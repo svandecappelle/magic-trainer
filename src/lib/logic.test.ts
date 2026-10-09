@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDeckText, parseDeckText } from './deckText';
+import { formatDeckText, parseDecklist, parseDeckText } from './deckText';
 import { createReducer, initialState } from './goldfish';
 import { colorPips, manaCurve, primaryType, probAtLeast } from './stats';
 import type { Card, Deck, DeckEntry } from '../types';
@@ -105,5 +105,24 @@ describe('goldfish reducer', () => {
     expect(s.turn).toBe(2);
     expect(s.zones.battlefield[0].tapped).toBe(false);
     expect(s.zones.hand).toHaveLength(8);
+  });
+});
+
+describe('parseDecklist', () => {
+  it('reads the Arena deck name and strips Moxfield/bracket set markers', () => {
+    const parsed = parseDecklist(`About
+Name Mono Red
+
+Deck
+4 Lightning Bolt (2X2) 117 *F*
+2 Counterspell [MH2]
+SIDEBOARD:
+1 Duress`);
+    expect(parsed.name).toBe('Mono Red');
+    expect(parsed.lines).toEqual([
+      { qty: 4, name: 'Lightning Bolt', board: 'main' },
+      { qty: 2, name: 'Counterspell', board: 'main' },
+      { qty: 1, name: 'Duress', board: 'side' },
+    ]);
   });
 });

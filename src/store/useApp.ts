@@ -6,7 +6,7 @@ interface AppState {
   decks: Deck[];
   collection: Record<string, CollectionEntry>;
 
-  createDeck: (name: string, format: string) => string;
+  createDeck: (name: string, format: string, entries?: DeckEntry[]) => string;
   updateDeck: (id: string, patch: Partial<Pick<Deck, 'name' | 'format' | 'entries'>>) => void;
   deleteDeck: (id: string) => void;
   /** Add (or remove, with a negative delta) copies of a card in a deck. */
@@ -31,10 +31,10 @@ export const useApp = create<AppState>()(
       decks: [],
       collection: {},
 
-      createDeck: (name, format) => {
+      createDeck: (name, format, entries = []) => {
         const id = crypto.randomUUID();
         const now = Date.now();
-        set((s) => ({ decks: [...s.decks, { id, name, format, entries: [], createdAt: now, updatedAt: now }] }));
+        set((s) => ({ decks: [...s.decks, { id, name, format, entries, createdAt: now, updatedAt: now }] }));
         return id;
       },
 

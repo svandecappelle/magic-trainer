@@ -225,3 +225,5 @@ footer { padding: 16px 20px; border-top: 1px solid var(--border); }
 .hand-card.selected { box-shadow: 0 0 0 3px var(--accent); transform: translateY(-10px); }
 .play-error { margin: 8px 0; }
 .play .log { padding-left: 34px; max-height: 340px; }
+.import-panel { margin-bottom: 16px; }
+.import-panel code { background: var(--panel-2); padding: 0 4px; border-radius: 3px; }

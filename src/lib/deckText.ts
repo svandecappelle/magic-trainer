@@ -6,25 +6,44 @@ export interface ParsedLine {
   board: Board;
 }
 
+export interface ParsedDecklist {
+  /** From an Arena "About / Name …" header, if present. */
+  name?: string;
+  lines: ParsedLine[];
+}
+
 /**
- * Parse a decklist in the common text formats (MTG Arena, MTGO, plain):
+ * Parse a decklist in the common text formats (MTG Arena, MTGO, Moxfield, plain):
+ *   About                <- Arena header; "Name My Deck" sets the deck name
+ *   Name My Deck
+ *   Deck
  *   4 Lightning Bolt
- *   4x Lightning Bolt (M11) 149
+ *   4x Lightning Bolt (M11) 149 *F*
+ *   2 Counterspell [MH2]
  *   SB: 2 Duress
  *   Sideboard            <- following lines go to the sideboard
  */
-export function parseDeckText(text: string): ParsedLine[] {
+export function parseDecklist(text: string): ParsedDecklist {
   const merged = new Map<string, ParsedLine>();
   let board: Board = 'main';
+  let inAbout = false;
+  let name: string | undefined;
 
   for (const raw of text.split(/\r?\n/)) {
     let line = raw.trim();
     if (!line || line.startsWith('//') || line.startsWith('#')) continue;
 
     const header = line.toLowerCase().replace(/:$/, '');
-    if (header === 'sideboard') { board = 'side'; continue; }
+    if (header === 'about') { inAbout = true; continue; }
+    if (header === 'sideboard') { board = 'side'; inAbout = false; continue; }
     if (header === 'deck' || header === 'mainboard' || header === 'commander' || header === 'companion') {
       board = 'main';
+      inAbout = false;
+      continue;
+    }
+    if (inAbout) {
+      const m = line.match(/^name\s+(.+)$/i);
+      if (m) name = m[1].trim();
       continue;
     }
 
@@ -36,17 +55,22 @@ export function parseDeckText(text: string): ParsedLine[] {
 
     const m = line.match(/^(\d+)\s*x?\s+(.+)$/i);
     const qty = m ? Number(m[1]) : 1;
-    // Strip a trailing set code and collector number: "Name (M11) 149"
-    const name = (m ? m[2] : line).replace(/\s+\([A-Za-z0-9]+\)(\s+\S+)?$/, '').trim();
-    if (!name || qty <= 0) continue;
+    const cardName = (m ? m[2] : line)
+      .replace(/\s+\*[A-Z]+\*$/, '') // Moxfield foil/etched marker: *F*, *E*
+      .replace(/\s+\([A-Za-z0-9]+\)(\s+\S+)?$/, '') // set and collector number: (M11) 149
+      .replace(/\s+\[[^\]]+\]$/, '') // set in brackets: [M11]
+      .trim();
+    if (!cardName || qty <= 0) continue;
 
-    const key = `${lineBoard}|${name.toLowerCase()}`;
+    const key = `${lineBoard}|${cardName.toLowerCase()}`;
     const existing = merged.get(key);
     if (existing) existing.qty += qty;
-    else merged.set(key, { qty, name, board: lineBoard });
+    else merged.set(key, { qty, name: cardName, board: lineBoard });
   }
-  return [...merged.values()];
+  return { name, lines: [...merged.values()] };
 }
+
+export const parseDeckText = (text: string): ParsedLine[] => parseDecklist(text).lines;
 
 export function formatDeckText(deck: Deck): string {
   const lines = (board: Board) =>

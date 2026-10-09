@@ -4,10 +4,10 @@ import { CardSearch } from '../components/CardSearch';
 import { DeckStats } from '../components/DeckStats';
 import { ManaCost } from '../components/ManaCost';
 import { formatDeckText, parseDeckText } from '../lib/deckText';
-import { fetchCardsByName } from '../lib/scryfall';
+import { resolveDecklist } from '../lib/importDeck';
 import { primaryType, TYPE_ORDER } from '../lib/stats';
 import { useApp } from '../store/useApp';
-import { FORMATS, type Board, type Card, type DeckEntry } from '../types';
+import { FORMATS, type Board, type Card } from '../types';
 
 export function DeckEditor() {
   const { deckId = '' } = useParams();
@@ -32,17 +32,7 @@ export function DeckEditor() {
     if (!lines.length) return;
     setImportMsg('Looking up cards…');
     try {
-      // Scryfall's name lookup rejects "Fire // Ice" but accepts "Fire", so send front-face names.
-      const names = [...new Set(lines.map((l) => l.name.split(' // ')[0]))];
-      const { found, notFound } = await fetchCardsByName(names);
-      const byName = new Map(found.map((c) => [c.name.toLowerCase(), c]));
-      // Index front-face names too, so both "Fire" and "Fire // Ice" lines resolve.
-      for (const c of found) byName.set(c.name.split(' // ')[0].toLowerCase(), c);
-      const entries: DeckEntry[] = [];
-      for (const l of lines) {
-        const card = byName.get(l.name.toLowerCase());
-        if (card) entries.push({ card, qty: l.qty, board: l.board });
-      }
+      const { entries, notFound } = await resolveDecklist(lines);
       updateDeck(deck!.id, { entries });
       setImportMsg(notFound.length ? `Imported. Not found: ${notFound.join(', ')}` : `Imported ${entries.length} entries.`);
       if (!notFound.length) setTextMode('none');

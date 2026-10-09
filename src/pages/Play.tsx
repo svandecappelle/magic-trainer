@@ -8,7 +8,7 @@ import {
 import { PRESET_DECKS } from '../lib/engine/presets';
 import { isCreature, isLandCard, parseEffects, power, targetKind, toughness, type TargetKind } from '../lib/engine/rules';
 import { parseDeckText } from '../lib/deckText';
-import { fetchCardsByName } from '../lib/scryfall';
+import { resolveDecklist } from '../lib/importDeck';
 import { useApp } from '../store/useApp';
 import type { Card, Deck } from '../types';
 
@@ -26,10 +26,8 @@ async function loadDeckCards(id: string, decks: Deck[]): Promise<Card[]> {
   }
   const cached = presetCache.get(id);
   if (cached) return cached;
-  const lines = parseDeckText(preset.list);
-  const { found } = await fetchCardsByName(lines.map((l) => l.name));
-  const byName = new Map(found.map((c) => [c.name, c]));
-  const cards = lines.flatMap((l) => (byName.has(l.name) ? Array(l.qty).fill(byName.get(l.name)) : []));
+  const { entries } = await resolveDecklist(parseDeckText(preset.list));
+  const cards = entries.filter((e) => e.board === 'main').flatMap((e) => Array(e.qty).fill(e.card));
   presetCache.set(id, cards);
   return cards;
 }
