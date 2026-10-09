@@ -5,7 +5,7 @@ import type { Card } from '../../types';
 
 export const KEYWORDS = [
   'flying', 'reach', 'haste', 'vigilance', 'trample', 'deathtouch', 'lifelink',
-  'defender', 'first strike', 'double strike', 'menace',
+  'defender', 'first strike', 'double strike', 'menace', 'flash',
 ] as const;
 export type Keyword = (typeof KEYWORDS)[number];
 
@@ -36,6 +36,11 @@ export const toughness = (card: Card) => parseStat(card.toughness, 1);
 
 export const isCreature = (card: Card) => primaryType(card) === 'Creature';
 export const isLandCard = (card: Card) => primaryType(card) === 'Land';
+
+export const isInstant = (card: Card) => card.typeLine.split('//')[0].includes('Instant');
+
+/** Can be cast whenever its controller has priority, not only in their own main phase. */
+export const hasInstantSpeed = (card: Card) => isInstant(card) || hasKeyword(card, 'flash');
 
 export function isInstantOrSorcery(card: Card): boolean {
   const front = card.typeLine.split('//')[0];
@@ -131,20 +136,26 @@ export function findPayment(sources: ManaSource[], cost: Cost): string[] | null 
 
 export type DamageTarget = 'any' | 'creature' | 'player' | 'each-opponent';
 
+/** Which spells a counterspell may target, e.g. Negate: noncreature. */
+export type CounterFilter = 'any' | 'creature' | 'noncreature';
+
 export type Effect =
   | { kind: 'damage'; amount: number; target: DamageTarget }
+  | { kind: 'counter'; filter: CounterFilter }
+  | { kind: 'pump'; power: number; toughness: number }
   | { kind: 'destroy'; exile: boolean }
   | { kind: 'draw'; n: number }
   | { kind: 'gainLife'; n: number };
 
-export type TargetKind = 'any' | 'creature' | 'player';
+export type TargetKind = 'any' | 'creature' | 'player' | 'spell';
 
 const WORD_NUMBERS: Record<string, number> = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5 };
 const toNumber = (s: string) => WORD_NUMBERS[s.toLowerCase()] ?? Number(s);
 
 /**
  * Recognizes the most common instant/sorcery effects from oracle text. Anything else
- * is not simulated. Targeting restrictions such as "nonblack" are ignored.
+ * is not simulated. Targeting restrictions such as "nonblack" are ignored, except
+ * creature/noncreature on counterspells.
  */
 export function parseEffects(card: Card): Effect[] {
   if (!isInstantOrSorcery(card)) return [];
@@ -161,6 +172,15 @@ export function parseEffects(card: Card): Effect[] {
     effects.push({ kind: 'damage', amount: Number(dmg[1]), target });
   }
 
+  const counter = text.match(/\bcounter target (noncreature |creature )?spell\b/i);
+  if (counter) {
+    const filter = (counter[1]?.trim().toLowerCase() ?? 'any') as CounterFilter;
+    effects.push({ kind: 'counter', filter });
+  }
+
+  const pump = text.match(/target creature gets \+(\d+)\/\+(\d+) until end of turn/i);
+  if (pump) effects.push({ kind: 'pump', power: Number(pump[1]), toughness: Number(pump[2]) });
+
   const removal = text.match(/\b(destroy|exile) target (?:[\w-]+ )?creature\b/i);
   if (removal) effects.push({ kind: 'destroy', exile: removal[1].toLowerCase() === 'exile' });
 
@@ -176,7 +196,8 @@ export function parseEffects(card: Card): Effect[] {
 /** What the spell needs to target, if anything (one target per spell). */
 export function targetKind(effects: Effect[]): TargetKind | null {
   for (const e of effects) {
-    if (e.kind === 'destroy') return 'creature';
+    if (e.kind === 'destroy' || e.kind === 'pump') return 'creature';
+    if (e.kind === 'counter') return 'spell';
     if (e.kind === 'damage' && e.target !== 'each-opponent') return e.target;
   }
   return null;

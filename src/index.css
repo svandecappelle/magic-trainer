@@ -237,3 +237,11 @@ footer { padding: 16px 20px; border-top: 1px solid var(--border); }
 .lobby { max-width: 520px; }
 .room-code { font-family: ui-monospace, monospace; font-size: 2.2rem; font-weight: 800; letter-spacing: 0.25em; color: var(--accent); }
 .play-notice { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.perm .pt.pumped { color: #9be38f; }
+.stack {
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 12px; margin: 4px 0;
+  border: 1px dashed var(--accent); border-radius: 8px;
+}
+.stack-item { display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: default; }
+.stack-item img { width: 76px; border-radius: 5px; }
+.stack-item.targetable { cursor: crosshair; }

@@ -33,6 +33,11 @@ function startedRoom() {
   return { rooms, alice, bob, code };
 }
 
+function keepBoth({ rooms, alice, bob }: ReturnType<typeof startedRoom>) {
+  rooms.handle(alice, { t: 'action', action: { type: 'keep', bottom: [] } });
+  rooms.handle(bob, { t: 'action', action: { type: 'keep', bottom: [] } });
+}
+
 describe('RoomManager', () => {
   it('starts a game when the second player joins, hiding secret information', () => {
     const { alice, bob } = startedRoom();
@@ -45,14 +50,18 @@ describe('RoomManager', () => {
     expect(view.players[1].hand.every((c) => c.card.name === 'Hidden card')).toBe(true);
     expect(view.players[0].library.every((c) => c.card.name === 'Hidden card')).toBe(true);
     expect(bob.state.players[0].hand.every((c) => c.card.name === 'Hidden card')).toBe(true);
+    expect(view.seed).toBe(0); // the shuffle seed would reveal future draws
   });
 
   it('only lets the acting player act, and broadcasts the result', () => {
-    const { rooms, alice, bob } = startedRoom();
+    const room = startedRoom();
+    const { rooms, alice, bob } = room;
     expect(actor(alice.state)).toBe(0);
 
-    rooms.handle(bob, { t: 'action', action: { type: 'pass' } });
+    rooms.handle(bob, { t: 'action', action: { type: 'keep', bottom: [] } });
     expect(bob.last('error')!.message).toMatch(/not your turn/);
+    keepBoth(room);
+    expect(alice.state.turn).toBe(1);
 
     const land = alice.state.players[0].hand[0].iid;
     rooms.handle(alice, { t: 'action', action: { type: 'playLand', iid: land } });

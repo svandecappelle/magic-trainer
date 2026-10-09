@@ -33,7 +33,7 @@ export const HIDDEN_CARD: Card = {
   colors: [], colorIdentity: [], setCode: '', setName: '', rarity: '',
 };
 
-/** What `viewer` is allowed to see: no libraries, no opponent hand. */
+/** What `viewer` is allowed to see: no libraries, no opponent hand, no random seed (it predicts shuffles). */
 export function redact(state: GameState, viewer: PlayerId): GameState {
   const hide = (cards: CardInst[]): CardInst[] => cards.map((_, i) => ({ iid: `hidden-${i}`, card: HIDDEN_CARD }));
   const players = state.players.map((p, i): PlayerState => ({
@@ -41,5 +41,5 @@ export function redact(state: GameState, viewer: PlayerId): GameState {
     library: hide(p.library),
     hand: i === viewer ? p.hand : hide(p.hand),
   })) as [PlayerState, PlayerState];
-  return { ...state, players };
+  return { ...state, players, seed: 0 };
 }

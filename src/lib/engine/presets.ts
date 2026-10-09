@@ -44,4 +44,20 @@ export const PRESET_DECKS: { id: string; name: string; list: string }[] = [
 4 Ajani's Pridemate
 2 Baneslayer Angel`,
   },
+  {
+    id: 'preset-flash',
+    name: 'Blue-Green Flash (preset)',
+    list: `12 Forest
+11 Island
+4 Ambush Viper
+4 Spectral Sailor
+4 Grizzly Bears
+4 Giant Spider
+4 Centaur Courser
+2 Craw Wurm
+4 Counterspell
+3 Essence Scatter
+4 Giant Growth
+4 Divination`,
+  },
 ];

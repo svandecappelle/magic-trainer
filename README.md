@@ -30,7 +30,7 @@ Known limitation: the server trusts the card data each client sends with its dec
 | `src/lib/deckText.ts` | Parse / format text decklists (Arena, MTGO, plain) |
 | `src/lib/stats.ts` | Mana curve, color pips, type breakdown, hypergeometric odds |
 | `src/lib/goldfish.ts` | Pure game-state reducer for solo practice (zones, mulligan, turns) |
-| `src/lib/engine/` | Simplified two-player rules engine (`engine.ts`), card rules parsing (`rules.ts`), heuristic bot (`bot.ts`), preset decks |
+| `src/lib/engine/` | Simplified two-player rules engine with London mulligans, a stack and Arena-style priority windows (`engine.ts`), card rules parsing (`rules.ts`), heuristic bot (`bot.ts`), preset decks |
 | `src/lib/multiplayer/` | Client/server message types, hidden-information redaction, WebSocket hook |
 | `server/` | Node WebSocket game server: rooms, seats, reconnection (`rooms.ts`), HTTP/static wiring (`index.ts`) |
 | `src/store/` | Zustand stores, persisted to `localStorage` |
@@ -41,5 +41,6 @@ All data stays in the browser (`localStorage`). Card data and images come from [
 
 ## Roadmap
 
-- Bot: instant-speed responses, mulligans, creature abilities/triggers, smarter combat (multi-blocks, combat tricks).
+- Rules: creature abilities and triggers, activated abilities, more spell effects, choosing cards to discard.
+- Bot: multi-blocks, holding back blockers, planning its mana around instants it holds.
 - Online: verify decks server-side against Scryfall, spectators, chat.

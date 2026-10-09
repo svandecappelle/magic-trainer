@@ -1,9 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import {
-  actor, apply, canAttack, canBlock, canPay, findPermanent, IllegalAction, isMainStep, opponent,
-  type Action, type GameState, type Permanent, type PlayerId,
+  actor, apply, canAttack, canBlock, canCastNow, findPermanent, hasUsefulTarget, IllegalAction, isMainStep, opponent, powerOf, toughnessOf,
+  type Action, type GameState, type Permanent, type PlayerId, type WindowReason,
 } from '../lib/engine/engine';
-import { isCreature, isLandCard, parseEffects, power, targetKind, toughness, type TargetKind } from '../lib/engine/rules';
+import { isCreature, isLandCard, parseEffects, targetKind, type TargetKind } from '../lib/engine/rules';
 import type { Card } from '../types';
 
 interface Props {
@@ -18,6 +18,17 @@ interface Props {
   notice?: ReactNode;
 }
 
+const STEP_LABELS: Record<GameState['step'], string> = {
+  mulligan: 'Mulligans', main1: 'Main 1', attack: 'Attackers', block: 'Blockers', main2: 'Main 2',
+};
+
+const WINDOW_PROMPTS: Record<WindowReason, (myTurn: boolean) => string> = {
+  main: () => 'Cast an instant, or pass.',
+  attack: (myTurn) => (myTurn ? 'Attackers declared. Cast an instant, or pass.' : 'You are being attacked. Cast an instant before blocks, or pass.'),
+  block: () => 'Blockers declared. Cast a combat trick, or pass to deal damage.',
+  end: (myTurn) => (myTurn ? 'End of your turn. Cast an instant, or pass.' : 'End of the opponent\'s turn. Cast an instant, or pass.'),
+};
+
 /** The two-player game table, shared by Play vs Bot and online multiplayer. */
 export function GameBoard({ game: g, me, onAction, endControls, notice }: Props) {
   const opp = opponent(me);
@@ -29,14 +40,16 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   const [attackSel, setAttackSel] = useState<string[]>([]);
   const [blockerSel, setBlockerSel] = useState<string | null>(null);
   const [blocks, setBlocks] = useState<Record<string, string[]>>({});
+  const [bottomSel, setBottomSel] = useState<string[]>([]);
 
-  // Reset selections whenever the game moves to another step.
+  // Reset selections whenever the game moves on.
   useEffect(() => {
     setTargeting(null);
     setAttackSel([]);
     setBlockerSel(null);
     setBlocks({});
-  }, [g.step, g.turn]);
+    setBottomSel([]);
+  }, [g.step, g.turn, g.priority?.player, g.stack.length, g.mulligan?.player, g.mulligan?.count[me]]);
 
   const acting = actor(g);
   const iAct = acting === me;
@@ -53,11 +66,18 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   }
 
   function onHandClick(iid: string, card: Card) {
-    if (!iAct || !isMainStep(g)) return;
+    if (!iAct) return;
+    if (g.mulligan) {
+      setBottomSel((sel) => (sel.includes(iid) ? sel.filter((x) => x !== iid) : [...sel, iid]));
+      return;
+    }
     if (isLandCard(card)) return act({ type: 'playLand', iid });
     const kind = targetKind(parseEffects(card));
     if (kind) {
-      if (!canPay(g, me, card)) return setError(`Not enough mana for ${card.name}`);
+      if (!canCastNow(g, me, card)) {
+        return setError(g.priority ? `${card.name} can't be cast right now` : `Not enough mana for ${card.name}`);
+      }
+      if (!hasUsefulTarget(g, me, card)) return setError(`${card.name} has nothing to target right now`);
       setTargeting({ iid, kind });
       setError('');
     } else {
@@ -67,7 +87,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
 
   function onPermanentClick(perm: Permanent) {
     if (targeting) {
-      if (targeting.kind === 'player') return setError('Choose a player');
+      if (targeting.kind === 'player' || targeting.kind === 'spell') return setError(`Choose a ${targeting.kind}`);
       act({ type: 'cast', iid: targeting.iid, target: { kind: 'permanent', iid: perm.iid } });
       return setTargeting(null);
     }
@@ -95,7 +115,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
 
   function onPlayerClick(p: PlayerId) {
     if (!targeting) return;
-    if (targeting.kind === 'creature') return setError('Choose a creature');
+    if (targeting.kind === 'creature' || targeting.kind === 'spell') return setError(`Choose a ${targeting.kind}`);
     act({ type: 'cast', iid: targeting.iid, target: { kind: 'player', player: p } });
     setTargeting(null);
   }
@@ -106,15 +126,15 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     const attacking = g.attackers.includes(perm.iid) || attackSel.includes(perm.iid);
     const blocking = blockedBy(perm.iid);
     const selected = blockerSel === perm.iid;
-    const targetable = targeting && targeting.kind !== 'player' && isCreature(perm.card);
+    const targetable = targeting && (targeting.kind === 'any' || targeting.kind === 'creature') && isCreature(perm.card);
     const classes = ['perm', perm.tapped && 'tapped', attacking && 'attacking', (blocking || selected) && 'blocking', targetable && 'targetable']
       .filter(Boolean).join(' ');
     return (
       <div key={perm.iid} className={classes} onClick={() => onPermanentClick(perm)} onMouseEnter={() => setPreview(perm.card)}>
         <img src={perm.card.imageSmall ?? perm.card.imageNormal} alt={perm.card.name} />
         {isCreature(perm.card) && (
-          <span className={`pt ${perm.damage ? 'hurt' : ''}`}>
-            {power(perm.card)}/{toughness(perm.card) - perm.damage}
+          <span className={`pt ${perm.damage ? 'hurt' : ''} ${perm.pumpPower || perm.pumpToughness ? 'pumped' : ''}`}>
+            {powerOf(perm)}/{toughnessOf(perm) - perm.damage}
           </span>
         )}
         {perm.sick && isCreature(perm.card) && <span className="sick" title="Summoning sick">zzz</span>}
@@ -133,7 +153,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
 
   const player = (p: PlayerId) => {
     const ps = g.players[p];
-    const targetable = targeting && targeting.kind !== 'creature';
+    const targetable = targeting && (targeting.kind === 'any' || targeting.kind === 'player');
     return (
       <div className={`player-panel ${g.active === p ? 'active' : ''} ${targetable ? 'targetable' : ''}`} onClick={() => onPlayerClick(p)}>
         <strong>{ps.name}{p === me && ps.name !== 'You' ? ' (you)' : ''}</strong>
@@ -144,16 +164,44 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   };
 
   const oppName = g.players[opp].name;
+  const top = g.stack.at(-1);
   let prompt = '';
   let controls: ReactNode = null;
   if (g.winner !== null) {
     prompt = g.winner === 'draw' ? 'Draw game.' : g.winner === me ? 'You win! 🎉' : `${oppName} wins.`;
     controls = endControls;
+  } else if (g.mulligan) {
+    const need = Math.min(g.mulligan.count[me], g.players[me].hand.length);
+    if (!iAct) {
+      prompt = g.mulligan.kept[me] ? `${oppName} is deciding on a mulligan…` : `${oppName} decides first…`;
+    } else if (need > 0) {
+      prompt = `Mulligan ${g.mulligan.count[me]}: click ${need} card(s) to put on the bottom (${bottomSel.length}/${need}), or mulligan again.`;
+      controls = (
+        <>
+          <button disabled={bottomSel.length !== need} onClick={() => act({ type: 'keep', bottom: bottomSel })}>Keep</button>
+          <button className="secondary" onClick={() => act({ type: 'mulligan' })}>Mulligan</button>
+        </>
+      );
+    } else {
+      const lands = g.players[me].hand.filter((c) => isLandCard(c.card)).length;
+      prompt = `Opening hand: ${lands} land(s). Keep or mulligan?`;
+      controls = (
+        <>
+          <button onClick={() => act({ type: 'keep', bottom: [] })}>Keep</button>
+          <button className="secondary" onClick={() => act({ type: 'mulligan' })}>Mulligan</button>
+        </>
+      );
+    }
   } else if (!iAct) {
-    prompt = g.step === 'block' ? `${oppName} is choosing blockers…` : `${oppName} is thinking…`;
+    prompt = g.priority ? `${oppName} may respond…` : g.step === 'block' ? `${oppName} is choosing blockers…` : `${oppName} is thinking…`;
   } else if (targeting) {
-    prompt = `Choose a target (${targeting.kind === 'any' ? 'creature or player' : targeting.kind}).`;
+    prompt = `Choose a target (${targeting.kind === 'any' ? 'creature or player' : targeting.kind === 'spell' ? 'a spell on the stack' : targeting.kind}).`;
     controls = <button className="secondary" onClick={() => setTargeting(null)}>Cancel</button>;
+  } else if (g.priority) {
+    prompt = top
+      ? `${g.players[top.controller].name === 'You' ? 'Your' : `${g.players[top.controller].name}'s`} ${top.card.name} is on the stack. Respond with an instant, or pass.`
+      : WINDOW_PROMPTS[g.priority.reason](g.active === me);
+    controls = <button onClick={() => act({ type: 'pass' })}>{top ? 'Pass (let it resolve)' : 'Pass'}</button>;
   } else if (g.step === 'attack') {
     prompt = 'Declare attackers: click your creatures.';
     controls = (
@@ -176,20 +224,43 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
         <div className="bot-hand">{g.players[opp].hand.map((c) => <div key={c.iid} className="card-back" />)}</div>
         {side(opp)}
         <div className="play-bar">
-          <span className="small muted">Turn {g.turn} · {g.step === 'main1' ? 'Main 1' : g.step === 'main2' ? 'Main 2' : g.step === 'attack' ? 'Attackers' : 'Blockers'}</span>
+          <span className="small muted">{g.mulligan ? 'Mulligans' : `Turn ${g.turn} · ${STEP_LABELS[g.step]}`}</span>
           <strong>{prompt}</strong>
           <span className="spacer" />
           {controls}
         </div>
+        {g.stack.length > 0 && (
+          <div className="stack">
+            <span className="small muted">Stack (top first)</span>
+            {[...g.stack].reverse().map((item) => (
+              <div
+                key={item.iid}
+                className={`stack-item ${targeting?.kind === 'spell' ? 'targetable' : ''}`}
+                onMouseEnter={() => setPreview(item.card)}
+                onClick={() => {
+                  if (targeting?.kind !== 'spell') return;
+                  act({ type: 'cast', iid: targeting.iid, target: { kind: 'spell', iid: item.iid } });
+                  setTargeting(null);
+                }}
+              >
+                <img src={item.card.imageSmall ?? item.card.imageNormal} alt={item.card.name} />
+                <span className="small">{g.players[item.controller].name}</span>
+              </div>
+            ))}
+          </div>
+        )}
         {side(me)}
         {player(me)}
         <div className="my-hand">
           {g.players[me].hand.map(({ iid, card }) => {
-            const playable = iAct && isMainStep(g) && (isLandCard(card) ? !g.players[me].landPlayed : canPay(g, me, card));
+            const playable = isLandCard(card)
+              ? iAct && !g.priority && !g.mulligan && isMainStep(g) && g.active === me && !g.players[me].landPlayed
+              : canCastNow(g, me, card) && hasUsefulTarget(g, me, card);
+            const selected = targeting?.iid === iid || bottomSel.includes(iid);
             return (
               <img
                 key={iid}
-                className={`hand-card ${playable ? 'playable' : ''} ${targeting?.iid === iid ? 'selected' : ''}`}
+                className={`hand-card ${playable ? 'playable' : ''} ${selected ? 'selected' : ''}`}
                 src={card.imageSmall ?? card.imageNormal}
                 alt={card.name}
                 onClick={() => onHandClick(iid, card)}

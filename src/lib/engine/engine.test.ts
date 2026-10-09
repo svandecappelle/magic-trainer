@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
 import { botAction, fallbackAction } from './bot';
 import { actor, apply, IllegalAction, newGame, type GameState, type Permanent, type PlayerId } from './engine';
+import { hasInstantSpeed } from './rules';
 import { findPayment, manaColors, parseCost, parseEffects } from './rules';
 
 let n = 0;
@@ -19,10 +20,11 @@ const bolt = card({ name: 'Lightning Bolt', typeLine: 'Instant', manaCost: '{R}'
 
 /** A game in main1 of player 0's turn with a hand-built battlefield. */
 function board(perms: { card: Card; controller: PlayerId; tapped?: boolean; sick?: boolean }[], hand: Card[] = []): GameState {
-  const s = newGame({ decks: [Array(20).fill(mountain), Array(20).fill(mountain)], names: ['Me', 'Bot'], first: 0, rng: () => 0.5 });
+  const s = newGame({ decks: [Array(20).fill(mountain), Array(20).fill(mountain)], names: ['Me', 'Bot'], first: 0, rng: () => 0.5, mulligans: false });
   s.players[0].hand = hand.map((c, i) => ({ iid: `h${i}`, card: c }));
   s.battlefield = perms.map((x, i): Permanent => ({
     iid: `p${i}`, card: x.card, controller: x.controller, tapped: x.tapped ?? false, sick: x.sick ?? false, damage: 0, deathtouched: false,
+    pumpPower: 0, pumpToughness: 0,
   }));
   return s;
 }
@@ -96,7 +98,19 @@ describe('engine', () => {
     ]);
     const atk = apply(s, { type: 'pass' });
     expect(() => apply(atk, { type: 'declareAttackers', attackers: ['p1'] })).toThrow(/cannot attack/);
-    const blk = apply(atk, { type: 'declareAttackers', attackers: ['p0'] });
+    // Only a flyer attacks and the Bear can't block it: the blockers step is skipped.
+    const skipped = apply(atk, { type: 'declareAttackers', attackers: ['p0'] });
+    expect(skipped.step).toBe('main2');
+    expect(skipped.players[1].life).toBe(19);
+
+    // With a ground attacker too, blocks are declared, and the Bear still can't block the flyer.
+    const both = board([
+      { card: creature('Bird', 1, 1, ['Flying']), controller: 0 },
+      { card: creature('Wolf', 2, 2), controller: 0 },
+      { card: creature('Bear', 2, 2), controller: 1 },
+    ]);
+    const blk = apply(apply(both, { type: 'pass' }), { type: 'declareAttackers', attackers: ['p0', 'p1'] });
+    expect(blk.step).toBe('block');
     expect(() => apply(blk, { type: 'declareBlockers', blocks: { p0: ['p2'] } })).toThrow(/cannot block/);
   });
 });
@@ -137,5 +151,128 @@ describe('bot', () => {
       }
       expect(s.winner).not.toBeNull();
     }
+  });
+});
+
+const island = card({ name: 'Island', typeLine: 'Basic Land — Island' });
+const counterspell = card({ name: 'Counterspell', typeLine: 'Instant', manaCost: '{U}{U}', cmc: 2, oracleText: 'Counter target spell.' });
+const negate = card({ name: 'Negate', typeLine: 'Instant', manaCost: '{1}{U}', cmc: 2, oracleText: 'Counter target noncreature spell.' });
+const growth = card({ name: 'Giant Growth', typeLine: 'Instant', manaCost: '{G}', cmc: 1, oracleText: 'Target creature gets +3/+3 until end of turn.' });
+
+/** Give player 1 a hand (the board() helper only sets player 0's). */
+function withOpponentHand(s: GameState, cards: Card[]): GameState {
+  s.players[1].hand = cards.map((c, i) => ({ iid: `o${i}`, card: c }));
+  return s;
+}
+
+describe('mulligans', () => {
+  it('runs the London mulligan in turn order, then starts turn 1', () => {
+    let s = newGame({ decks: [Array(40).fill(mountain), Array(40).fill(forest)], names: ['A', 'B'], first: 1, rng: () => 0.3 });
+    expect(s.step).toBe('mulligan');
+    expect(actor(s)).toBe(1);
+    expect(() => apply(s, { type: 'pass' })).toThrow(/keep your opening hand/);
+
+    s = apply(s, { type: 'mulligan' });
+    expect(s.players[1].hand).toHaveLength(7);
+    expect(() => apply(s, { type: 'keep', bottom: [] })).toThrow(/Choose 1 card/);
+    const bottom = s.players[1].hand[0].iid;
+    s = apply(s, { type: 'keep', bottom: [bottom] });
+    expect(s.players[1].hand).toHaveLength(6);
+    expect(s.players[1].library.at(-1)!.iid).toBe(bottom);
+
+    expect(actor(s)).toBe(0);
+    s = apply(s, { type: 'keep', bottom: [] });
+    expect(s.mulligan).toBeNull();
+    expect(s.turn).toBe(1);
+    expect(s.active).toBe(1);
+    expect(s.step).toBe('main1');
+  });
+});
+
+describe('instant speed', () => {
+  it('lets the defender kill an attacker before blocks', () => {
+    let s = withOpponentHand(
+      board([{ card: creature('Bear', 2, 2), controller: 0 }, { card: mountain, controller: 1 }]),
+      [bolt],
+    );
+    s = apply(apply(s, { type: 'pass' }), { type: 'declareAttackers', attackers: ['p0'] });
+    expect(s.priority).toMatchObject({ player: 1, reason: 'attack' });
+    s = apply(s, { type: 'cast', iid: 'o0', target: { kind: 'permanent', iid: 'p0' } });
+    // Player 0 has no instants, so they auto-pass, Bolt resolves and combat ends without attackers.
+    expect(s.priority).toBeNull();
+    expect(s.step).toBe('main2');
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toEqual(['Bear']);
+    expect(s.players[1].life).toBe(20);
+  });
+
+  it('counters a spell; Negate cannot counter a creature', () => {
+    const base = withOpponentHand(
+      board([{ card: mountain, controller: 0 }, { card: island, controller: 1 }, { card: island, controller: 1 }], [creature('Goblin', 2, 2, [], '{R}')]),
+      [negate, counterspell],
+    );
+    let s = apply(base, { type: 'cast', iid: 'h0' });
+    expect(s.stack).toHaveLength(1);
+    expect(actor(s)).toBe(1);
+    expect(() => apply(s, { type: 'cast', iid: 'o0', target: { kind: 'spell', iid: 'h0' } })).toThrow(/noncreature/);
+    s = apply(s, { type: 'cast', iid: 'o1', target: { kind: 'spell', iid: 'h0' } });
+    expect(s.stack).toHaveLength(0);
+    expect(s.priority).toBeNull();
+    expect(s.battlefield.some((p) => p.card.name === 'Goblin')).toBe(false);
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toEqual(['Goblin']);
+  });
+
+  it('pumps a creature after blocks to win the fight, and the boost wears off', () => {
+    let s = board(
+      [{ card: creature('Bear', 2, 2), controller: 0 }, { card: forest, controller: 0 }, { card: creature('Ogre', 3, 3), controller: 1 }],
+      [growth],
+    );
+    s = apply(apply(s, { type: 'pass' }), { type: 'declareAttackers', attackers: ['p0'] });
+    s = apply(s, { type: 'declareBlockers', blocks: { p0: ['p2'] } });
+    expect(s.priority).toMatchObject({ player: 0, reason: 'block' });
+    s = apply(s, { type: 'cast', iid: 'h0', target: { kind: 'permanent', iid: 'p0' } });
+    expect(s.step).toBe('main2');
+    expect(s.battlefield.map((p) => p.card.name).sort()).toEqual(['Bear', 'Forest']);
+    s = apply(s, { type: 'pass' }); // end turn
+    expect(s.battlefield.find((p) => p.card.name === 'Bear')!.pumpPower).toBe(0);
+  });
+
+  it('offers an end-of-turn window, and casting a sorcery there is refused', () => {
+    const sorcery = card({ name: 'Lava Spike', typeLine: 'Sorcery', manaCost: '{R}', cmc: 1, oracleText: 'Lava Spike deals 3 damage to target player or planeswalker.' });
+    let s = withOpponentHand(board([{ card: mountain, controller: 1 }]), [sorcery, bolt]);
+    s = apply(apply(s, { type: 'pass' }), { type: 'pass' }); // main1 → main2 → end of turn
+    expect(s.priority).toMatchObject({ player: 1, reason: 'end' });
+    expect(() => apply(s, { type: 'cast', iid: 'o0', target: { kind: 'player', player: 0 } })).toThrow(/main phase/);
+    s = apply(s, { type: 'cast', iid: 'o1', target: { kind: 'player', player: 0 } });
+    expect(s.players[0].life).toBe(17);
+    expect(s.active).toBe(1); // turn passed after the window closed
+  });
+
+  it('casts flash creatures at instant speed and fizzles spells whose target is gone', () => {
+    const knight = creature('Benalish Knight', 2, 2, ['First strike', 'Flash'], '{W}');
+    expect(hasInstantSpeed(knight)).toBe(true);
+    // Player 0 bolts a creature; player 1 responds by bolting the same creature first.
+    let s = withOpponentHand(
+      board([{ card: mountain, controller: 0 }, { card: creature('Bear', 2, 2), controller: 1 }, { card: mountain, controller: 1 }], [bolt]),
+      [bolt],
+    );
+    s = apply(s, { type: 'cast', iid: 'h0', target: { kind: 'permanent', iid: 'p1' } });
+    s = apply(s, { type: 'cast', iid: 'o0', target: { kind: 'permanent', iid: 'p1' } });
+    expect(s.log.some((l) => l.includes('fizzles'))).toBe(true);
+    expect(s.stack).toHaveLength(0);
+  });
+});
+
+describe('bot with instants', () => {
+  it('saves its creature from burn with a pump spell, and mulligans a no-land hand', () => {
+    let s = withOpponentHand(
+      board([{ card: mountain, controller: 0 }, { card: creature('Bear', 2, 2), controller: 1 }, { card: forest, controller: 1 }], [bolt]),
+      [growth],
+    );
+    s.players[0].hand = [{ iid: 'h0', card: bolt }];
+    s = apply(s, { type: 'cast', iid: 'h0', target: { kind: 'permanent', iid: 'p1' } });
+    expect(botAction(s)).toEqual({ type: 'cast', iid: 'o0', target: { kind: 'permanent', iid: 'p1' } });
+
+    const m = newGame({ decks: [Array(40).fill(bolt), Array(40).fill(bolt)], names: ['A', 'B'], first: 0 });
+    expect(botAction(m)).toEqual({ type: 'mulligan' });
   });
 });

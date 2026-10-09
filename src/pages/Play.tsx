@@ -95,11 +95,12 @@ export function Play() {
 export function RulesNote() {
   return (
     <div className="panel small muted">
-      <strong>Simplified rules.</strong> Spells are cast in your main phases only (no instant-speed responses).
-      Combat supports flying, reach, haste, vigilance, trample, deathtouch, lifelink, defender, first strike,
-      double strike and menace. Instants and sorceries that deal damage, destroy/exile a creature, draw cards or
-      gain life are automated; other effects (including creature abilities and triggers) are not simulated yet.
-      No mulligans. <Link to="/decks">Build a deck</Link> to bring your own.
+      <strong>Simplified rules.</strong> London mulligans; instants and flash cards can be cast when you get
+      priority: in response to a spell, after attackers or blockers are declared, and at end of turn (you are only
+      asked when you hold something castable). Combat supports flying, reach, haste, vigilance, trample, deathtouch,
+      lifelink, defender, first strike, double strike and menace. Spells that deal damage, destroy/exile a creature,
+      counter a spell, pump a creature, draw cards or gain life are automated; other effects (including creature
+      abilities and triggers) are not simulated yet. <Link to="/decks">Build a deck</Link> to bring your own.
     </div>
   );
 }
