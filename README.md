@@ -1,13 +1,25 @@
 # Magic Trainer
 
-A web app for Magic: The Gathering players: deck builder, collection manager, solo "goldfish" practice, play against a bot, and a table life tracker.
+A web app for Magic: The Gathering players: deck builder, collection manager, solo "goldfish" practice, play against a bot or a friend online, and a table life tracker.
 
 ```bash
 npm install
-npm run dev     # http://localhost:5173
-npm test        # unit tests for the logic in src/lib
+npm run dev     # app on http://localhost:5173
+npm run server  # game server for online play (port 8787); Vite proxies /ws to it
+npm test        # unit tests
 npm run build   # type-check + production build into dist/
+npm start       # production: serves dist/ and the game server on one port (PORT, default 8787)
 ```
+
+### Playing online
+
+Run both `npm run dev` and `npm run server`, open **Play Online**, create a room and send the 5-letter code to your opponent.
+To play another machine on your network, start Vite with `npx vite --host` and share your LAN address.
+Over the internet, deploy with `npm run build && npm start` on any Node host (Render, Fly.io, a VPS…).
+
+The server holds the authoritative game state: it validates every action with the same engine as the bot, and
+each player only receives what they may see (no libraries, no opponent hand). A reload rejoins the same seat.
+Known limitation: the server trusts the card data each client sends with its deck.
 
 ## Structure
 
@@ -19,6 +31,8 @@ npm run build   # type-check + production build into dist/
 | `src/lib/stats.ts` | Mana curve, color pips, type breakdown, hypergeometric odds |
 | `src/lib/goldfish.ts` | Pure game-state reducer for solo practice (zones, mulligan, turns) |
 | `src/lib/engine/` | Simplified two-player rules engine (`engine.ts`), card rules parsing (`rules.ts`), heuristic bot (`bot.ts`), preset decks |
+| `src/lib/multiplayer/` | Client/server message types, hidden-information redaction, WebSocket hook |
+| `server/` | Node WebSocket game server: rooms, seats, reconnection (`rooms.ts`), HTTP/static wiring (`index.ts`) |
 | `src/store/` | Zustand stores, persisted to `localStorage` |
 | `src/pages/` | One component per screen |
 | `src/components/` | Shared UI: card search, mana symbols, deck stats |
@@ -28,4 +42,4 @@ All data stays in the browser (`localStorage`). Card data and images come from [
 ## Roadmap
 
 - Bot: instant-speed responses, mulligans, creature abilities/triggers, smarter combat (multi-blocks, combat tricks).
-- Online multiplayer: needs a backend (e.g. Node + WebSocket) that owns the game state and syncs players.
+- Online: verify decks server-side against Scryfall, spectators, chat.

@@ -227,3 +227,13 @@ footer { padding: 16px 20px; border-top: 1px solid var(--border); }
 .play .log { padding-left: 34px; max-height: 340px; }
 .import-panel { margin-bottom: 16px; }
 .import-panel code { background: var(--panel-2); padding: 0 4px; border-radius: 3px; }
+
+/* Online */
+.online-setup { display: flex; flex-direction: column; gap: 12px; max-width: 720px; }
+.online-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.online-choices > div { background: var(--panel-2); border-radius: 8px; padding: 10px 14px; }
+@media (max-width: 640px) { .online-choices { grid-template-columns: 1fr; } }
+.room-code-input { width: 110px; font-family: ui-monospace, monospace; font-size: 1.1rem; letter-spacing: 0.2em; text-transform: uppercase; }
+.lobby { max-width: 520px; }
+.room-code { font-family: ui-monospace, monospace; font-size: 2.2rem; font-weight: 800; letter-spacing: 0.25em; color: var(--accent); }
+.play-notice { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
