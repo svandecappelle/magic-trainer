@@ -27,6 +27,7 @@ export interface ScryfallCard extends ScryfallFace {
   set: string;
   set_name: string;
   rarity: string;
+  keywords?: string[];
 }
 
 /** Convert a Scryfall card to our slim Card. Double-faced cards keep their data on card_faces. */
@@ -50,6 +51,7 @@ export function toCard(c: ScryfallCard): Card {
     rarity: c.rarity,
     power: c.power ?? face?.power,
     toughness: c.toughness ?? face?.toughness,
+    keywords: c.keywords,
   };
 }
 

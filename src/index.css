@@ -185,3 +185,43 @@ footer { padding: 16px 20px; border-top: 1px solid var(--border); }
 .life-card.dead { opacity: 0.5; }
 .player-name { text-align: center; width: 100%; font-weight: 600; background: transparent; border-color: transparent; }
 .life-total { font-size: 4.5rem; font-weight: 800; line-height: 1.1; margin: 8px 0; }
+
+/* Play vs Bot */
+.setup-panel { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.play-layout { display: grid; grid-template-columns: 1fr 300px; gap: 16px; margin-top: 12px; }
+@media (max-width: 900px) { .play-layout { grid-template-columns: 1fr; } }
+.player-panel {
+  display: flex; gap: 16px; align-items: center; padding: 8px 12px;
+  background: var(--panel); border: 2px solid var(--border); border-radius: 10px;
+}
+.player-panel.active { border-color: var(--accent); }
+.life-big { font-size: 1.4rem; font-weight: 800; }
+.targetable { outline: 3px dashed var(--danger); outline-offset: 2px; cursor: crosshair; }
+.play-side { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; min-height: 230px; }
+.perm-row { display: flex; flex-wrap: wrap; gap: 8px; min-height: 100px; align-items: center; }
+.perm-row.lands .perm img { width: 64px; }
+.perm { position: relative; cursor: pointer; transition: transform 0.15s; }
+.perm img { width: 84px; border-radius: 5px; display: block; }
+.perm.tapped { transform: rotate(90deg); margin: 0 16px; }
+.perm.attacking img { box-shadow: 0 0 0 3px var(--danger); }
+.perm.blocking img { box-shadow: 0 0 0 3px #4a90d9; }
+.perm .pt {
+  position: absolute; right: 2px; bottom: 2px; background: rgba(0, 0, 0, 0.8); color: #fff;
+  font-size: 0.75rem; font-weight: 700; padding: 0 4px; border-radius: 3px;
+}
+.perm .pt.hurt { color: #ff8a80; }
+.perm .sick { position: absolute; left: 2px; top: 2px; background: rgba(0, 0, 0, 0.75); font-size: 0.65rem; padding: 0 3px; border-radius: 3px; }
+.perm .tag { position: absolute; left: 0; right: 0; bottom: -16px; font-size: 0.62rem; text-align: center; color: #8ab8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.play-bar {
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 8px 12px; margin: 4px 0;
+  background: var(--panel-2); border-left: 4px solid var(--accent); border-radius: 6px;
+}
+.bot-hand { display: flex; gap: 4px; padding: 6px 0; min-height: 44px; }
+.card-back { width: 28px; height: 38px; border-radius: 3px; background: linear-gradient(135deg, #6b4423, #3d2614); border: 1px solid #8a6a40; }
+.my-hand { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 0; }
+.hand-card { width: 100px; border-radius: 5px; cursor: pointer; opacity: 0.7; transition: transform 0.1s; }
+.hand-card.playable { opacity: 1; box-shadow: 0 0 0 2px var(--ok); }
+.hand-card:hover { transform: translateY(-6px); }
+.hand-card.selected { box-shadow: 0 0 0 3px var(--accent); transform: translateY(-10px); }
+.play-error { margin: 8px 0; }
+.play .log { padding-left: 34px; max-height: 340px; }

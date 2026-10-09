@@ -5,6 +5,7 @@ import { Decks } from './pages/Decks';
 import { Goldfish } from './pages/Goldfish';
 import { Home } from './pages/Home';
 import { LifeTracker } from './pages/LifeTracker';
+import { Play } from './pages/Play';
 
 export function App() {
   return (
@@ -14,6 +15,7 @@ export function App() {
         <NavLink to="/decks">Decks</NavLink>
         <NavLink to="/collection">Collection</NavLink>
         <NavLink to="/goldfish">Goldfish</NavLink>
+        <NavLink to="/play">Play vs Bot</NavLink>
         <NavLink to="/life">Life tracker</NavLink>
       </nav>
       <main>
@@ -24,6 +26,7 @@ export function App() {
           <Route path="/collection" element={<Collection />} />
           <Route path="/goldfish" element={<Goldfish />} />
           <Route path="/goldfish/:deckId" element={<Goldfish />} />
+          <Route path="/play" element={<Play />} />
           <Route path="/life" element={<LifeTracker />} />
         </Routes>
       </main>

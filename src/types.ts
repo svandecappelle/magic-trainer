@@ -16,6 +16,8 @@ export interface Card {
   rarity: string;
   power?: string;
   toughness?: string;
+  /** Keyword abilities, e.g. ["Flying", "Lifelink"]. Missing on cards saved before v0.2. */
+  keywords?: string[];
 }
 
 export type Board = 'main' | 'side';

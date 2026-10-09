@@ -6,6 +6,7 @@ const FEATURES = [
   { to: '/decks', title: 'Deck builder', text: 'Search every card, build decks, import and export lists, check the curve and land odds.' },
   { to: '/collection', title: 'Collection', text: 'Track the cards you own and what they are worth. Decks show which cards you are missing.' },
   { to: '/goldfish', title: 'Goldfish', text: 'Practice a deck solo: opening hands, London mulligan, playing turns, tapping lands.' },
+  { to: '/play', title: 'Play vs Bot', text: 'Test your deck against a computer opponent with real combat, mana, and removal.' },
   { to: '/life', title: 'Life tracker', text: 'Life, poison, and turns for 2–6 players at the table, plus dice and coin flips.' },
 ];
 
@@ -41,7 +42,6 @@ export function Home() {
       )}
       <h3>Coming next</h3>
       <ul className="small muted">
-        <li>Training bot to play against</li>
         <li>Online multiplayer</li>
       </ul>
     </div>
