@@ -2,9 +2,9 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, findPayment, hasInstantSpeed, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, cardColors, entersTappedRule, entersWithCounters, protectionsOf, staticsOf, wardCost, isPlaneswalker, isToken, manaColors, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, faceName, modeSets, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, entersTappedRule, entersWithCounters, protectionsOf, staticsOf, wardCost, isPlaneswalker, isToken, manaColors, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   type AbilitySpec, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
-  type ActivatedSpec, type ObjectEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
+  type ActivatedSpec, type CastChoice, type Cost, type ObjectEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
 
 export type PlayerId = 0 | 1;
@@ -12,6 +12,8 @@ export type PlayerId = 0 | 1;
 export interface CardInst {
   iid: string;
   card: Card;
+  /** In exile "on an adventure": its creature can be cast from there. */
+  adventure?: boolean;
 }
 
 /** A lasting change to a permanent's power, toughness or abilities. */
@@ -33,6 +35,8 @@ export interface Permanent extends CardInst {
   boosts: Boost[];
   /** Indexes of "once each turn" abilities already activated this turn. */
   used?: number[];
+  /** The full card when the permanent is one face of it (modal double-faced back face). */
+  printed?: Card;
   /** Aura or Equipment: the permanent it is attached to. */
   attachedTo?: string;
   /** What static abilities (anthems, Auras, Equipment) give it right now; recomputed by the engine. */
@@ -49,6 +53,21 @@ export interface StackItem extends CardInst {
   x?: number;
   /** For an ability: the permanent it comes from ("this creature gets +1/+1"). */
   source?: string;
+  /** How the spell was cast: which face, modes, kicked, and from which zone. */
+  face?: number;
+  modes?: number[];
+  kicked?: boolean;
+  from?: CastZone;
+}
+
+/** Where a spell is cast from: hand, graveyard (flashback) or exile (a creature back from its adventure). */
+export type CastZone = 'hand' | 'graveyard' | 'exile';
+
+/** One way to cast a card right now. */
+export interface CastOption {
+  face: number;
+  kicked: boolean;
+  from: CastZone;
 }
 
 /** A triggered ability waiting to be put on the stack (the next time a player would get priority). */
@@ -127,7 +146,8 @@ export type ChoicePurpose =
   | 'legendRule' // two legendary permanents with the same name: keep one
   | 'payLife' // shock lands: pay life or enter tapped
   | 'sacrifice' // an edict: choose what to sacrifice
-  | 'sacrificeCost'; // "Sacrifice a creature:" when activating
+  | 'sacrificeCost' // "Sacrifice a creature:" when activating, or as a spell's additional cost
+  | 'discardCost'; // a spell's additional cost: discard a card
 
 /** Where "arrange" choices may put cards (scry: top/bottom, surveil: top/graveyard). */
 export type ArrangeZone = 'top' | 'bottom' | 'graveyard';
@@ -159,7 +179,7 @@ export interface Pending {
    * What continues once answered: the end of turn, the spell or ability being resolved, or a
    * triggered ability waiting for targets (`trigger`).
    */
-  resume: 'cleanup' | 'effect' | 'trigger' | 'activation' | 'legend' | 'payLife';
+  resume: 'cleanup' | 'effect' | 'trigger' | 'activation' | 'legend' | 'payLife' | 'castCost';
   /** For payLife: the land that entered. */
   iid?: string;
   trigger?: Triggered;
@@ -192,7 +212,8 @@ export type LogEntry =
   | { k: 'mulligan'; p: PlayerId; keeping: number }
   | { k: 'keep'; p: PlayerId; n: number }
   | { k: 'playLand'; p: PlayerId; card: string }
-  | { k: 'cast'; p: PlayerId; card: string; targets?: LogTarget[] }
+  | { k: 'cast'; p: PlayerId; card: string; targets?: LogTarget[]; kicked?: boolean; from?: CastZone }
+  | { k: 'cycle'; p: PlayerId; card: string }
   | { k: 'activate'; p: PlayerId; card: string; targets?: LogTarget[] }
   | { k: 'enters'; card: string }
   /** A triggered ability goes on the stack. */
@@ -286,9 +307,16 @@ export type Target =
 export type Action =
   | { type: 'mulligan' }
   | { type: 'keep'; bottom: string[] }
-  | { type: 'playLand'; iid: string }
+  /** `face`: play the back face of a modal double-faced card as a land. */
+  | { type: 'playLand'; iid: string; face?: number }
   /** `targets` has one list per target slot; `target` is a shorthand for a single-target spell. `x`: the value of X. */
-  | { type: 'cast'; iid: string; targets?: Target[][]; target?: Target; x?: number }
+  | {
+      type: 'cast'; iid: string; targets?: Target[][]; target?: Target; x?: number;
+      /** Face to cast (adventure, modal double-faced, split), modes of a modal spell, kicker paid. */
+      face?: number; modes?: number[]; kicked?: boolean;
+    }
+  /** Cycling (or landcycling) a card in hand. */
+  | { type: 'cycle'; iid: string }
   /** Activate ability number `index` (in activatedOf order) of a permanent you control. */
   | { type: 'activate'; iid: string; index: number; targets?: Target[][]; x?: number }
   | { type: 'pass' }
@@ -311,7 +339,7 @@ export type GameErrorCode =
   | 'needsTarget' | 'tooManyTargets' | 'targetMustBe' | 'illegalTarget' | 'notEnoughMana' | 'declareBlockersFirst'
   | 'notAttackStep' | 'cannotAttack' | 'notBlockStep' | 'notAttacking' | 'menace' | 'cannotBlock'
   | 'makeChoiceFirst' | 'nothingToChoose' | 'badChoice' | 'badX'
-  | 'notEnoughLoyalty' | 'cannotAttackThat' | 'manaSpent'
+  | 'notEnoughLoyalty' | 'cannotAttackThat' | 'manaSpent' | 'badModes' | 'nothingToDiscard' | 'cannotCycle'
   | 'noSuchAbility' | 'activateTiming' | 'alreadyTapped' | 'summoningSick' | 'onceEachTurn' | 'notEnoughLife' | 'nothingToSacrifice';
 
 export type ErrorParams = Record<string, string | number>;
@@ -394,6 +422,34 @@ export function costWithX(card: Card, x = 0) {
 export const canPay = (s: GameState, p: PlayerId, card: Card, x = 0) =>
   findPayment(manaSources(s, p), costWithX(card, x)) !== null;
 
+/** The mana cost of casting `card` a given way: its face's cost (or flashback), kicker, X, minus affinity. */
+export function castCost(s: GameState, p: PlayerId, card: Card, opt: { face?: number; kicked?: boolean; from?: CastZone }, x = 0): Cost {
+  const face = opt.face ?? 0;
+  const info = castInfo(card, face);
+  const c = faceCard(card, face);
+  const base = opt.from === 'graveyard' && info.flashback ? parseCost(info.flashback) : costWithX(c, x);
+  const kicker = opt.kicked && info.kicker ? parseCost(info.kicker) : { generic: 0, colored: [] };
+  const discount = info.affinity ? s.battlefield.filter((x) => x.controller === p && cardMatches(x.card, info.affinity!)).length : 0;
+  return { generic: Math.max(0, base.generic + kicker.generic - discount), colored: [...base.colored, ...kicker.colored] };
+}
+
+/** What can pay for casting `card`: mana, plus creatures to tap (convoke) and graveyard cards to exile (delve). */
+export function castSources(s: GameState, p: PlayerId, card: Card, iid: string, face = 0): ManaSource[] {
+  const info = castInfo(card, face);
+  const out = manaSources(s, p);
+  if (info.convoke) {
+    for (const x of s.battlefield) {
+      if (x.controller !== p || x.tapped || !isCreature(x.card)) continue;
+      // Convoke: each creature pays {1} or one mana of one of its colors.
+      out.push({ iid: `convoke:${x.iid}`, colors: [...cardColors(x.card), 'C'], last: true });
+    }
+  }
+  if (info.delve) {
+    for (const c of s.players[p].graveyard) if (c.iid !== iid) out.push({ iid: `delve:${c.iid}`, colors: [], last: true });
+  }
+  return out;
+}
+
 /** The largest X `p` can pay for right now (0 when the card has no X, or none can be paid). */
 export function maxX(s: GameState, p: PlayerId, card: Card): number {
   if (!xCount(card)) return 0;
@@ -423,6 +479,55 @@ export function canCastNow(s: GameState, p: PlayerId, card: Card): boolean {
   if (isLandCard(card) || s.mulligan || s.pending || actor(s) !== p) return false;
   const timing = s.priority ? hasInstantSpeed(card) : isMainStep(s) && s.active === p;
   return timing && canPay(s, p, card);
+}
+
+/** Where card `iid` is and whether `p` may cast it from there (hand; graveyard with flashback; exile after an adventure). */
+export function castSource(s: GameState, p: PlayerId, iid: string): { inst: CardInst; from: CastZone } | null {
+  const ps = s.players[p];
+  const inHand = ps.hand.find((c) => c.iid === iid);
+  if (inHand) return { inst: inHand, from: 'hand' };
+  const inGrave = ps.graveyard.find((c) => c.iid === iid);
+  if (inGrave && castInfo(inGrave.card).flashback) return { inst: inGrave, from: 'graveyard' };
+  const inExile = ps.exile.find((c) => c.iid === iid && c.adventure);
+  if (inExile) return { inst: inExile, from: 'exile' };
+  return null;
+}
+
+/** Does at least one way to choose modes give the spell useful targets? (Non-modal: its targets.) */
+function usefulTargets(s: GameState, p: PlayerId, card: Card, choice: CastChoice): boolean {
+  const info = castInfo(card, choice.face ?? 0);
+  const check = (c: CastChoice) => castSpec(card, c).targets.every((spec) => legalTargets(s, p, spec, undefined, faceCard(card, c.face ?? 0)).length >= spec.min);
+  if (!info.modal) return check(choice);
+  return modeSets(info.modal).some((modes) => castSpec(card, { ...choice, modes }).effects.length && check({ ...choice, modes }));
+}
+
+/** The ways `p` can cast card `iid` right now (timing, mana, useful targets), cheapest first. */
+export function castOptions(s: GameState, p: PlayerId, iid: string): CastOption[] {
+  if (s.mulligan || s.pending || actor(s) !== p) return [];
+  const src = castSource(s, p, iid);
+  if (!src) return [];
+  const { inst, from } = src;
+  const faces = from === 'hand' ? playableFaces(inst.card) : [0];
+  const out: CastOption[] = [];
+  for (const face of faces) {
+    const c = faceCard(inst.card, face);
+    if (isLand(c)) continue;
+    const timing = s.priority ? hasInstantSpeed(c) : isMainStep(s) && s.active === p;
+    if (!timing) continue;
+    const info = castInfo(inst.card, face);
+    for (const kicked of info.kicker ? [false, true] : [false]) {
+      const cost = castCost(s, p, inst.card, { face, kicked, from });
+      if (!findPayment(castSources(s, p, inst.card, iid, face), cost)) continue;
+      if (!usefulTargets(s, p, inst.card, { face, kicked })) continue;
+      out.push({ face, kicked, from });
+    }
+  }
+  return out;
+}
+
+/** Can `p` play this card as a land, on which face (modal double-faced cards may have a land on the back)? */
+export function landFaces(card: Card): number[] {
+  return playableFaces(card).filter((f) => isLand(faceCard(card, f)));
 }
 
 // ---------- Activated abilities ----------
@@ -471,6 +576,24 @@ export function abilityMaxX(s: GameState, perm: Permanent, index: number): numbe
 function sacrificeOptions(s: GameState, perm: Permanent, spec: ActivatedSpec): Permanent[] {
   const cost = spec.cost.sacrifice!;
   return matching(s, perm.controller, cost.which).filter((x) => x.controller === perm.controller && !(cost.another && x.iid === perm.iid));
+}
+
+/** The spell's costs are paid: it goes on the stack, cast triggers fire, and the opponent may respond. */
+function finishCast(d: GameState, item: StackItem, named: LogTarget[]) {
+  const p = item.controller;
+  const card = castCard(item);
+  d.stack.push(item);
+  log(d, {
+    k: 'cast', p, card: faceName(item.card, item.face ?? 0), ...(named.length ? { targets: named } : {}), ...(item.kicked ? { kicked: true } : {}), ...(item.from ? { from: item.from } : {}),
+  });
+  fireCast(d, p, card);
+  fireWard(d, item);
+  if (d.priority) {
+    d.priority.passes = 0;
+    d.priority.player = opponent(p);
+  } else {
+    openWindow(d, 'main', opponent(p), 0);
+  }
 }
 
 /** The ability's costs are paid: it goes on the stack and the opponent may respond. */
@@ -820,7 +943,7 @@ const newPermanent = (inst: CardInst, controller: PlayerId): Permanent => ({
 function removePermanent(d: GameState, perm: Permanent, zone: 'graveyard' | 'exile') {
   d.battlefield = d.battlefield.filter((x) => x.iid !== perm.iid);
   // A token that leaves the battlefield ceases to exist (it still "dies").
-  if (!isToken(perm.card)) d.players[perm.controller][zone].push({ iid: perm.iid, card: perm.card });
+  if (!isToken(perm.card)) d.players[perm.controller][zone].push({ iid: perm.iid, card: perm.printed ?? perm.card });
   if (zone === 'graveyard' && isCreature(perm.card)) fireObject(d, 'dies', perm);
 }
 
@@ -834,6 +957,16 @@ function payMana(d: GameState, p: PlayerId, plan: ManaPick[]) {
   const spentPool = new Set(plan.filter((m) => m.iid.startsWith('pool:')).map((m) => Number(m.iid.slice(5))));
   const next = pool.filter((_, i) => !spentPool.has(i));
   for (const iid of new Set(plan.filter((m) => !m.iid.startsWith('pool:')).map((m) => m.iid))) {
+    if (iid.startsWith('convoke:')) {
+      findPermanent(d, iid.slice(8))!.tapped = true;
+      continue;
+    }
+    if (iid.startsWith('delve:')) {
+      const inst = ps.graveyard.find((c) => c.iid === iid.slice(6))!;
+      ps.graveyard = ps.graveyard.filter((c) => c !== inst);
+      ps.exile.push(inst);
+      continue;
+    }
     const perm = findPermanent(d, iid)!;
     const spent = new Set(plan.filter((m) => m.iid === iid).map((m) => m.index));
     manaUnits(perm.card).forEach((colors, i) => {
@@ -1156,7 +1289,23 @@ function resolveCombat(d: GameState) {
 
 // ---------- Resolving spells and abilities ----------
 
-const specOf = (item: StackItem): AbilitySpec => item.ability ?? spellSpec(item.card);
+const specOf = (item: StackItem): AbilitySpec =>
+  item.ability ?? castSpec(item.card, { face: item.face, modes: item.modes, kicked: item.kicked });
+
+/** The card a spell on the stack is (its cast face). */
+const castCard = (item: StackItem) => faceCard(item.card, item.face ?? 0);
+
+/**
+ * Where a spell goes once it has resolved, fizzled or been countered: exile when cast with flashback,
+ * exile "on an adventure" after its adventure resolved, else its owner's graveyard.
+ */
+function putAwaySpell(d: GameState, item: StackItem, resolved: boolean) {
+  const ps = d.players[item.controller];
+  const inst: CardInst = { iid: item.iid, card: item.card };
+  if (item.from === 'graveyard') ps.exile.push(inst);
+  else if (resolved && item.face && isAdventure(item.card)) ps.exile.push({ ...inst, adventure: true });
+  else ps.graveyard.push(inst);
+}
 
 /** What an effect applies to, looked up again now: earlier effects may have changed the game. */
 /** A card in a graveyard that an effect applies to. */
@@ -1229,7 +1378,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         }
         d.stack = d.stack.filter((x) => x !== target);
         // A countered ability just leaves the stack; a spell goes to the graveyard.
-        if (!target.ability) d.players[target.controller].graveyard.push({ iid: target.iid, card: target.card });
+        if (!target.ability) putAwaySpell(d, target, false);
         log(d, { k: 'countered', card: target.card.name });
       }
       break;
@@ -1396,7 +1545,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
     case 'bounceAll':
       for (const perm of e.kind === 'bounceAll' ? matching(d, caster, e.which) : perms) {
         d.battlefield = d.battlefield.filter((x) => x.iid !== perm.iid);
-        if (!isToken(perm.card)) d.players[perm.controller].hand.push({ iid: perm.iid, card: perm.card });
+        if (!isToken(perm.card)) d.players[perm.controller].hand.push({ iid: perm.iid, card: perm.printed ?? perm.card });
         log(d, { k: 'bounced', card: perm.card.name });
       }
       break;
@@ -1467,18 +1616,20 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
 function startResolving(d: GameState, reason: WindowReason) {
   const item = d.stack.pop()!;
 
-  if (!item.ability && !isInstantOrSorcery(item.card)) {
+  if (!item.ability && !isInstantOrSorcery(castCard(item))) {
     // An Aura needs its target to still be legal; it enters attached to it.
-    const aura = auraTarget(item.card);
+    const card = castCard(item);
+    const aura = auraTarget(card);
     const host = item.targets[0]?.[0];
-    if (aura && (!host || !isLegalTarget(d, item.controller, aura, host, item.iid, item.card))) {
-      log(d, { k: 'fizzles', card: item.card.name });
-      d.players[item.controller].graveyard.push({ iid: item.iid, card: item.card });
+    if (aura && (!host || !isLegalTarget(d, item.controller, aura, host, item.iid, card))) {
+      log(d, { k: 'fizzles', card: card.name });
+      putAwaySpell(d, item, false);
       afterResolving(d, reason);
       return;
     }
-    log(d, { k: 'enters', card: item.card.name });
-    const perm = enterBattlefield(d, { iid: item.iid, card: item.card }, item.controller, { x: item.x });
+    log(d, { k: 'enters', card: faceName(item.card, item.face ?? 0) });
+    const perm = enterBattlefield(d, { iid: item.iid, card }, item.controller, { x: item.x });
+    if (card !== item.card) perm.printed = item.card;
     if (aura && host?.kind === 'permanent') {
       perm.attachedTo = host.iid;
       log(d, { k: 'attached', card: perm.card.name, to: findPermanent(d, host.iid)!.card.name });
@@ -1489,14 +1640,14 @@ function startResolving(d: GameState, reason: WindowReason) {
 
   // Targets are checked again on resolution. If none is still legal, the spell does nothing.
   const spec = specOf(item);
-  const legal = item.targets.map((ts, slot) => ts.filter((t) => spec.targets[slot] && isLegalTarget(d, item.controller, spec.targets[slot], t, item.iid, item.card)));
+  const legal = item.targets.map((ts, slot) => ts.filter((t) => spec.targets[slot] && isLegalTarget(d, item.controller, spec.targets[slot], t, item.iid, castCard(item))));
   if (item.targets.some((ts) => ts.length) && legal.every((ts) => !ts.length)) {
-    log(d, { k: 'fizzles', card: item.card.name });
-    if (!item.ability) d.players[item.controller].graveyard.push({ iid: item.iid, card: item.card });
+    log(d, { k: 'fizzles', card: castCard(item).name });
+    if (!item.ability) putAwaySpell(d, item, false);
     afterResolving(d, reason);
     return;
   }
-  if (!spec.effects.length) log(d, { k: 'notSimulated', card: item.card.name });
+  if (!spec.effects.length) log(d, { k: 'notSimulated', card: castCard(item).name });
   d.resolving = { item, legal, next: 0, reason };
   continueResolving(d);
 }
@@ -1527,7 +1678,7 @@ function continueResolving(d: GameState, answer?: Answer) {
     r.next++;
   }
   d.resolving = null;
-  if (!r.item.ability) d.players[r.item.controller].graveyard.push({ iid: r.item.iid, card: r.item.card });
+  if (!r.item.ability) putAwaySpell(d, r.item, true);
   afterResolving(d, r.reason);
 }
 
@@ -1549,7 +1700,8 @@ function wantsPriority(d: GameState, p: PlayerId): boolean {
     if (reason === 'attack' && p === d.active) return false; // the attacker just acted
   }
   if (d.stack.at(-1)?.controller === p) return false; // don't respond to your own spell
-  return d.players[p].hand.some((c) => canCastNow(d, p, c.card) && hasUsefulTarget(d, p, c.card)) || activatable(d, p).length > 0;
+  const ps = d.players[p];
+  return [...ps.hand, ...ps.graveyard, ...ps.exile].some((c) => castOptions(d, p, c.iid).length > 0) || activatable(d, p).length > 0;
 }
 
 function openWindow(d: GameState, reason: WindowReason, player: PlayerId, passes: number) {
@@ -1754,6 +1906,15 @@ export function apply(state: GameState, action: Action): GameState {
           d.players[perm.controller].life -= n;
         }
         if (perm) log(d, { k: 'shock', card: perm.card.name, paid: action.answer.yes ? n : 0 });
+      } else if (pending.resume === 'castCost' && action.answer.kind === 'cards') {
+        if (pending.choice.purpose === 'discardCost') {
+          for (const iid of action.answer.iids) {
+            const inst = d.players[p].hand.find((c) => c.iid === iid)!;
+            moveToGraveyard(d, p, inst, 'hand');
+            log(d, { k: 'discard', p, card: inst.card.name });
+          }
+        } else sacrifice(d, findPermanent(d, action.answer.iids[0])!);
+        finishCast(d, pending.activation!.item, pending.activation!.named);
       } else if (pending.resume === 'activation' && action.answer.kind === 'cards') {
         sacrifice(d, findPermanent(d, action.answer.iids[0])!);
         finishActivation(d, pending.activation!.item, pending.activation!.named);
@@ -1765,38 +1926,91 @@ export function apply(state: GameState, action: Action): GameState {
       if (d.priority || !isMainStep(d) || p !== d.active) throw new IllegalAction('landTiming');
       if (me.landPlayed) throw new IllegalAction('landAlreadyPlayed');
       const inst = me.hand.find((c) => c.iid === action.iid);
-      if (!inst || !isLandCard(inst.card)) throw new IllegalAction('notALand');
+      const face = action.face ?? 0;
+      if (!inst || !landFaces(inst.card).includes(face)) throw new IllegalAction('notALand');
+      const land = faceCard(inst.card, face);
       me.hand = me.hand.filter((c) => c !== inst);
       me.landPlayed = true;
-      log(d, { k: 'playLand', p, card: inst.card.name });
-      enterBattlefield(d, inst, p);
+      log(d, { k: 'playLand', p, card: land.name });
+      const perm = enterBattlefield(d, { iid: inst.iid, card: land }, p);
+      if (land !== inst.card) perm.printed = inst.card;
       break;
     }
 
     case 'cast': {
-      const inst = me.hand.find((c) => c.iid === action.iid);
-      if (!inst || isLandCard(inst.card)) throw new IllegalAction('notASpell');
+      const src = castSource(d, p, action.iid);
+      const face = action.face ?? 0;
+      if (!src || (src.from !== 'hand' && face) || !(src.from === 'hand' ? playableFaces(src.inst.card) : [0]).includes(face)) {
+        throw new IllegalAction('notASpell');
+      }
+      const { inst, from } = src;
+      const card = faceCard(inst.card, face);
+      if (isLandCard(card)) throw new IllegalAction('notASpell');
       if (d.priority) {
-        if (!hasInstantSpeed(inst.card)) throw new IllegalAction('sorcerySpeed', { card: inst.card.name });
+        if (!hasInstantSpeed(card)) throw new IllegalAction('sorcerySpeed', { card: card.name });
       } else if (!isMainStep(d) || p !== d.active) {
         throw new IllegalAction('castTiming');
       }
+      const info = castInfo(inst.card, face);
+      const kicked = !!action.kicked && !!info.kicker;
+      const modes = info.modal ? [...new Set(action.modes ?? [])] : undefined;
+      if (modes && (modes.length < Math.max(1, info.modal!.min) || modes.length > info.modal!.max || modes.some((m) => !Number.isInteger(m) || m < 0 || m >= info.modal!.modes.length))) {
+        throw new IllegalAction('badModes', { card: card.name });
+      }
 
-      const spec = spellSpec(inst.card);
+      const spec = castSpec(inst.card, { face, modes, kicked });
       const chosen = action.targets ?? (action.target ? [[action.target]] : []);
-      const targets = checkTargets(d, p, inst.card, spec, chosen);
-      const x = xCount(inst.card) ? (action.x ?? 0) : 0;
+      const targets = checkTargets(d, p, card, spec, chosen);
+      const x = xCount(card) ? (action.x ?? 0) : 0;
       if (!Number.isInteger(x) || x < 0) throw new IllegalAction('badX');
+      // Additional costs that need something to pay with.
+      const extra = info.additional;
+      if (extra?.kind === 'life' && me.life < extra.n) throw new IllegalAction('notEnoughLife');
+      if (extra?.kind === 'sacrifice' && !matching(d, p, extra.which).some((x) => x.controller === p)) throw new IllegalAction('nothingToSacrifice', { card: card.name });
+      if (extra?.kind === 'discard' && me.hand.filter((c) => c.iid !== inst.iid).length < extra.n) throw new IllegalAction('nothingToDiscard', { card: card.name });
 
-      if (!pay(d, p, manaSources(d, p), costWithX(inst.card, x))) throw new IllegalAction('notEnoughMana', { card: inst.card.name });
-      me.hand = me.hand.filter((c) => c !== inst);
+      if (!pay(d, p, castSources(d, p, inst.card, inst.iid, face), castCost(d, p, inst.card, { face, kicked, from }, x))) {
+        throw new IllegalAction('notEnoughMana', { card: card.name });
+      }
+      if (from === 'hand') me.hand = me.hand.filter((c) => c.iid !== inst.iid);
+      else if (from === 'graveyard') me.graveyard = me.graveyard.filter((c) => c.iid !== inst.iid);
+      else me.exile = me.exile.filter((c) => c.iid !== inst.iid);
       const named = targets.flat().map((t) => targetName(d, t));
-      d.stack.push({ ...inst, controller: p, targets, ...(xCount(inst.card) ? { x } : {}) });
-      log(d, { k: 'cast', p, card: inst.card.name, ...(named.length ? { targets: named } : {}) });
-      fireCast(d, p, inst.card);
-      fireWard(d, d.stack.at(-1)!);
+      const item: StackItem = {
+        iid: inst.iid, card: inst.card, controller: p, targets, ...(xCount(card) ? { x } : {}),
+        ...(face ? { face } : {}), ...(modes ? { modes } : {}), ...(kicked ? { kicked } : {}), ...(from !== 'hand' ? { from } : {}),
+      };
+      if (extra?.kind === 'life') me.life -= extra.n;
+      if (extra?.kind === 'sacrifice' || extra?.kind === 'discard') {
+        const options = extra.kind === 'sacrifice' ? matching(d, p, extra.which).filter((x) => x.controller === p) : [...me.hand];
+        d.pending = {
+          choice: {
+            kind: 'cards', player: p, purpose: extra.kind === 'sacrifice' ? 'sacrificeCost' : 'discardCost',
+            min: extra.kind === 'discard' ? extra.n : 1, max: extra.kind === 'discard' ? extra.n : 1, options, params: { card: card.name, n: extra.kind === 'discard' ? extra.n : 1 },
+          },
+          resume: 'castCost',
+          activation: { item, named },
+        };
+        break;
+      }
+      finishCast(d, item, named);
+      break;
+    }
 
-      // The opponent may respond.
+    case 'cycle': {
+      const inst = me.hand.find((c) => c.iid === action.iid);
+      const cycling = inst && castInfo(inst.card).cycling;
+      if (!inst || !cycling) throw new IllegalAction('cannotCycle');
+      if (!d.priority && !(isMainStep(d) && p === d.active)) throw new IllegalAction('activateTiming');
+      if (!pay(d, p, manaSources(d, p), parseCost(cycling.cost))) throw new IllegalAction('notEnoughMana', { card: inst.card.name });
+      me.hand = me.hand.filter((c) => c !== inst);
+      me.graveyard.push(inst);
+      log(d, { k: 'cycle', p, card: inst.card.name });
+      const ability: AbilitySpec = cycling.search
+        ? { targets: [], effects: [{ kind: 'search', n: 1, filter: cycling.search, dest: 'hand', tapped: false }] }
+        : { targets: [], effects: [{ kind: 'draw', n: 1, to: 'you' }] };
+      d.abilities = (d.abilities ?? 0) + 1;
+      d.stack.push({ iid: `${inst.iid}-cycle-${d.abilities}`, card: inst.card, controller: p, targets: [], ability });
       if (d.priority) {
         d.priority.passes = 0;
         d.priority.player = opponent(p);

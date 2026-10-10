@@ -21,8 +21,10 @@ const log: LogMessages = {
   cast: (e, c) => {
     const who = c.isMe(e.p) ? 'You cast' : `${c.name(e.p)} casts`;
     const names = (e.targets ?? []).map((t) => ('card' in t ? c.card(t.card) : c.isMe(t.p) ? 'you' : c.name(t.p)));
-    return `${who} ${c.card(e.card)}${names.length ? ` targeting ${c.list(names)}` : ''}`;
+    const how = [e.kicked && 'kicked', e.from === 'graveyard' && 'with flashback', e.from === 'exile' && 'from exile'].filter(Boolean).join(', ');
+    return `${who} ${c.card(e.card)}${how ? ` (${how})` : ''}${names.length ? ` targeting ${c.list(names)}` : ''}`;
   },
+  cycle: (e, c) => `${c.isMe(e.p) ? 'You cycle' : `${c.name(e.p)} cycles`} ${c.card(e.card)}`,
   enters: (e, c) => `${c.card(e.card)} enters the battlefield`,
   triggers: (e, c) => {
     const names = (e.targets ?? []).map((t) => ('card' in t ? c.card(t.card) : c.isMe(t.p) ? 'you' : c.name(t.p)));
@@ -122,6 +124,9 @@ const errors: ErrorMessages = {
   summoningSick: (p) => `${p.card} just arrived: it can't use {T} abilities this turn`,
   onceEachTurn: (p) => `${p.card}'s ability can only be activated once each turn`,
   notEnoughLife: () => 'Not enough life to pay that cost',
+  badModes: (p) => `Choose the right number of modes for ${p.card}`,
+  nothingToDiscard: (p) => `You have no other card to discard for ${p.card}`,
+  cannotCycle: () => 'That card has no cycling',
   manaSpent: () => 'That mana was already spent: the land stays tapped',
   notEnoughLoyalty: (p) => `${p.card} doesn't have enough loyalty for that ability`,
   cannotAttackThat: () => 'Creatures can only attack the opponent or their planeswalkers',
@@ -431,6 +436,7 @@ export const en = {
       optional: (p: { card: string }) => `Use ${p.card}'s ability?`,
       legendRule: (p: { card: string }) => `Legend rule: choose which ${p.card} to keep.`,
       payLife: (p: { card: string; n: number }) => `${p.card}: pay ${p.n} life to have it enter untapped?`,
+      discardCost: (p: { card: string; n: number }) => `Discard ${plural(p.n, 'card', 'cards')} to cast ${p.card}.`,
       search: (p: { n: number }) => `Search your library: choose up to ${plural(p.n, 'card', 'cards')}.`,
       sacrifice: (p: { n: number }) => `Choose ${plural(p.n, 'permanent', 'permanents')} to sacrifice.`,
       sacrificeCost: (p: { card: string }) => `Choose what to sacrifice for ${p.card}'s ability.`,
@@ -473,6 +479,14 @@ export const en = {
     thinking: (name: string) => `${name} is thinking…`,
     addMana: 'Add mana',
     manaPool: 'Mana pool: spent first, empties at the end of the step',
+    chooseHowToPlay: (card: string) => `How do you play ${card}?`,
+    castNamed: (card: string) => `Cast ${card}`,
+    castKicked: (card: string, cost: string) => `Cast ${card} kicked (+${cost})`,
+    castFlashback: (card: string, cost: string) => `Flashback ${card} (${cost})`,
+    castFromExile: (card: string) => `Cast ${card} from exile`,
+    playAsLand: (card: string) => `Play ${card} (land)`,
+    cycleFor: (cost: string) => `Cycle (${cost})`,
+    modeNotSimulated: 'This mode is not simulated',
     chooseAbility: (card: string) => `Choose an ability of ${card}.`,
     chooseTarget: (kind: string) => `Choose a target (${kind}).`,
     onStack: (card: string, owner: string | null) =>

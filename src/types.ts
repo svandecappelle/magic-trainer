@@ -1,3 +1,17 @@
+/** One face of a multi-face card (double-faced, adventure, split). */
+export interface CardFace {
+  name: string;
+  manaCost: string;
+  typeLine: string;
+  oracleText: string;
+  colors?: string[];
+  power?: string;
+  toughness?: string;
+  loyalty?: string;
+  imageSmall?: string;
+  imageNormal?: string;
+}
+
 /** A card as stored by the app: a slim snapshot of the Scryfall card object. */
 export interface Card {
   id: string;
@@ -18,6 +32,10 @@ export interface Card {
   toughness?: string;
   /** Starting loyalty of a planeswalker. Missing on cards saved before planeswalkers were simulated. */
   loyalty?: string;
+  /** Scryfall layout: "normal", "transform", "modal_dfc", "adventure", "split"… Missing on older saved cards. */
+  layout?: string;
+  /** Faces of a multi-face card, front first. Missing on older saved cards (rebuilt from the joined fields). */
+  faces?: CardFace[];
   /** Keyword abilities, e.g. ["Flying", "Lifelink"]. Missing on cards saved before v0.2. */
   keywords?: string[];
   /**

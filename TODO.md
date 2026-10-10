@@ -103,13 +103,19 @@ Not simulated yet in triggers (recognized, logged as "not simulated"):
 
 ## Step 5 — Special card types and costs
 
-- [ ] 33. Modal spells "Choose one —" (541)
-- [ ] 34. Double-faced cards: transform, modal DFC (463)
-- [ ] 35. Kicker and additional costs (406)
-- [ ] 36. Cycling (280)
-- [ ] 37. Convoke, delve, affinity (179)
-- [ ] 38. Flashback (148)
-- [ ] 39. Adventure (119)
+- [x] 33. Modal spells "Choose one —" (541) — choose one / two / one or both / one or more; the modes are picked
+  before targets. Modal triggered abilities ("When … enters, choose one —") are not simulated
+- [x] 34. Double-faced cards: modal DFC (play either face, land backs included), split cards (cast either half).
+  Transforming cards enter on their front face; transforming is not simulated yet
+- [x] 35. Kicker and additional costs (406) — kicker cost, "if this spell was kicked" (extra effects, "deals N damage
+  instead"); additional costs: sacrifice a …, discard N cards, pay N life. "X or Y" costs and multikicker are not
+- [x] 36. Cycling (280) — cycling and basic/typed landcycling; "whenever you cycle" triggers are not simulated
+- [x] 37. Convoke, delve, affinity (179) — used automatically when mana isn't enough (convoke creatures, then delve)
+- [x] 38. Flashback (148) — cast from the graveyard (click it in the graveyard viewer), then exiled
+- [x] 39. Adventure (119) — cast the adventure, the card goes on an adventure in exile, cast the creature from there
+
+Cards saved before this step have no faces data: re-import decks with double-faced, adventure or split cards to
+get each face's cost and image (their text is rebuilt from the joined faces meanwhile).
 
 ## Step 6 — Rare or complex rules
 

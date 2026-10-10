@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import {
-  activatable, activationProblem, abilityMaxX, actor, apply, canAttack, canTapForMana, canUntapForMana, findInGraveyard, legalTargets, canBlock, canCastNow, findPermanent, hasKw, hasUsefulTarget, IllegalAction, isLegalTarget, isMainStep, maxX, opponent,
+  activatable, activationProblem, abilityMaxX, actor, apply, canAttack, canTapForMana, canUntapForMana, castCost, castOptions, castSources,
+  landFaces, findInGraveyard, legalTargets, canBlock, findPermanent, hasKw, IllegalAction, isLegalTarget, isMainStep, opponent,
   powerOf, toughnessOf, xCount,
-  type Action, type CardInst, type GameState, type Permanent, type PlayerId, type Target,
+  type Action, type CardInst, type CastOption, type GameState, type Permanent, type PlayerId, type Target,
 } from '../lib/engine/engine';
 import { errorText, logText, useT, type AppError } from '../i18n';
 import { useCardDisplay } from '../lib/cardLocale';
-import { activatedOf, isCreature, isLandCard, isPlaneswalker, spellSpec, type AbilitySpec } from '../lib/engine/rules';
+import {
+  activatedOf, castInfo, castSpec, faceCard, faceName, modeSimulated, findPayment, isCreature, isLandCard, isPlaneswalker, parseCost, type AbilitySpec,
+} from '../lib/engine/rules';
 import { ChoicePanel, choicePrompt } from './ChoicePanel';
 import { Lines, type Line } from './board/Lines';
 import { useBoardFx, type Float } from './board/useBoardFx';
@@ -72,9 +75,17 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     iid: string; spec: AbilitySpec; slot: number; picked: Target[][]; x?: number; choice?: boolean; from?: string;
     /** Set when activating ability number `activate` of permanent `iid`. */
     activate?: number;
+    /** Set when casting a spell: the cast action, targets aside. */
+    cast?: Extract<Action, { type: 'cast' }>;
   } | null>(null);
-  /** Choosing X before casting a spell (or activating an ability, `ability`) with {X} in its cost. */
-  const [xPick, setXPick] = useState<{ iid: string; card: Card; x: number; max: number; ability?: number } | null>(null);
+  /** Choosing X before casting a spell (`plan`) or activating an ability (`ability`) with {X} in its cost. */
+  const [xPick, setXPick] = useState<{
+    iid: string; card: Card; x: number; max: number; ability?: number; plan?: { card: Card; opt: CastOption; modes?: number[] };
+  } | null>(null);
+  /** A card with several ways to play it (kicker, adventure, land face, cycling…): which one? */
+  const [castMenu, setCastMenu] = useState<{ card: Card; items: { key: string; label: string; run: () => void }[] } | null>(null);
+  /** Choosing the modes of a modal spell ("Choose one —"). */
+  const [modePick, setModePick] = useState<{ iid: string; card: Card; opt: CastOption; picked: number[] } | null>(null);
   /** A permanent with several abilities was clicked: which one? */
   const [abilityMenu, setAbilityMenu] = useState<Permanent | null>(null);
   const [attackSel, setAttackSel] = useState<string[]>([]);
@@ -93,6 +104,8 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     } else setTargeting(null);
     setXPick(null);
     setAbilityMenu(null);
+    setCastMenu(null);
+    setModePick(null);
     setAttackSel([]);
     setAttackAt({});
     setBlockerSel(null);
@@ -166,33 +179,72 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
       setBottomSel((sel) => (sel.includes(iid) ? sel.filter((x) => x !== iid) : [...sel, iid]));
       return;
     }
-    if (targeting?.iid === iid || xPick?.iid === iid) {
+    if (targeting?.iid === iid || xPick?.iid === iid || modePick?.iid === iid) {
       setTargeting(null);
+      setModePick(null);
       return setXPick(null);
     }
-    if (isLandCard(card)) return act({ type: 'playLand', iid });
-    if (xCount(card)) {
-      if (!canCastNow(g, me, card)) {
-        return setError({ code: g.priority ? 'cannotCastNow' : 'notEnoughMana', params: { card: show.name(card) } });
-      }
-      const max = maxX(g, me, card);
-      setTargeting(null);
-      setXPick({ iid, card, x: max, max });
-      return setError(null);
-    }
-    castWithTargets(iid, card);
+    playCard(iid, card);
   }
 
-  /** Cast now, or start picking targets first. */
-  function castWithTargets(iid: string, card: Card, x?: number) {
-    const spec = spellSpec(card);
-    const xs = x === undefined ? {} : { x };
-    if (!spec.targets.length) return act({ type: 'cast', iid, ...xs });
-    if (!canCastNow(g, me, card)) {
-      return setError({ code: g.priority ? 'cannotCastNow' : 'notEnoughMana', params: { card: show.name(card) } });
+  const canPlayLand = iAct && !g.priority && !g.pending && !g.mulligan && isMainStep(g) && g.active === me && !g.players[me].landPlayed;
+
+  /** Every way to play a card right now (land faces, casts, cycling); one runs at once, several open a menu. */
+  function playCard(iid: string, card: Card) {
+    const items: { key: string; label: string; run: () => void }[] = [];
+    const inHand = g.players[me].hand.some((c) => c.iid === iid);
+    if (inHand && canPlayLand) {
+      for (const face of landFaces(card)) {
+        items.push({ key: `land${face}`, label: t.game.playAsLand(show.name(faceCard(card, face))), run: () => act({ type: 'playLand', iid, ...(face ? { face } : {}) }) });
+      }
     }
-    if (!hasUsefulTarget(g, me, card)) return setError({ code: 'nothingToTarget', params: { card: show.name(card) } });
-    setTargeting({ iid, spec, slot: 0, picked: spec.targets.map(() => []), ...xs });
+    for (const opt of castOptions(g, me, iid)) {
+      const name = opt.face ? show.name(faceCard(card, opt.face)) : show.nameOf(faceName(card));
+      const info = castInfo(card, opt.face);
+      const label = opt.from === 'graveyard' ? t.game.castFlashback(name, info.flashback ?? '')
+        : opt.from === 'exile' ? t.game.castFromExile(name)
+        : opt.kicked ? t.game.castKicked(name, info.kicker ?? '')
+        : t.game.castNamed(name);
+      items.push({ key: `cast${opt.face}${opt.kicked}`, label, run: () => beginCast(iid, card, opt) });
+    }
+    const cycling = inHand ? castInfo(card).cycling : undefined;
+    const cycleTiming = !!g.priority || (isMainStep(g) && g.active === me);
+    if (cycling && cycleTiming && !g.pending && findPayment(castSources(g, me, card, iid), parseCost(cycling.cost))) {
+      items.push({ key: 'cycle', label: t.game.cycleFor(cycling.cost), run: () => act({ type: 'cycle', iid }) });
+    }
+    setError(null);
+    if (items.length === 1) return items[0].run();
+    if (items.length > 1) return setCastMenu({ card, items });
+    // Nothing possible: let the rules explain why.
+    if (isLandCard(card)) return act({ type: 'playLand', iid });
+    setError({ code: g.priority ? 'cannotCastNow' : 'notEnoughMana', params: { card: show.name(card) } });
+  }
+
+  /** Cast a card a given way: modes first if it's modal, then X, then targets. */
+  function beginCast(iid: string, card: Card, opt: CastOption) {
+    setCastMenu(null);
+    if (castInfo(card, opt.face).modal) return setModePick({ iid, card, opt, picked: [] });
+    continueCast(iid, card, opt);
+  }
+
+  function continueCast(iid: string, card: Card, opt: CastOption, modes?: number[], x?: number) {
+    const face = faceCard(card, opt.face);
+    if (xCount(face) && x === undefined) {
+      let max = 0;
+      while (findPayment(castSources(g, me, card, iid, opt.face), castCost(g, me, card, opt, max + 1))) max++;
+      setTargeting(null);
+      return setXPick({ iid, card: face, x: max, max, plan: { card, opt, modes } });
+    }
+    const cast: Extract<Action, { type: 'cast' }> = {
+      type: 'cast', iid, ...(opt.face ? { face: opt.face } : {}), ...(opt.kicked ? { kicked: true } : {}),
+      ...(modes ? { modes } : {}), ...(x === undefined ? {} : { x }),
+    };
+    const spec = castSpec(card, { face: opt.face, modes, kicked: opt.kicked });
+    if (!spec.targets.length) return act(cast);
+    if (spec.targets.some((slot) => legalTargets(g, me, slot, undefined, face).length < slot.min)) {
+      return setError({ code: 'nothingToTarget', params: { card: show.name(face) } });
+    }
+    setTargeting({ iid, spec, slot: 0, picked: spec.targets.map(() => []), cast });
     setError(null);
   }
 
@@ -209,11 +261,14 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   function nextSlot(tg: NonNullable<typeof targeting>) {
     if (tg.slot + 1 < tg.spec.targets.length) return setTargeting({ ...tg, slot: tg.slot + 1 });
     if (tg.choice) return act({ type: 'choose', answer: { kind: 'targets', targets: tg.picked } });
+    if (tg.cast) {
+      act({ ...tg.cast, targets: tg.picked });
+      return setTargeting(null);
+    }
     if (tg.activate !== undefined) {
       act({ type: 'activate', iid: tg.iid, index: tg.activate, targets: tg.picked, ...(tg.x === undefined ? {} : { x: tg.x }) });
       return setTargeting(null);
     }
-    act({ type: 'cast', iid: tg.iid, targets: tg.picked, ...(tg.x === undefined ? {} : { x: tg.x }) });
     setTargeting(null);
   }
 
@@ -344,6 +399,49 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     else prompt = t.game.choosing(oppName);
   } else if (!iAct) {
     prompt = g.priority ? t.game.mayRespond(oppName) : g.step === 'block' ? t.game.choosingBlockers(oppName) : t.game.thinking(oppName);
+  } else if (castMenu) {
+    prompt = t.game.chooseHowToPlay(show.name(castMenu.card));
+    controls = (
+      <>
+        <button className="secondary" onClick={() => setCastMenu(null)}>{t.common.cancel}</button>
+        {castMenu.items.map((it) => (
+          <button key={it.key} className="ability-option" onClick={() => { setCastMenu(null); it.run(); }}>{it.label}</button>
+        ))}
+      </>
+    );
+  } else if (modePick) {
+    const modal = castInfo(modePick.card, modePick.opt.face).modal!;
+    const ok = modePick.picked.length >= Math.max(1, modal.min) && modePick.picked.length <= modal.max;
+    const confirm = () => {
+      const m = [...modePick.picked].sort((a, b) => a - b);
+      setModePick(null);
+      continueCast(modePick.iid, modePick.card, modePick.opt, m);
+    };
+    prompt = t.game.choice.mode(Math.max(1, modal.min), modal.max);
+    if (ok) primary = confirm;
+    controls = (
+      <>
+        <button className="secondary" onClick={() => setModePick(null)}>{t.common.cancel}</button>
+        {modal.modes.map((text, i) => {
+          const on = modePick.picked.includes(i);
+          const usable = modeSimulated(modePick.card, modePick.opt.face, i);
+          return (
+            <button
+              key={i}
+              className={`ability-option mode ${on ? 'on' : ''}`}
+              title={usable ? text : t.game.modeNotSimulated}
+              onClick={() => {
+                const picked = on ? modePick.picked.filter((x) => x !== i) : modal.max === 1 ? [i] : [...modePick.picked, i].slice(0, modal.max);
+                setModePick({ ...modePick, picked });
+              }}
+            >
+              {usable ? text : `${text} ✗`}
+            </button>
+          );
+        })}
+        <button className="primary" disabled={!ok} onClick={confirm}>{t.game.confirm}</button>
+      </>
+    );
   } else if (abilityMenu) {
     prompt = t.game.chooseAbility(show.name(abilityMenu.card));
     controls = (
@@ -363,7 +461,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
       setXPick(null);
       const perm = xPick.ability === undefined ? undefined : findPermanent(g, xPick.iid);
       if (perm) startActivation(perm, xPick.ability!, xPick.x);
-      else castWithTargets(xPick.iid, xPick.card, xPick.x);
+      else if (xPick.plan) continueCast(xPick.iid, xPick.plan.card, xPick.plan.opt, xPick.plan.modes, xPick.x);
     };
     primary = confirm;
     controls = (
@@ -441,6 +539,8 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
       } else if (e.key === 'Escape') {
         setTargeting((tg) => (tg?.choice ? tg : null)); // a trigger's targets can't be cancelled
         setAbilityMenu(null);
+        setCastMenu(null);
+        setModePick(null);
         setXPick(null);
         setBlockerSel(null);
         setZoneView(null);
@@ -569,7 +669,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
       canTarget(asTarget) && 'targetable', isPicked(asTarget) && 'picked',
     ].filter(Boolean).join(' ');
     const zone = (z: 'graveyard' | 'exile', icon: string) => (
-      <button className="zone-chip" title={t.game.zoneNames[z]} onClick={(e) => { e.stopPropagation(); setZoneView(zoneView?.p === p && zoneView.zone === z ? null : { p, zone: z }); }}>
+      <button className={`zone-chip ${p === me && ps[z].some((c) => castOptions(g, me, c.iid).length > 0) ? 'castable' : ''}`} title={t.game.zoneNames[z]} onClick={(e) => { e.stopPropagation(); setZoneView(zoneView?.p === p && zoneView.zone === z ? null : { p, zone: z }); }}>
         {icon} {ps[z].length}
       </button>
     );
@@ -697,10 +797,8 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
           {hud(me)}
           <div className="my-hand">
             {myHand.map(({ iid, card }, i) => {
-              const playable = isLandCard(card)
-                ? iAct && !g.priority && !g.pending && !g.mulligan && isMainStep(g) && g.active === me && !g.players[me].landPlayed
-                : canCastNow(g, me, card) && hasUsefulTarget(g, me, card);
-              const selected = targeting?.iid === iid || xPick?.iid === iid || bottomSel.includes(iid);
+              const playable = (landFaces(card).length > 0 && canPlayLand) || castOptions(g, me, iid).length > 0;
+              const selected = targeting?.iid === iid || xPick?.iid === iid || modePick?.iid === iid || bottomSel.includes(iid);
               const offset = i - (myHand.length - 1) / 2;
               return (
                 <div
@@ -734,9 +832,20 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
               </div>
               <div className="zone-cards">
                 {g.players[zoneView.p][zoneView.zone].length === 0 && <span className="muted">{t.game.emptyZone}</span>}
-                {[...g.players[zoneView.p][zoneView.zone]].reverse().map((c: CardInst) => (
-                  <img key={c.iid} src={show.imageSmall(c.card)} alt={show.name(c.card)} {...zoomable(c.card)} />
-                ))}
+                {[...g.players[zoneView.p][zoneView.zone]].reverse().map((c: CardInst) => {
+                  // Flashback cards in your graveyard and adventurers in your exile can be cast from here.
+                  const castable = zoneView.p === me && castOptions(g, me, c.iid).length > 0;
+                  return (
+                    <img
+                      key={c.iid}
+                      className={castable ? 'castable' : ''}
+                      src={show.imageSmall(c.card)}
+                      alt={show.name(c.card)}
+                      onClick={castable ? () => { setZoneView(null); playCard(c.iid, c.card); } : undefined}
+                      {...zoomable(c.card)}
+                    />
+                  );
+                })}
               </div>
             </div>
           </div>

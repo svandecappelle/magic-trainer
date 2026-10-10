@@ -8,6 +8,7 @@ interface ScryfallImages {
 }
 
 interface ScryfallFace {
+  name?: string;
   printed_name?: string;
   printed_type_line?: string;
   mana_cost?: string;
@@ -32,6 +33,7 @@ export interface ScryfallCard extends ScryfallFace {
   rarity: string;
   keywords?: string[];
   lang?: string;
+  layout?: string;
 }
 
 /** Convert a Scryfall card to our slim Card. Double-faced cards keep their data on card_faces. */
@@ -56,6 +58,15 @@ export function toCard(c: ScryfallCard): Card {
     power: c.power ?? face?.power,
     toughness: c.toughness ?? face?.toughness,
     ...((c.loyalty ?? face?.loyalty) ? { loyalty: c.loyalty ?? face?.loyalty } : {}),
+    ...(c.layout && c.layout !== 'normal' ? { layout: c.layout } : {}),
+    ...(c.card_faces?.length ? {
+      faces: c.card_faces.map((f) => ({
+        name: f.name ?? '', manaCost: f.mana_cost ?? '', typeLine: f.type_line ?? '', oracleText: f.oracle_text ?? '',
+        ...(f.colors ? { colors: f.colors } : {}), ...(f.power ? { power: f.power, toughness: f.toughness } : {}),
+        ...(f.loyalty ? { loyalty: f.loyalty } : {}),
+        ...(f.image_uris ? { imageSmall: f.image_uris.small, imageNormal: f.image_uris.normal } : {}),
+      })),
+    } : {}),
     keywords: c.keywords,
     ...(c.lang && c.lang !== 'en' ? localizedText(c) : {}),
   };

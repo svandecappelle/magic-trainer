@@ -1,10 +1,10 @@
 import {
-  abilityMaxX, activatable, actor, canAttack, findInGraveyard, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
+  abilityMaxX, activatable, actor, canAttack, castCost, castOptions, castSources, findInGraveyard, landFaces, manaSources, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
   legalTargets, matching, maxX, opponent, powerOf, toughnessOf, xCount,
-  type Action, type Answer, type CardInst, type Choice, type GameState, type Permanent, type PlayerId, type StackItem, type Target,
+  type Action, type Answer, type CastOption, type CardInst, type Choice, type GameState, type Permanent, type PlayerId, type StackItem, type Target,
 } from './engine';
 import {
-  auraTarget, creatureValue, hasInstantSpeed, isPlaneswalker, isToken, staticsOf, hasKeyword, isCreature, isInstantOrSorcery, isLandCard, manaColors,
+  auraTarget, castInfo, castSpec, creatureValue, modeSets, faceCard, findPayment, hasInstantSpeed, isAdventure, isPlaneswalker, isToken, staticsOf, hasKeyword, isCreature, isInstantOrSorcery, isLandCard, manaColors,
   parseCost, spellSpec, type AbilitySpec, type Amount, type Effect,
 } from './rules';
 import type { Card } from '../../types';
@@ -27,7 +27,7 @@ export function botAction(s: GameState): Action {
   }
 
   const land = chooseLand(s, me);
-  if (land) return { type: 'playLand', iid: land };
+  if (land) return { type: 'playLand', iid: land.iid, ...(land.face ? { face: land.face } : {}) };
   return chooseMainPhaseSpell(s, me) ?? { type: 'pass' };
 }
 
@@ -173,18 +173,86 @@ function chooseBlocks(s: GameState, me: PlayerId): Record<string, string[]> {
 
 // ---------- Main phase ----------
 
-function chooseLand(s: GameState, me: PlayerId): string | null {
+function chooseLand(s: GameState, me: PlayerId): { iid: string; face: number } | null {
   const player = s.players[me];
   if (player.landPlayed) return null;
   const lands = player.hand.filter((c) => isLandCard(c.card) && manaColors(c.card).length);
-  if (!lands.length) return null;
+  if (!lands.length) {
+    // A modal double-faced card with a land on its back, when there's no other land to play.
+    const mdfc = player.hand.find((c) => landFaces(c.card).some((f) => f > 0));
+    return mdfc ? { iid: mdfc.iid, face: landFaces(mdfc.card).find((f) => f > 0)! } : null;
+  }
 
   // Prefer the land whose colors are most demanded by the spells in hand.
   const pips = player.hand
     .filter((c) => !isLandCard(c.card))
     .flatMap((c) => parseCost(c.card.manaCost).colored.flat());
   const score = (colors: string[]) => pips.filter((c) => colors.includes(c)).length;
-  return lands.reduce((best, l) => (score(manaColors(l.card)) > score(manaColors(best.card)) ? l : best)).iid;
+  return { iid: lands.reduce((best, l) => (score(manaColors(l.card)) > score(manaColors(best.card)) ? l : best)).iid, face: 0 };
+}
+
+/** One way to cast one card: the option (face, kicker, zone) and, for a modal spell, its modes. */
+interface Candidate {
+  iid: string;
+  card: Card;
+  opt: CastOption;
+  face: Card;
+  modes?: number[];
+}
+
+/** Every way the bot can cast something now: from hand, graveyard (flashback) and exile (adventures). */
+function candidates(s: GameState, me: PlayerId): Candidate[] {
+  const ps = s.players[me];
+  const out: Candidate[] = [];
+  for (const inst of [...ps.hand, ...ps.graveyard, ...ps.exile]) {
+    for (const opt of castOptions(s, me, inst.iid)) {
+      const modal = castInfo(inst.card, opt.face).modal;
+      for (const modes of modal ? modeSets(modal) : [undefined]) {
+        out.push({ iid: inst.iid, card: inst.card, opt, face: faceCard(inst.card, opt.face), ...(modes ? { modes } : {}) });
+      }
+    }
+  }
+  // Kicked first (more for the card), an adventure before its creature, then the most expensive.
+  const adventure = (c: Candidate) => Number(c.opt.face > 0 && isAdventure(c.card));
+  return out.sort((a, b) => Number(b.opt.kicked) - Number(a.opt.kicked) || adventure(b) - adventure(a) || b.face.cmc - a.face.cmc);
+}
+
+/** The largest X affordable for a cast option. */
+function candidateMaxX(s: GameState, me: PlayerId, c: Candidate): number {
+  if (!xCount(c.face)) return 0;
+  let x = 0;
+  while (findPayment(castSources(s, me, c.card, c.iid, c.opt.face), castCost(s, me, c.card, c.opt, x + 1))) x++;
+  return x;
+}
+
+const castAction = (c: Candidate, targets: Target[][] = [], x?: number): Action => ({
+  type: 'cast', iid: c.iid, ...(targets.length ? { targets } : {}), ...(xCount(c.face) ? { x: x ?? 0 } : {}),
+  ...(c.opt.face ? { face: c.opt.face } : {}), ...(c.opt.kicked ? { kicked: true } : {}), ...(c.modes ? { modes: c.modes } : {}),
+});
+
+function castCandidate(s: GameState, me: PlayerId, c: Candidate, among?: Permanent[]): Action | null {
+  return playWithGoodTarget(s, me, {
+    spec: castSpec(c.card, { face: c.opt.face, modes: c.modes, kicked: c.opt.kicked }),
+    source: c.face,
+    hasX: xCount(c.face) > 0,
+    maxX: candidateMaxX(s, me, c),
+    act: (targets, x) => castAction(c, targets, x),
+  }, among);
+}
+
+/**
+ * Cycling: a land-cycler while short of lands; otherwise a card too expensive to cast soon, or an
+ * extra land late in the game.
+ */
+function chooseCycle(s: GameState, me: PlayerId): Action | null {
+  const lands = s.battlefield.filter((x) => x.controller === me && isLandCard(x.card)).length;
+  for (const c of s.players[me].hand) {
+    const cycling = castInfo(c.card).cycling;
+    if (!cycling || !findPayment(manaSources(s, me), parseCost(cycling.cost))) continue;
+    const want = cycling.search ? lands < 5 : isLandCard(c.card) ? lands >= 5 : c.card.cmc > lands + 2;
+    if (want) return { type: 'cycle', iid: c.iid };
+  }
+  return null;
 }
 
 function castable(s: GameState, me: PlayerId) {
@@ -194,22 +262,23 @@ function castable(s: GameState, me: PlayerId) {
 }
 
 function chooseMainPhaseSpell(s: GameState, me: PlayerId): Action | null {
-  for (const { iid, card } of castable(s, me)) {
+  for (const c of candidates(s, me)) {
+    const card = c.face;
     if (!isInstantOrSorcery(card)) {
       // Creatures and other permanents: before combat only if they can attack right away.
       const aura = auraTarget(card);
       if (aura) {
         const host = chooseAuraHost(s, me, card);
-        if (host) return { type: 'cast', iid, targets: [[{ kind: 'permanent', iid: host.iid }]] };
+        if (host) return castAction(c, [[{ kind: 'permanent', iid: host.iid }]]);
         continue;
       }
-      if (s.step === 'main2' || (isCreature(card) && hasKeyword(card, 'haste'))) return { type: 'cast', iid };
+      if (s.step === 'main2' || (isCreature(card) && hasKeyword(card, 'haste'))) return castAction(c);
       continue;
     }
-    const action = castWithGoodTarget(s, me, { iid, card });
+    const action = castCandidate(s, me, c);
     if (action) return action;
   }
-  return usePlaneswalkers(s, me) ?? useAbility(s, me);
+  return usePlaneswalkers(s, me) ?? useAbility(s, me) ?? (s.step === 'main2' ? chooseCycle(s, me) : null);
 }
 
 /**
@@ -575,7 +644,7 @@ function respond(s: GameState, me: PlayerId): Action | null {
       const action = castWithGoodTarget(s, me, c);
       if (action) return action;
     }
-    return useAbility(s, me);
+    return useAbility(s, me) ?? chooseCycle(s, me);
   }
   return null;
 }
@@ -648,7 +717,7 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
       } else if (!safe && choice.purpose === 'discardChosen') {
         // Take their best card: the most expensive spell.
         options.sort((a, b) => b.card.cmc - a.card.cmc);
-      } else if (!safe && (choice.purpose === 'cleanupDiscard' || choice.purpose === 'discard')) {
+      } else if (!safe && (choice.purpose === 'cleanupDiscard' || choice.purpose === 'discard' || choice.purpose === 'discardCost')) {
         // Discard what we can use least: extra lands beyond what the hand needs, then the most expensive spells.
         const lands = options.filter((c) => isLandCard(c.card));
         const spells = options.filter((c) => !isLandCard(c.card)).sort((a, b) => b.card.cmc - a.card.cmc);

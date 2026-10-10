@@ -1,5 +1,5 @@
 import { primaryType } from '../stats';
-import type { Card } from '../../types';
+import type { Card, CardFace } from '../../types';
 
 // ---------- Card characteristics ----------
 
@@ -12,6 +12,7 @@ export type Keyword = (typeof KEYWORDS)[number];
 
 /** Front face oracle text (toCard joins faces with "\n//\n"). */
 const frontText = (card: Card) => card.oracleText.split('\n//\n')[0];
+export { frontText };
 
 export function hasKeyword(card: Card, kw: Keyword): boolean {
   if (card.keywords) return card.keywords.some((k) => k.toLowerCase() === kw);
@@ -136,6 +137,8 @@ export interface ManaSource {
   iid: string;
   colors: Color[];
   units?: Color[][];
+  /** Spent only when nothing else can pay (convoke creatures, delve cards). */
+  last?: boolean;
 }
 
 /** One mana spent: unit `index` of source `iid`. */
@@ -150,11 +153,11 @@ export interface ManaPick {
  */
 export function planPayment(sources: ManaSource[], cost: Cost): ManaPick[] | null {
   const units = sources.flatMap((s) => (s.units ?? [s.colors]).map((colors, index) => ({
-    iid: s.iid, index, colors, pool: s.iid.startsWith('pool:'), size: (s.units ?? [s.colors]).length,
+    iid: s.iid, index, colors, pool: s.iid.startsWith('pool:'), size: (s.units ?? [s.colors]).length, last: !!s.last,
   })));
   if (units.length < cost.generic + cost.colored.length) return null;
   // Pool first, then bigger sources (their other mana would be wasted), then the least flexible.
-  units.sort((a, b) => Number(b.pool) - Number(a.pool) || b.size - a.size || a.colors.length - b.colors.length);
+  units.sort((a, b) => Number(b.pool) - Number(a.pool) || Number(a.last) - Number(b.last) || b.size - a.size || a.colors.length - b.colors.length);
   const reqs = [...cost.colored].sort((a, b) => a.length - b.length);
   const used = new Set<number>();
 
@@ -736,13 +739,225 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
   return { targets, effects };
 }
 
-/** The rules of an instant or sorcery, from its front face text. Other cards have none. */
-export function spellSpec(card: Card): AbilitySpec {
-  // An Aura spell targets what it will enchant.
-  const aura = auraTarget(card);
+/** The rules of an instant or sorcery cast the usual way (front face, no modes, not kicked). */
+export const spellSpec = (card: Card): AbilitySpec => castSpec(card, {});
+
+// ---------- Faces and ways to cast ----------
+
+/** Faces of a card, front first. Cards saved without faces are rebuilt from the joined name/type/text. */
+export function cardFaces(card: Card): CardFace[] {
+  if (card.faces?.length) return card.faces;
+  const names = card.name.split(' // ');
+  const front: CardFace = {
+    name: names[0], manaCost: card.manaCost.split(' // ')[0], typeLine: card.typeLine.split(' // ')[0], oracleText: frontText(card),
+    power: card.power, toughness: card.toughness, loyalty: card.loyalty, imageSmall: card.imageSmall, imageNormal: card.imageNormal,
+  };
+  if (names.length < 2) return [front];
+  const types = card.typeLine.split(' // ');
+  const texts = card.oracleText.split('\n//\n');
+  const costs = card.manaCost.split(' // ');
+  return [front, ...names.slice(1).map((name, i) => ({
+    name, manaCost: costs[i + 1] ?? '', typeLine: types[i + 1] ?? '', oracleText: texts[i + 1] ?? '',
+    imageSmall: card.imageSmall, imageNormal: card.imageNormal,
+  }))];
+}
+
+const manaValue = (cost: string) => {
+  const c = parseCost(cost);
+  return c.generic + c.colored.length;
+};
+
+/** The name of one face ("Bonecrusher Giant", not "Bonecrusher Giant // Stomp"). */
+export const faceName = (card: Card, face = 0) => cardFaces(card)[face]?.name ?? card.name;
+
+/** A face as a card of its own (face 0 is the card itself). */
+export function faceCard(card: Card, face: number): Card {
+  if (!face) return card;
+  const f = cardFaces(card)[face];
+  if (!f) return card;
+  return {
+    ...card, id: `${card.id}#${face}`, name: f.name, manaCost: f.manaCost, cmc: manaValue(f.manaCost), typeLine: f.typeLine,
+    oracleText: f.oracleText, colors: f.colors ?? card.colors, power: f.power, toughness: f.toughness, loyalty: f.loyalty,
+    imageSmall: f.imageSmall ?? card.imageSmall, imageNormal: f.imageNormal ?? card.imageNormal,
+    keywords: undefined, faces: undefined, layout: undefined,
+  };
+}
+
+/** "Bonecrusher Giant // Stomp": face 1 is an Adventure (an instant or sorcery cast from hand, then the creature from exile). */
+export const isAdventure = (card: Card) => card.layout === 'adventure' || /\bAdventure\b/.test(cardFaces(card)[1]?.typeLine ?? '');
+/** Modal double-faced card: either face can be played (from hand). */
+export const isModalDfc = (card: Card) => card.layout === 'modal_dfc';
+/** Split card ("Fire // Ice"): either half can be cast. */
+export const isSplit = (card: Card) => card.layout === 'split' || (card.layout === undefined && cardFaces(card).length === 2 &&
+  cardFaces(card).every((f) => /\b(Instant|Sorcery)\b/.test(f.typeLine)) && !isAdventure(card));
+/** Transforming double-faced card (the back face only comes from transforming). */
+export const isTransform = (card: Card) => card.layout === 'transform';
+
+/** Which faces can be cast or played from hand. */
+export function playableFaces(card: Card): number[] {
+  if (isModalDfc(card) || isAdventure(card) || isSplit(card)) return cardFaces(card).map((_, i) => i);
+  return [0];
+}
+
+/** An extra cost paid when casting: "As an additional cost to cast this spell, …". */
+export type AdditionalCost =
+  | { kind: 'sacrifice'; which: Selector }
+  | { kind: 'discard'; n: number }
+  | { kind: 'life'; n: number };
+
+/** What a card's text says about the ways to cast it. */
+export interface CastInfo {
+  /** "Choose one —" / "Choose one or both —": the modes' texts, and how many to choose. */
+  modal?: { min: number; max: number; modes: string[] };
+  kicker?: string;
+  additional?: AdditionalCost;
+  /** The additional-cost sentence exists but isn't understood: the spell is not simulated. */
+  unknownCost?: boolean;
+  flashback?: string;
+  /** Cycling (draw a card) or landcycling (search for a land card: `search`). */
+  cycling?: { cost: string; search?: TargetFilter };
+  convoke: boolean;
+  delve: boolean;
+  /** "Affinity for artifacts": costs {1} less for each matching permanent you control. */
+  affinity?: TargetFilter;
+}
+
+const MODE_COUNTS: Record<string, [number, number]> = {
+  one: [1, 1], two: [2, 2], three: [3, 3], 'one or both': [1, 2], 'one or more': [1, 9], 'up to one': [0, 1], 'up to two': [0, 2],
+};
+
+/** Removes reminder text: it never carries rules, and may say "Draw a card." (cycling). */
+const stripReminder = (text: string) => text.replace(/\s*\([^)]*\)/g, '');
+
+export function castInfo(card: Card, face = 0): CastInfo {
+  const c = faceCard(card, face);
+  const text = stripReminder(frontText(c));
+  const info: CastInfo = { convoke: false, delve: false };
+  const kw = (c.keywords ?? []).map((k) => k.toLowerCase());
+  for (const line of text.split('\n').map((l) => l.trim())) {
+    let m;
+    if ((m = line.match(/^Kicker ((?:\{[^}]+\})+)$/))) info.kicker = m[1];
+    else if ((m = line.match(/^Flashback ((?:\{[^}]+\})+)$/))) info.flashback = m[1];
+    else if ((m = line.match(/^Cycling ((?:\{[^}]+\})+)$/))) info.cycling = { cost: m[1] };
+    else if ((m = line.match(/^(Basic land|Plains|Island|Swamp|Mountain|Forest)cycling ((?:\{[^}]+\})+)$/))) {
+      info.cycling = { cost: m[2], search: m[1] === 'Basic land' ? { basic: true, types: ['land'] } : { subtypes: [m[1].toLowerCase()] } };
+    } else if (/^Affinity for artifacts$/i.test(line)) info.affinity = { types: ['artifact'] };
+    else if (/^[A-Za-z ,]+$/.test(line) && line.split(/,\s*/).some((w) => /^(convoke|delve)$/i.test(w.trim()))) {
+      for (const w of line.split(/,\s*/).map((x) => x.trim().toLowerCase())) {
+        if (w === 'convoke') info.convoke = true;
+        if (w === 'delve') info.delve = true;
+      }
+    }
+  }
+  if (kw.includes('convoke')) info.convoke = true;
+  if (kw.includes('delve')) info.delve = true;
+  const modal = text.match(/Choose (one or both|one or more|up to one|up to two|one|two|three) —\n((?:• [^\n]+\n?)+)/);
+  if (modal) {
+    const [min, max] = MODE_COUNTS[modal[1]];
+    const modes = modal[2].split('\n').filter((l) => l.startsWith('• ')).map((l) => l.slice(2).trim());
+    info.modal = { min, max: Math.min(max, modes.length), modes };
+  }
+  const extra = text.match(/As an additional cost to cast this spell, ([^.]+)\./);
+  if (extra) {
+    const what = extra[1].toLowerCase();
+    let m;
+    if ((m = what.match(/^discard (a|two|three) cards?$/))) info.additional = { kind: 'discard', n: toNumber(m[1]) };
+    else if ((m = what.match(/^pay (\d+) life$/))) info.additional = { kind: 'life', n: Number(m[1]) };
+    else if ((m = what.match(/^sacrifice (?:a|an) ([a-z ]+)$/))) {
+      const spec = parseTargetPhrase(`target ${m[1]}`);
+      if (spec && (spec.kind === 'creature' || spec.kind === 'permanent')) info.additional = { kind: 'sacrifice', which: { kind: spec.kind, filter: spec.filter } };
+      else info.unknownCost = true;
+    } else info.unknownCost = true;
+  }
+  return info;
+}
+
+/** Is mode `i` of a modal spell simulated (understood on its own)? */
+export function modeSimulated(card: Card, face: number, i: number): boolean {
+  const modal = castInfo(card, face).modal;
+  return !!modal && parseAbilityText(modal.modes[i] ?? '').effects.length > 0;
+}
+
+/** The allowed mode combinations of a modal spell, the most modes first ("one or both": both, then each). */
+export function modeSets(modal: { min: number; max: number; modes: string[] }): number[][] {
+  const n = modal.modes.length;
+  const out: number[][] = [];
+  for (let mask = 1; mask < 1 << n; mask++) {
+    const set = Array.from({ length: n }, (_, i) => i).filter((i) => mask & (1 << i));
+    if (set.length >= Math.max(1, modal.min) && set.length <= modal.max) out.push(set);
+  }
+  return out.sort((a, b) => b.length - a.length || a[0] - b[0]);
+}
+
+/** Moves slot numbers in effects by `offset`, to put several parsed texts together. */
+function shiftSlots(effects: Effect[], offset: number): Effect[] {
+  const shift = (a: Affected): Affected => (typeof a === 'object' ? { slot: a.slot + offset } : a);
+  return effects.map((e) => {
+    if (e.kind === 'fight') return { ...e, a: { slot: e.a.slot + offset }, b: { slot: e.b.slot + offset } };
+    if ('to' in e) return { ...e, to: shift(e.to) } as Effect;
+    return e;
+  });
+}
+
+function combine(specs: AbilitySpec[]): AbilitySpec {
+  const out: AbilitySpec = { targets: [], effects: [] };
+  for (const sp of specs) {
+    out.effects.push(...shiftSlots(sp.effects, out.targets.length));
+    out.targets.push(...sp.targets);
+  }
+  return out;
+}
+
+/** How a card is cast: which face, which modes, kicked or not. */
+export interface CastChoice {
+  face?: number;
+  modes?: number[];
+  kicked?: boolean;
+}
+
+/**
+ * The rules of a spell cast a given way. Auras target what they'll enchant; other permanents have no
+ * spell effects. Modal spells need their modes; "If this spell was kicked, …" applies when kicked.
+ */
+export function castSpec(card: Card, choice: CastChoice): AbilitySpec {
+  const c = faceCard(card, choice.face ?? 0);
+  const aura = auraTarget(c);
   if (aura) return { targets: [aura], effects: [] };
-  if (!isInstantOrSorcery(card)) return { targets: [], effects: [] };
-  return parseAbilityText(frontText(card));
+  if (!isInstantOrSorcery(c)) return { targets: [], effects: [] };
+  const info = castInfo(card, choice.face ?? 0);
+  if (info.unknownCost) return { targets: [], effects: [] };
+  let text = stripReminder(frontText(c))
+    .split('\n')
+    .filter((l) => !/^(Kicker|Flashback|Cycling|Convoke|Delve|Affinity for|(Basic land|Plains|Island|Swamp|Mountain|Forest)cycling)\b/.test(l.trim()))
+    .join('\n')
+    .replace(/As an additional cost to cast this spell, [^.]+\.\s*/, '');
+  const kickedTexts: string[] = [];
+  text = text.replace(/If this spell was kicked, ([^.]+\.)\s*/g, (_, rest: string) => {
+    kickedTexts.push(rest);
+    return '';
+  });
+  let spec: AbilitySpec;
+  if (info.modal) {
+    const modes = choice.modes ?? [];
+    if (modes.length < Math.max(1, info.modal.min) || modes.length > info.modal.max) return { targets: [], effects: [] };
+    const head = text.slice(0, text.indexOf('Choose ')).trim();
+    const parsed = modes.map((i) => parseAbilityText(info.modal!.modes[i] ?? ''));
+    // A mode that isn't understood makes the whole spell "not simulated" rather than half-simulated.
+    if (parsed.some((p) => !p.effects.length)) return { targets: [], effects: [] };
+    spec = combine([head ? parseAbilityText(head) : { targets: [], effects: [] }, ...parsed]);
+  } else {
+    spec = parseAbilityText(text);
+  }
+  if (choice.kicked) {
+    for (const k of kickedTexts) {
+      // "it deals 4 damage instead": the spell's damage changes.
+      const instead = k.match(/deals (\d+) damage(?: to [a-z ]+)? instead\.$/i);
+      const dmg = spec.effects.find((e) => e.kind === 'damage');
+      if (instead && dmg?.kind === 'damage') dmg.amount = Number(instead[1]);
+      else if (!/\binstead\b/i.test(k)) spec = combine([spec, parseAbilityText(k)]);
+    }
+  }
+  return spec;
 }
 
 /** Just the effects of an instant or sorcery. */

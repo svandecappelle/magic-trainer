@@ -27,13 +27,15 @@ const log: LogMessages = {
   keep: (e, c) => `${c.isMe(e.p) ? 'Vous gardez' : `${c.name(e.p)} garde`} ${plural(e.n, 'carte', 'cartes')}`,
   playLand: (e, c) => `${c.isMe(e.p) ? 'Vous jouez' : `${c.name(e.p)} joue`} ${c.card(e.card)}`,
   cast: (e, c) => {
-    const who = c.isMe(e.p) ? 'Vous lancez' : `${c.name(e.p)} lance`;
+    const how = [e.kicked && 'avec le kick', e.from === 'graveyard' && 'en flashback', e.from === 'exile' && "depuis l'exil"].filter(Boolean).join(', ');
+    const who = (c.isMe(e.p) ? 'Vous lancez ' : `${c.name(e.p)} lance `) + c.card(e.card) + (how ? ` (${how})` : '');
     const targets = e.targets ?? [];
     // "en vous ciblant" when you are the only target.
-    if (targets.length === 1 && 'p' in targets[0] && c.isMe(targets[0].p)) return `${who} ${c.card(e.card)} en vous ciblant`;
+    if (targets.length === 1 && 'p' in targets[0] && c.isMe(targets[0].p)) return `${who} en vous ciblant`;
     const names = targets.map((t) => ('card' in t ? c.card(t.card) : c.isMe(t.p) ? 'vous' : c.name(t.p)));
-    return `${who} ${c.card(e.card)}${names.length ? ` en ciblant ${c.list(names)}` : ''}`;
+    return `${who}${names.length ? ` en ciblant ${c.list(names)}` : ''}`;
   },
+  cycle: (e, c) => `${c.isMe(e.p) ? 'Vous recyclez' : `${c.name(e.p)} recycle`} ${c.card(e.card)}`,
   enters: (e, c) => `${c.card(e.card)} arrive sur le champ de bataille`,
   triggers: (e, c) => {
     const names = (e.targets ?? []).map((t) => ('card' in t ? c.card(t.card) : c.isMe(t.p) ? 'vous' : c.name(t.p)));
@@ -129,6 +131,9 @@ const errors: ErrorMessages = {
   summoningSick: (p) => `${p.card} vient d'arriver : il ne peut pas utiliser de capacité {T} ce tour-ci`,
   onceEachTurn: (p) => `La capacité de ${p.card} ne peut être activée qu'une fois par tour`,
   notEnoughLife: () => 'Pas assez de points de vie pour payer ce coût',
+  badModes: (p) => `Choisissez le bon nombre de modes pour ${p.card}`,
+  nothingToDiscard: (p) => `Vous n'avez pas d'autre carte à défausser pour ${p.card}`,
+  cannotCycle: () => "Cette carte n'a pas le recyclage",
   manaSpent: () => 'Ce mana a déjà été dépensé : le terrain reste engagé',
   notEnoughLoyalty: (p) => `${p.card} n'a pas assez de loyauté pour cette capacité`,
   cannotAttackThat: () => "Les créatures ne peuvent attaquer que l'adversaire ou ses planeswalkers",
@@ -437,6 +442,7 @@ export const fr: Messages = {
       optional: (p) => `Utiliser la capacité de ${p.card} ?`,
       legendRule: (p) => `Règle des légendes : choisissez quel ${p.card} garder.`,
       payLife: (p) => `${p.card} : payer ${p.n} points de vie pour qu'il arrive dégagé ?`,
+      discardCost: (p) => `Défaussez ${p.n === 1 ? 'une carte' : `${p.n} cartes`} pour lancer ${p.card}.`,
       search: (p) => `Cherchez dans votre bibliothèque : choisissez jusqu'à ${p.n} carte${p.n > 1 ? 's' : ''}.`,
       sacrifice: (p) => `Choisissez ${p.n === 1 ? 'un permanent' : `${p.n} permanents`} à sacrifier.`,
       sacrificeCost: (p) => `Choisissez quoi sacrifier pour la capacité de ${p.card}.`,
@@ -481,6 +487,14 @@ export const fr: Messages = {
     thinking: (name) => `${name} réfléchit…`,
     addMana: 'Produire du mana',
     manaPool: "Réserve de mana : dépensée en premier, elle se vide à la fin de l'étape",
+    chooseHowToPlay: (card) => `Comment jouer ${card} ?`,
+    castNamed: (card) => `Lancer ${card}`,
+    castKicked: (card, cost) => `Lancer ${card} avec le kick (+${cost})`,
+    castFlashback: (card, cost) => `Flashback ${card} (${cost})`,
+    castFromExile: (card) => `Lancer ${card} depuis l'exil`,
+    playAsLand: (card) => `Jouer ${card} (terrain)`,
+    cycleFor: (cost) => `Recycler (${cost})`,
+    modeNotSimulated: "Ce mode n'est pas simulé",
     chooseAbility: (card) => `Choisissez une capacité de ${card}.`,
     chooseTarget: (kind) => `Choisissez une cible (${kind}).`,
     onStack: (card, owner) =>

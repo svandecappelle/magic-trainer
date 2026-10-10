@@ -212,6 +212,9 @@
   max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: 0.82rem; font-weight: 500; background: var(--panel-2); color: var(--text); border: 1px solid var(--accent);
 }
+.actions .ability-option.mode { white-space: normal; max-width: 320px; text-align: left; border-color: var(--border); }
+.actions .ability-option.mode.on { border-color: var(--accent); background: rgba(212, 162, 76, 0.25); }
+.zone-chip.castable, .zone-cards img.castable { box-shadow: 0 0 0 2px var(--ok), 0 0 10px rgba(92, 184, 92, 0.5); cursor: pointer; }
 .key-hint { padding: 0 6px; font-size: 0.75rem; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; }
 .board-error {
   position: absolute; left: 50%; top: 100%; margin-top: 6px; z-index: 30; translate: -50% 0;
