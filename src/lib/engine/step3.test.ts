@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
 import { botAction } from './bot';
 import { apply, IllegalAction, newGame, powerOf, type GameState, type Permanent, type PlayerId } from './engine';
-import { activatedOf, isToken, parseAbilityText, triggersOf } from './rules';
+import { activatedOf, entersTapped, entersWithCounters, isToken, parseAbilityText, triggersOf } from './rules';
 
 let n = 0;
 function card(partial: Partial<Card> & { name: string }): Card {
@@ -201,5 +201,105 @@ describe('step 3 bot', () => {
     s = apply(s, action);
     expect(perm(s, 'Elf')).toBeUndefined();
     expect(perm(s, 'Fanatic')).toBeDefined();
+  });
+});
+
+describe('step 3: counters, library search, graveyard', () => {
+  it('reads graveyard targets, counters for each creature, searches and entering rules', () => {
+    expect(parseAbilityText('Return target creature card from your graveyard to your hand.')).toEqual({
+      targets: [{ kind: 'card', min: 1, max: 1, filter: { controller: 'you', types: ['creature'] } }],
+      effects: [{ kind: 'returnCard', to: { slot: 0 }, dest: 'hand' }],
+    });
+    expect(parseAbilityText('Return target permanent card with mana value 3 or less from your graveyard to the battlefield.')).toMatchObject({
+      targets: [{ kind: 'card', filter: { nonTypes: ['instant', 'sorcery'], maxManaValue: 3 } }], effects: [{ dest: 'battlefield' }],
+    });
+    expect(parseAbilityText('Exile target card from a graveyard.')).toMatchObject({ targets: [{ kind: 'card', filter: {} }], effects: [{ kind: 'destroy', exile: true }] });
+    expect(parseAbilityText('Put a +1/+1 counter on each creature you control.').effects[0]).toMatchObject({
+      kind: 'addCountersAll', counter: '+1/+1', n: 1, which: { kind: 'creature', filter: { controller: 'you' } }, other: false,
+    });
+    expect(parseAbilityText('Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.').effects[0]).toEqual({
+      kind: 'search', n: 1, filter: { basic: true, types: ['land'] }, dest: 'battlefield', tapped: true,
+    });
+    expect(parseAbilityText('Search your library for up to two basic land cards, reveal them, put them into your hand, then shuffle.').effects[0])
+      .toMatchObject({ n: 2, dest: 'hand' });
+    const fetch = card({ name: 'Wooded Foothills', typeLine: 'Land', oracleText: '{T}, Pay 1 life, Sacrifice this land: Search your library for a Mountain or Forest card, put it onto the battlefield, then shuffle.' });
+    expect(activatedOf(fetch)[0]).toMatchObject({
+      cost: { tap: true, life: 1, sacrificeSelf: true }, ability: { effects: [{ kind: 'search', filter: { subtypes: ['mountain', 'forest'] }, tapped: false }] },
+    });
+    expect(entersWithCounters(creature('Walker', 0, 0, 'This creature enters with X +1/+1 counters on it.'))).toBe('X');
+    expect(entersWithCounters(creature('Bear', 0, 0, 'Flying\nThis creature enters with two +1/+1 counters on it.'))).toBe(2);
+    expect(entersTapped(card({ name: 'Guildgate', typeLine: 'Land — Gate', oracleText: 'This land enters tapped.\n{T}: Add {R}.' }))).toBe(true);
+    expect(entersTapped(card({ name: 'Check', typeLine: 'Land', oracleText: 'This land enters tapped unless you control a Mountain.' }))).toBe(false);
+  });
+
+  it('returns and exiles cards from graveyards', () => {
+    const raise = spell('Raise', '{1}', 'Return target creature card from your graveyard to your hand.');
+    const purge = spell('Purge', '{1}', 'Exile target card from a graveyard.', 'Instant');
+    let s = board({ mana: 2, hand: [raise, purge] });
+    s.players[0].graveyard = [{ iid: 'g0', card: creature('Bear', 2, 2) }, { iid: 'g1', card: mountain }];
+    s.players[1].graveyard = [{ iid: 'g2', card: creature('Snake', 1, 1) }];
+    expect(errorOf(() => apply(s, { type: 'cast', iid: 'h0', target: { kind: 'card', iid: 'g2' } }))).toBe('illegalTarget');
+    expect(errorOf(() => apply(s, { type: 'cast', iid: 'h0', target: { kind: 'card', iid: 'g1' } }))).toBe('illegalTarget');
+    s = apply(s, { type: 'cast', iid: 'h0', target: { kind: 'card', iid: 'g0' } });
+    expect(s.players[0].hand.map((c) => c.card.name)).toContain('Bear');
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toEqual(['Mountain', 'Raise']);
+    s = apply(s, { type: 'cast', iid: 'h1', target: { kind: 'card', iid: 'g2' } });
+    expect(s.players[1].graveyard).toEqual([]);
+    expect(s.players[1].exile.map((c) => c.card.name)).toEqual(['Snake']);
+  });
+
+  it('lets an enters trigger return a creature, aimed by the bot at its best card', () => {
+    const digger = creature('Digger', 2, 2, 'When this creature enters, return target creature card from your graveyard to your hand.');
+    let s = board({ oppMana: 1, oppHand: [digger] });
+    s.players[1].graveyard = [{ iid: 'g0', card: creature('Small', 1, 1) }, { iid: 'g1', card: creature('Big', 5, 5) }];
+    s.active = 1;
+    s.step = 'main2';
+    s = apply(s, botAction(s));
+    expect(s.pending?.choice.kind).toBe('targets');
+    s = apply(s, botAction(s));
+    expect(s.players[1].hand.map((c) => c.card.name)).toEqual(['Big']);
+  });
+
+  it('searches the library, then shuffles', () => {
+    const growth = spell('Growth', '{1}', 'Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.');
+    let s = board({ mana: 1, hand: [growth] });
+    s.players[0].library = [...s.players[0].library.slice(0, 5), { iid: 'lib-spell', card: creature('Bear', 2, 2) }];
+    const lands = s.battlefield.length;
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    expect(s.pending?.choice).toMatchObject({ kind: 'cards', purpose: 'search', min: 0, max: 1 });
+    const options = (s.pending!.choice as { options: { iid: string; card: Card }[] }).options;
+    expect(options.every((o) => o.card.name === 'Mountain')).toBe(true);
+    s = apply(s, { type: 'choose', answer: { kind: 'cards', iids: [options[0].iid] } });
+    expect(s.battlefield).toHaveLength(lands + 1);
+    expect(s.battlefield.at(-1)!.tapped).toBe(true);
+    expect(s.players[0].library).toHaveLength(5);
+    expect(s.log.at(-1)).toMatchObject({ k: 'search', n: 1, dest: 'battlefield' });
+  });
+
+  it('cracks a fetch land: pays life, sacrifices it, finds a land', () => {
+    const fetch = card({ name: 'Foothills', typeLine: 'Land', oracleText: '{T}, Pay 1 life, Sacrifice this land: Search your library for a Mountain or Forest card, put it onto the battlefield, then shuffle.' });
+    let s = board({ mine: [fetch] });
+    s = apply(s, { type: 'activate', iid: iidOf(s, 'Foothills'), index: 0 });
+    expect(perm(s, 'Foothills')).toBeUndefined();
+    expect(s.players[0].life).toBe(19);
+    // The ability resolves (both players pass automatically), then asks what to find.
+    expect(s.pending?.choice.purpose).toBe('search');
+    s = apply(s, botAction(s));
+    expect(perm(s, 'Mountain')!.tapped).toBe(false);
+  });
+
+  it('puts counters on entering creatures and taps lands that enter tapped', () => {
+    const walker = creature('Walker', 0, 0, 'This creature enters with X +1/+1 counters on it.', { manaCost: '{X}{X}', cmc: 0 });
+    const gate = card({ name: 'Gate', typeLine: 'Land — Gate', oracleText: 'This land enters tapped.\n{T}: Add {R}.' });
+    const overseer = creature('Overseer', 1, 1, '{T}: Put a +1/+1 counter on each other creature you control.');
+    let s = board({ mana: 4, hand: [walker, gate], mine: [overseer] });
+    s = apply(s, { type: 'cast', iid: 'h0', x: 2 });
+    expect(perm(s, 'Walker')!.counters).toEqual({ '+1/+1': 2 });
+    expect(powerOf(perm(s, 'Walker')!)).toBe(2);
+    s = apply(s, { type: 'playLand', iid: 'h1' });
+    expect(perm(s, 'Gate')!.tapped).toBe(true);
+    s = apply(s, { type: 'activate', iid: iidOf(s, 'Overseer'), index: 0 });
+    expect(perm(s, 'Walker')!.counters).toEqual({ '+1/+1': 3 });
+    expect(perm(s, 'Overseer')!.counters).toEqual({});
   });
 });

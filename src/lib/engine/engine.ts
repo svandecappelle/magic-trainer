@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, findPayment, hasInstantSpeed, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, isToken, manaColors, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, entersTapped, entersWithCounters, isToken, manaColors, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   type AbilitySpec, type Affected, type Amount, type CounterKind, type Effect, type Keyword, type ManaSource, type Selector,
   type ActivatedSpec, type ObjectEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -107,6 +107,7 @@ export type ChoicePurpose =
   | 'discardChosen' // Duress: the spell's controller chooses from a revealed hand
   | 'scry'
   | 'surveil'
+  | 'search' // library search: find up to N matching cards
   | 'triggerTargets' // targets for a triggered ability going on the stack
   | 'optional' // "you may …" on resolution
   | 'sacrifice' // an edict: choose what to sacrifice
@@ -206,6 +207,11 @@ export type LogEntry =
   | { k: 'bounced'; card: string }
   | { k: 'sacrificed'; card: string }
   | { k: 'token'; p: PlayerId; card: string; n: number }
+  /** A card left a graveyard: back to hand, onto the battlefield, or exiled. */
+  | { k: 'returned'; card: string; dest: 'hand' | 'battlefield' }
+  | { k: 'exiledCard'; card: string }
+  /** `dest`: hand cards are not named (hidden); found cards put onto the battlefield are logged as entering. */
+  | { k: 'search'; p: PlayerId; n: number; dest: 'hand' | 'battlefield' }
   | { k: 'emptyLibrary'; p: PlayerId }
   | { k: 'concede'; p: PlayerId }
   | { k: 'wins'; p: PlayerId }
@@ -244,7 +250,9 @@ export interface GameState {
 export type Target =
   | { kind: 'player'; player: PlayerId }
   | { kind: 'permanent'; iid: string }
-  | { kind: 'spell'; iid: string };
+  | { kind: 'spell'; iid: string }
+  /** A card in a graveyard. */
+  | { kind: 'card'; iid: string };
 
 /** Actions are always taken by `actor(state)`. */
 export type Action =
@@ -301,7 +309,7 @@ export const findPermanent = (s: GameState, iid: string) => s.battlefield.find((
 export const creaturesOf = (s: GameState, p: PlayerId) =>
   s.battlefield.filter((x) => x.controller === p && isCreature(x.card));
 
-const isPermanent = (x: CardInst): x is Permanent => 'boosts' in x;
+const isPermanent = (x: object): x is Permanent => 'boosts' in x;
 
 /** Keyword printed on the card or granted until end of turn. */
 export const hasKw = (x: CardInst, kw: Keyword) =>
@@ -434,6 +442,23 @@ export function activatable(s: GameState, p: PlayerId): { perm: Permanent; index
 
 const blockerIds = (s: GameState) => Object.values(s.blocks).flat();
 
+/** Supertype and subtype conditions: "basic", "Forest or Plains". */
+function fitsTypeLine(card: Card, f: TargetFilter): boolean {
+  const [types, subtypes = ''] = card.typeLine.split('//')[0].toLowerCase().split('—');
+  if (f.basic && !types.includes('basic')) return false;
+  if (f.subtypes && !f.subtypes.some((t) => subtypes.split(' ').includes(t))) return false;
+  return true;
+}
+
+/** Where a card is in a graveyard, if it is. */
+export function findInGraveyard(s: GameState, iid: string): { inst: CardInst; owner: PlayerId } | undefined {
+  for (const owner of [0, 1] as PlayerId[]) {
+    const inst = s.players[owner].graveyard.find((c) => c.iid === iid);
+    if (inst) return { inst, owner };
+  }
+  return undefined;
+}
+
 /** Does a card (a permanent, or a spell on the stack) pass the filter, from `caster`'s point of view? */
 function matchesFilter(s: GameState, f: TargetFilter, caster: PlayerId, x: CardInst, controller: PlayerId): boolean {
   const perm = isPermanent(x) ? x : undefined;
@@ -448,6 +473,7 @@ function matchesFilter(s: GameState, f: TargetFilter, caster: PlayerId, x: CardI
   if (f.withoutKeyword && hasKw(x, f.withoutKeyword)) return false;
   if (f.maxManaValue !== undefined && x.card.cmc > f.maxManaValue) return false;
   if (f.minManaValue !== undefined && x.card.cmc < f.minManaValue) return false;
+  if (!fitsTypeLine(x.card, f)) return false;
   const pow = perm ? powerOf(perm) : power(x.card);
   if (f.minPower !== undefined && pow < f.minPower) return false;
   if (f.maxPower !== undefined && pow > f.maxPower) return false;
@@ -467,13 +493,17 @@ export function isLegalTarget(s: GameState, caster: PlayerId, spec: TargetSpec, 
     if (spec.kind !== 'player' && spec.kind !== 'any') return false;
     return !spec.filter.controller || (t.player === caster) === (spec.filter.controller === 'you');
   }
+  if (t.kind === 'card') {
+    const found = findInGraveyard(s, t.iid);
+    return spec.kind === 'card' && !!found && matchesFilter(s, spec.filter, caster, found.inst, found.owner);
+  }
   if (t.kind === 'spell') {
     const item = s.stack.find((x) => x.iid === t.iid);
     if (spec.kind !== 'spell' || !item || item.iid === selfIid || item.ability) return false;
     return matchesFilter(s, spec.filter, caster, item, item.controller);
   }
   const perm = findPermanent(s, t.iid);
-  if (!perm) return false;
+  if (!perm || spec.kind === 'card') return false;
   const types = cardTypes(perm.card);
   const kindOk =
     spec.kind === 'creature' ? types.includes('creature')
@@ -491,7 +521,8 @@ export function matching(s: GameState, caster: PlayerId, which: Selector): Perma
 /** Does the card match a filter of card words ("nonland", "creature")? Used for cards in hand. */
 export const cardMatches = (card: Card, f: TargetFilter) => {
   const types = cardTypes(card);
-  return (!f.types || f.types.some((t) => types.includes(t))) && !f.nonTypes?.some((t) => types.includes(t));
+  return (!f.types || f.types.some((t) => types.includes(t))) && !f.nonTypes?.some((t) => types.includes(t)) &&
+    (f.maxManaValue === undefined || card.cmc <= f.maxManaValue) && fitsTypeLine(card, f);
 };
 
 /** Every legal choice for a target slot right now. */
@@ -500,6 +531,7 @@ export function legalTargets(s: GameState, caster: PlayerId, spec: TargetSpec, s
     ...([0, 1] as PlayerId[]).map((player): Target => ({ kind: 'player', player })),
     ...s.battlefield.map((x): Target => ({ kind: 'permanent', iid: x.iid })),
     ...s.stack.map((x): Target => ({ kind: 'spell', iid: x.iid })),
+    ...(spec.kind === 'card' ? [0, 1].flatMap((p) => s.players[p].graveyard.map((c): Target => ({ kind: 'card', iid: c.iid }))) : []),
   ];
   return all.filter((t) => isLegalTarget(s, caster, spec, t, selfIid));
 }
@@ -514,7 +546,7 @@ const sameTarget = (a: Target, b: Target) =>
 
 function targetName(s: GameState, t: Target): LogTarget {
   if (t.kind === 'player') return { p: t.player };
-  const x = t.kind === 'spell' ? s.stack.find((i) => i.iid === t.iid) : findPermanent(s, t.iid);
+  const x = t.kind === 'spell' ? s.stack.find((i) => i.iid === t.iid) : t.kind === 'card' ? findInGraveyard(s, t.iid)?.inst : findPermanent(s, t.iid);
   return { card: x?.card.name ?? '?' };
 }
 
@@ -531,7 +563,8 @@ function checkTargets(s: GameState, caster: PlayerId, card: Card, spec: AbilityS
         const kindOk =
           (t.kind === 'player' && (slot.kind === 'player' || slot.kind === 'any')) ||
           (t.kind === 'spell' && slot.kind === 'spell') ||
-          (t.kind === 'permanent' && slot.kind !== 'player' && slot.kind !== 'spell');
+          (t.kind === 'card' && slot.kind === 'card') ||
+          (t.kind === 'permanent' && slot.kind !== 'player' && slot.kind !== 'spell' && slot.kind !== 'card');
         if (!kindOk) throw new IllegalAction('targetMustBe', { kind: slot.kind });
         throw new IllegalAction('illegalTarget', { card: card.name });
       }
@@ -733,8 +766,14 @@ function sacrifice(d: GameState, perm: Permanent) {
 }
 
 /** A permanent enters: put it on the battlefield and check "enters" triggers (its own, landfall…). */
-function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId): Permanent {
+function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, opts: { x?: number; tapped?: boolean } = {}): Permanent {
   const perm = newPermanent(inst, controller);
+  if (opts.tapped || entersTapped(inst.card)) perm.tapped = true;
+  const counters = entersWithCounters(inst.card);
+  if (counters !== null) {
+    const n = counters === 'X' ? (opts.x ?? 0) : counters;
+    if (n > 0) perm.counters = { '+1/+1': n };
+  }
   d.battlefield.push(perm);
   fireObject(d, 'enters', perm);
   return perm;
@@ -927,7 +966,14 @@ function resolveCombat(d: GameState) {
 const specOf = (item: StackItem): AbilitySpec => item.ability ?? spellSpec(item.card);
 
 /** What an effect applies to, looked up again now: earlier effects may have changed the game. */
-function affected(d: GameState, r: Resolving, to: Affected): (Permanent | PlayerId | StackItem)[] {
+/** A card in a graveyard that an effect applies to. */
+interface GraveCard {
+  grave: CardInst;
+  owner: PlayerId;
+}
+type Affectable = Permanent | PlayerId | StackItem | GraveCard;
+
+function affected(d: GameState, r: Resolving, to: Affected): Affectable[] {
   if (to === 'you') return [r.item.controller];
   if (to === 'self') {
     const src = r.item.source ? findPermanent(d, r.item.source) : undefined;
@@ -936,8 +982,12 @@ function affected(d: GameState, r: Resolving, to: Affected): (Permanent | Player
   if (to === 'each-opponent') return [opponent(r.item.controller)];
   // Each player, starting with the active player.
   if (to === 'each-player') return [d.active, opponent(d.active)];
-  return (r.legal[to.slot] ?? []).flatMap((t): (Permanent | PlayerId | StackItem)[] => {
+  return (r.legal[to.slot] ?? []).flatMap((t): Affectable[] => {
     if (t.kind === 'player') return [t.player];
+    if (t.kind === 'card') {
+      const found = findInGraveyard(d, t.iid);
+      return found ? [{ grave: found.inst, owner: found.owner }] : [];
+    }
     const x = t.kind === 'spell' ? d.stack.find((i) => i.iid === t.iid) : findPermanent(d, t.iid);
     return x ? [x] : [];
   });
@@ -958,7 +1008,12 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
   const things = 'to' in e ? affected(d, r, e.to) : [];
   const players = things.filter((x): x is PlayerId => typeof x === 'number');
   const perms = things.filter((x): x is Permanent => typeof x !== 'number' && isPermanent(x));
-  const spells = things.filter((x): x is StackItem => typeof x !== 'number' && !isPermanent(x));
+  const spells = things.filter((x): x is StackItem => typeof x !== 'number' && 'targets' in x);
+  const graveCards = things.filter((x): x is GraveCard => typeof x !== 'number' && 'grave' in x);
+  /** Takes a card out of its graveyard. */
+  const unbury = (g: GraveCard) => {
+    d.players[g.owner].graveyard = d.players[g.owner].graveyard.filter((c) => c.iid !== g.grave.iid);
+  };
 
   switch (e.kind) {
     case 'damage':
@@ -1000,7 +1055,45 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         removePermanent(d, perm, e.exile ? 'exile' : 'graveyard');
         log(d, { k: e.exile ? 'exiled' : 'destroyed', card: perm.card.name });
       }
+      for (const g of graveCards) {
+        unbury(g);
+        d.players[g.owner].exile.push(g.grave);
+        log(d, { k: 'exiledCard', card: g.grave.card.name });
+      }
       break;
+    case 'returnCard':
+      for (const g of graveCards) {
+        unbury(g);
+        log(d, { k: 'returned', card: g.grave.card.name, dest: e.dest });
+        if (e.dest === 'hand') d.players[g.owner].hand.push(g.grave);
+        else enterBattlefield(d, g.grave, caster);
+      }
+      break;
+    case 'addCountersAll': {
+      const n = amount(r, e.n);
+      for (const perm of matching(d, caster, e.which)) {
+        if (e.other && perm.iid === item.source) continue;
+        perm.counters = { ...perm.counters, [e.counter]: (perm.counters[e.counter] ?? 0) + n };
+        log(d, { k: 'counters', card: perm.card.name, counter: e.counter, n });
+      }
+      break;
+    }
+    case 'search': {
+      const ps = d.players[caster];
+      const found = ps.library.filter((c) => cardMatches(c.card, e.filter));
+      if (found.length && (!answer || answer.kind !== 'cards')) {
+        return { kind: 'cards', player: caster, purpose: 'search', min: 0, max: Math.min(e.n, found.length), options: found, params: { n: e.n } };
+      }
+      const chosen = answer?.kind === 'cards' ? answer.iids.map((iid) => found.find((c) => c.iid === iid)!) : [];
+      ps.library = ps.library.filter((c) => !chosen.includes(c));
+      log(d, { k: 'search', p: caster, n: chosen.length, dest: e.dest });
+      for (const inst of chosen) {
+        if (e.dest === 'hand') ps.hand.push(inst);
+        else enterBattlefield(d, inst, caster, { tapped: e.tapped });
+      }
+      ps.library = shuffle(ps.library, () => random(d));
+      break;
+    }
     case 'destroyAll':
       for (const perm of matching(d, caster, e.which)) {
         removePermanent(d, perm, e.exile ? 'exile' : 'graveyard');
@@ -1165,7 +1258,7 @@ function startResolving(d: GameState, reason: WindowReason) {
 
   if (!item.ability && !isInstantOrSorcery(item.card)) {
     log(d, { k: 'enters', card: item.card.name });
-    enterBattlefield(d, { iid: item.iid, card: item.card }, item.controller);
+    enterBattlefield(d, { iid: item.iid, card: item.card }, item.controller, { x: item.x });
     afterResolving(d, reason);
     return;
   }

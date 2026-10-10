@@ -18,6 +18,7 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
     case 'surveil': return t.game.choice.surveil({ n });
     case 'optional': return t.game.choice.optional({ card: card(String(p.card)) });
     case 'sacrifice': return t.game.choice.sacrifice({ n });
+    case 'search': return t.game.choice.search({ n });
     case 'sacrificeCost': return t.game.choice.sacrificeCost({ card: card(String(p.card)) });
     case 'triggerTargets':
       if (choice.kind === 'targets') {

@@ -16,7 +16,7 @@ const keywordNames: Record<Keyword, string> = {
 };
 
 const targetKinds = {
-  any: 'une créature ou un joueur', creature: 'une créature', player: 'un joueur', spell: 'un sort sur la pile', permanent: 'un permanent',
+  any: 'une créature ou un joueur', creature: 'une créature', player: 'un joueur', spell: 'un sort sur la pile', permanent: 'un permanent', card: 'une carte dans un cimetière',
 };
 const kindName = (kind: string | number) => targetKinds[kind as keyof typeof targetKinds] ?? String(kind);
 
@@ -67,6 +67,9 @@ const log: LogMessages = {
   tapped: (e, c) => `${c.card(e.card)} est ${e.untap ? 'dégagé' : 'engagé'}`,
   bounced: (e, c) => `${c.card(e.card)} retourne dans la main de son propriétaire`,
   sacrificed: (e, c) => `${c.card(e.card)} est sacrifié`,
+  returned: (e, c) => `${c.card(e.card)} revient du cimetière ${e.dest === 'hand' ? 'dans la main de son propriétaire' : 'sur le champ de bataille'}`,
+  exiledCard: (e, c) => `${c.card(e.card)} est exilé du cimetière`,
+  search: (e, c) => `${c.isMe(e.p) ? 'Vous cherchez dans votre' : `${c.name(e.p)} cherche dans sa`} bibliothèque${e.n ? ` : ${e.n} carte${e.n > 1 ? 's' : ''} ${e.dest === 'hand' ? 'en main' : 'sur le champ de bataille'}` : ' sans rien trouver'}`,
   token: (e, c) => `${c.isMe(e.p) ? 'Vous créez' : `${c.name(e.p)} crée`} ${e.n === 1 ? `un jeton ${e.card}` : `${e.n} jetons ${e.card}`}`,
   activate: (e, c) => {
     const who = c.isMe(e.p) ? 'Vous activez' : `${c.name(e.p)} active`;
@@ -424,6 +427,7 @@ export const fr: Messages = {
       surveil: (p) => `Surveillance ${p.n} : gardez des cartes au-dessus (dans l'ordre) ou mettez-les au cimetière.`,
       triggerTargets: (p) => `La capacité de ${p.card} se déclenche : choisissez une cible (${p.kind}).`,
       optional: (p) => `Utiliser la capacité de ${p.card} ?`,
+      search: (p) => `Cherchez dans votre bibliothèque : choisissez jusqu'à ${p.n} carte${p.n > 1 ? 's' : ''}.`,
       sacrifice: (p) => `Choisissez ${p.n === 1 ? 'un permanent' : `${p.n} permanents`} à sacrifier.`,
       sacrificeCost: (p) => `Choisissez quoi sacrifier pour la capacité de ${p.card}.`,
       arrange: 'Placez chaque carte où vous voulez, puis confirmez.',

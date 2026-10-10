@@ -11,7 +11,7 @@ to show how much each step unlocks. Tick items as they land.
   keyword grants until end of turn, destroy/exile, +1/+1 and -1/-1 counters, draw (you / target player / each player),
   gain and lose life, discard (chosen, random, Duress-style), mill, scry, surveil, tap/untap, bounce, board wipes
   ("destroy all/each", "damage to each creature", "creatures you control get…", "return all…"), fight and "bite".
-- About half of the 350 most-played Modern instants and sorceries are simulated (Oct 2026 sample).
+- 208 of the 350 most-played Modern instants and sorceries are simulated (Oct 2026 sample).
 - Triggered abilities: enters, dies, attacks, deals combat damage to a player, landfall / "another creature enters",
   upkeep and end step, "whenever you cast …", prowess. Targets are chosen when the trigger goes on the stack,
   "you may" asks on resolution. About 30% of the 350 most-played permanents with triggers are fully simulated
@@ -73,9 +73,12 @@ Not simulated yet in triggers (recognized, logged as "not simulated"):
 - [x] 19. Sacrifice as cost or effect (2190) — "Sacrifice this/a/another …" costs, edicts, "sacrifice this creature"
 - [x] 20. Tokens: creatures, Treasure, Clue, Food (2442) — "create N P/T color Type creature tokens (with keywords)";
   tokens with their own abilities in quotes, copies, investigate and Blood are not simulated yet
-- [ ] 21. +1/+1 counters (1909) — spells that put counters work; still missing: "enters with counters", "for each counter"…
-- [ ] 22. Library search: tutors, ramp, fetchlands (680)
-- [ ] 23. Return from graveyard (828)
+- [x] 21. +1/+1 counters (1909) — "enters with N (or X) +1/+1 counters", "put a counter on each creature you
+  control"; "for each counter", moving and removing counters are not simulated
+- [x] 22. Library search: tutors, ramp, fetchlands (680) — "search your library for … card(s), put into your hand /
+  onto the battlefield (tapped), then shuffle"; split destinations (Cultivate) are not simulated
+- [x] 23. Return from graveyard (828) — targets in graveyards ("target creature card from your graveyard"):
+  return to hand or battlefield, exile; non-targeted returns are not simulated
 - [ ] 24. Planeswalkers: loyalty abilities, attacking them (278)
 - [ ] 25. Mana pool and manual tapping; sources making 2+ mana
 
@@ -84,7 +87,7 @@ Not simulated yet in triggers (recognized, logged as "not simulated"):
 - [ ] 26. Auras (805)
 - [ ] 27. Equipment (516)
 - [ ] 28. Anthems / static buffs (479)
-- [ ] 29. Lands entering tapped (525)
+- [ ] 29. Lands entering tapped (525) — unconditional "enters tapped" works; "unless you control…" not yet
 - [ ] 30. Hexproof, indestructible, ward (316)
 - [ ] 31. Protection (104)
 - [ ] 32. Legend rule

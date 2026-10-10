@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import {
-  activatable, activationProblem, abilityMaxX, actor, apply, canAttack, canBlock, canCastNow, findPermanent, hasKw, hasUsefulTarget, IllegalAction, isLegalTarget, isMainStep, maxX, opponent,
+  activatable, activationProblem, abilityMaxX, actor, apply, canAttack, findInGraveyard, legalTargets, canBlock, canCastNow, findPermanent, hasKw, hasUsefulTarget, IllegalAction, isLegalTarget, isMainStep, maxX, opponent,
   powerOf, toughnessOf, xCount,
   type Action, type CardInst, type GameState, type Permanent, type PlayerId, type Target,
 } from '../lib/engine/engine';
@@ -605,6 +605,31 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
                   <span className="small">{names[item.controller]}</span>
                 </div>
               ))}
+            </div>
+          )}
+          {/* Targets in a graveyard: pick them here. */}
+          {targeting && slotSpec?.kind === 'card' && (
+            <div className="choice-dock">
+              <div className="choice-panel">
+                <div className="choice-cards">
+                  {legalTargets(g, me, slotSpec).map((tg) => {
+                    const found = tg.kind === 'card' ? findInGraveyard(g, tg.iid) : undefined;
+                    if (!found) return null;
+                    return (
+                      <figure key={tg.kind === 'card' ? tg.iid : ''} className="grave-pick">
+                        <img
+                          className={`choice-card ${isPicked(tg) ? 'selected' : ''}`}
+                          src={show.imageSmall(found.inst.card)}
+                          alt={show.name(found.inst.card)}
+                          onClick={() => pickTarget(tg)}
+                          {...zoomable(found.inst.card)}
+                        />
+                        <figcaption className="small muted">{names[found.owner]}</figcaption>
+                      </figure>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
           {g.pending && g.pending.choice.player === me && g.pending.choice.kind !== 'targets' && g.winner === null && (

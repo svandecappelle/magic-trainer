@@ -171,13 +171,18 @@ export interface TargetFilter {
   minManaValue?: number;
   minPower?: number;
   maxPower?: number;
+  /** Basic lands only ("basic land card"). */
+  basic?: boolean;
+  /** At least one of these subtypes ("Forest or Plains card"), lower case. */
+  subtypes?: string[];
 }
 
 /**
  * What a target slot accepts. "any" is a creature, planeswalker or player; "permanent" is any
- * permanent matching the filter's types.
+ * permanent matching the filter's types; "card" is a card in a graveyard (whose owner is
+ * `filter.controller`: "your graveyard" / "an opponent's graveyard").
  */
-export type TargetKind = 'any' | 'creature' | 'player' | 'spell' | 'permanent';
+export type TargetKind = 'any' | 'creature' | 'player' | 'spell' | 'permanent' | 'card';
 
 export interface TargetSpec {
   kind: TargetKind;
@@ -241,7 +246,13 @@ export type Effect =
   /** "Sacrifice this creature" as an effect (Ball Lightning). */
   | { kind: 'sacrificeSelf' }
   /** Create N tokens under the controller's control. */
-  | { kind: 'token'; n: Amount; token: TokenSpec };
+  | { kind: 'token'; n: Amount; token: TokenSpec }
+  /** A card in a graveyard goes to its owner's hand, or onto the battlefield under the controller's control. */
+  | { kind: 'returnCard'; to: Affected; dest: 'hand' | 'battlefield' }
+  /** "Put a +1/+1 counter on each creature you control" (`other`: except the source). */
+  | { kind: 'addCountersAll'; counter: CounterKind; n: Amount; which: Selector; other: boolean }
+  /** Search your library for up to `n` matching cards, then shuffle. */
+  | { kind: 'search'; n: number; filter: TargetFilter; dest: 'hand' | 'battlefield'; tapped: boolean };
 
 /** A token's characteristics; the engine turns it into a card. */
 export interface TokenSpec {
@@ -310,6 +321,23 @@ export function parseTargetPhrase(phrase: string): TargetSpec | null {
   const [min, max] = head[1] ? [0, count] : [count, count];
   text = head[4];
   const filter: TargetFilter = {};
+
+  // "target creature card from your graveyard", "target card from a graveyard"
+  const grave = text.match(/^(.*?)\bcards? (with [a-z0-9 ]+ )?(?:from|in) (your|a|an opponent's) graveyard$/);
+  if (grave) {
+    if (grave[3] !== 'a') filter.controller = grave[3] === 'your' ? 'you' : 'opponent';
+    const words = grave[1].trim();
+    const kinds = words === '' ? {} : words === 'permanent' ? { nonTypes: ['instant', 'sorcery'] as CardType[] } : cardWordsFilter(words);
+    if (!kinds) return null;
+    Object.assign(filter, kinds);
+    if (grave[2]) {
+      const mv = grave[2].match(/^with mana value (\d+) or (less|greater) $/);
+      if (!mv) return null;
+      if (mv[2] === 'less') filter.maxManaValue = Number(mv[1]);
+      else filter.minManaValue = Number(mv[1]);
+    }
+    return { kind: 'card', min, max, filter };
+  }
 
   // Trailing clauses.
   const isKeyword = (w: string): w is Keyword => (KEYWORDS as readonly string[]).includes(w);
@@ -403,6 +431,21 @@ function cardWordsFilter(words: string): TargetFilter | null {
   return filter;
 }
 
+const LAND_TYPES = ['plains', 'island', 'swamp', 'mountain', 'forest', 'desert', 'gate', 'cave', 'sphere'];
+
+/** "basic land", "Forest or Plains", "creature" (the cards a library search may find). */
+function librarySearchFilter(words: string): TargetFilter | null {
+  const filter: TargetFilter = {};
+  for (const w of words.toLowerCase().replace(/,? or |, /g, ' ').split(' ').filter(Boolean)) {
+    if (w === 'basic') filter.basic = true;
+    else if (LAND_TYPES.includes(w)) (filter.subtypes ??= []).push(w);
+    else if (CARD_TYPES.includes(w as CardType)) (filter.types ??= []).push(w as CardType);
+    else if (w === 'card') continue;
+    else return null;
+  }
+  return filter;
+}
+
 /** Reads "flying and trample" / "first strike, vigilance, and lifelink". */
 const keywordList = (s: string | undefined) =>
   (s ?? '').split(/,? and |, /).map((k) => k.trim()).filter(Boolean) as Keyword[];
@@ -483,12 +526,24 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     return which && { kind: 'pumpAll', power: 0, toughness: 0, keywords: keywordList(m[2]), which };
   });
   scan(new RegExp(`\\b(destroy|exile) (${TARGET})${END}`, 'gi'), (m) => {
-    const to = slotFor(m[2], (spec) => spec.kind === 'creature' || spec.kind === 'permanent');
+    const to = slotFor(m[2], (spec) => spec.kind === 'creature' || spec.kind === 'permanent' || (spec.kind === 'card' && m[1].toLowerCase() === 'exile'));
     return to && { kind: 'destroy', exile: m[1].toLowerCase() === 'exile', to };
   });
   scan(new RegExp(`\\b(destroy|exile) (?:all|each) ([a-z0-9 ,'-]+?)${END}`, 'gi'), (m) => {
     const which = selector(m[2]);
     return which && { kind: 'destroyAll', exile: m[1].toLowerCase() === 'exile', which };
+  });
+  scan(new RegExp(`\\bput (${AMOUNT}) ([+-]1\\/[+-]1) counters? on each ((?:other )?creature(?: you control| you don't control| your opponents control)?)${END}`, 'gi'), (m) => {
+    const which = selector(m[3].replace(/^(other )?creature/i, (_, o) => `${o ?? ''}creatures`));
+    return which && { kind: 'addCountersAll', counter: m[2] as CounterKind, n: toAmount(m[1]), which, other: /^other /i.test(m[3]) };
+  });
+  // "Search your library for a basic land card, put it onto the battlefield tapped, then shuffle."
+  scan(new RegExp(`\\bsearch your library for (up to ${NUMBER} |an? |${NUMBER} )([a-z ,-]+?) cards?(?: with mana value (\\d+) or less)?, (?:reveal (?:it|them|that card|those cards), )?(?:and )?put (?:it|them|that card|those cards) (into your hand|onto the battlefield( tapped)?)(?:,? (?:then|and) shuffle)?`, 'gi'), (m) => {
+    const count = m[1].trim().replace(/^up to /i, '');
+    const filter = librarySearchFilter(m[2]);
+    if (!filter) return null;
+    if (m[3]) filter.maxManaValue = Number(m[3]);
+    return { kind: 'search', n: toNumber(count), filter, dest: m[4].toLowerCase() === 'into your hand' ? 'hand' : 'battlefield', tapped: !!m[5] };
   });
   scan(new RegExp(`\\bput (${AMOUNT}) ([+-]1\\/[+-]1) counters? on (${TARGET})${END}`, 'gi'), (m) => {
     const to = slotFor(m[3], (spec) => spec.kind === 'creature');
@@ -545,6 +600,11 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
   scan(new RegExp(`\\breturn (${TARGET}) to (?:its|their) (?:owner's|owners') hands?`, 'gi'), (m) => {
     const to = slotFor(m[1], (spec) => spec.kind === 'creature' || spec.kind === 'permanent');
     return to && { kind: 'bounce', to };
+  });
+  // From a graveyard: "Return target creature card from your graveyard to your hand / to the battlefield".
+  scan(new RegExp(`\\breturn (${TARGET}) to (your hand|its owner's hand|the battlefield(?: under your control)?)(?=\\.|,| and |$)`, 'gi'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'card');
+    return to && { kind: 'returnCard', to, dest: m[2].toLowerCase().includes('battlefield') ? 'battlefield' : 'hand' };
   });
   scan(/\breturn all ([a-z0-9 ,'-]+?) to (?:its|their) (?:owner's|owners') hands?/gi, (m) => {
     const which = selector(m[1]);
@@ -804,4 +864,19 @@ export function activatedOf(card: Card): ActivatedSpec[] {
   }
   activatedCache.set(key, out);
   return out;
+}
+
+// ---------- Entering the battlefield ----------
+
+/** "This creature enters with N +1/+1 counters on it" (X: the value paid when cast). */
+export function entersWithCounters(card: Card): Amount | null {
+  const selves = selfWords(card.name).map(escapeRe).join('|');
+  const m = frontText(card).match(new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)? with (${AMOUNT}) \\+1\\/\\+1 counters? on it\\.`, 'i'));
+  return m ? toAmount(m[1]) : null;
+}
+
+/** "This land enters tapped." (unconditional only: "unless …" and "if …" are not checked yet). */
+export function entersTapped(card: Card): boolean {
+  const selves = selfWords(card.name).map(escapeRe).join('|');
+  return new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)? tapped\\.(?:\\n|$)`, 'i').test(frontText(card));
 }

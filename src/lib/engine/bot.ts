@@ -1,5 +1,5 @@
 import {
-  abilityMaxX, activatable, actor, canAttack, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
+  abilityMaxX, activatable, actor, canAttack, findInGraveyard, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
   legalTargets, matching, maxX, opponent, powerOf, toughnessOf, xCount,
   type Action, type Answer, type CardInst, type Choice, type GameState, type Permanent, type PlayerId, type StackItem, type Target,
 } from './engine';
@@ -201,7 +201,7 @@ function intentOf(e: Effect): Intent {
       return e.power < 0 || e.toughness < 0 ? 'harm' : 'help';
     case 'addCounters':
       return e.counter === '-1/-1' ? 'harm' : 'help';
-    case 'draw': case 'gainLife':
+    case 'draw': case 'gainLife': case 'returnCard': case 'search':
       return 'help';
     default:
       return 'neutral';
@@ -299,6 +299,11 @@ function playWithGoodTarget(s: GameState, me: PlayerId, play: Play, among?: Perm
   }
   if (!spec.targets.length) return cast();
   if (spec.targets.length > 1) return null;
+  if (spec.targets[0].kind === 'card') {
+    if (among) return null;
+    const card = chooseGraveCard(s, me, spec);
+    return card ? cast([[card]]) : null;
+  }
   const target = chooseTarget(s, me, spec, among);
   return target === null ? null : cast([[asTarget(target)]]);
 }
@@ -363,12 +368,30 @@ function chooseTarget(s: GameState, me: PlayerId, spec: AbilitySpec, among?: Per
   return perms.find((x) => x.controller === me) ?? null;
 }
 
+/** Worth of a card for graveyard and library choices. */
+const cardWorth = (card: Card) => (isCreature(card) ? creatureValue(card) : card.cmc + (isLandCard(card) ? 1 : 0));
+
+/** A card in a graveyard for slot 0: our best card to get back, or their best card to exile. */
+function chooseGraveCard(s: GameState, me: PlayerId, spec: AbilitySpec): Target | null {
+  const help = spec.effects.some((e) => 'to' in e && typeof e.to === 'object' && e.to.slot === 0 && intentOf(e) === 'help');
+  const cards = legalTargets(s, me, spec.targets[0])
+    .map((t) => ({ t, found: t.kind === 'card' ? findInGraveyard(s, t.iid) : undefined }))
+    .filter((x) => x.found && (x.found.owner === me) === help)
+    .sort((a, b) => cardWorth(b.found!.inst.card) - cardWorth(a.found!.inst.card));
+  return cards[0]?.t ?? null;
+}
+
+/** Fetch lands and "sacrifice this land: search for a basic land": ramp, worth a little life. */
+const isLandSearch = (spec: AbilitySpec) =>
+  spec.effects.some((e) => e.kind === 'search' && e.dest === 'battlefield' && e.filter.types?.includes('land'));
+
 // ---------- Activated abilities ----------
 
 /** Abilities the bot may use now, with the rules it follows for their costs. */
 function abilityPlays(s: GameState, me: PlayerId): (Play & { perm: Permanent; tapsCreature: boolean; sacrifice: boolean; spendable: boolean })[] {
   return activatable(s, me)
-    .filter(({ spec }) => !spec.cost.life) // never pay life: it could loop until death
+    // Never pay life (it could loop until death), except a little for a fetch land.
+    .filter(({ spec }) => !spec.cost.life || (isLandSearch(spec.ability) && s.players[me].life > 6))
     .filter(({ spec }) => spec.cost.tap || spec.cost.mana || spec.cost.sacrificeSelf) // free abilities could repeat forever
     .map(({ perm, index, spec }) => ({
       perm,
@@ -377,8 +400,8 @@ function abilityPlays(s: GameState, me: PlayerId): (Play & { perm: Permanent; ta
       maxX: abilityMaxX(s, perm, index),
       tapsCreature: spec.cost.tap && isCreature(perm.card),
       sacrifice: spec.cost.sacrificeSelf || !!spec.cost.sacrifice,
-      /** Clue, Food: made to be sacrificed. */
-      spendable: isToken(perm.card) && !isCreature(perm.card) && !spec.cost.sacrifice,
+      /** Clue, Food, fetch lands: made to be sacrificed. */
+      spendable: (isToken(perm.card) && !isCreature(perm.card) && !spec.cost.sacrifice) || isLandSearch(spec.ability),
       act: (targets: Target[][], x: number): Action => ({
         type: 'activate', iid: perm.iid, index, ...(targets.length ? { targets } : {}), ...(spec.cost.mana.includes('{X}') ? { x } : {}),
       }),
@@ -517,6 +540,15 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
         // Give up what is worth least: tokens and small creatures first.
         const worth = (c: CardInst) => (isCreature(c.card) ? creatureValue(c.card) : c.card.cmc) - (isToken(c.card) ? 1 : 0);
         options.sort((a, b) => worth(a) - worth(b));
+      } else if (!safe && choice.purpose === 'search') {
+        // Lands of the colors our hand needs most; otherwise the most expensive card.
+        const pips = s.players[choice.player].hand.flatMap((c) => parseCost(c.card.manaCost).colored.flat());
+        const have = new Set(s.battlefield.filter((x) => x.controller === choice.player).flatMap((x) => manaColors(x.card)));
+        const score = (c: CardInst) => isLandCard(c.card)
+          ? manaColors(c.card).reduce((n, col) => n + pips.filter((p) => p === col).length + (have.has(col) ? 0 : 2), 0)
+          : cardWorth(c.card);
+        options.sort((a, b) => score(b) - score(a));
+        return { kind: 'cards', iids: options.slice(0, choice.max).map((c) => c.iid) };
       } else if (!safe && choice.purpose === 'discardChosen') {
         // Take their best card: the most expensive spell.
         options.sort((a, b) => b.card.cmc - a.card.cmc);
@@ -570,8 +602,13 @@ function triggerTargets(s: GameState, me: PlayerId, spec: AbilitySpec, safe: boo
     if (safe) return legal.slice(0, slot.min);
     const onSlot = spec.effects.filter((e) => 'to' in e && typeof e.to === 'object' && e.to.slot === i);
     const harm = onSlot.some((e) => intentOf(e) === 'harm');
-    const ours = (t: Target) => (t.kind === 'player' ? t.player === me : (t.kind === 'permanent' ? findPermanent(s, t.iid)?.controller : s.stack.find((x) => x.iid === t.iid)?.controller) === me);
+    const ours = (t: Target) => {
+      if (t.kind === 'player') return t.player === me;
+      if (t.kind === 'card') return findInGraveyard(s, t.iid)?.owner === me;
+      return (t.kind === 'permanent' ? findPermanent(s, t.iid)?.controller : s.stack.find((x) => x.iid === t.iid)?.controller) === me;
+    };
     const value = (t: Target) => {
+      if (t.kind === 'card') return cardWorth(findInGraveyard(s, t.iid)!.inst.card);
       if (t.kind !== 'permanent') return t.kind === 'player' ? 2.5 : 3;
       const perm = findPermanent(s, t.iid)!;
       if (harm && kills(perm, onSlot)) return 10 + creatureValue(perm.card);

@@ -243,6 +243,7 @@
 .choice-card.selected { box-shadow: 0 0 0 3px var(--accent); transform: translateY(-8px); }
 .choice-arrange { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .choice-arrange .row { display: flex; gap: 4px; margin: 0; }
+.grave-pick { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .choice-mode { display: flex; align-items: center; gap: 6px; flex-basis: 100%; }
 
 .zone-view { position: absolute; inset: 0; z-index: 50; display: grid; place-items: center; background: rgba(0, 0, 0, 0.55); animation: pop 0.15s; }

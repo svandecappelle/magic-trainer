@@ -56,6 +56,14 @@ const log: LogMessages = {
   tapped: (e, c) => `${c.card(e.card)} is ${e.untap ? 'untapped' : 'tapped'}`,
   bounced: (e, c) => `${c.card(e.card)} returns to its owner's hand`,
   sacrificed: (e, c) => `${c.card(e.card)} is sacrificed`,
+  returned: (e, c) => `${c.card(e.card)} returns from the graveyard ${e.dest === 'hand' ? "to its owner's hand" : 'to the battlefield'}`,
+  exiledCard: (e, c) => `${c.card(e.card)} is exiled from the graveyard`,
+  search: (e, c) => {
+    const me = c.isMe(e.p);
+    const who = me ? 'You search your library' : `${c.name(e.p)} searches their library`;
+    if (!e.n) return `${who} and find${me ? '' : 's'} nothing`;
+    return `${who} and put${me ? '' : 's'} ${plural(e.n, 'card', 'cards')} ${e.dest === 'hand' ? 'into hand' : 'onto the battlefield'}`;
+  },
   token: (e, c) => `${c.isMe(e.p) ? 'You create' : `${c.name(e.p)} creates`} ${e.n === 1 ? `a ${e.card} token` : `${e.n} ${e.card} tokens`}`,
   activate: (e, c) => {
     const who = c.isMe(e.p) ? 'You activate' : `${c.name(e.p)} activates`;
@@ -398,7 +406,7 @@ export const en = {
     chooseX: (card: string) => `${card}: choose X.`,
     xValue: (x: number) => `X = ${x}`,
     turnLabel: (n: number, step: string) => `Turn ${n} · ${step}`,
-    targetKinds: { any: 'a creature or player', creature: 'a creature', player: 'a player', spell: 'a spell on the stack', permanent: 'a permanent' },
+    targetKinds: { any: 'a creature or player', creature: 'a creature', player: 'a player', spell: 'a spell on the stack', permanent: 'a permanent', card: 'a card in a graveyard' },
     /** Targets picked so far, while choosing several. */
     targetsPicked: (n: number, min: number, max: number) =>
       min === max ? `${n}/${max} chosen` : `${n} chosen (${min === 0 ? 'up to' : `${min} to`} ${max})`,
@@ -413,6 +421,7 @@ export const en = {
       surveil: (p: { n: number }) => `Surveil ${p.n}: keep cards on top (in order) or put them into your graveyard.`,
       triggerTargets: (p: { card: string; kind: string }) => `${p.card}'s ability triggers: choose a target (${p.kind}).`,
       optional: (p: { card: string }) => `Use ${p.card}'s ability?`,
+      search: (p: { n: number }) => `Search your library: choose up to ${plural(p.n, 'card', 'cards')}.`,
       sacrifice: (p: { n: number }) => `Choose ${plural(p.n, 'permanent', 'permanents')} to sacrifice.`,
       sacrificeCost: (p: { card: string }) => `Choose what to sacrifice for ${p.card}'s ability.`,
       arrange: 'Put each card where you want it, then confirm.',
