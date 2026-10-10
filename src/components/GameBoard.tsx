@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import {
   actor, apply, canAttack, canBlock, canCastNow, findPermanent, hasKw, hasUsefulTarget, IllegalAction, isLegalTarget, isMainStep, maxX, opponent,
   powerOf, toughnessOf, xCount,
@@ -50,6 +50,9 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   const [error, setError] = useState<AppError | null>(null);
   const [preview, setPreview] = useState<Card | null>(null);
   const [zoneView, setZoneView] = useState<{ p: PlayerId; zone: 'graveyard' | 'exile' } | null>(null);
+  /** A card shown large after a long press (touch screens have no hover preview) or a right click. */
+  const [zoom, setZoom] = useState<Card | null>(null);
+  const press = useRef<{ timer: number; x: number; y: number; fired: boolean } | null>(null);
   const fx = useBoardFx(g, me);
 
   // Board elements by key, for drawing arrows between them.
@@ -116,6 +119,38 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
       else throw e;
     }
   }
+
+  /** Handlers that make `card` zoomable: hold it ~0.45 s, or right click it. Hovering still previews it. */
+  const zoomable = (card: Card) => ({
+    onMouseEnter: () => setPreview(card),
+    onContextMenu: (e: ReactMouseEvent) => {
+      e.preventDefault();
+      setZoom(card);
+    },
+    onPointerDown: (e: ReactPointerEvent) => {
+      if (e.pointerType === 'mouse') return;
+      const at = { x: e.clientX, y: e.clientY, fired: false, timer: 0 };
+      at.timer = window.setTimeout(() => {
+        at.fired = true;
+        setZoom(card);
+      }, 450);
+      press.current = at;
+    },
+    onPointerMove: (e: ReactPointerEvent) => {
+      const at = press.current;
+      if (at && !at.fired && Math.hypot(e.clientX - at.x, e.clientY - at.y) > 10) clearTimeout(at.timer);
+    },
+    onPointerUp: () => press.current && clearTimeout(press.current.timer),
+    onPointerCancel: () => press.current && clearTimeout(press.current.timer),
+  });
+  /** The click that ends a long press must not also play the card. */
+  const swallowZoomClick = (e: ReactMouseEvent) => {
+    if (press.current?.fired) {
+      e.stopPropagation();
+      e.preventDefault();
+      press.current = null;
+    }
+  };
 
   function onHandClick(iid: string, card: Card) {
     if (!iAct) return;
@@ -336,6 +371,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
         setXPick(null);
         setBlockerSel(null);
         setZoneView(null);
+        setZoom(null);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -398,7 +434,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
         ref={ghost ? undefined : reg(`perm:${perm.iid}`)}
         className={classes}
         onClick={ghost ? undefined : () => onPermanentClick(perm)}
-        onMouseEnter={() => setPreview(perm.card)}
+        {...zoomable(perm.card)}
       >
         <img src={show.imageSmall(perm.card)} alt={show.name(perm.card)} draggable={false} />
         {isCreature(perm.card) && (
@@ -462,11 +498,10 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
 
   const phase = currentPhase(g);
   const myHand = g.players[me].hand;
-  const handStyle = { '--overlap': `${Math.max(0, (myHand.length - 7) * 9)}px` } as CSSProperties;
 
   return (
     <div className="game">
-      <div className="board" ref={boardRef}>
+      <div className="board" ref={boardRef} onClickCapture={swallowZoomClick}>
         {/* Opponent */}
         <div className="player-bar theirs">
           {hud(opp)}
@@ -513,7 +548,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
                   key={item.iid}
                   ref={reg(`stack:${item.iid}`)}
                   className={`stack-card ${i === 0 ? 'top' : ''} ${canTarget({ kind: 'spell', iid: item.iid }) ? 'targetable' : ''} ${item.ability ? 'ability' : ''} ${item.controller === me ? 'mine' : 'theirs'}`}
-                  onMouseEnter={() => setPreview(item.card)}
+                  {...zoomable(item.card)}
                   onClick={() => pickTarget({ kind: 'spell', iid: item.iid })}
                 >
                   <img src={show.imageSmall(item.card)} alt={show.name(item.card)} draggable={false} />
@@ -534,7 +569,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
         {/* You */}
         <div className="player-bar mine">
           {hud(me)}
-          <div className="my-hand" style={handStyle}>
+          <div className="my-hand">
             {myHand.map(({ iid, card }, i) => {
               const playable = isLandCard(card)
                 ? iAct && !g.priority && !g.pending && !g.mulligan && isMainStep(g) && g.active === me && !g.players[me].landPlayed
@@ -548,7 +583,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
                   className={`hand-card ${playable ? 'playable' : ''} ${selected ? 'selected' : ''}`}
                   style={{ '--rot': `${offset * 1.6}deg`, '--drop': `${Math.abs(offset) * 2.5}px` } as CSSProperties}
                   onClick={() => onHandClick(iid, card)}
-                  onMouseEnter={() => setPreview(card)}
+                  {...zoomable(card)}
                 >
                   <img src={show.imageSmall(card)} alt={show.name(card)} draggable={false} />
                 </div>
@@ -574,7 +609,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
               <div className="zone-cards">
                 {g.players[zoneView.p][zoneView.zone].length === 0 && <span className="muted">{t.game.emptyZone}</span>}
                 {[...g.players[zoneView.p][zoneView.zone]].reverse().map((c: CardInst) => (
-                  <img key={c.iid} src={show.imageSmall(c.card)} alt={show.name(c.card)} onMouseEnter={() => setPreview(c.card)} />
+                  <img key={c.iid} src={show.imageSmall(c.card)} alt={show.name(c.card)} {...zoomable(c.card)} />
                 ))}
               </div>
             </div>
@@ -583,6 +618,12 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
 
         <Lines container={boardRef} registry={registry} lines={lines} />
       </div>
+
+      {zoom && (
+        <div className="card-zoom" onClick={() => setZoom(null)}>
+          <img src={show.imageNormal(zoom)} alt={show.name(zoom)} />
+        </div>
+      )}
 
       <aside className="game-side">
         {preview?.imageNormal ? (

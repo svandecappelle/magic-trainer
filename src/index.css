@@ -201,3 +201,33 @@ footer { padding: 16px 20px; border-top: 1px solid var(--border); }
 .room-code { font-family: ui-monospace, monospace; font-size: 2.2rem; font-weight: 800; letter-spacing: 0.25em; color: var(--accent); }
 .play-notice { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
 .lang-select { padding: 3px 6px; font-size: 0.85rem; }
+
+/* ---------- Small screens ---------- */
+
+@media (max-width: 640px) {
+  main { padding: 0 10px 28px; }
+  footer { padding: 12px 10px; }
+  /* The menu stays on one line and scrolls sideways. */
+  .topnav { flex-wrap: nowrap; gap: 14px; padding: 8px 10px; overflow-x: auto; scrollbar-width: none; }
+  .topnav::-webkit-scrollbar { display: none; }
+  .topnav a { white-space: nowrap; }
+  .topnav .brand { margin-right: 0; }
+  .topnav .spacer { min-width: 4px; }
+  .collection-table { display: block; overflow-x: auto; }
+  .deck-name-input { font-size: 1.15rem; min-width: 0; flex-basis: 100%; }
+  .game-card img { width: 78px; }
+  .game-card.tapped { margin: 0 12px; }
+  .life-total { font-size: 3.5rem; }
+  .room-code { font-size: 1.7rem; }
+}
+
+/* Touch screens: there is no hover, so hover-only controls are always shown and "hover to preview" boxes are hidden. */
+@media (hover: none) {
+  .entry-actions { opacity: 1; }
+  .game-card-actions { display: flex; }
+  .game-card-actions button { padding: 3px 7px; }
+  .card-preview.placeholder { display: none; }
+}
+@media (max-width: 1000px) {
+  .card-preview.placeholder { display: none; }
+}
