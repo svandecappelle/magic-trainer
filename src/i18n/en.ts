@@ -9,7 +9,7 @@ const lists = new Intl.ListFormat('en', { type: 'conjunction' });
 const signed = (n: number) => (n < 0 ? `${n}` : `+${n}`);
 const keywordNames: Record<Keyword, string> = {
   flying: 'flying', reach: 'reach', haste: 'haste', vigilance: 'vigilance', trample: 'trample', deathtouch: 'deathtouch',
-  lifelink: 'lifelink', defender: 'defender', 'first strike': 'first strike', 'double strike': 'double strike', menace: 'menace', flash: 'flash', prowess: 'prowess', hexproof: 'hexproof', shroud: 'shroud', indestructible: 'indestructible',
+  lifelink: 'lifelink', defender: 'defender', 'first strike': 'first strike', 'double strike': 'double strike', menace: 'menace', flash: 'flash', prowess: 'prowess', hexproof: 'hexproof', shroud: 'shroud', indestructible: 'indestructible', infect: 'infect',
 };
 
 const log: LogMessages = {
@@ -58,6 +58,12 @@ const log: LogMessages = {
   tapped: (e, c) => `${c.card(e.card)} is ${e.untap ? 'untapped' : 'tapped'}`,
   bounced: (e, c) => `${c.card(e.card)} returns to its owner's hand`,
   sacrificed: (e, c) => `${c.card(e.card)} is sacrificed`,
+  poison: (e, c) => `${c.isMe(e.p) ? 'You get' : `${c.name(e.p)} gets`} ${plural(e.n, 'poison counter', 'poison counters')}`,
+  proliferate: (e, c) => `${c.isMe(e.p) ? 'You proliferate' : `${c.name(e.p)} proliferates`}`,
+  control: (e, c) => `${c.isMe(e.p) ? 'You gain' : `${c.name(e.p)} gains`} control of ${c.card(e.card)}`,
+  copied: (e, c) => (e.card === e.as ? `${c.card(e.card)} is copied` : `${c.card(e.card)} enters as a copy of ${c.card(e.as)}`),
+  prevented: (e, c) => `Damage from ${c.card(e.card)} is prevented`,
+  extraTurn: (e, c) => `${c.isMe(e.p) ? 'You will take' : `${c.name(e.p)} will take`} an extra turn`,
   attached: (e, c) => `${c.card(e.card)} is attached to ${c.card(e.to)}`,
   legendRule: (e, c) => `${c.card(e.card)} goes to the graveyard (legend rule)`,
   shock: (e, c) => (e.paid ? `${c.card(e.card)} enters untapped (${e.paid} life paid)` : `${c.card(e.card)} enters tapped`),
@@ -434,6 +440,7 @@ export const en = {
       surveil: (p: { n: number }) => `Surveil ${p.n}: keep cards on top (in order) or put them into your graveyard.`,
       triggerTargets: (p: { card: string; kind: string }) => `${p.card}'s ability triggers: choose a target (${p.kind}).`,
       optional: (p: { card: string }) => `Use ${p.card}'s ability?`,
+      clone: (p: { card: string }) => `${p.card}: choose a creature to copy (or none).`,
       legendRule: (p: { card: string }) => `Legend rule: choose which ${p.card} to keep.`,
       payLife: (p: { card: string; n: number }) => `${p.card}: pay ${p.n} life to have it enter untapped?`,
       discardCost: (p: { card: string; n: number }) => `Discard ${plural(p.n, 'card', 'cards')} to cast ${p.card}.`,
@@ -487,6 +494,7 @@ export const en = {
     playAsLand: (card: string) => `Play ${card} (land)`,
     cycleFor: (cost: string) => `Cycle (${cost})`,
     modeNotSimulated: 'This mode is not simulated',
+    poisonTitle: 'Poison counters: 10 and you lose',
     chooseAbility: (card: string) => `Choose an ability of ${card}.`,
     chooseTarget: (kind: string) => `Choose a target (${kind}).`,
     onStack: (card: string, owner: string | null) =>

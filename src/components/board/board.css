@@ -144,6 +144,7 @@
 .mana-C { background: #c8c8c8; }
 .mana-any { background: conic-gradient(#f8f3d6, #4a90d9, #8c7f8f, #e0533f, #3e9f5e, #f8f3d6); }
 .hud .zones { display: flex; gap: 8px; align-items: center; color: var(--muted); }
+.hud .poison { color: #9be38f; font-weight: 700; }
 .zone-chip {
   padding: 0 6px; font-size: 0.78rem; font-weight: 500; color: var(--text);
   background: transparent; border: 1px solid var(--border); border-radius: 10px;

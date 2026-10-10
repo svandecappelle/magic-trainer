@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, findPayment, hasInstantSpeed, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, faceName, modeSets, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, entersTappedRule, entersWithCounters, protectionsOf, staticsOf, wardCost, isPlaneswalker, isToken, manaColors, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, entersTappedRule, entersWithCounters, protectionsOf, staticsOf, wardCost, isPlaneswalker, isToken, manaColors, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   type AbilitySpec, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type CastChoice, type Cost, type ObjectEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -35,8 +35,12 @@ export interface Permanent extends CardInst {
   boosts: Boost[];
   /** Indexes of "once each turn" abilities already activated this turn. */
   used?: number[];
-  /** The full card when the permanent is one face of it (modal double-faced back face). */
+  /** The full card when the permanent is one face of it (modal double-faced back face), or a clone's own card. */
   printed?: Card;
+  /** Its owner, when someone else controls it (gain control). */
+  owner?: PlayerId;
+  /** Control goes back to the owner at the end of the turn (Threaten). */
+  controlUntilEndOfTurn?: boolean;
   /** Aura or Equipment: the permanent it is attached to. */
   attachedTo?: string;
   /** What static abilities (anthems, Auras, Equipment) give it right now; recomputed by the engine. */
@@ -53,6 +57,8 @@ export interface StackItem extends CardInst {
   x?: number;
   /** For an ability: the permanent it comes from ("this creature gets +1/+1"). */
   source?: string;
+  /** A copy of a spell: it ceases to exist when it leaves the stack. */
+  copy?: boolean;
   /** How the spell was cast: which face, modes, kicked, and from which zone. */
   face?: number;
   modes?: number[];
@@ -95,6 +101,8 @@ export interface PlayerState {
   landPlayed: boolean;
   /** Mana made but not spent yet; it empties when the step or phase ends. */
   pool?: PoolMana[];
+  /** Poison counters: ten or more and the player loses. */
+  poison?: number;
 }
 
 /**
@@ -145,6 +153,7 @@ export type ChoicePurpose =
   | 'optional' // "you may …" on resolution
   | 'legendRule' // two legendary permanents with the same name: keep one
   | 'payLife' // shock lands: pay life or enter tapped
+  | 'clone' // "enter as a copy of any creature": which one
   | 'sacrifice' // an edict: choose what to sacrifice
   | 'sacrificeCost' // "Sacrifice a creature:" when activating, or as a spell's additional cost
   | 'discardCost'; // a spell's additional cost: discard a card
@@ -179,7 +188,9 @@ export interface Pending {
    * What continues once answered: the end of turn, the spell or ability being resolved, or a
    * triggered ability waiting for targets (`trigger`).
    */
-  resume: 'cleanup' | 'effect' | 'trigger' | 'activation' | 'legend' | 'payLife' | 'castCost';
+  resume: 'cleanup' | 'effect' | 'trigger' | 'activation' | 'legend' | 'payLife' | 'castCost' | 'clone';
+  /** For clone: the window the resolving spell belongs to. */
+  reason?: WindowReason;
   /** For payLife: the land that entered. */
   iid?: string;
   trigger?: Triggered;
@@ -248,6 +259,12 @@ export type LogEntry =
   | { k: 'bounced'; card: string }
   | { k: 'sacrificed'; card: string }
   | { k: 'attached'; card: string; to: string }
+  | { k: 'poison'; p: PlayerId; n: number }
+  | { k: 'proliferate'; p: PlayerId }
+  | { k: 'control'; p: PlayerId; card: string }
+  | { k: 'copied'; card: string; as: string }
+  | { k: 'prevented'; card: string }
+  | { k: 'extraTurn'; p: PlayerId }
   | { k: 'legendRule'; card: string }
   /** A shock land: `paid` life to enter untapped, or entered tapped. */
   | { k: 'shock'; card: string; paid: number }
@@ -286,6 +303,12 @@ export interface GameState {
    * Optional so states created before this option existed still load.
    */
   fullControl?: [boolean, boolean];
+  /** Fog: no combat damage this turn. */
+  preventCombat?: boolean;
+  /** "Prevent the next N damage" shields this turn: target ("player:0" or a permanent iid) and amount left. */
+  shields?: { target: string; n: number }[];
+  /** Extra turns to take, per player. */
+  extraTurns?: [number, number];
   /** Lands that entered asking "pay N life or enter tapped", asked once nothing else is going on. */
   lifeChoices?: { iid: string; n: number }[];
   /** Triggered abilities not on the stack yet. Optional so older saved states still load. */
@@ -932,6 +955,19 @@ function finishTurn(d: GameState) {
     perm.damage = 0;
     perm.deathtouched = false;
     perm.boosts = perm.boosts.filter((b) => b.until !== 'endOfTurn');
+    if (perm.controlUntilEndOfTurn) {
+      perm.controller = perm.owner ?? perm.controller;
+      delete perm.owner;
+      delete perm.controlUntilEndOfTurn;
+    }
+  }
+  delete d.preventCombat;
+  delete d.shields;
+  // An extra turn: the same player goes again.
+  const extra = d.extraTurns?.[d.active] ?? 0;
+  if (extra > 0) {
+    d.extraTurns![d.active] = extra - 1;
+    return beginTurn(d, d.active, false);
   }
   beginTurn(d, opponent(d.active), false);
 }
@@ -943,7 +979,7 @@ const newPermanent = (inst: CardInst, controller: PlayerId): Permanent => ({
 function removePermanent(d: GameState, perm: Permanent, zone: 'graveyard' | 'exile') {
   d.battlefield = d.battlefield.filter((x) => x.iid !== perm.iid);
   // A token that leaves the battlefield ceases to exist (it still "dies").
-  if (!isToken(perm.card)) d.players[perm.controller][zone].push({ iid: perm.iid, card: perm.printed ?? perm.card });
+  if (!isToken(perm.printed ?? perm.card)) d.players[perm.owner ?? perm.controller][zone].push({ iid: perm.iid, card: perm.printed ?? perm.card });
   if (zone === 'graveyard' && isCreature(perm.card)) fireObject(d, 'dies', perm);
 }
 
@@ -1185,7 +1221,7 @@ function checkStateBased(d: GameState) {
   }
   refreshStatics(d);
   if (d.winner !== null) return;
-  const dead = ([0, 1] as PlayerId[]).filter((p) => d.players[p].life <= 0);
+  const dead = ([0, 1] as PlayerId[]).filter((p) => d.players[p].life <= 0 || (d.players[p].poison ?? 0) >= 10);
   if (dead.length === 2) d.winner = 'draw';
   else if (dead.length === 1) d.winner = opponent(dead[0]);
   if (d.winner !== null) log(d, d.winner === 'draw' ? { k: 'draw' } : { k: 'wins', p: d.winner });
@@ -1215,9 +1251,27 @@ function refreshStatics(d: GameState) {
 function dealDamage(d: GameState, source: CardInst, controller: PlayerId, target: Permanent | PlayerId, amount: number) {
   if (amount <= 0) return;
   if (typeof target !== 'number' && protectedFrom(target, source.card)) return; // protection prevents it
-  if (typeof target === 'number') {
+  // "Prevent the next N damage" shields.
+  const key = typeof target === 'number' ? `player:${target}` : target.iid;
+  for (const sh of d.shields ?? []) {
+    if (sh.target !== key || !sh.n || !amount) continue;
+    const stop = Math.min(sh.n, amount);
+    sh.n -= stop;
+    amount -= stop;
+    log(d, { k: 'prevented', card: source.card.name });
+  }
+  if (amount <= 0) return;
+  const infect = hasKw(source, 'infect');
+  if (typeof target === 'number' && infect) {
+    // Infect: damage to players as poison counters, to creatures as -1/-1 counters.
+    addPoison(d, target, amount);
+    log(d, { k: 'damagePlayer', card: source.card.name, n: amount, p: target });
+  } else if (typeof target === 'number') {
     d.players[target].life -= amount;
     log(d, { k: 'damagePlayer', card: source.card.name, n: amount, p: target });
+  } else if (infect && isCreature(target.card)) {
+    target.counters = { ...target.counters, '-1/-1': (target.counters['-1/-1'] ?? 0) + amount };
+    log(d, { k: 'damage', card: source.card.name, n: amount, target: target.card.name });
   } else if (isPlaneswalker(target.card) && !isCreature(target.card)) {
     // Damage to a planeswalker removes that many loyalty counters.
     target.counters = { ...target.counters, loyalty: (target.counters.loyalty ?? 0) - amount };
@@ -1230,8 +1284,14 @@ function dealDamage(d: GameState, source: CardInst, controller: PlayerId, target
   if (hasKw(source, 'lifelink')) d.players[controller].life += amount;
 }
 
+function addPoison(d: GameState, p: PlayerId, n: number) {
+  d.players[p].poison = (d.players[p].poison ?? 0) + n;
+  log(d, { k: 'poison', p, n });
+}
+
 function resolveCombat(d: GameState) {
   refreshStatics(d);
+  if (d.preventCombat) return; // Fog
   const def = opponent(d.active);
   const get = (iid: string) => findPermanent(d, iid);
   const involved = [...d.attackers, ...blockerIds(d)].map(get).filter((x) => x !== undefined);
@@ -1280,7 +1340,12 @@ function resolveCombat(d: GameState) {
 
     for (const h of hits) {
       dealDamage(d, h.source, h.source.controller, h.target, h.amount);
-      if (typeof h.target === 'number' && h.amount > 0) fireObject(d, 'combatDamage', h.source);
+      if (typeof h.target === 'number' && h.amount > 0) {
+        // Toxic: combat damage to a player also gives poison counters.
+        const toxic = toxicOf(h.source.card);
+        if (toxic) addPoison(d, h.target, toxic);
+        fireObject(d, 'combatDamage', h.source);
+      }
     }
     checkStateBased(d);
     if (d.winner !== null) return;
@@ -1300,6 +1365,7 @@ const castCard = (item: StackItem) => faceCard(item.card, item.face ?? 0);
  * exile "on an adventure" after its adventure resolved, else its owner's graveyard.
  */
 function putAwaySpell(d: GameState, item: StackItem, resolved: boolean) {
+  if (item.copy) return; // a copy ceases to exist
   const ps = d.players[item.controller];
   const inst: CardInst = { iid: item.iid, card: item.card };
   if (item.from === 'graveyard') ps.exile.push(inst);
@@ -1545,7 +1611,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
     case 'bounceAll':
       for (const perm of e.kind === 'bounceAll' ? matching(d, caster, e.which) : perms) {
         d.battlefield = d.battlefield.filter((x) => x.iid !== perm.iid);
-        if (!isToken(perm.card)) d.players[perm.controller].hand.push({ iid: perm.iid, card: perm.printed ?? perm.card });
+        if (!isToken(perm.printed ?? perm.card)) d.players[perm.owner ?? perm.controller].hand.push({ iid: perm.iid, card: perm.printed ?? perm.card });
         log(d, { k: 'bounced', card: perm.card.name });
       }
       break;
@@ -1590,6 +1656,66 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       }
       break;
     }
+    case 'poison':
+      for (const p of players) addPoison(d, p, amount(r, e.n));
+      break;
+    case 'proliferate': {
+      // Each permanent and player with counters gets one more of each kind: ours that help, theirs that hurt.
+      for (const perm of d.battlefield) {
+        const mine = perm.controller === caster;
+        const kinds = (Object.keys(perm.counters) as CounterKind[]).filter((k) => perm.counters[k] && (mine ? k !== '-1/-1' : k === '-1/-1'));
+        if (kinds.length) perm.counters = { ...perm.counters, ...Object.fromEntries(kinds.map((k) => [k, (perm.counters[k] ?? 0) + 1])) };
+      }
+      const opp = opponent(caster);
+      if (d.players[opp].poison) addPoison(d, opp, 1);
+      log(d, { k: 'proliferate', p: caster });
+      break;
+    }
+    case 'gainControl':
+      for (const perm of perms) {
+        if (perm.controller === caster) continue;
+        perm.owner ??= perm.controller;
+        perm.controller = caster;
+        perm.sick = true;
+        if (e.untilEndOfTurn) perm.controlUntilEndOfTurn = true;
+        if (e.untapHaste) {
+          perm.tapped = false;
+          perm.boosts.push({ power: 0, toughness: 0, keywords: ['haste'], until: 'endOfTurn' });
+        }
+        delete perm.attachedTo; // Equipment stays with its controller
+        log(d, { k: 'control', p: caster, card: perm.card.name });
+      }
+      break;
+    case 'copySpell':
+      for (const target of spells) {
+        d.abilities = (d.abilities ?? 0) + 1;
+        d.stack.push({ ...structuredClone(target), iid: `${target.iid}-copy-${d.abilities}`, controller: caster, copy: true });
+        log(d, { k: 'copied', card: target.card.name, as: target.card.name });
+      }
+      break;
+    case 'tokenCopy':
+      for (const perm of perms) {
+        d.abilities = (d.abilities ?? 0) + 1;
+        const model = perm.printed ?? perm.card;
+        enterBattlefield(d, { iid: `token-${d.abilities}`, card: { ...model, id: `token:copy:${model.id}` } }, caster);
+        log(d, { k: 'token', p: caster, card: model.name, n: 1 });
+      }
+      break;
+    case 'preventCombat':
+      d.preventCombat = true;
+      break;
+    case 'preventDamage': {
+      const n = amount(r, e.n);
+      for (const t of [...players.map((p) => `player:${p}`), ...perms.map((x) => x.iid)]) (d.shields ??= []).push({ target: t, n });
+      break;
+    }
+    case 'extraTurn':
+      for (const p of players) {
+        d.extraTurns = [...(d.extraTurns ?? [0, 0])] as [number, number];
+        d.extraTurns[p]++;
+        log(d, { k: 'extraTurn', p });
+      }
+      break;
     case 'addMana': {
       const ps = d.players[caster];
       ps.pool = [...(ps.pool ?? []), ...e.units.map((colors) => ({ colors }))];
@@ -1617,8 +1743,17 @@ function startResolving(d: GameState, reason: WindowReason) {
   const item = d.stack.pop()!;
 
   if (!item.ability && !isInstantOrSorcery(castCard(item))) {
-    // An Aura needs its target to still be legal; it enters attached to it.
+    // A clone asks what to copy before it enters.
     const card = castCard(item);
+    const others = d.battlefield.filter((x) => isCreature(x.card));
+    if (entersAsCopy(card) && others.length) {
+      d.pending = {
+        choice: { kind: 'cards', player: item.controller, purpose: 'clone', min: 0, max: 1, options: others, params: { card: card.name } },
+        resume: 'clone', activation: { item, named: [] }, reason,
+      };
+      return;
+    }
+    // An Aura needs its target to still be legal; it enters attached to it.
     const aura = auraTarget(card);
     const host = item.targets[0]?.[0];
     if (aura && (!host || !isLegalTarget(d, item.controller, aura, host, item.iid, card))) {
@@ -1906,6 +2041,16 @@ export function apply(state: GameState, action: Action): GameState {
           d.players[perm.controller].life -= n;
         }
         if (perm) log(d, { k: 'shock', card: perm.card.name, paid: action.answer.yes ? n : 0 });
+      } else if (pending.resume === 'clone' && action.answer.kind === 'cards') {
+        const item = pending.activation!.item;
+        const model = action.answer.iids[0] ? findPermanent(d, action.answer.iids[0]) : undefined;
+        const own = castCard(item);
+        const copy = model ? { ...(model.printed ?? model.card), id: model.card.id } : own;
+        log(d, { k: 'enters', card: own.name });
+        if (model) log(d, { k: 'copied', card: own.name, as: model.card.name });
+        const perm = enterBattlefield(d, { iid: item.iid, card: copy }, item.controller, { x: item.x });
+        if (model) perm.printed = item.card;
+        afterResolving(d, pending.reason ?? 'main');
       } else if (pending.resume === 'castCost' && action.answer.kind === 'cards') {
         if (pending.choice.purpose === 'discardCost') {
           for (const iid of action.answer.iids) {

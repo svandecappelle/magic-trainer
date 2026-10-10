@@ -330,6 +330,7 @@ const num = (a: Amount) => (a === 'X' ? 0 : a);
 function intentOf(e: Effect): Intent {
   switch (e.kind) {
     case 'damage': case 'destroy': case 'counter': case 'loseLife': case 'mill': case 'discard': case 'bounce': case 'bounceAll': case 'sacrifice':
+    case 'poison': case 'gainControl':
       return 'harm';
     case 'tap':
       return e.untap ? 'neutral' : 'harm';
@@ -337,7 +338,7 @@ function intentOf(e: Effect): Intent {
       return e.power < 0 || e.toughness < 0 ? 'harm' : 'help';
     case 'addCounters':
       return e.counter === '-1/-1' ? 'harm' : 'help';
-    case 'draw': case 'gainLife': case 'returnCard': case 'search':
+    case 'draw': case 'gainLife': case 'returnCard': case 'search': case 'tokenCopy': case 'preventDamage': case 'extraTurn':
       return 'help';
     default:
       return 'neutral';
@@ -435,6 +436,9 @@ function playWithGoodTarget(s: GameState, me: PlayerId, play: Play, among?: Perm
   const cast = (targets: Target[][] = []): Action => play.act(targets, x);
   if (!effects.length) return null; // not simulated: casting it would do nothing
   if (effects.every((e) => e.kind === 'addMana')) return null; // rituals: the bot doesn't plan mana ahead
+  if (effects.some((e) => e.kind === 'copySpell' || e.kind === 'preventCombat')) return null; // used in response only (fogs)
+  // Threaten: only worth it before our attack.
+  if (effects.some((e) => e.kind === 'gainControl' && e.untilEndOfTurn) && !(s.active === me && s.step === 'main1' && !s.priority)) return null;
   // An edict needs something to hit.
   const opp = opponent(me);
   if (effects.some((e) => e.kind === 'sacrifice' && !matching(s, opp, e.which).some((x) => x.controller === opp))) return null;
@@ -637,6 +641,14 @@ function respond(s: GameState, me: PlayerId): Action | null {
   if (reason === 'block') {
     const trick = combatTrick(s, me, withEffect('pump', 'help'));
     if (trick) return trick;
+    // Fog when the attack would kill us.
+    if (s.active === opp) {
+      const incoming = s.attackers
+        .filter((aid) => !(s.blocks[aid]?.length))
+        .reduce((n, aid) => { const a = findPermanent(s, aid); return n + (a ? powerOf(a) * strikes(a) : 0); }, 0);
+      const fog = withEffect('preventCombat')[0];
+      if (fog && incoming >= s.players[me].life) return { type: 'cast', iid: fog.iid };
+    }
   }
   if (reason === 'end' && s.active === opp) {
     // End of the opponent's turn: use mana that would otherwise go to waste.
@@ -697,6 +709,12 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
   switch (choice.kind) {
     case 'cards': {
       let options = [...choice.options];
+      if (choice.purpose === 'clone') {
+        if (safe) return { kind: 'cards', iids: [] };
+        // Copy the best creature on the battlefield.
+        const best = [...options].sort((a, b) => creatureValue(b.card) - creatureValue(a.card))[0];
+        return { kind: 'cards', iids: best ? [best.iid] : [] };
+      }
       if (!safe && choice.purpose === 'legendRule') {
         // Keep the copy with the most counters (loyalty, +1/+1).
         const counters = (c: CardInst) => Object.values(findPermanent(s, c.iid)?.counters ?? {}).reduce((n, x) => n + (x ?? 0), 0);

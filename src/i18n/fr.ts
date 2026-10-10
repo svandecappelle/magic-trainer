@@ -12,7 +12,7 @@ const signed = (n: number) => (n < 0 ? `${n}` : `+${n}`);
 const keywordNames: Record<Keyword, string> = {
   flying: 'le vol', reach: 'la portée', haste: 'la célérité', vigilance: 'la vigilance', trample: 'le piétinement',
   deathtouch: 'le contact mortel', lifelink: 'le lien de vie', defender: 'défenseur', 'first strike': "l'initiative",
-  'double strike': 'la double initiative', menace: 'la menace', flash: 'le flash', prowess: 'la prouesse', hexproof: 'la défense talismanique', shroud: 'le linceul', indestructible: "l'indestructibilité",
+  'double strike': 'la double initiative', menace: 'la menace', flash: 'le flash', prowess: 'la prouesse', hexproof: 'la défense talismanique', shroud: 'le linceul', indestructible: "l'indestructibilité", infect: "l'infection",
 };
 
 const targetKinds = {
@@ -69,6 +69,12 @@ const log: LogMessages = {
   tapped: (e, c) => `${c.card(e.card)} est ${e.untap ? 'dégagé' : 'engagé'}`,
   bounced: (e, c) => `${c.card(e.card)} retourne dans la main de son propriétaire`,
   sacrificed: (e, c) => `${c.card(e.card)} est sacrifié`,
+  poison: (e, c) => `${c.isMe(e.p) ? 'Vous recevez' : `${c.name(e.p)} reçoit`} ${e.n} marqueur${e.n > 1 ? 's' : ''} poison`,
+  proliferate: (e, c) => `${c.isMe(e.p) ? 'Vous proliférez' : `${c.name(e.p)} prolifère`}`,
+  control: (e, c) => `${c.isMe(e.p) ? 'Vous acquérez' : `${c.name(e.p)} acquiert`} le contrôle de ${c.card(e.card)}`,
+  copied: (e, c) => (e.card === e.as ? `${c.card(e.card)} est copié` : `${c.card(e.card)} arrive comme copie de ${c.card(e.as)}`),
+  prevented: (e, c) => `Les blessures de ${c.card(e.card)} sont prévenues`,
+  extraTurn: (e, c) => `${c.isMe(e.p) ? 'Vous jouerez' : `${c.name(e.p)} jouera`} un tour supplémentaire`,
   attached: (e, c) => `${c.card(e.card)} est attaché à ${c.card(e.to)}`,
   legendRule: (e, c) => `${c.card(e.card)} va au cimetière (règle des légendes)`,
   shock: (e, c) => (e.paid ? `${c.card(e.card)} arrive dégagé (${e.paid} points de vie payés)` : `${c.card(e.card)} arrive engagé`),
@@ -440,6 +446,7 @@ export const fr: Messages = {
       surveil: (p) => `Surveillance ${p.n} : gardez des cartes au-dessus (dans l'ordre) ou mettez-les au cimetière.`,
       triggerTargets: (p) => `La capacité de ${p.card} se déclenche : choisissez une cible (${p.kind}).`,
       optional: (p) => `Utiliser la capacité de ${p.card} ?`,
+      clone: (p) => `${p.card} : choisissez une créature à copier (ou aucune).`,
       legendRule: (p) => `Règle des légendes : choisissez quel ${p.card} garder.`,
       payLife: (p) => `${p.card} : payer ${p.n} points de vie pour qu'il arrive dégagé ?`,
       discardCost: (p) => `Défaussez ${p.n === 1 ? 'une carte' : `${p.n} cartes`} pour lancer ${p.card}.`,
@@ -495,6 +502,7 @@ export const fr: Messages = {
     playAsLand: (card) => `Jouer ${card} (terrain)`,
     cycleFor: (cost) => `Recycler (${cost})`,
     modeNotSimulated: "Ce mode n'est pas simulé",
+    poisonTitle: 'Marqueurs poison : à 10, la partie est perdue',
     chooseAbility: (card) => `Choisissez une capacité de ${card}.`,
     chooseTarget: (kind) => `Choisissez une cible (${kind}).`,
     onStack: (card, owner) =>

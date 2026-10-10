@@ -6,7 +6,7 @@ import type { Card, CardFace } from '../../types';
 export const KEYWORDS = [
   'flying', 'reach', 'haste', 'vigilance', 'trample', 'deathtouch', 'lifelink',
   'defender', 'first strike', 'double strike', 'menace', 'flash', 'prowess',
-  'hexproof', 'shroud', 'indestructible',
+  'hexproof', 'shroud', 'indestructible', 'infect',
 ] as const;
 export type Keyword = (typeof KEYWORDS)[number];
 
@@ -317,7 +317,21 @@ export type Effect =
   /** Search your library for up to `n` matching cards, then shuffle. */
   | { kind: 'search'; n: number; filter: TargetFilter; dest: 'hand' | 'battlefield'; tapped: boolean }
   /** Equip: attach the ability's source to the target. */
-  | { kind: 'attach'; to: Affected };
+  | { kind: 'attach'; to: Affected }
+  | { kind: 'poison'; n: Amount; to: Affected }
+  /** Add one counter of each kind already there: chosen automatically (the controller's side gains, opponents lose). */
+  | { kind: 'proliferate' }
+  /** Threaten effects also untap the creature and give it haste. */
+  | { kind: 'gainControl'; to: Affected; untilEndOfTurn: boolean; untapHaste?: boolean }
+  /** Copy a spell on the stack (same targets). */
+  | { kind: 'copySpell'; to: Affected }
+  /** "Create a token that's a copy of target creature". */
+  | { kind: 'tokenCopy'; to: Affected }
+  /** Fog: no combat damage this turn. */
+  | { kind: 'preventCombat' }
+  /** "Prevent the next N damage that would be dealt to any target this turn." */
+  | { kind: 'preventDamage'; n: Amount; to: Affected }
+  | { kind: 'extraTurn'; to: Affected };
 
 /** A token's characteristics; the engine turns it into a card. */
 export interface TokenSpec {
@@ -457,7 +471,7 @@ export function parseTargetPhrase(phrase: string): TargetSpec | null {
 
   if (nouns.has('spell')) {
     // "creature spell", "instant or sorcery spell": the other words are the spell's types.
-    const types = [...nouns].filter((n) => n !== 'spell');
+    const types = [...new Set([...[...nouns].filter((n) => n !== 'spell'), ...adjectiveTypes])];
     if (types.some((t) => !CARD_TYPES.includes(t as CardType))) return null;
     if (types.length) filter.types = types as CardType[];
     return { kind: 'spell', min, max, filter };
@@ -531,6 +545,15 @@ function selfWords(name: string): string[] {
  * "Goblin Guide gets +1/+1" or "put a +1/+1 counter on this creature" can refer to it.
  */
 export function parseAbilityText(text: string, self?: string): AbilitySpec {
+  // Threaten: "Untap target creature and gain control of it until end of turn. That creature gains haste until end of turn."
+  // Act of Treason: "Gain control of target creature until end of turn. Untap that creature. It gains haste until end of turn."
+  const threaten = /Untap target (creature[a-z ]*?) and gain control of it until end of turn\. (?:That creature|It) gains haste until end of turn\./i;
+  const treason = /Gain control of target (creature[a-z ]*?) until end of turn\. Untap (?:that creature|it)\. (?:That creature|It) gains haste until end of turn\./i;
+  const threat = text.match(threaten) ?? text.match(treason);
+  if (threat) {
+    const spec = parseTargetPhrase(`target ${threat[1]}`);
+    if (spec) return { targets: [spec], effects: [{ kind: 'gainControl', to: { slot: 0 }, untilEndOfTurn: true, untapHaste: true }] };
+  }
   const targets: TargetSpec[] = [];
   const effects: Effect[] = [];
   /** Adds a target slot for the phrase, if understood and accepted by the effect. */
@@ -603,6 +626,34 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
   scan(new RegExp(`\\bput (${AMOUNT}) ([+-]1\\/[+-]1) counters? on each ((?:other )?creature(?: you control| you don't control| your opponents control)?)${END}`, 'gi'), (m) => {
     const which = selector(m[3].replace(/^(other )?creature/i, (_, o) => `${o ?? ''}creatures`));
     return which && { kind: 'addCountersAll', counter: m[2] as CounterKind, n: toAmount(m[1]), which, other: /^other /i.test(m[3]) };
+  });
+  // Poison: "Target player gets two poison counters", "each opponent gets a poison counter".
+  scan(new RegExp(`${PLAYER} gets? (${AMOUNT}) poison counters?`, 'gi'), (m) => {
+    const to = who(m[1]);
+    return to && { kind: 'poison', n: toAmount(m[2]), to };
+  });
+  scan(/(?:^|[.\n] *)Proliferate\./g, () => ({ kind: 'proliferate' }));
+  scan(new RegExp(`\\bgain control of (${TARGET})( until end of turn)?(?=\\.|,| and |$)`, 'gi'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'creature' || spec.kind === 'permanent');
+    return to && { kind: 'gainControl', to, untilEndOfTurn: !!m[2] };
+  });
+  scan(new RegExp(`\\bcopy (${TARGET})(?=\\.|,| and |$)`, 'gi'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'spell');
+    return to && { kind: 'copySpell', to };
+  });
+  scan(new RegExp(`\\b[Cc]reate a token that's a copy of (${TARGET})(?=\\.|,| and |$)`, 'g'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'creature' || spec.kind === 'permanent');
+    return to && { kind: 'tokenCopy', to };
+  });
+  scan(/\bPrevent all combat damage that would be dealt this turn\./gi, () => ({ kind: 'preventCombat' }));
+  scan(new RegExp(`\\bPrevent the next (\\d+|X) damage that would be dealt to (${TARGET}) this turn`, 'gi'), (m) => {
+    const to = slotFor(m[2], (spec) => spec.kind === 'any' || spec.kind === 'creature' || spec.kind === 'player');
+    return to && { kind: 'preventDamage', n: toAmount(m[1]), to };
+  });
+  scan(/(?:^|[.\n] *)Take an extra turn after this one\./g, () => ({ kind: 'extraTurn', to: 'you' }));
+  scan(new RegExp(`${PLAYER} takes an extra turn after this one`, 'gi'), (m) => {
+    const to = who(m[1]);
+    return to && { kind: 'extraTurn', to };
   });
   // Rituals: "Add {B}{B}{B}." (sentence start: mana abilities of permanents are handled as mana sources).
   scan(/(?:^|[.\n] *)Add ([^.]+)\./g, (m) => {
@@ -1318,3 +1369,13 @@ export function entersTappedRule(card: Card): EntersTappedRule | null {
   const shock = text.match(/As (?:this land|this permanent) enters(?: the battlefield)?, you may pay (\d+) life\. If you don't, it enters(?: the battlefield)? tapped\./i);
   return shock ? { kind: 'payLife', n: Number(shock[1]) } : null;
 }
+
+/** "Toxic 2": combat damage to a player also gives that many poison counters. */
+export function toxicOf(card: Card): number {
+  const m = frontText(card).match(/(?:^|\n|, )Toxic (\d+)/i);
+  return m ? Number(m[1]) : 0;
+}
+
+/** Clones: "You may have this creature enter as a copy of any creature on the battlefield." */
+export const entersAsCopy = (card: Card) =>
+  /you may have (?:this creature|[^.]+?) enter(?: the battlefield)? as a copy of (?:any|a) creature on the battlefield\./i.test(frontText(card));

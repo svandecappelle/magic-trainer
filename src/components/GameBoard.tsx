@@ -691,6 +691,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
           <span title={t.game.zoneNames.library}>📚 {ps.library.length}</span>
           <span title={t.game.zoneNames.hand}>✋ {ps.hand.length}</span>
           {zone('graveyard', '🪦')}
+          {!!ps.poison && <span className="poison" title={t.game.poisonTitle}>☠ {ps.poison}</span>}
           {zone('exile', '🌀')}
         </div>
       </div>

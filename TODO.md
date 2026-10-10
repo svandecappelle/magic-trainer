@@ -119,13 +119,15 @@ get each face's cost and image (their text is rebuilt from the joined faces mean
 
 ## Step 6 — Rare or complex rules
 
-- [ ] Copy / clone (250)
-- [ ] Gain control (156)
-- [ ] Infect, toxic, poison (122)
-- [ ] Proliferate (71)
-- [ ] Replacement and prevention effects ("instead", "prevent")
-- [ ] Extra turns, alternate win conditions
-- [ ] Full layer system for interacting continuous effects
+- [x] Copy / clone (250) — clones ("enter as a copy of any creature"), copying a spell (same targets), token copies
+- [x] Gain control (156) — permanently or until end of turn (Threaten / Act of Treason: untap, haste); goes to its
+  owner's graveyard or hand when it leaves
+- [x] Infect, toxic, poison (122) — poison counters, 10 loses; infect damage as poison / -1/-1 counters; toxic N
+- [x] Proliferate (71) — automatic choice: counters that help you on your permanents, -1/-1 on theirs, their poison
+- [x] Replacement and prevention effects — Fog ("prevent all combat damage"), "prevent the next N damage";
+  other "instead" replacements are not simulated
+- [x] Extra turns ("take an extra turn after this one"); alternate win conditions are not simulated
+- [ ] Full layer system for interacting continuous effects (today: boosts, counters and statics simply add up)
 
 ## Game behaviour
 
