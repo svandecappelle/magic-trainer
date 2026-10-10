@@ -53,9 +53,18 @@ It installs **one dedicated file**, `magic-trainer.host.conf`, from the template
 - it runs `nginx -t` before reloading; if nginx rejects the configuration, the previous state is restored;
 - `make uninstall` removes only that file and its link (the certificate and the backups stay).
 
-`HTTPS=1` runs `certbot --nginx -d DOMAIN`, which adds the 443 server and the HTTP→HTTPS redirect to that same
-file. Re-running `make install` rewrites the file without HTTPS: run `sudo make https DOMAIN=…` again afterwards
-(the existing certificate is reused).
+`HTTPS=1` (or `sudo make https DOMAIN=…` later) gets a Let's Encrypt certificate with
+`certbot certonly --webroot`: the site answers the challenge from its own folder (`/var/www/magic-trainer-acme`),
+so certbot's nginx plugin isn't needed and other sites are never edited. The site then switches to its HTTPS
+template ([`deploy/magic-trainer.host.https.conf`](deploy/magic-trainer.host.https.conf)): port 80 redirects to 443,
+which serves the app with that certificate. Re-running `make install` keeps HTTPS as long as the certificate exists;
+renewals reload nginx through certbot's deploy hook.
+
+Without its own 443 server, an `https://` request for the domain is answered by nginx's default HTTPS server,
+i.e. another site on the machine: set up HTTPS whenever other sites on the server use it.
+
+The installer also checks, with `nginx -T`, that nginx really loads the file: it picks `sites-enabled/` only when
+`nginx.conf` includes it, `conf.d/` otherwise.
 
 ### Configuring nginx by hand
 
