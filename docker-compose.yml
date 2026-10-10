@@ -1,0 +1,11 @@
+services:
+  magic-trainer:
+    build: .
+    image: magic-trainer:latest
+    restart: unless-stopped
+    environment:
+      PORT: 8787
+    # Only reachable from the server itself: nginx (or another reverse proxy) faces the internet.
+    # Use "8787:8787" instead to expose it directly, e.g. for a quick test without nginx.
+    ports:
+      - "127.0.0.1:8787:8787"
