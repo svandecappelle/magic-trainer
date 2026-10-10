@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import {
-  activatable, activationProblem, abilityMaxX, actor, apply, canAttack, findInGraveyard, legalTargets, canBlock, canCastNow, findPermanent, hasKw, hasUsefulTarget, IllegalAction, isLegalTarget, isMainStep, maxX, opponent,
+  activatable, activationProblem, abilityMaxX, actor, apply, canAttack, canTapForMana, canUntapForMana, findInGraveyard, legalTargets, canBlock, canCastNow, findPermanent, hasKw, hasUsefulTarget, IllegalAction, isLegalTarget, isMainStep, maxX, opponent,
   powerOf, toughnessOf, xCount,
   type Action, type CardInst, type GameState, type Permanent, type PlayerId, type Target,
 } from '../lib/engine/engine';
@@ -282,11 +282,14 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
       }
       return;
     }
-    // Your own permanent with abilities: activate one.
+    // Your own permanent: take back unspent mana, activate an ability, or tap it for mana.
     if (perm.controller === me && !declaringAttack) {
+      if (canUntapForMana(g, me, perm)) return act({ type: 'untapForMana', iid: perm.iid });
       const abilities = activatedOf(perm.card).map((spec, index) => ({ spec, index })).filter((a) => a.spec.ability.effects.length);
-      if (abilities.length === 1) startActivation(perm, abilities[0].index);
-      else if (abilities.length > 1) setAbilityMenu(perm);
+      const mana = canTapForMana(perm);
+      if (abilities.length + (mana ? 1 : 0) > 1) setAbilityMenu(perm);
+      else if (abilities.length === 1) startActivation(perm, abilities[0].index);
+      else if (mana) act({ type: 'tapForMana', iid: perm.iid });
     }
   }
 
@@ -341,6 +344,9 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     controls = (
       <>
         <button className="secondary" onClick={() => setAbilityMenu(null)}>{t.common.cancel}</button>
+        {canTapForMana(abilityMenu) && (
+          <button className="ability-option" onClick={() => { setAbilityMenu(null); act({ type: 'tapForMana', iid: abilityMenu.iid }); }}>{t.game.addMana}</button>
+        )}
         {activatedOf(abilityMenu.card).map((spec, index) => spec.ability.effects.length ? (
           <button key={index} className="ability-option" title={spec.text} onClick={() => startActivation(abilityMenu, index)}>{spec.text}</button>
         ) : null)}
@@ -553,6 +559,13 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
           {g.active === p && <span className="turn-dot" title={t.game.turnOf(p === me, names[p])} />}
         </div>
         <div className="life" key={ps.life}>♥ {ps.life}{floatsFor(`player:${p}`)}</div>
+        {ps.pool && ps.pool.length > 0 && (
+          <div className="pool" title={t.game.manaPool}>
+            {ps.pool.map((m, i) => (
+              <span key={i} className={`mana-dot mana-${m.colors.length === 1 ? m.colors[0] : 'any'}`}>{m.colors.length === 1 ? m.colors[0] : '✦'}</span>
+            ))}
+          </div>
+        )}
         <div className="zones small">
           <span title={t.game.zoneNames.library}>📚 {ps.library.length}</span>
           <span title={t.game.zoneNames.hand}>✋ {ps.hand.length}</span>

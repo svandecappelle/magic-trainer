@@ -1,9 +1,9 @@
 import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
-  cardTypes, findPayment, hasInstantSpeed, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
+  cardTypes, findPayment, hasInstantSpeed, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
   activatedOf, entersTapped, entersWithCounters, isPlaneswalker, isToken, manaColors, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
-  type AbilitySpec, type Affected, type Amount, type CounterKind, type Effect, type Keyword, type ManaSource, type Selector,
+  type AbilitySpec, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type ObjectEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
 
@@ -54,6 +54,12 @@ export interface Triggered {
   ability: AbilitySpec;
 }
 
+/** One mana in a pool: its possible colors, and the permanent that made it (to untap it again). */
+export interface PoolMana {
+  colors: Color[];
+  source?: string;
+}
+
 export interface PlayerState {
   name: string;
   life: number;
@@ -62,6 +68,8 @@ export interface PlayerState {
   graveyard: CardInst[];
   exile: CardInst[];
   landPlayed: boolean;
+  /** Mana made but not spent yet; it empties when the step or phase ends. */
+  pool?: PoolMana[];
 }
 
 /**
@@ -274,7 +282,11 @@ export type Action =
   | { type: 'choose'; answer: Answer }
   | { type: 'concede'; player: PlayerId }
   /** Allowed at any time, like conceding. */
-  | { type: 'setFullControl'; player: PlayerId; on: boolean };
+  | { type: 'setFullControl'; player: PlayerId; on: boolean }
+  /** Tap a mana source: its mana goes to your pool. */
+  | { type: 'tapForMana'; iid: string }
+  /** Undo tapForMana while its mana is still unspent. */
+  | { type: 'untapForMana'; iid: string };
 
 /** Why an action was refused. Rendered in the player's language (src/i18n). */
 export type GameErrorCode =
@@ -283,7 +295,7 @@ export type GameErrorCode =
   | 'needsTarget' | 'tooManyTargets' | 'targetMustBe' | 'illegalTarget' | 'notEnoughMana' | 'declareBlockersFirst'
   | 'notAttackStep' | 'cannotAttack' | 'notBlockStep' | 'notAttacking' | 'menace' | 'cannotBlock'
   | 'makeChoiceFirst' | 'nothingToChoose' | 'badChoice' | 'badX'
-  | 'notEnoughLoyalty' | 'cannotAttackThat'
+  | 'notEnoughLoyalty' | 'cannotAttackThat' | 'manaSpent'
   | 'noSuchAbility' | 'activateTiming' | 'alreadyTapped' | 'summoningSick' | 'onceEachTurn' | 'notEnoughLife' | 'nothingToSacrifice';
 
 export type ErrorParams = Record<string, string | number>;
@@ -329,11 +341,26 @@ const counterBonus = (perm: Permanent) => (perm.counters['+1/+1'] ?? 0) - (perm.
 export const powerOf = (perm: Permanent) => power(perm.card) + sum(perm, 'power') + counterBonus(perm);
 export const toughnessOf = (perm: Permanent) => toughness(perm.card) + sum(perm, 'toughness') + counterBonus(perm);
 
+/** Can this permanent be tapped for mana now? */
+export const canTapForMana = (perm: Permanent) =>
+  !perm.tapped && !(isCreature(perm.card) && perm.sick && !hasKw(perm, 'haste')) && manaUnits(perm.card).length > 0;
+
+/** What `p` can pay with: mana in their pool ("pool:N"), then untapped mana sources. */
 export function manaSources(s: GameState, p: PlayerId): ManaSource[] {
-  return s.battlefield
-    .filter((x) => x.controller === p && !x.tapped && !(isCreature(x.card) && x.sick))
-    .map((x) => ({ iid: x.iid, colors: manaColors(x.card) }))
-    .filter((x) => x.colors.length > 0);
+  const pool = (s.players[p].pool ?? []).map((m, i): ManaSource => ({ iid: `pool:${i}`, colors: m.colors }));
+  const perms = s.battlefield
+    .filter((x) => x.controller === p && canTapForMana(x))
+    .map((x): ManaSource => {
+      const units = manaUnits(x.card);
+      return { iid: x.iid, colors: manaColors(x.card), ...(units.length > 1 ? { units } : {}) };
+    });
+  return [...pool, ...perms];
+}
+
+/** Can the permanent's mana be taken back (all of it still unspent in the pool)? */
+export function canUntapForMana(s: GameState, p: PlayerId, perm: Permanent): boolean {
+  if (perm.controller !== p || !perm.tapped) return false;
+  return (s.players[p].pool ?? []).filter((m) => m.source === perm.iid).length === manaUnits(perm.card).length;
 }
 
 /** How many {X} the cost has (Fireball: 1, some spells: 2). */
@@ -691,6 +718,7 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
   d.turn++;
   d.step = 'main1';
   d.players[p].landPlayed = false;
+  emptyPools(d);
   for (const perm of d.battlefield) {
     if (perm.controller === p) {
       perm.tapped = false;
@@ -761,13 +789,44 @@ function removePermanent(d: GameState, perm: Permanent, zone: 'graveyard' | 'exi
   if (zone === 'graveyard' && isCreature(perm.card)) fireObject(d, 'dies', perm);
 }
 
-/** Taps the permanents paying for something; those whose mana ability sacrifices them (Treasure) are sacrificed. */
-function payMana(d: GameState, iids: string[]) {
-  for (const iid of iids) {
+/**
+ * Pays with the chosen mana: spends pool mana, taps the permanents (their other mana goes to the
+ * pool, e.g. Sol Ring's second mana) and sacrifices those whose mana ability says so (Treasure).
+ */
+function payMana(d: GameState, p: PlayerId, plan: ManaPick[]) {
+  const ps = d.players[p];
+  const pool = ps.pool ?? [];
+  const spentPool = new Set(plan.filter((m) => m.iid.startsWith('pool:')).map((m) => Number(m.iid.slice(5))));
+  const next = pool.filter((_, i) => !spentPool.has(i));
+  for (const iid of new Set(plan.filter((m) => !m.iid.startsWith('pool:')).map((m) => m.iid))) {
     const perm = findPermanent(d, iid)!;
-    perm.tapped = true;
-    if (/\{T\}, Sacrifice [^:]*: Add/i.test(perm.card.oracleText)) sacrifice(d, perm);
+    const spent = new Set(plan.filter((m) => m.iid === iid).map((m) => m.index));
+    manaUnits(perm.card).forEach((colors, i) => {
+      if (!spent.has(i)) next.push({ colors, source: iid });
+    });
+    tapForManaOnly(d, perm);
   }
+  if (next.length) ps.pool = next;
+  else delete ps.pool;
+}
+
+/** Taps a mana source (sacrificing a Treasure); the caller deals with its mana. */
+function tapForManaOnly(d: GameState, perm: Permanent) {
+  perm.tapped = true;
+  if (/\{T\}, Sacrifice [^:]*: Add/i.test(perm.card.oracleText)) sacrifice(d, perm);
+}
+
+/** Pays a cost from `p`'s pool and mana sources, or returns false if it can't be paid. */
+function pay(d: GameState, p: PlayerId, sources: ManaSource[], cost: { generic: number; colored: Color[][] }): boolean {
+  const plan = planPayment(sources, cost);
+  if (!plan) return false;
+  payMana(d, p, plan);
+  return true;
+}
+
+/** Mana empties from pools when a step or phase ends. */
+function emptyPools(d: GameState) {
+  for (const ps of d.players) delete ps.pool;
 }
 
 /** Sacrifice a permanent (as a cost or an effect). */
@@ -1045,12 +1104,13 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       for (const target of spells) {
         if (e.unlessPays) {
           const payer = target.controller;
-          const payment = findPayment(manaSources(d, payer), { generic: e.unlessPays, colored: [] });
+          const cost = { generic: e.unlessPays, colored: [] };
+          const payment = findPayment(manaSources(d, payer), cost);
           if (payment && !answer) {
             return { kind: 'yesNo', player: payer, purpose: 'payOrCounter', params: { card: target.card.name, n: e.unlessPays } };
           }
           if (payment && answer?.kind === 'yesNo' && answer.yes) {
-            payMana(d, payment);
+            pay(d, payer, manaSources(d, payer), cost);
             log(d, { k: 'paid', p: payer, n: e.unlessPays, card: target.card.name });
             continue;
           }
@@ -1257,6 +1317,11 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       }
       r.sub = 0;
       break;
+    case 'addMana': {
+      const ps = d.players[caster];
+      ps.pool = [...(ps.pool ?? []), ...e.units.map((colors) => ({ colors }))];
+      break;
+    }
     case 'sacrificeSelf': {
       const src = item.source ? findPermanent(d, item.source) : undefined;
       if (src) sacrifice(d, src);
@@ -1386,6 +1451,8 @@ function passOnce(d: GameState) {
 
 /** Everyone passed with an empty stack: the game moves on. */
 function closeWindow(d: GameState, reason: WindowReason) {
+  // A window closing ends its step (the main phase goes on after a main-phase spell).
+  if (reason !== 'main') emptyPools(d);
   if (reason === 'upkeep') {
     drawStep(d, d.turn === 1);
   } else if (reason === 'combat') {
@@ -1540,9 +1607,7 @@ export function apply(state: GameState, action: Action): GameState {
       const x = xCount(inst.card) ? (action.x ?? 0) : 0;
       if (!Number.isInteger(x) || x < 0) throw new IllegalAction('badX');
 
-      const payment = findPayment(manaSources(d, p), costWithX(inst.card, x));
-      if (!payment) throw new IllegalAction('notEnoughMana', { card: inst.card.name });
-      payMana(d, payment);
+      if (!pay(d, p, manaSources(d, p), costWithX(inst.card, x))) throw new IllegalAction('notEnoughMana', { card: inst.card.name });
       me.hand = me.hand.filter((c) => c !== inst);
       const named = targets.flat().map((t) => targetName(d, t));
       d.stack.push({ ...inst, controller: p, targets, ...(xCount(inst.card) ? { x } : {}) });
@@ -1569,7 +1634,7 @@ export function apply(state: GameState, action: Action): GameState {
       if (problem) throw new IllegalAction(problem, { card: perm.card.name });
       const targets = checkTargets(d, p, perm.card, spec.ability, action.targets ?? []);
 
-      payMana(d, findPayment(sourcesFor(d, perm, spec), abilityCost(spec, x))!);
+      pay(d, p, sourcesFor(d, perm, spec), abilityCost(spec, x));
       if (spec.cost.tap) perm.tapped = true;
       if (spec.cost.life) d.players[p].life -= spec.cost.life;
       if (spec.once || spec.cost.loyalty !== undefined) perm.used = [...(perm.used ?? []), action.index];
@@ -1598,16 +1663,38 @@ export function apply(state: GameState, action: Action): GameState {
       break;
     }
 
+    case 'tapForMana': {
+      const perm = findPermanent(d, action.iid);
+      if (!perm || perm.controller !== p) throw new IllegalAction('noSuchAbility');
+      if (!canTapForMana(perm)) throw new IllegalAction(perm.tapped ? 'alreadyTapped' : 'summoningSick', { card: perm.card.name });
+      const units = manaUnits(perm.card);
+      d.players[p].pool = [...(d.players[p].pool ?? []), ...units.map((colors) => ({ colors, source: perm.iid }))];
+      tapForManaOnly(d, perm);
+      break;
+    }
+
+    case 'untapForMana': {
+      const perm = findPermanent(d, action.iid);
+      if (!perm || !canUntapForMana(d, p, perm)) throw new IllegalAction('manaSpent');
+      perm.tapped = false;
+      const rest = (d.players[p].pool ?? []).filter((m) => m.source !== perm.iid);
+      if (rest.length) d.players[p].pool = rest;
+      else delete d.players[p].pool;
+      break;
+    }
+
     case 'pass': {
       if (d.priority) {
         passOnce(d);
       } else if (d.step === 'main1') {
+        emptyPools(d);
         // Skip combat entirely when nothing can attack.
         if (creaturesOf(d, p).some(canAttack)) openWindow(d, 'combat', opponent(p), 1);
         else d.step = 'main2';
       } else if (d.step === 'attack') {
         d.step = 'main2';
       } else if (d.step === 'main2') {
+        emptyPools(d);
         // The active player is done; the opponent gets an end-of-turn window.
         fireStep(d, 'endStep');
         openWindow(d, 'end', opponent(p), 1);

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
 import { botAction } from './bot';
 import { apply, IllegalAction, newGame, powerOf, type GameState, type Permanent, type PlayerId } from './engine';
-import { activatedOf, entersTapped, entersWithCounters, isToken, parseAbilityText, triggersOf } from './rules';
+import { activatedOf, entersTapped, entersWithCounters, isToken, manaUnits, parseAbilityText, triggersOf } from './rules';
 
 let n = 0;
 function card(partial: Partial<Card> & { name: string }): Card {
@@ -374,5 +374,59 @@ describe('step 3: planeswalkers', () => {
     t.active = 1;
     t.step = 'attack';
     expect(botAction(t)).toEqual({ type: 'declareAttackers', attackers: [iidOf(t, 'Bear')], targets: { [iidOf(t, 'Bear')]: iidOf(t, 'Chandra') } });
+  });
+});
+
+describe('step 3: mana pool', () => {
+  const solRing = card({ name: 'Sol Ring', typeLine: 'Artifact', manaCost: '{1}', cmc: 1, oracleText: '{T}: Add {C}{C}.' });
+
+  it('reads how much mana a source makes', () => {
+    expect(manaUnits(solRing)).toEqual([['C'], ['C']]);
+    expect(manaUnits(card({ name: 'Karplusan Forest', typeLine: 'Land', oracleText: '{T}: Add {C}.\n{T}: Add {R} or {G}. This land deals 1 damage to you.' })))
+      .toEqual([['C', 'R', 'G']]);
+    expect(manaUnits(card({ name: 'Gilded Lotus', typeLine: 'Artifact', oracleText: '{T}: Add three mana of any one color.' }))).toHaveLength(3);
+    expect(manaUnits(card({ name: 'Azorius Chancery', typeLine: 'Land', oracleText: '{T}: Add {W}{U}.' }))).toEqual([['W'], ['U']]);
+    expect(manaUnits(mountain)).toEqual([['R']]);
+    expect(parseAbilityText('Add {B}{B}{B}.').effects).toEqual([{ kind: 'addMana', units: [['B'], ['B'], ['B']] }]);
+  });
+
+  it('pays with a two-mana source and keeps the extra mana in the pool for this step', () => {
+    const bear = creature('Bear', 2, 2, '', { manaCost: '{1}{R}', cmc: 2 });
+    const elf = creature('Elf', 1, 1, '', { manaCost: '{1}', cmc: 1 });
+    let s = board({ mana: 1, mine: [solRing], hand: [bear, elf, creature('Ogre', 3, 3, '', { manaCost: '{2}', cmc: 2 })] });
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    expect(perm(s, 'Sol Ring')!.tapped).toBe(true);
+    expect(s.players[0].pool).toEqual([{ colors: ['C'], source: iidOf(s, 'Sol Ring') }]);
+    s = apply(s, { type: 'cast', iid: 'h1' }); // paid from the pool
+    expect(s.players[0].pool).toBeUndefined();
+    expect(errorOf(() => apply(s, { type: 'cast', iid: 'h2' }))).toBe('notEnoughMana');
+  });
+
+  it('taps for mana by hand, untaps while unspent, and empties the pool at the end of the step', () => {
+    let s = board({ mana: 2, mine: [creature('Bear', 2, 2)] });
+    const [a, b] = s.battlefield.filter((p) => p.card.name === 'Mountain').map((p) => p.iid);
+    s = apply(s, { type: 'tapForMana', iid: a });
+    s = apply(s, { type: 'tapForMana', iid: b });
+    expect(s.players[0].pool).toHaveLength(2);
+    s = apply(s, { type: 'untapForMana', iid: b });
+    expect(s.players[0].pool).toHaveLength(1);
+    expect(s.battlefield.find((p) => p.iid === b)!.tapped).toBe(false);
+    expect(errorOf(() => apply(s, { type: 'tapForMana', iid: a }))).toBe('alreadyTapped');
+    s = apply(s, { type: 'pass' }); // to combat: the step ends
+    expect(s.players[0].pool).toBeUndefined();
+    expect(errorOf(() => apply(s, { type: 'untapForMana', iid: a }))).toBe('manaSpent');
+  });
+
+  it('casts a ritual and spends its mana', () => {
+    const swamp = card({ name: 'Swamp', typeLine: 'Basic Land — Swamp' });
+    const ritual = spell('Dark Ritual', '{B}', 'Add {B}{B}{B}.', 'Instant');
+    const horror = creature('Horror', 4, 4, '', { manaCost: '{1}{B}{B}', cmc: 3 });
+    let s = board({ hand: [ritual, horror] });
+    s.battlefield.push({ iid: 'sw', card: swamp, controller: 0, tapped: false, sick: false, damage: 0, deathtouched: false, counters: {}, boosts: [] });
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    expect(s.players[0].pool).toEqual([{ colors: ['B'] }, { colors: ['B'] }, { colors: ['B'] }]);
+    s = apply(s, { type: 'cast', iid: 'h1' });
+    expect(perm(s, 'Horror')).toBeDefined();
+    expect(s.players[0].pool).toBeUndefined();
   });
 });

@@ -64,22 +64,47 @@ export function creatureValue(card: Card): number {
 export type Color = 'W' | 'U' | 'B' | 'R' | 'G' | 'C';
 const BASIC_TYPES: [string, Color][] = [['Plains', 'W'], ['Island', 'U'], ['Swamp', 'B'], ['Mountain', 'R'], ['Forest', 'G']];
 
+const ALL_COLORS: Color[] = ['W', 'U', 'B', 'R', 'G'];
+const MANA_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5 };
+
 /**
- * Colors a permanent can tap for: basic land types plus "{T}: Add …" abilities.
- * Simplification: every source makes one mana per tap (Sol Ring makes 1, not 2).
+ * Mana in an "Add …" text, one entry per mana with the colors it may be:
+ * "{C}{C}" → [[C], [C]], "{R} or {G}" → [[R, G]], "two mana of any one color" → two entries of all colors
+ * (simplified: they may be different colors). Null when not understood (X mana, "for each…").
  */
-export function manaColors(card: Card): Color[] {
-  const out = new Set<Color>();
-  const front = card.typeLine.split('//')[0];
-  for (const [type, color] of BASIC_TYPES) if (front.includes(type)) out.add(color);
-  for (const line of frontText(card).split('\n')) {
-    const m = line.match(/\{T\}[^:]*:\s*Add ([^.]*)/);
-    if (!m) continue;
-    if (/any color/i.test(m[1])) (['W', 'U', 'B', 'R', 'G'] as Color[]).forEach((c) => out.add(c));
-    for (const sym of m[1].matchAll(/\{([WUBRGC])\}/g)) out.add(sym[1] as Color);
-  }
-  return [...out];
+export function parseManaText(text: string): Color[][] | null {
+  const t = text.trim().replace(/\.$/, '');
+  const any = t.match(/^(one|two|three|four|five) mana of any (?:one )?color$/i);
+  if (any) return Array.from({ length: MANA_WORDS[any[1].toLowerCase()] }, () => [...ALL_COLORS]);
+  if (/^(\{[WUBRGC]\})+$/.test(t)) return [...t.matchAll(/\{([WUBRGC])\}/g)].map((m) => [m[1] as Color]);
+  // "{R} or {G}", "{W}, {U}, or {B}": one mana, a choice of colors.
+  if (/^\{[WUBRGC]\}(?:,? (?:or )?\{[WUBRGC]\})+$/.test(t)) return [[...t.matchAll(/\{([WUBRGC])\}/g)].map((m) => m[1] as Color)];
+  return null;
 }
+
+/**
+ * The mana a permanent makes when tapped: basic land types plus "{T}: Add …" abilities. With several
+ * one-mana abilities (pain lands), one mana of any of their colors; otherwise the biggest ability.
+ */
+export function manaUnits(card: Card): Color[][] {
+  const single = new Set<Color>();
+  let best: Color[][] = [];
+  const front = card.typeLine.split('//')[0];
+  for (const [type, color] of BASIC_TYPES) if (front.includes(type)) single.add(color);
+  for (const line of frontText(card).split('\n')) {
+    const m = line.match(/^\{T\}(?:, Sacrifice [^:]*)?:\s*Add ([^.]*)\./);
+    if (!m) continue;
+    const units = parseManaText(m[1]);
+    if (!units) continue;
+    if (units.length === 1) units[0].forEach((c) => single.add(c));
+    else if (units.length > best.length) best = units;
+  }
+  if (best.length) return best;
+  return single.size ? [[...single]] : [];
+}
+
+/** Colors a permanent can tap for. */
+export const manaColors = (card: Card): Color[] => [...new Set(manaUnits(card).flat())];
 
 export interface Cost {
   generic: number;
@@ -102,34 +127,64 @@ export function parseCost(manaCost: string): Cost {
   return cost;
 }
 
+/**
+ * Something that can pay mana: a permanent (`units`: the mana one tap makes) or mana already in the
+ * pool (`iid` "pool:N", one unit). `colors` alone means one mana of those colors.
+ */
 export interface ManaSource {
   iid: string;
   colors: Color[];
+  units?: Color[][];
 }
 
-/** Picks which sources to tap for a cost, or null if it can't be paid. */
-export function findPayment(sources: ManaSource[], cost: Cost): string[] | null {
-  if (sources.length < cost.generic + cost.colored.length) return null;
-  // Hardest requirements first; spend single-color sources before flexible ones.
+/** One mana spent: unit `index` of source `iid`. */
+export interface ManaPick {
+  iid: string;
+  index: number;
+}
+
+/**
+ * Picks the mana to spend on a cost, or null if it can't be paid. Mana in the pool is spent first,
+ * then mana of sources tapped anyway (Sol Ring's second mana), then single-color sources.
+ */
+export function planPayment(sources: ManaSource[], cost: Cost): ManaPick[] | null {
+  const units = sources.flatMap((s) => (s.units ?? [s.colors]).map((colors, index) => ({
+    iid: s.iid, index, colors, pool: s.iid.startsWith('pool:'), size: (s.units ?? [s.colors]).length,
+  })));
+  if (units.length < cost.generic + cost.colored.length) return null;
+  // Pool first, then bigger sources (their other mana would be wasted), then the least flexible.
+  units.sort((a, b) => Number(b.pool) - Number(a.pool) || b.size - a.size || a.colors.length - b.colors.length);
   const reqs = [...cost.colored].sort((a, b) => a.length - b.length);
-  const ordered = [...sources].sort((a, b) => a.colors.length - b.colors.length);
-  const used = new Set<string>();
+  const used = new Set<number>();
 
   const assign = (i: number): boolean => {
     if (i === reqs.length) return true;
-    for (const s of ordered) {
-      if (used.has(s.iid) || !s.colors.some((c) => reqs[i].includes(c))) continue;
-      used.add(s.iid);
+    for (let u = 0; u < units.length; u++) {
+      if (used.has(u) || !units[u].colors.some((c) => reqs[i].includes(c))) continue;
+      used.add(u);
       if (assign(i + 1)) return true;
-      used.delete(s.iid);
+      used.delete(u);
     }
     return false;
   };
   if (!assign(0)) return null;
 
-  const generic = ordered.filter((s) => !used.has(s.iid)).slice(0, cost.generic);
-  if (generic.length < cost.generic) return null;
-  return [...used, ...generic.map((s) => s.iid)];
+  // Generic mana: the pool, then sources already being tapped, then the rest in order.
+  const tapped = () => new Set([...used].map((u) => units[u].iid));
+  for (let n = 0; n < cost.generic; n++) {
+    const open = units.map((_, u) => u).filter((u) => !used.has(u));
+    if (!open.length) return null;
+    const busy = tapped();
+    const pick = open.find((u) => units[u].pool) ?? open.find((u) => busy.has(units[u].iid)) ?? open[0];
+    used.add(pick);
+  }
+  return [...used].map((u) => ({ iid: units[u].iid, index: units[u].index }));
+}
+
+/** Which sources a payment uses (the permanents to tap, and pool mana), or null if it can't be paid. */
+export function findPayment(sources: ManaSource[], cost: Cost): string[] | null {
+  const plan = planPayment(sources, cost);
+  return plan && [...new Set(plan.map((p) => p.iid))];
 }
 
 // ---------- Card types ----------
@@ -251,6 +306,8 @@ export type Effect =
   | { kind: 'returnCard'; to: Affected; dest: 'hand' | 'battlefield' }
   /** "Put a +1/+1 counter on each creature you control" (`other`: except the source). */
   | { kind: 'addCountersAll'; counter: CounterKind; n: Amount; which: Selector; other: boolean }
+  /** Mana into the controller's pool (rituals: "Add {B}{B}{B}"). One entry per mana, with its possible colors. */
+  | { kind: 'addMana'; units: Color[][] }
   /** Search your library for up to `n` matching cards, then shuffle. */
   | { kind: 'search'; n: number; filter: TargetFilter; dest: 'hand' | 'battlefield'; tapped: boolean };
 
@@ -538,6 +595,11 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
   scan(new RegExp(`\\bput (${AMOUNT}) ([+-]1\\/[+-]1) counters? on each ((?:other )?creature(?: you control| you don't control| your opponents control)?)${END}`, 'gi'), (m) => {
     const which = selector(m[3].replace(/^(other )?creature/i, (_, o) => `${o ?? ''}creatures`));
     return which && { kind: 'addCountersAll', counter: m[2] as CounterKind, n: toAmount(m[1]), which, other: /^other /i.test(m[3]) };
+  });
+  // Rituals: "Add {B}{B}{B}." (sentence start: mana abilities of permanents are handled as mana sources).
+  scan(/(?:^|[.\n] *)Add ([^.]+)\./g, (m) => {
+    const units = parseManaText(m[1]);
+    return units && { kind: 'addMana', units };
   });
   // "Search your library for a basic land card, put it onto the battlefield tapped, then shuffle."
   scan(new RegExp(`\\bsearch your library for (up to ${NUMBER} |an? |${NUMBER} )([a-z ,-]+?) cards?(?: with mana value (\\d+) or less)?, (?:reveal (?:it|them|that card|those cards), )?(?:and )?put (?:it|them|that card|those cards) (into your hand|onto the battlefield( tapped)?)(?:,? (?:then|and) shuffle)?`, 'gi'), (m) => {

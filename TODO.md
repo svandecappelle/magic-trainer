@@ -18,7 +18,7 @@ to show how much each step unlocks. Tick items as they land.
   (most others make tokens or Treasure, or watch draws, life gain or sacrifices).
 - Keywords: flying, reach, haste, vigilance, trample, deathtouch, lifelink, defender, first strike,
   double strike, menace, flash.
-- Mana: basic land types and "{T}: Add …" (one mana per source, X = 0).
+- Mana: basic land types and "{T}: Add …" (any amount), a mana pool with manual tapping, rituals.
 - London mulligan, stack, priority windows, full control mode.
 - Activated abilities of permanents ("{T}: …", "{2}{R}: …", sacrifice and life costs), tokens (creatures, Treasure,
   Clue, Food), edicts. About a quarter of the 350 most-played cards with activated abilities have one simulated.
@@ -82,7 +82,9 @@ Not simulated yet in triggers (recognized, logged as "not simulated"):
 - [x] 24. Planeswalkers: loyalty abilities, attacking them (278) — loyalty counters, one loyalty ability per turn at
   sorcery speed, damage removes loyalty, creatures can attack them; "−X" abilities and static abilities are not
   simulated. Cards saved before this change have no loyalty value and start at 3 (re-import the deck to fix)
-- [ ] 25. Mana pool and manual tapping; sources making 2+ mana
+- [x] 25. Mana pool and manual tapping; sources making 2+ mana — click a mana source to tap it (click again to undo
+  while its mana is unspent), pools empty between steps, Sol Ring / bounce lands / "three mana of any one color",
+  rituals. Simplification: "N mana of any one color" may be spent as different colors. The bot doesn't cast rituals
 
 ## Step 4 — Permanents with ongoing rules
 

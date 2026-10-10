@@ -119,6 +119,7 @@ const errors: ErrorMessages = {
   summoningSick: (p) => `${p.card} just arrived: it can't use {T} abilities this turn`,
   onceEachTurn: (p) => `${p.card}'s ability can only be activated once each turn`,
   notEnoughLife: () => 'Not enough life to pay that cost',
+  manaSpent: () => 'That mana was already spent: the land stays tapped',
   notEnoughLoyalty: (p) => `${p.card} doesn't have enough loyalty for that ability`,
   cannotAttackThat: () => 'Creatures can only attack the opponent or their planeswalkers',
   nothingToSacrifice: (p) => `You have nothing to sacrifice for ${p.card}'s ability`,
@@ -463,6 +464,8 @@ export const en = {
     mayRespond: (name: string) => `${name} may respond…`,
     choosingBlockers: (name: string) => `${name} is choosing blockers…`,
     thinking: (name: string) => `${name} is thinking…`,
+    addMana: 'Add mana',
+    manaPool: 'Mana pool: spent first, empties at the end of the step',
     chooseAbility: (card: string) => `Choose an ability of ${card}.`,
     chooseTarget: (kind: string) => `Choose a target (${kind}).`,
     onStack: (card: string, owner: string | null) =>

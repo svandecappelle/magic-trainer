@@ -126,6 +126,7 @@ const errors: ErrorMessages = {
   summoningSick: (p) => `${p.card} vient d'arriver : il ne peut pas utiliser de capacité {T} ce tour-ci`,
   onceEachTurn: (p) => `La capacité de ${p.card} ne peut être activée qu'une fois par tour`,
   notEnoughLife: () => 'Pas assez de points de vie pour payer ce coût',
+  manaSpent: () => 'Ce mana a déjà été dépensé : le terrain reste engagé',
   notEnoughLoyalty: (p) => `${p.card} n'a pas assez de loyauté pour cette capacité`,
   cannotAttackThat: () => "Les créatures ne peuvent attaquer que l'adversaire ou ses planeswalkers",
   nothingToSacrifice: (p) => `Vous n'avez rien à sacrifier pour la capacité de ${p.card}`,
@@ -471,6 +472,8 @@ export const fr: Messages = {
     mayRespond: (name) => `${name} peut répondre…`,
     choosingBlockers: (name) => `${name} choisit ses bloqueurs…`,
     thinking: (name) => `${name} réfléchit…`,
+    addMana: 'Produire du mana',
+    manaPool: "Réserve de mana : dépensée en premier, elle se vide à la fin de l'étape",
     chooseAbility: (card) => `Choisissez une capacité de ${card}.`,
     chooseTarget: (kind) => `Choisissez une cible (${kind}).`,
     onStack: (card, owner) =>

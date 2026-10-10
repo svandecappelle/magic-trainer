@@ -123,6 +123,18 @@
 .hud-name { display: flex; align-items: center; gap: 8px; }
 .turn-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
 .hud .life { position: relative; font-size: 1.8rem; font-weight: 800; line-height: 1.15; animation: life-pulse 0.5s ease-out; }
+.hud .pool { display: flex; flex-wrap: wrap; gap: 3px; margin: 2px 0; }
+.mana-dot {
+  display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%;
+  font-size: 0.65rem; font-weight: 800; color: #111; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5); animation: pop 0.2s ease-out;
+}
+.mana-W { background: #f8f3d6; }
+.mana-U { background: #4a90d9; }
+.mana-B { background: #8c7f8f; }
+.mana-R { background: #e0533f; }
+.mana-G { background: #3e9f5e; }
+.mana-C { background: #c8c8c8; }
+.mana-any { background: conic-gradient(#f8f3d6, #4a90d9, #8c7f8f, #e0533f, #3e9f5e, #f8f3d6); }
 .hud .zones { display: flex; gap: 8px; align-items: center; color: var(--muted); }
 .zone-chip {
   padding: 0 6px; font-size: 0.78rem; font-weight: 500; color: var(--text);

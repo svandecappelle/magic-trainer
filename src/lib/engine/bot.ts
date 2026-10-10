@@ -340,6 +340,7 @@ function playWithGoodTarget(s: GameState, me: PlayerId, play: Play, among?: Perm
   const { effects } = spec;
   const cast = (targets: Target[][] = []): Action => play.act(targets, x);
   if (!effects.length) return null; // not simulated: casting it would do nothing
+  if (effects.every((e) => e.kind === 'addMana')) return null; // rituals: the bot doesn't plan mana ahead
   // An edict needs something to hit.
   const opp = opponent(me);
   if (effects.some((e) => e.kind === 'sacrifice' && !matching(s, opp, e.which).some((x) => x.controller === opp))) return null;
