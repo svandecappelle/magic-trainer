@@ -472,7 +472,44 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
     case 'mode':
       return { kind: 'mode', modes: Array.from({ length: choice.min }, (_, i) => i) };
     case 'yesNo':
-      // Paying to keep our spell is worth it.
-      return { kind: 'yesNo', yes: !safe && choice.purpose === 'payOrCounter' };
+      // Paying to keep our spell is worth it; our own "you may" abilities are used.
+      return { kind: 'yesNo', yes: !safe && (choice.purpose === 'payOrCounter' || choice.purpose === 'optional') };
+    case 'targets':
+      return { kind: 'targets', targets: triggerTargets(s, choice.player, { targets: choice.slots, effects: triggerEffects(s, choice) }, safe) };
   }
+}
+
+/** The effects of the trigger waiting for targets, to know whether its targets are hurt or helped. */
+function triggerEffects(s: GameState, choice: Choice): Effect[] {
+  return s.pending?.choice === choice ? (s.pending.trigger?.ability.effects ?? []) : [];
+}
+
+/**
+ * Targets for a triggered ability. Unlike a spell, it can't be kept for later: when the only
+ * legal targets are bad ones, the least bad are chosen.
+ */
+function triggerTargets(s: GameState, me: PlayerId, spec: AbilitySpec, safe: boolean): Target[][] {
+  const fight = spec.effects.find((e) => e.kind === 'fight');
+  const pair = !safe && fight?.kind === 'fight' ? chooseFight(s, me, spec, fight) : null;
+  if (pair) return pair;
+  return spec.targets.map((slot, i) => {
+    const legal = legalTargets(s, me, slot);
+    if (safe) return legal.slice(0, slot.min);
+    const onSlot = spec.effects.filter((e) => 'to' in e && typeof e.to === 'object' && e.to.slot === i);
+    const harm = onSlot.some((e) => intentOf(e) === 'harm');
+    const ours = (t: Target) => (t.kind === 'player' ? t.player === me : (t.kind === 'permanent' ? findPermanent(s, t.iid)?.controller : s.stack.find((x) => x.iid === t.iid)?.controller) === me);
+    const value = (t: Target) => {
+      if (t.kind !== 'permanent') return t.kind === 'player' ? 2.5 : 3;
+      const perm = findPermanent(s, t.iid)!;
+      if (harm && kills(perm, onSlot)) return 10 + creatureValue(perm.card);
+      // Damage that doesn't kill is better spent on the player.
+      if (harm && onSlot.some((e) => e.kind === 'damage')) return 1;
+      return isCreature(perm.card) ? creatureValue(perm.card) : perm.card.cmc;
+    };
+    // Good targets first (theirs for harm, ours for help), the most valuable first; then the least valuable others.
+    const good = legal.filter((t) => ours(t) !== harm).sort((a, b) => value(b) - value(a));
+    const bad = legal.filter((t) => ours(t) === harm).sort((a, b) => value(a) - value(b));
+    const n = Math.max(slot.min, Math.min(slot.max, good.length));
+    return [...good, ...bad].slice(0, n);
+  });
 }

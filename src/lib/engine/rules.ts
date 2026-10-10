@@ -5,7 +5,7 @@ import type { Card } from '../../types';
 
 export const KEYWORDS = [
   'flying', 'reach', 'haste', 'vigilance', 'trample', 'deathtouch', 'lifelink',
-  'defender', 'first strike', 'double strike', 'menace', 'flash',
+  'defender', 'first strike', 'double strike', 'menace', 'flash', 'prowess',
 ] as const;
 export type Keyword = (typeof KEYWORDS)[number];
 
@@ -192,8 +192,11 @@ export interface TargetSpec {
 /** Counter kinds placed on permanents. */
 export type CounterKind = '+1/+1' | '-1/-1';
 
-/** Who an effect applies to: the targets chosen for a slot, the controller, or everyone / each opponent. */
-export type Affected = { slot: number } | 'you' | 'each-opponent' | 'each-player';
+/**
+ * Who an effect applies to: the targets chosen for a slot, the controller, everyone / each opponent,
+ * or the ability's own source ("this creature gets +1/+1").
+ */
+export type Affected = { slot: number } | 'you' | 'each-opponent' | 'each-player' | 'self';
 
 /** A number in rules text; "X" is the value chosen when casting. */
 export type Amount = number | 'X';
@@ -238,6 +241,8 @@ export type Effect =
 export interface AbilitySpec {
   targets: TargetSpec[];
   effects: Effect[];
+  /** "you may …": the controller decides on resolution whether it happens. */
+  optional?: boolean;
 }
 
 const WORD_NUMBERS: Record<string, number> = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7 };
@@ -365,11 +370,20 @@ function cardWordsFilter(words: string): TargetFilter | null {
 const keywordList = (s: string | undefined) =>
   (s ?? '').split(/,? and |, /).map((k) => k.trim()).filter(Boolean) as Keyword[];
 
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** Ways rules text names its own card: "Goblin Guide", "Ragavan" (legends), "this creature". */
+function selfWords(name: string): string[] {
+  const front = name.split(' // ')[0];
+  return [front, front.split(',')[0], 'this creature', 'this permanent', 'this artifact', 'this enchantment', 'this land'];
+}
+
 /**
- * Recognizes common effects in rules text (a spell's text, or later an ability's).
- * Anything else is not simulated. `name` is the card's own name, for "Shock deals 2 damage…".
+ * Recognizes common effects in rules text (a spell's text, or an ability's).
+ * Anything else is not simulated. `self` is the name of the card the ability is on, so
+ * "Goblin Guide gets +1/+1" or "put a +1/+1 counter on this creature" can refer to it.
  */
-export function parseAbilityText(text: string): AbilitySpec {
+export function parseAbilityText(text: string, self?: string): AbilitySpec {
   const targets: TargetSpec[] = [];
   const effects: Effect[] = [];
   /** Adds a target slot for the phrase, if understood and accepted by the effect. */
@@ -444,13 +458,13 @@ export function parseAbilityText(text: string): AbilitySpec {
     return to && { kind: 'addCounters', counter: m[2] as CounterKind, n: toAmount(m[1]), to };
   });
   // Drawing: "Draw two cards", "Target player draws X cards", "Each player draws a card".
-  scan(new RegExp(`(?:^|[^a-z])draw (${AMOUNT}) cards?\\b`, 'gi'), (m) => ({ kind: 'draw', n: toAmount(m[1]), to: 'you' }));
+  scan(new RegExp(`(?:^|[^a-z])draw (${AMOUNT}) cards?\\b(?! and lose)`, 'gi'), (m) => ({ kind: 'draw', n: toAmount(m[1]), to: 'you' }));
   scan(new RegExp(`${PLAYER} draws (${AMOUNT}) cards?\\b(?! and loses)`, 'gi'), (m) => {
     const to = who(m[1]);
     return to && { kind: 'draw', n: toAmount(m[2]), to };
   });
-  // Sign in Blood: "Target player draws two cards and loses 2 life."
-  scan(new RegExp(`${PLAYER} draws (${AMOUNT}) cards? and loses (\\d+|X) life`, 'gi'), (m) => {
+  // Sign in Blood: "Target player draws two cards and loses 2 life." Phyrexian Arena: "you draw a card and lose 1 life".
+  scan(new RegExp(`${PLAYER} draws? (${AMOUNT}) cards? and loses? (\\d+|X) life`, 'gi'), (m) => {
     const to = who(m[1]);
     return to && [{ kind: 'draw', n: toAmount(m[2]), to }, { kind: 'loseLife', n: toAmount(m[3]), to }];
   });
@@ -511,6 +525,21 @@ export function parseAbilityText(text: string): AbilitySpec {
     return a && b && typeof a === 'object' && typeof b === 'object' ? { kind: 'fight', a, b, oneSided: true } : null;
   });
 
+  if (self) {
+    // "it" only means the source when nothing else was targeted ("Target creature gets +1/+0. It gains…").
+    const words = [...selfWords(self), ...(/\btargets?\b/i.test(text) ? [] : ['it'])].map(escapeRe).join('|');
+    const SELF = `(?:${words})`;
+    scan(new RegExp(`(?:^|[.,] *|then |and )${SELF} gets ([+-]\\d+)\\/([+-]\\d+)(?: and gains ${KEYWORD_LIST})? until end of turn`, 'gi'), (m) => ({
+      kind: 'pump', power: Number(m[1]), toughness: Number(m[2]), keywords: keywordList(m[3]), to: 'self',
+    }));
+    scan(new RegExp(`(?:^|[.,] *|then |and )${SELF} gains ${KEYWORD_LIST} until end of turn`, 'gi'), (m) => ({
+      kind: 'pump', power: 0, toughness: 0, keywords: keywordList(m[1]), to: 'self',
+    }));
+    scan(new RegExp(`\\bput (${AMOUNT}) ([+-]1\\/[+-]1) counters? on ${SELF}(?=\\.|\\n|$|,)`, 'gi'), (m) => ({
+      kind: 'addCounters', counter: m[2] as CounterKind, n: toAmount(m[1]), to: 'self',
+    }));
+  }
+
   for (const { run } of matches.sort((a, b) => a.at - b.at)) {
     const effect = run();
     if (Array.isArray(effect)) effects.push(...effect);
@@ -527,3 +556,116 @@ export function spellSpec(card: Card): AbilitySpec {
 
 /** Just the effects of an instant or sorcery. */
 export const parseEffects = (card: Card): Effect[] => spellSpec(card).effects;
+
+// ---------- Triggered abilities ----------
+
+export type ObjectEvent = 'enters' | 'dies' | 'attacks' | 'combatDamage';
+
+/** What makes a triggered ability trigger. */
+export type TriggerEvent =
+  /** This permanent enters / dies / attacks / deals combat damage to a player. */
+  | { on: ObjectEvent; self: true }
+  /** A matching permanent does ("Whenever another creature you control enters", landfall). */
+  | { on: ObjectEvent; self: false; which: Selector; another: boolean }
+  /** At the beginning of an upkeep or end step: yours, each one, or each opponent's. */
+  | { on: 'upkeep' | 'endStep'; whose: 'you' | 'each' | 'opponent' }
+  /** Whenever you cast a spell matching the card words ("noncreature", "instant or sorcery"). */
+  | { on: 'cast'; filter: TargetFilter };
+
+export interface TriggerSpec {
+  event: TriggerEvent;
+  /** What it does. No effects means the ability is recognized as a trigger but not simulated. */
+  ability: AbilitySpec;
+}
+
+/**
+ * Words that change what an ability does in ways the parser can't follow (conditions,
+ * replacements, references to the triggering object). Such abilities are not simulated rather
+ * than simulated wrongly.
+ */
+const UNSUPPORTED = /\b(?:if|unless|for each|where|instead|that (?:creature|card|player|land|spell|permanent)|those|otherwise|this way|exiled with)\b/i;
+
+const NO_EFFECT: AbilitySpec = { targets: [], effects: [] };
+
+/** "a creature you control", "another nontoken creature", "a land" → which permanents a trigger watches. */
+function triggerSubject(subject: string, underYourControl: boolean): { which: Selector; another: boolean } | null {
+  const m = subject.toLowerCase().match(/^(a|an|another) (.+)$/);
+  if (!m) return null;
+  const spec = parseTargetPhrase(`target ${m[2]}`);
+  if (!spec || (spec.kind !== 'creature' && spec.kind !== 'permanent')) return null;
+  if (underYourControl) {
+    if (spec.filter.controller === 'opponent') return null;
+    spec.filter.controller = 'you';
+  }
+  return { which: { kind: spec.kind, filter: spec.filter }, another: m[1] === 'another' };
+}
+
+/** The effect text of a trigger: "you may" makes it optional; unsupported wordings give no effects. */
+function triggerAbility(text: string, name: string, self: boolean): AbilitySpec {
+  const optional = /^you may /i.test(text);
+  // "you may gain 1 life" → "you gain 1 life"
+  const body = optional ? `you ${text.slice('you may '.length)}` : text;
+  // "it" in "Whenever a creature you control attacks, it gets +1/+0" is the attacker, not this card.
+  if (UNSUPPORTED.test(body) || (!self && /\bits?\b/i.test(body))) return NO_EFFECT;
+  const spec = parseAbilityText(body, self ? name : undefined);
+  return optional && spec.effects.length ? { ...spec, optional } : spec;
+}
+
+const triggerCache = new Map<string, TriggerSpec[]>();
+
+/** Triggered abilities printed on a permanent card (front face), plus prowess. */
+export function triggersOf(card: Card): TriggerSpec[] {
+  const key = `${card.name}\n${card.oracleText}`;
+  const cached = triggerCache.get(key);
+  if (cached) return cached;
+  const out: TriggerSpec[] = [];
+  const name = card.name.split(' // ')[0];
+  // A trigger's subject may also be a legend's first name ("When Loran enters").
+  const selves = [...selfWords(name), name.split(' ')[0]].map((w) => w.toLowerCase());
+
+  if (hasKeyword(card, 'prowess')) {
+    out.push({
+      event: { on: 'cast', filter: { nonTypes: ['creature'] } },
+      ability: { targets: [], effects: [{ kind: 'pump', power: 1, toughness: 1, keywords: [], to: 'self' }] },
+    });
+  }
+
+  for (const raw of frontText(card).split('\n')) {
+    // Drop reminder text and ability words ("Landfall — Whenever…").
+    const line = raw.replace(/\s*\([^)]*\)/g, '').replace(/^[A-Z][A-Za-z' ]+ — /, '').trim();
+
+    const ev = line.match(/^(?:When|Whenever) (.+?) (enters(?: the battlefield)?( under your control)?|attacks|dies|deals combat damage to a player)(?: or (enters|attacks|dies)(?: the battlefield)?)?, (.+)$/i);
+    if (ev) {
+      const [, rawSubject, verb, under, alsoVerb, text] = ev;
+      const ons = [verb, alsoVerb].filter(Boolean).map((v): ObjectEvent => (v.startsWith('deals') ? 'combatDamage' : (v.toLowerCase().split(' ')[0] as ObjectEvent)));
+      // "this creature or another creature you control" is any creature you control, itself included.
+      const orAnother = rawSubject.match(/^(.+?) or another (.+)$/i);
+      const subject = orAnother && selves.includes(orAnother[1].toLowerCase()) ? `a ${orAnother[2]}` : rawSubject;
+      const self = selves.includes(subject.toLowerCase());
+      const watched = self ? null : triggerSubject(subject, !!under);
+      if (!self && !watched) continue;
+      const ability = triggerAbility(text, name, self);
+      for (const on of ons) {
+        out.push({ event: self ? { on, self: true } : { on, self: false, ...watched! }, ability });
+      }
+      continue;
+    }
+
+    const step = line.match(/^At the beginning of (your|each|each player's|each opponent's) (upkeep|end step), (.+)$/i);
+    if (step) {
+      const w = step[1].toLowerCase();
+      const whose = w === 'your' ? 'you' : w === "each opponent's" ? 'opponent' : 'each';
+      out.push({ event: { on: step[2].toLowerCase() === 'upkeep' ? 'upkeep' : 'endStep', whose }, ability: triggerAbility(step[3], name, true) });
+      continue;
+    }
+
+    // Magecraft: "Whenever you cast or copy …" (copies aren't simulated, casting is).
+    const cast = line.match(/^Whenever you cast (?:or copy )?an? (?:([a-z, -]+?) )?spell, (.+)$/i);
+    if (cast) {
+      const filter = cast[1] ? cardWordsFilter(cast[1]) : {};
+      if (filter) out.push({ event: { on: 'cast', filter }, ability: triggerAbility(cast[2], name, true) });
+    }
+  }
+  triggerCache.set(key, out);
+  return out;
+}

@@ -12,7 +12,7 @@ const signed = (n: number) => (n < 0 ? `${n}` : `+${n}`);
 const keywordNames: Record<Keyword, string> = {
   flying: 'le vol', reach: 'la portée', haste: 'la célérité', vigilance: 'la vigilance', trample: 'le piétinement',
   deathtouch: 'le contact mortel', lifelink: 'le lien de vie', defender: 'défenseur', 'first strike': "l'initiative",
-  'double strike': 'la double initiative', menace: 'la menace', flash: 'le flash',
+  'double strike': 'la double initiative', menace: 'la menace', flash: 'le flash', prowess: 'la prouesse',
 };
 
 const targetKinds = {
@@ -35,6 +35,12 @@ const log: LogMessages = {
     return `${who} ${c.card(e.card)}${names.length ? ` en ciblant ${c.list(names)}` : ''}`;
   },
   enters: (e, c) => `${c.card(e.card)} arrive sur le champ de bataille`,
+  triggers: (e, c) => {
+    const names = (e.targets ?? []).map((t) => ('card' in t ? c.card(t.card) : c.isMe(t.p) ? 'vous' : c.name(t.p)));
+    return `La capacité de ${c.card(e.card)} se déclenche${names.length ? ` en ciblant ${c.list(names)}` : ''}`;
+  },
+  noTarget: (e, c) => `La capacité de ${c.card(e.card)} n'a pas de cible légale`,
+  declined: (e, c) => `La capacité de ${c.card(e.card)} n'est pas utilisée`,
   attack: (e, c) => `${c.isMe(e.p) ? 'Vous attaquez' : `${c.name(e.p)} attaque`} avec ${c.list(e.cards.map(c.card))}`,
   blocked: (e, c) => `${c.card(e.card)} est bloqué par ${c.list(e.by.map(c.card))}`,
   damage: (e, c) => `${c.card(e.card)} inflige ${e.n} à ${c.card(e.target)}`,
@@ -402,6 +408,8 @@ export const fr: Messages = {
       discardChosen: (p) => `${p.who} révèle sa main : choisissez ${plural(p.n, 'carte', 'cartes')} à défausser.`,
       scry: (p) => `Regard ${p.n} : gardez des cartes au-dessus (dans l'ordre) ou mettez-les en dessous.`,
       surveil: (p) => `Surveillance ${p.n} : gardez des cartes au-dessus (dans l'ordre) ou mettez-les au cimetière.`,
+      triggerTargets: (p) => `La capacité de ${p.card} se déclenche : choisissez une cible (${p.kind}).`,
+      optional: (p) => `Utiliser la capacité de ${p.card} ?`,
       arrange: 'Placez chaque carte où vous voulez, puis confirmez.',
       mode: (min, max) => (min === max ? `Choisissez ${plural(max, 'mode', 'modes')}.` : `Choisissez de ${min} à ${max} modes.`),
       cards: (min, max) => (min === max ? `Choisissez ${plural(max, 'carte', 'cartes')}.` : `Choisissez de ${min} à ${max} cartes.`),
@@ -414,6 +422,8 @@ export const fr: Messages = {
     arrangeZones: { top: 'Dessus', bottom: 'Dessous', graveyard: 'Cimetière' },
     counters: (counter, n) => `${counter} ×${n}`,
     windows: {
+      upkeep: (myTurn) =>
+        myTurn ? "Votre entretien : des capacités se déclenchent. Lancez un éphémère, ou passez." : "Entretien adverse : des capacités se déclenchent. Lancez un éphémère, ou passez.",
       begin: (myTurn) =>
         myTurn ? 'Début de votre tour. Lancez un éphémère, ou passez.' : 'Début du tour adverse. Lancez un éphémère, ou passez.',
       main: () => 'Lancez un éphémère, ou passez.',

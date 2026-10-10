@@ -12,11 +12,15 @@ to show how much each step unlocks. Tick items as they land.
   gain and lose life, discard (chosen, random, Duress-style), mill, scry, surveil, tap/untap, bounce, board wipes
   ("destroy all/each", "damage to each creature", "creatures you control get…", "return all…"), fight and "bite".
 - About half of the 350 most-played Modern instants and sorceries are simulated (Oct 2026 sample).
+- Triggered abilities: enters, dies, attacks, deals combat damage to a player, landfall / "another creature enters",
+  upkeep and end step, "whenever you cast …", prowess. Targets are chosen when the trigger goes on the stack,
+  "you may" asks on resolution. About 30% of the 350 most-played permanents with triggers are fully simulated
+  (most others make tokens or Treasure, or watch draws, life gain or sacrifices).
 - Keywords: flying, reach, haste, vigilance, trample, deathtouch, lifelink, defender, first strike,
   double strike, menace, flash.
 - Mana: basic land types and "{T}: Add …" (one mana per source, X = 0).
 - London mulligan, stack, priority windows, full control mode.
-- Anything else is cast "not simulated"; artifacts, enchantments and planeswalkers enter and do nothing.
+- Anything else is cast "not simulated"; artifacts, enchantments and planeswalkers enter and only their triggers work.
 
 ## Step 0 — Foundations
 
@@ -43,12 +47,20 @@ to show how much each step unlocks. Tick items as they land.
 
 ## Step 2 — Triggered abilities
 
-- [ ] 12. Enters the battlefield (3450)
-- [ ] 13. Upkeep / end step (776)
-- [ ] 14. Attacks (728)
-- [ ] 15. Dies (501)
-- [ ] 16. Landfall (171)
-- [ ] 17. Cast triggers, prowess
+- [x] 12. Enters the battlefield (3450)
+- [x] 13. Upkeep / end step (776) — upkeep triggers resolve before the draw
+- [x] 14. Attacks (728), and "deals combat damage to a player"
+- [x] 15. Dies (501), including "this creature or another creature dies"
+- [x] 16. Landfall (171), and "whenever another creature you control enters"
+- [x] 17. Cast triggers ("whenever you cast a noncreature spell", magecraft), prowess
+
+Not simulated yet in triggers (recognized, logged as "not simulated"):
+- Conditions and references to the triggering object: "if …", "it" / "that creature" / "that player" when the
+  trigger watches another permanent, "where X is …", "for each …"
+- Other events: an opponent casts or draws, you gain life, "one or more creatures", beginning of combat,
+  becomes tapped / targeted, sacrifices
+- Triggers from first-strike damage wait until regular damage is dealt; a player's simultaneous triggers go on
+  the stack in the order they happened (no ordering choice)
 
 ## Step 3 — Activated abilities and resources
 

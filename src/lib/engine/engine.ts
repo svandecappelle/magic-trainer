@@ -2,9 +2,9 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, findPayment, hasInstantSpeed, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  manaColors, parseCost, power, spellSpec, toughness,
+  manaColors, parseCost, power, spellSpec, toughness, triggersOf,
   type AbilitySpec, type Affected, type Amount, type CounterKind, type Effect, type Keyword, type ManaSource, type Selector,
-  type TargetFilter, type TargetSpec,
+  type ObjectEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
 
 export type PlayerId = 0 | 1;
@@ -41,6 +41,15 @@ export interface StackItem extends CardInst {
   ability?: AbilitySpec;
   /** The value chosen for X when cast. */
   x?: number;
+  /** For an ability: the permanent it comes from ("this creature gets +1/+1"). */
+  source?: string;
+}
+
+/** A triggered ability waiting to be put on the stack (the next time a player would get priority). */
+export interface Triggered {
+  source: CardInst;
+  controller: PlayerId;
+  ability: AbilitySpec;
 }
 
 export interface PlayerState {
@@ -53,14 +62,18 @@ export interface PlayerState {
   landPlayed: boolean;
 }
 
-/** Untap, upkeep and draw happen automatically at the start of a turn. */
-export type Step = 'mulligan' | 'main1' | 'attack' | 'block' | 'main2';
+/**
+ * Untap, upkeep and draw happen automatically at the start of a turn. The game only stops in
+ * the upkeep when abilities trigger there.
+ */
+export type Step = 'mulligan' | 'upkeep' | 'main1' | 'attack' | 'block' | 'main2';
 
 /**
  * Why both players get a chance to cast instants. Like MTG Arena, priority is only
  * offered at these moments, and skipped for a player with nothing castable.
  */
 export type WindowReason =
+  | 'upkeep' // upkeep triggers are on the stack; the draw comes after
   | 'begin' // start of a turn, after the draw (full control only)
   | 'main' // a spell was cast in a main phase
   | 'combat' // beginning of combat, before attackers (full control only)
@@ -91,7 +104,9 @@ export type ChoicePurpose =
   | 'discard' // "discard a card": the discarding player chooses
   | 'discardChosen' // Duress: the spell's controller chooses from a revealed hand
   | 'scry'
-  | 'surveil';
+  | 'surveil'
+  | 'triggerTargets' // targets for a triggered ability going on the stack
+  | 'optional'; // "you may …" on resolution
 
 /** Where "arrange" choices may put cards (scry: top/bottom, surveil: top/graveyard). */
 export type ArrangeZone = 'top' | 'bottom' | 'graveyard';
@@ -106,18 +121,25 @@ export type Choice = { player: PlayerId; purpose: ChoicePurpose; params?: ErrorP
   | { kind: 'arrange'; cards: CardInst[]; zones: ArrangeZone[] }
   | { kind: 'mode'; min: number; max: number; modes: string[] }
   | { kind: 'yesNo' }
+  /** Targets for each slot, like casting a spell. `source` is where the ability comes from. */
+  | { kind: 'targets'; slots: TargetSpec[]; source: CardInst }
 );
 
 export type Answer =
   | { kind: 'cards'; iids: string[] }
   | { kind: 'arrange'; zones: Partial<Record<ArrangeZone, string[]>> }
   | { kind: 'mode'; modes: number[] }
-  | { kind: 'yesNo'; yes: boolean };
+  | { kind: 'yesNo'; yes: boolean }
+  | { kind: 'targets'; targets: Target[][] };
 
 export interface Pending {
   choice: Choice;
-  /** What continues once answered: the end of turn, or the spell or ability being resolved. */
-  resume: 'cleanup' | 'effect';
+  /**
+   * What continues once answered: the end of turn, the spell or ability being resolved, or a
+   * triggered ability waiting for targets (`trigger`).
+   */
+  resume: 'cleanup' | 'effect' | 'trigger';
+  trigger?: Triggered;
 }
 
 /** A spell or ability halfway through resolving (paused on a choice). */
@@ -129,6 +151,8 @@ export interface Resolving {
   next: number;
   /** Within an effect that asks several players in turn ("each player discards"), who is next. */
   sub?: number;
+  /** An optional ability ("you may") whose controller said yes. */
+  accepted?: boolean;
   reason: WindowReason;
 }
 
@@ -145,6 +169,12 @@ export type LogEntry =
   | { k: 'playLand'; p: PlayerId; card: string }
   | { k: 'cast'; p: PlayerId; card: string; targets?: LogTarget[] }
   | { k: 'enters'; card: string }
+  /** A triggered ability goes on the stack. */
+  | { k: 'triggers'; card: string; targets?: LogTarget[] }
+  /** A triggered ability has no legal target and is removed. */
+  | { k: 'noTarget'; card: string }
+  /** The controller chose not to use a "you may" ability. */
+  | { k: 'declined'; card: string }
   | { k: 'attack'; p: PlayerId; cards: string[] }
   | { k: 'blocked'; card: string; by: string[] }
   | { k: 'damage'; card: string; n: number; target: string }
@@ -194,6 +224,10 @@ export interface GameState {
    * Optional so states created before this option existed still load.
    */
   fullControl?: [boolean, boolean];
+  /** Triggered abilities not on the stack yet. Optional so older saved states still load. */
+  triggered?: Triggered[];
+  /** Counter for ability ids on the stack. */
+  abilities?: number;
   /** Random generator state, so shuffles during the game are reproducible. Secret: redacted for clients. */
   seed: number;
 }
@@ -449,6 +483,8 @@ export function validateAnswer(choice: Choice, answer: Answer): void {
     const modes = new Set(answer.modes);
     if (modes.size !== answer.modes.length || modes.size < choice.min || modes.size > choice.max) throw bad();
     if (answer.modes.some((m) => !Number.isInteger(m) || m < 0 || m >= choice.modes.length)) throw bad();
+  } else if (choice.kind === 'targets' && answer.kind === 'targets') {
+    if (!Array.isArray(answer.targets) || answer.targets.length > choice.slots.length || answer.targets.some((ts) => !Array.isArray(ts))) throw bad();
   }
 }
 
@@ -540,9 +576,21 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
     }
   }
   log(d, { k: 'turn', n: d.turn, p });
-  if (!skipDraw) draw(d, p, 1);
-  // The active player has passed; the opponent may act before the first main phase.
-  if (d.winner === null) openWindow(d, 'begin', opponent(p), 1);
+  fireStep(d, 'upkeep');
+  if (d.triggered?.length) {
+    // Upkeep triggers resolve before the draw (see closeWindow).
+    d.step = 'upkeep';
+    d.priority = { player: p, passes: 0, reason: 'upkeep' };
+    return;
+  }
+  drawStep(d, skipDraw);
+}
+
+/** Draw for the turn, then the opponent may act before the first main phase (the active player has passed). */
+function drawStep(d: GameState, skipDraw: boolean) {
+  d.step = 'main1';
+  if (!skipDraw) draw(d, d.active, 1);
+  if (d.winner === null) openWindow(d, 'begin', opponent(d.active), 1);
 }
 
 /** Cleanup step: the active player discards down to seven (their choice), then the turn passes. */
@@ -586,6 +634,110 @@ const newPermanent = (inst: CardInst, controller: PlayerId): Permanent => ({
 function removePermanent(d: GameState, perm: Permanent, zone: 'graveyard' | 'exile') {
   d.battlefield = d.battlefield.filter((x) => x.iid !== perm.iid);
   d.players[perm.controller][zone].push({ iid: perm.iid, card: perm.card });
+  if (zone === 'graveyard' && isCreature(perm.card)) fireObject(d, 'dies', perm);
+}
+
+/** A permanent enters: put it on the battlefield and check "enters" triggers (its own, landfall…). */
+function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId): Permanent {
+  const perm = newPermanent(inst, controller);
+  d.battlefield.push(perm);
+  fireObject(d, 'enters', perm);
+  return perm;
+}
+
+// ---------- Triggers ----------
+
+function queueTrigger(d: GameState, source: CardInst, controller: PlayerId, ability: AbilitySpec) {
+  if (!ability.effects.length) {
+    log(d, { k: 'notSimulated', card: source.card.name });
+    return;
+  }
+  (d.triggered ??= []).push({ source: { iid: source.iid, card: source.card }, controller, ability });
+}
+
+/** Does `perm` match what a trigger watches, seen from the trigger controller's side? Works for permanents that just left too. */
+function fits(d: GameState, viewer: PlayerId, which: Selector, perm: Permanent): boolean {
+  if (which.kind === 'creature' && !isCreature(perm.card)) return false;
+  return matchesFilter(d, which.filter, viewer, perm, perm.controller);
+}
+
+/**
+ * `perm` entered, died or attacked: trigger its own abilities and those of permanents watching
+ * for it. A creature that died still sees its own death ("When this creature dies").
+ */
+function fireObject(d: GameState, on: ObjectEvent, perm: Permanent) {
+  const watchers = d.battlefield.some((x) => x.iid === perm.iid) ? d.battlefield : [...d.battlefield, perm];
+  for (const x of watchers) {
+    for (const t of triggersOf(x.card)) {
+      const e: TriggerEvent = t.event;
+      if (e.on !== on) continue;
+      const hit = e.self ? x.iid === perm.iid : !(e.another && x.iid === perm.iid) && fits(d, x.controller, e.which, perm);
+      if (hit) queueTrigger(d, x, x.controller, t.ability);
+    }
+  }
+}
+
+/** The beginning of the active player's upkeep or end step. */
+function fireStep(d: GameState, on: 'upkeep' | 'endStep') {
+  for (const x of d.battlefield) {
+    for (const t of triggersOf(x.card)) {
+      if (t.event.on !== on) continue;
+      const mine = x.controller === d.active;
+      if (t.event.whose === 'each' || (t.event.whose === 'you') === mine) queueTrigger(d, x, x.controller, t.ability);
+    }
+  }
+}
+
+/** `p` cast `card`: "whenever you cast …" and prowess. */
+function fireCast(d: GameState, p: PlayerId, card: Card) {
+  for (const x of d.battlefield) {
+    if (x.controller !== p) continue;
+    for (const t of triggersOf(x.card)) {
+      if (t.event.on === 'cast' && cardMatches(card, t.event.filter)) queueTrigger(d, x, p, t.ability);
+    }
+  }
+}
+
+function pushAbility(d: GameState, t: Triggered, targets: Target[][]) {
+  d.abilities = (d.abilities ?? 0) + 1;
+  d.stack.push({
+    iid: `${t.source.iid}-ability-${d.abilities}`, card: t.source.card, controller: t.controller, targets, ability: t.ability, source: t.source.iid,
+  });
+  const named = targets.flat().map((tg) => targetName(d, tg));
+  log(d, { k: 'triggers', card: t.source.card.name, ...(named.length ? { targets: named } : {}) });
+  // Both players get priority again, starting with the active player.
+  if (d.priority) {
+    d.priority.passes = 0;
+    d.priority.player = d.active;
+  } else {
+    d.priority = { player: d.active, passes: 0, reason: 'main' };
+  }
+}
+
+/**
+ * Puts the next waiting trigger on the stack (the active player's first, so they resolve last).
+ * Returns false when its controller must choose targets first.
+ */
+function flushTrigger(d: GameState): boolean {
+  const queue = d.triggered!;
+  const i = Math.max(0, queue.findIndex((t) => t.controller === d.active));
+  const [t] = queue.splice(i, 1);
+  if (!queue.length) delete d.triggered;
+  const slots = t.ability.targets;
+  if (!slots.length) {
+    pushAbility(d, t, []);
+    return true;
+  }
+  if (slots.some((slot) => legalTargets(d, t.controller, slot).length < slot.min)) {
+    log(d, { k: 'noTarget', card: t.source.card.name });
+    return true;
+  }
+  d.pending = {
+    choice: { kind: 'targets', player: t.controller, purpose: 'triggerTargets', slots, source: t.source, params: { card: t.source.card.name } },
+    resume: 'trigger',
+    trigger: t,
+  };
+  return false;
 }
 
 /** State-based actions: +1/+1 and -1/-1 counters cancel out, 0 toughness, lethal damage, 0 life. */
@@ -666,7 +818,10 @@ function resolveCombat(d: GameState) {
       }
     }
 
-    for (const h of hits) dealDamage(d, h.source, h.source.controller, h.target, h.amount);
+    for (const h of hits) {
+      dealDamage(d, h.source, h.source.controller, h.target, h.amount);
+      if (typeof h.target === 'number' && h.amount > 0) fireObject(d, 'combatDamage', h.source);
+    }
     checkStateBased(d);
     if (d.winner !== null) return;
   }
@@ -679,6 +834,10 @@ const specOf = (item: StackItem): AbilitySpec => item.ability ?? spellSpec(item.
 /** What an effect applies to, looked up again now: earlier effects may have changed the game. */
 function affected(d: GameState, r: Resolving, to: Affected): (Permanent | PlayerId | StackItem)[] {
   if (to === 'you') return [r.item.controller];
+  if (to === 'self') {
+    const src = r.item.source ? findPermanent(d, r.item.source) : undefined;
+    return src ? [src] : [];
+  }
   if (to === 'each-opponent') return [opponent(r.item.controller)];
   // Each player, starting with the active player.
   if (to === 'each-player') return [d.active, opponent(d.active)];
@@ -876,8 +1035,8 @@ function startResolving(d: GameState, reason: WindowReason) {
   const item = d.stack.pop()!;
 
   if (!item.ability && !isInstantOrSorcery(item.card)) {
-    d.battlefield.push(newPermanent(item, item.controller));
     log(d, { k: 'enters', card: item.card.name });
+    enterBattlefield(d, { iid: item.iid, card: item.card }, item.controller);
     afterResolving(d, reason);
     return;
   }
@@ -898,7 +1057,20 @@ function startResolving(d: GameState, reason: WindowReason) {
 
 function continueResolving(d: GameState, answer?: Answer) {
   const r = d.resolving!;
-  const effects = specOf(r.item).effects;
+  const spec = specOf(r.item);
+  const effects = spec.effects;
+  if (spec.optional && !r.accepted) {
+    if (answer?.kind !== 'yesNo') {
+      d.pending = { choice: { kind: 'yesNo', player: r.item.controller, purpose: 'optional', params: { card: r.item.card.name } }, resume: 'effect' };
+      return;
+    }
+    if (!answer.yes) {
+      log(d, { k: 'declined', card: r.item.card.name });
+      r.next = effects.length;
+    }
+    r.accepted = true;
+    answer = undefined;
+  }
   while (r.next < effects.length) {
     const choice = runEffect(d, r, effects[r.next], answer);
     answer = undefined;
@@ -927,7 +1099,7 @@ function wantsPriority(d: GameState, p: PlayerId): boolean {
   const reason = d.priority!.reason;
   if (!d.stack.length) {
     // Like Arena, these stops are only made in full control.
-    if (reason === 'begin' || reason === 'combat') return false;
+    if (reason === 'begin' || reason === 'combat' || reason === 'upkeep') return false;
     if (reason === 'attack' && p === d.active) return false; // the attacker just acted
   }
   if (d.stack.at(-1)?.controller === p) return false; // don't respond to your own spell
@@ -936,11 +1108,24 @@ function wantsPriority(d: GameState, p: PlayerId): boolean {
 
 function openWindow(d: GameState, reason: WindowReason, player: PlayerId, passes: number) {
   d.priority = { player, passes, reason };
-  autoPass(d);
+  settle(d);
 }
 
-function autoPass(d: GameState) {
-  while (d.priority && !d.pending && d.winner === null && !wantsPriority(d, d.priority.player)) passOnce(d);
+/**
+ * Runs the game forward until someone has to decide something: state-based actions, then
+ * waiting triggers go on the stack, then players who wouldn't do anything pass automatically.
+ */
+function settle(d: GameState) {
+  for (;;) {
+    checkStateBased(d);
+    if (d.winner !== null || d.pending || d.mulligan) return;
+    if (d.triggered?.length) {
+      if (!flushTrigger(d)) return;
+      continue;
+    }
+    if (!d.priority || wantsPriority(d, d.priority.player)) return;
+    passOnce(d);
+  }
 }
 
 function passOnce(d: GameState) {
@@ -957,7 +1142,9 @@ function passOnce(d: GameState) {
 
 /** Everyone passed with an empty stack: the game moves on. */
 function closeWindow(d: GameState, reason: WindowReason) {
-  if (reason === 'combat') {
+  if (reason === 'upkeep') {
+    drawStep(d, d.turn === 1);
+  } else if (reason === 'combat') {
     // Attackers may have been removed during the window.
     d.step = creaturesOf(d, d.active).some(canAttack) ? 'attack' : 'main2';
   } else if (reason === 'attack') {
@@ -993,11 +1180,11 @@ function setBlocks(d: GameState, blocks: Record<string, string[]>) {
 export function addAbility(state: GameState, source: CardInst, controller: PlayerId, spec: AbilitySpec, targets: Target[][] = []): GameState {
   const d = structuredClone(state);
   const n = d.stack.length + d.log.length;
-  d.stack.push({ iid: `${source.iid}-ability-${n}`, card: source.card, controller, targets, ability: spec });
+  d.stack.push({ iid: `${source.iid}-ability-${n}`, card: source.card, controller, targets, ability: spec, source: source.iid });
   if (d.priority) {
     d.priority.passes = 0;
     d.priority.player = d.active;
-    autoPass(d);
+    settle(d);
   } else {
     openWindow(d, 'main', d.active, 0);
   }
@@ -1071,8 +1258,10 @@ export function apply(state: GameState, action: Action): GameState {
       validateAnswer(pending.choice, action.answer);
       d.pending = null;
       if (pending.resume === 'cleanup' && action.answer.kind === 'cards') finishCleanup(d, action.answer.iids);
-      else continueResolving(d, action.answer);
-      autoPass(d);
+      else if (pending.resume === 'trigger' && action.answer.kind === 'targets') {
+        const t = pending.trigger!;
+        pushAbility(d, t, checkTargets(d, t.controller, t.source.card, t.ability, action.answer.targets));
+      } else continueResolving(d, action.answer);
       break;
     }
 
@@ -1082,9 +1271,9 @@ export function apply(state: GameState, action: Action): GameState {
       const inst = me.hand.find((c) => c.iid === action.iid);
       if (!inst || !isLandCard(inst.card)) throw new IllegalAction('notALand');
       me.hand = me.hand.filter((c) => c !== inst);
-      d.battlefield.push(newPermanent(inst, p));
       me.landPlayed = true;
       log(d, { k: 'playLand', p, card: inst.card.name });
+      enterBattlefield(d, inst, p);
       break;
     }
 
@@ -1110,12 +1299,12 @@ export function apply(state: GameState, action: Action): GameState {
       const named = targets.flat().map((t) => targetName(d, t));
       d.stack.push({ ...inst, controller: p, targets, ...(xCount(inst.card) ? { x } : {}) });
       log(d, { k: 'cast', p, card: inst.card.name, ...(named.length ? { targets: named } : {}) });
+      fireCast(d, p, inst.card);
 
       // The opponent may respond.
       if (d.priority) {
         d.priority.passes = 0;
         d.priority.player = opponent(p);
-        autoPass(d);
       } else {
         openWindow(d, 'main', opponent(p), 0);
       }
@@ -1125,7 +1314,6 @@ export function apply(state: GameState, action: Action): GameState {
     case 'pass': {
       if (d.priority) {
         passOnce(d);
-        autoPass(d);
       } else if (d.step === 'main1') {
         // Skip combat entirely when nothing can attack.
         if (creaturesOf(d, p).some(canAttack)) openWindow(d, 'combat', opponent(p), 1);
@@ -1134,6 +1322,7 @@ export function apply(state: GameState, action: Action): GameState {
         d.step = 'main2';
       } else if (d.step === 'main2') {
         // The active player is done; the opponent gets an end-of-turn window.
+        fireStep(d, 'endStep');
         openWindow(d, 'end', opponent(p), 1);
       } else {
         throw new IllegalAction('declareBlockersFirst');
@@ -1156,6 +1345,7 @@ export function apply(state: GameState, action: Action): GameState {
       d.attackers = attackers.map((a) => a.iid);
       d.blocks = {};
       log(d, { k: 'attack', p, cards: attackers.map((a) => a.card.name) });
+      for (const a of attackers) fireObject(d, 'attacks', a);
       // The attacking player gets priority first.
       openWindow(d, 'attack', p, 0);
       break;
@@ -1187,6 +1377,6 @@ export function apply(state: GameState, action: Action): GameState {
     }
   }
 
-  checkStateBased(d);
+  settle(d);
   return d;
 }

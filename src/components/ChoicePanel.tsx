@@ -16,6 +16,11 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
     case 'discardChosen': return t.game.choice.discardChosen({ n, who: names[Number(p.p) as 0 | 1] });
     case 'scry': return t.game.choice.scry({ n });
     case 'surveil': return t.game.choice.surveil({ n });
+    case 'optional': return t.game.choice.optional({ card: card(String(p.card)) });
+    case 'triggerTargets':
+      if (choice.kind === 'targets') {
+        return t.game.choice.triggerTargets({ card: card(String(p.card)), kind: t.game.targetKinds[choice.slots[0].kind] });
+      }
   }
   if (choice.kind === 'cards') return t.game.choice.cards(choice.min, choice.max);
   if (choice.kind === 'mode') return t.game.choice.mode(choice.min, choice.max);
@@ -89,6 +94,9 @@ export function ChoicePanel({ choice, onAnswer, onPreview }: Props) {
       </div>
     );
   }
+
+  // Targets are picked on the board.
+  if (choice.kind === 'targets') return null;
 
   // Arrange: each card goes to a zone; the order shown is the order kept (first = on top).
   const byIid = new Map(choice.cards.map((c) => [c.iid, c]));

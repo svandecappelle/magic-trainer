@@ -9,7 +9,7 @@ const lists = new Intl.ListFormat('en', { type: 'conjunction' });
 const signed = (n: number) => (n < 0 ? `${n}` : `+${n}`);
 const keywordNames: Record<Keyword, string> = {
   flying: 'flying', reach: 'reach', haste: 'haste', vigilance: 'vigilance', trample: 'trample', deathtouch: 'deathtouch',
-  lifelink: 'lifelink', defender: 'defender', 'first strike': 'first strike', 'double strike': 'double strike', menace: 'menace', flash: 'flash',
+  lifelink: 'lifelink', defender: 'defender', 'first strike': 'first strike', 'double strike': 'double strike', menace: 'menace', flash: 'flash', prowess: 'prowess',
 };
 
 const log: LogMessages = {
@@ -24,6 +24,12 @@ const log: LogMessages = {
     return `${who} ${c.card(e.card)}${names.length ? ` targeting ${c.list(names)}` : ''}`;
   },
   enters: (e, c) => `${c.card(e.card)} enters the battlefield`,
+  triggers: (e, c) => {
+    const names = (e.targets ?? []).map((t) => ('card' in t ? c.card(t.card) : c.isMe(t.p) ? 'you' : c.name(t.p)));
+    return `${c.card(e.card)}'s ability triggers${names.length ? ` targeting ${c.list(names)}` : ''}`;
+  },
+  noTarget: (e, c) => `${c.card(e.card)}'s ability has no legal target`,
+  declined: (e, c) => `${c.card(e.card)}'s ability is not used`,
   attack: (e, c) => `${c.isMe(e.p) ? 'You attack' : `${c.name(e.p)} attacks`} with ${c.list(e.cards.map(c.card))}`,
   blocked: (e, c) => `${c.card(e.card)} is blocked by ${c.list(e.by.map(c.card))}`,
   damage: (e, c) => `${c.card(e.card)} deals ${e.n} to ${c.card(e.target)}`,
@@ -391,6 +397,8 @@ export const en = {
       discardChosen: (p: { n: number; who: string }) => `${p.who} reveals their hand: choose ${plural(p.n, 'card', 'cards')} for them to discard.`,
       scry: (p: { n: number }) => `Scry ${p.n}: keep cards on top (in order) or put them on the bottom.`,
       surveil: (p: { n: number }) => `Surveil ${p.n}: keep cards on top (in order) or put them into your graveyard.`,
+      triggerTargets: (p: { card: string; kind: string }) => `${p.card}'s ability triggers: choose a target (${p.kind}).`,
+      optional: (p: { card: string }) => `Use ${p.card}'s ability?`,
       arrange: 'Put each card where you want it, then confirm.',
       mode: (min: number, max: number) => (min === max ? `Choose ${plural(max, 'mode', 'modes')}.` : `Choose ${min} to ${max} modes.`),
       cards: (min: number, max: number) => (min === max ? `Choose ${plural(max, 'card', 'cards')}.` : `Choose ${min} to ${max} cards.`),
@@ -403,6 +411,8 @@ export const en = {
     arrangeZones: { top: 'Top', bottom: 'Bottom', graveyard: 'Graveyard' },
     counters: (counter: string, n: number) => `${counter} ×${n}`,
     windows: {
+      upkeep: (myTurn: boolean): string =>
+        myTurn ? 'Your upkeep: abilities trigger. Cast an instant, or pass.' : "The opponent's upkeep: abilities trigger. Cast an instant, or pass.",
       begin: (myTurn: boolean): string =>
         myTurn ? 'Start of your turn. Cast an instant, or pass.' : "Start of the opponent's turn. Cast an instant, or pass.",
       main: (): string => 'Cast an instant, or pass.',

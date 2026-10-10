@@ -29,7 +29,7 @@ type Phase = 'begin' | 'main1' | 'combat' | 'block' | 'main2' | 'end';
 const PHASES: Phase[] = ['begin', 'main1', 'combat', 'block', 'main2', 'end'];
 
 function currentPhase(g: GameState): Phase {
-  if (g.priority?.reason === 'begin') return 'begin';
+  if (g.priority?.reason === 'begin' || g.step === 'upkeep') return 'begin';
   if (g.priority?.reason === 'end' || g.pending?.choice.purpose === 'cleanupDiscard') return 'end';
   if (g.priority?.reason === 'combat' || g.step === 'attack') return 'combat';
   if (g.step === 'block') return 'block';
@@ -61,8 +61,13 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   };
 
   // Selection state for multi-click interactions.
-  /** Casting a spell with targets: the slot being filled and the targets picked so far, per slot. */
-  const [targeting, setTargeting] = useState<{ iid: string; spec: AbilitySpec; slot: number; picked: Target[][]; x?: number } | null>(null);
+  /**
+   * Picking targets, slot by slot: for a spell being cast, or for a triggered ability (`choice`),
+   * whose arrows start from `from`.
+   */
+  const [targeting, setTargeting] = useState<{
+    iid: string; spec: AbilitySpec; slot: number; picked: Target[][]; x?: number; choice?: boolean; from?: string;
+  } | null>(null);
   /** Choosing X before casting a spell with {X} in its cost. */
   const [xPick, setXPick] = useState<{ iid: string; card: Card; x: number; max: number } | null>(null);
   const [attackSel, setAttackSel] = useState<string[]>([]);
@@ -72,7 +77,11 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
 
   // Reset selections whenever the game moves on.
   useEffect(() => {
-    setTargeting(null);
+    const c = g.pending?.choice;
+    // A triggered ability of ours needs targets: pick them on the board like for a spell.
+    if (c?.kind === 'targets' && c.player === me) {
+      setTargeting({ iid: '', spec: { targets: c.slots, effects: [] }, slot: 0, picked: c.slots.map(() => []), choice: true, from: `perm:${c.source.iid}` });
+    } else setTargeting(null);
     setXPick(null);
     setAttackSel([]);
     setBlockerSel(null);
@@ -151,6 +160,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   /** Move on to the next target slot, casting the spell after the last one. */
   function nextSlot(tg: NonNullable<typeof targeting>) {
     if (tg.slot + 1 < tg.spec.targets.length) return setTargeting({ ...tg, slot: tg.slot + 1 });
+    if (tg.choice) return act({ type: 'choose', answer: { kind: 'targets', targets: tg.picked } });
     act({ type: 'cast', iid: tg.iid, targets: tg.picked, ...(tg.x === undefined ? {} : { x: tg.x }) });
     setTargeting(null);
   }
@@ -239,7 +249,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
         </>
       );
     }
-  } else if (g.pending) {
+  } else if (g.pending && !targeting?.choice) {
     if (g.pending.choice.player === me) prompt = choicePrompt(t, g.pending.choice, show.nameOf, names);
     else prompt = t.game.choosing(oppName);
   } else if (!iAct) {
@@ -263,11 +273,14 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   } else if (targeting && slotSpec) {
     const n = targeting.picked[targeting.slot].length;
     const several = slotSpec.max > 1 || slotSpec.min < slotSpec.max;
-    prompt = t.game.chooseTarget(t.game.targetKinds[slotSpec.kind]) + (several ? ` ${t.game.targetsPicked(n, slotSpec.min, slotSpec.max)}` : '');
+    const source = g.pending?.choice.kind === 'targets' ? g.pending.choice.source.card : null;
+    prompt = (source
+      ? t.game.choice.triggerTargets({ card: show.name(source), kind: t.game.targetKinds[slotSpec.kind] })
+      : t.game.chooseTarget(t.game.targetKinds[slotSpec.kind])) + (several ? ` ${t.game.targetsPicked(n, slotSpec.min, slotSpec.max)}` : '');
     if (several && n >= slotSpec.min) primary = () => nextSlot(targeting);
     controls = (
       <>
-        <button className="secondary" onClick={() => setTargeting(null)}>{t.common.cancel}</button>
+        {!targeting.choice && <button className="secondary" onClick={() => setTargeting(null)}>{t.common.cancel}</button>}
         {several && <button className="primary" disabled={n < slotSpec.min} onClick={() => nextSlot(targeting)}>{t.game.doneTargeting}</button>}
       </>
     );
@@ -319,7 +332,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
         (el as HTMLElement).blur?.();
         primaryRef.current();
       } else if (e.key === 'Escape') {
-        setTargeting(null);
+        setTargeting((tg) => (tg?.choice ? tg : null)); // a trigger's targets can't be cancelled
         setXPick(null);
         setBlockerSel(null);
         setZoneView(null);
@@ -345,7 +358,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     for (const tg of item.targets.flat()) lines.push({ from: `stack:${item.iid}`, to: targetKey(tg), kind: 'target' });
   }
   if (targeting) {
-    for (const tg of targeting.picked.flat()) lines.push({ from: `hand:${targeting.iid}`, to: targetKey(tg), kind: 'pending' });
+    for (const tg of targeting.picked.flat()) lines.push({ from: targeting.from ?? `hand:${targeting.iid}`, to: targetKey(tg), kind: 'pending' });
   }
 
   // ---------- Rendering ----------
@@ -509,7 +522,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
               ))}
             </div>
           )}
-          {g.pending && g.pending.choice.player === me && g.winner === null && (
+          {g.pending && g.pending.choice.player === me && g.pending.choice.kind !== 'targets' && g.winner === null && (
             <div className="choice-dock">
               <ChoicePanel choice={g.pending.choice} onAnswer={(answer) => act({ type: 'choose', answer })} onPreview={setPreview} />
             </div>
