@@ -24,51 +24,54 @@ Known limitation: the server trusts the card data each client sends with its dec
 
 ## Deploying on a server (Docker + nginx)
 
-The image builds the app (after running the tests) and starts one Node process that serves it and the
-multiplayer WebSocket (`/ws`) on port 8787. Requirements: Docker with the compose plugin.
+One Node process serves the app and the multiplayer WebSocket (`/ws`); it runs in a Docker container listening on
+`127.0.0.1:8787`, with nginx in front. Requirements: Docker with the compose plugin, nginx, and make.
 
 ```bash
 git clone git@github.com:svandecappelle/magic-trainer.git && cd magic-trainer
-docker compose up -d --build     # build the image and start it in the background
-docker compose ps                # "healthy" once it answers
-docker compose logs -f           # follow the logs
-curl -I http://127.0.0.1:8787/   # 200 from the server itself
+sudo make install DOMAIN=magic.example.com                 # container + nginx site
+sudo make install DOMAIN=magic.example.com HTTPS=1 EMAIL=you@example.com   # … with a Let's Encrypt certificate
 ```
 
-To update: `git pull && docker compose up -d --build`. Games in progress live in the server's memory, so a
-restart or an update ends them (players keep their decks and collection: those stay in their browser).
+Point the domain's DNS (A/AAAA record) at the server and open ports 80 and 443 first. `make help` lists the
+other targets: `make update` (git pull, rebuild, restart), `make status`, `make logs`, `sudo make https DOMAIN=…`,
+`sudo make uninstall`. Options: `PORT=` (host port, default 8787), `FORCE=1` (see below).
 
-`docker-compose.yml` publishes the port on `127.0.0.1` only, so the service is reachable from the server itself and
-nginx faces the internet. To try it without nginx, change the port line to `"8787:8787"` and open
-`http://<server>:8787`. To use another port, change both `PORT` and the port mapping.
+Games in progress live in the server's memory, so a restart or an update ends them (players keep their decks
+and collection: those stay in their browser).
 
-### nginx in front
+### What the installer does to nginx
 
-[`deploy/nginx.conf`](deploy/nginx.conf) is a ready-to-use site configuration. On a Debian/Ubuntu server:
+It installs **one dedicated file**, `magic-trainer.host.conf`, from the template
+[`deploy/magic-trainer.host.conf`](deploy/magic-trainer.host.conf): in `/etc/nginx/sites-available/` with a link in
+`sites-enabled/` (Debian/Ubuntu), or in `/etc/nginx/conf.d/` otherwise. Other sites are never modified:
 
-```bash
-sudo apt install nginx certbot python3-certbot-nginx
-sudo cp deploy/nginx.conf /etc/nginx/sites-available/magic-trainer
-sudo sed -i 's/magic.example.com/your.domain.com/' /etc/nginx/sites-available/magic-trainer
-sudo ln -s /etc/nginx/sites-available/magic-trainer /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
-sudo certbot --nginx -d your.domain.com    # HTTPS certificate; certbot adds the 443 server and the redirect
-```
+- it stops, changing nothing, if another configuration already declares `server_name DOMAIN` (`FORCE=1` to go on);
+- the `map` variable and `upstream` in the template have names prefixed with `magic_trainer` so they can't collide
+  with other configurations;
+- a previous version of its own file is kept as `magic-trainer.host.conf.bak-<date>` (not loaded by nginx);
+- it runs `nginx -t` before reloading; if nginx rejects the configuration, the previous state is restored;
+- `make uninstall` removes only that file and its link (the certificate and the backups stay).
 
-Point the domain's DNS (A/AAAA record) at the server and open ports 80 and 443 in its firewall first.
+`HTTPS=1` runs `certbot --nginx -d DOMAIN`, which adds the 443 server and the HTTP→HTTPS redirect to that same
+file. Re-running `make install` rewrites the file without HTTPS: run `sudo make https DOMAIN=…` again afterwards
+(the existing certificate is reused).
 
-What the configuration does, if you write your own (or use Caddy, Traefik…):
+### Configuring nginx by hand
+
+To write your own configuration (or use Caddy, Traefik…), the essentials are in the template:
 
 - **Proxy everything to `127.0.0.1:8787`.** The Node server serves the static files and falls back to `index.html`
-  for client-side routes such as `/play`, so no `try_files` or root directory is needed.
-- **Upgrade WebSocket requests on `/ws`:** `proxy_http_version 1.1`, `Upgrade $http_upgrade` and
-  `Connection "upgrade"` headers. Without them, Play Online can't connect.
+  for client-side routes such as `/play`, so no `root` or `try_files` is needed.
+- **Upgrade WebSocket requests on `/ws`:** `proxy_http_version 1.1` and the `Upgrade` / `Connection: upgrade`
+  headers. Without them, Play Online can't connect.
 - **Long read timeout on `/ws`** (`proxy_read_timeout 1h`): nginx closes connections idle for 60 s by default;
   the server pings every 30 s, but a long timeout avoids cutting games during slow turns.
-- **HTTPS:** behind HTTPS the app connects with `wss://` automatically (same host, `/ws`), so the WebSocket
-  needs no separate configuration.
-- **Caching:** files under `/assets/` have content hashes in their names and can be cached for a year;
-  `index.html` must not be cached that long (it isn't, by default).
+- **HTTPS:** behind HTTPS the app connects with `wss://` automatically (same host, `/ws`).
+- **Caching:** files under `/assets/` have content hashes in their names and can be cached for a year.
+
+Without nginx (for a quick test), change the port line of `docker-compose.yml` to `"8787:8787"`, run `make app`
+and open `http://<server>:8787`.
 
 ## Structure
 
@@ -82,7 +85,7 @@ What the configuration does, if you write your own (or use Caddy, Traefik…):
 | `src/lib/engine/` | Simplified two-player rules engine with London mulligans, a stack and Arena-style priority windows with an optional per-player full control mode (`engine.ts`), card rules parsing (`rules.ts`), heuristic bot (`bot.ts`), preset decks |
 | `src/lib/multiplayer/` | Client/server message types, hidden-information redaction, WebSocket hook |
 | `server/` | Node WebSocket game server: rooms, seats, reconnection (`rooms.ts`), HTTP/static wiring (`index.ts`) |
-| `Dockerfile`, `docker-compose.yml`, `deploy/` | Container image, compose service, example nginx configuration |
+| `Makefile`, `Dockerfile`, `docker-compose.yml`, `deploy/` | Server installer, container image, compose service, nginx site template |
 | `src/i18n/` | Translations (`en.ts`, `fr.ts`), language store, log/error rendering |
 | `src/store/` | Zustand stores, persisted to `localStorage` |
 | `src/pages/` | One component per screen |
