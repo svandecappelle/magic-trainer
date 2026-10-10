@@ -58,7 +58,10 @@ describe('step 3 wordings', () => {
     });
     expect(activatedOf(fanatic)[0]).toMatchObject({ cost: { sacrificeSelf: true }, ability: { effects: [{ kind: 'damage' }] } });
     expect(activatedOf(creature('Elf', 1, 1, '{T}: Add {G}.'))).toEqual([]);
-    expect(activatedOf(card({ name: 'Jace', typeLine: 'Legendary Planeswalker — Jace', oracleText: '+1: Draw a card.\n−2: Scry 2.' }))).toEqual([]);
+    expect(activatedOf(card({ name: 'Jace', typeLine: 'Legendary Planeswalker — Jace', oracleText: '+1: Draw a card.\n−2: Scry 2.' }))).toMatchObject([
+      { cost: { loyalty: 1 }, sorcery: true, ability: { effects: [{ kind: 'draw' }] } },
+      { cost: { loyalty: -2 }, sorcery: true, ability: { effects: [{ kind: 'scry' }] } },
+    ]);
     expect(activatedOf(creature('Priest', 1, 1, 'Sacrifice another creature: You gain 2 life.'))[0].cost.sacrifice).toMatchObject({
       another: true, which: { kind: 'creature', filter: { controller: 'you' } },
     });
@@ -301,5 +304,75 @@ describe('step 3: counters, library search, graveyard', () => {
     s = apply(s, { type: 'activate', iid: iidOf(s, 'Overseer'), index: 0 });
     expect(perm(s, 'Walker')!.counters).toEqual({ '+1/+1': 3 });
     expect(perm(s, 'Overseer')!.counters).toEqual({});
+  });
+});
+
+describe('step 3: planeswalkers', () => {
+  const walker = card({
+    name: 'Chandra', typeLine: 'Legendary Planeswalker — Chandra', loyalty: '4',
+    oracleText: '+1: Chandra deals 2 damage to each opponent.\n−3: Chandra deals 4 damage to target creature.',
+  });
+
+  it('reads targets that include planeswalkers', () => {
+    expect(parseAbilityText('Shock deals 2 damage to target creature or planeswalker.').targets[0]).toEqual({
+      kind: 'permanent', min: 1, max: 1, filter: { types: ['creature', 'planeswalker'] },
+    });
+    expect(parseAbilityText('Deals 3 damage to target player or planeswalker.').targets[0]).toMatchObject({ kind: 'any', filter: { types: ['planeswalker'] } });
+  });
+
+  it('enters with its loyalty, uses one loyalty ability a turn, and dies at 0 loyalty', () => {
+    let s = board({ mana: 1, hand: [walker], theirs: [creature('Ogre', 3, 3)] });
+    s.players[0].hand[0].card = { ...walker, manaCost: '{1}', cmc: 1 };
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    expect(perm(s, 'Chandra')!.counters.loyalty).toBe(4);
+    s = apply(s, { type: 'activate', iid: iidOf(s, 'Chandra'), index: 0 });
+    expect(perm(s, 'Chandra')!.counters.loyalty).toBe(5);
+    expect(s.players[1].life).toBe(18);
+    expect(errorOf(() => apply(s, { type: 'activate', iid: iidOf(s, 'Chandra'), index: 1, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Ogre') }]] })))
+      .toBe('onceEachTurn');
+    // Burn removes loyalty.
+    const bolt = spell('Bolt', '{1}', 'Bolt deals 5 damage to any target.', 'Instant');
+    let t = board({ oppMana: 1, oppHand: [bolt], mine: [walker] });
+    t.battlefield.at(-1)!.counters = { loyalty: 4 };
+    t.active = 1;
+    t = apply(t, { type: 'cast', iid: 'o0', target: { kind: 'permanent', iid: iidOf(t, 'Chandra') } });
+    expect(perm(t, 'Chandra')).toBeUndefined();
+  });
+
+  it('refuses a minus ability it cannot pay', () => {
+    const s = board({ mine: [walker], theirs: [creature('Ogre', 3, 3)] });
+    s.battlefield.find((p) => p.card.name === 'Chandra')!.counters = { loyalty: 2 };
+    expect(errorOf(() => apply(s, { type: 'activate', iid: iidOf(s, 'Chandra'), index: 1, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Ogre') }]] })))
+      .toBe('notEnoughLoyalty');
+  });
+
+  it('lets creatures attack a planeswalker', () => {
+    let s = board({ mine: [creature('Bear', 2, 2)], theirs: [walker] });
+    s.battlefield.find((p) => p.card.name === 'Chandra')!.counters = { loyalty: 4 };
+    s = apply(s, { type: 'pass' });
+    while (s.step !== 'attack' || s.priority) s = apply(s, { type: 'pass' });
+    s = apply(s, { type: 'declareAttackers', attackers: [iidOf(s, 'Bear')], targets: { [iidOf(s, 'Bear')]: iidOf(s, 'Chandra') } });
+    while (s.step !== 'main2') s = apply(s, s.priority ? { type: 'pass' } : { type: 'declareBlockers', blocks: {} });
+    expect(perm(s, 'Chandra')!.counters.loyalty).toBe(2);
+    expect(s.players[1].life).toBe(20);
+  });
+
+  it('makes the bot use loyalty abilities and attack planeswalkers', () => {
+    let s = board({ theirs: [walker], mine: [creature('Ogre', 3, 3)] });
+    s.battlefield.find((p) => p.card.name === 'Chandra')!.counters = { loyalty: 4 };
+    s.active = 1;
+    s.step = 'main1';
+    // −3 kills the Ogre and leaves Chandra at 1.
+    const action = botAction(s);
+    expect(action).toMatchObject({ type: 'activate', index: 1 });
+    s = apply(s, action);
+    expect(perm(s, 'Ogre')).toBeUndefined();
+    expect(perm(s, 'Chandra')!.counters.loyalty).toBe(1);
+
+    let t = board({ mine: [walker], theirs: [creature('Bear', 2, 2)] });
+    t.battlefield.find((p) => p.card.name === 'Chandra')!.counters = { loyalty: 2 };
+    t.active = 1;
+    t.step = 'attack';
+    expect(botAction(t)).toEqual({ type: 'declareAttackers', attackers: [iidOf(t, 'Bear')], targets: { [iidOf(t, 'Bear')]: iidOf(t, 'Chandra') } });
   });
 });

@@ -16,6 +16,8 @@ export interface Card {
   rarity: string;
   power?: string;
   toughness?: string;
+  /** Starting loyalty of a planeswalker. Missing on cards saved before planeswalkers were simulated. */
+  loyalty?: string;
   /** Keyword abilities, e.g. ["Flying", "Lifelink"]. Missing on cards saved before v0.2. */
   keywords?: string[];
   /**

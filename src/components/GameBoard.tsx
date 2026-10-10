@@ -6,7 +6,7 @@ import {
 } from '../lib/engine/engine';
 import { errorText, logText, useT, type AppError } from '../i18n';
 import { useCardDisplay } from '../lib/cardLocale';
-import { activatedOf, isCreature, isLandCard, spellSpec, type AbilitySpec } from '../lib/engine/rules';
+import { activatedOf, isCreature, isLandCard, isPlaneswalker, spellSpec, type AbilitySpec } from '../lib/engine/rules';
 import { ChoicePanel, choicePrompt } from './ChoicePanel';
 import { Lines, type Line } from './board/Lines';
 import { useBoardFx, type Float } from './board/useBoardFx';
@@ -78,6 +78,8 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   /** A permanent with several abilities was clicked: which one? */
   const [abilityMenu, setAbilityMenu] = useState<Permanent | null>(null);
   const [attackSel, setAttackSel] = useState<string[]>([]);
+  /** Selected attackers sent at a planeswalker: attacker iid → planeswalker iid. */
+  const [attackAt, setAttackAt] = useState<Record<string, string>>({});
   const [blockerSel, setBlockerSel] = useState<string | null>(null);
   const [blocks, setBlocks] = useState<Record<string, string[]>>({});
   const [bottomSel, setBottomSel] = useState<string[]>([]);
@@ -92,6 +94,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     setXPick(null);
     setAbilityMenu(null);
     setAttackSel([]);
+    setAttackAt({});
     setBlockerSel(null);
     setBlocks({});
     setBottomSel([]);
@@ -252,6 +255,14 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     if (targeting) return pickTarget({ kind: 'permanent', iid: perm.iid });
     if (declaringAttack && perm.controller === me && canAttack(perm)) {
       setAttackSel((sel) => (sel.includes(perm.iid) ? sel.filter((x) => x !== perm.iid) : [...sel, perm.iid]));
+      setAttackAt(({ [perm.iid]: _, ...rest }) => rest);
+      return;
+    }
+    // Send the selected attackers that aren't assigned yet at this planeswalker; click again to take them back.
+    if (declaringAttack && perm.controller !== me && isPlaneswalker(perm.card)) {
+      const waiting = attackSel.filter((a) => !attackAt[a]);
+      if (waiting.length) setAttackAt({ ...attackAt, ...Object.fromEntries(waiting.map((a) => [a, perm.iid])) });
+      else setAttackAt(Object.fromEntries(Object.entries(attackAt).filter(([, pw]) => pw !== perm.iid)));
       return;
     }
     if (declaringBlocks) {
@@ -374,13 +385,15 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     primary = () => act({ type: 'pass' });
     controls = <button className="primary" onClick={primary}>{top ? t.game.passResolve : t.game.pass}</button>;
   } else if (g.step === 'attack') {
-    prompt = t.game.declareAttackers;
+    const walkers = g.battlefield.some((x) => x.controller === opp && isPlaneswalker(x.card));
+    prompt = walkers ? t.game.declareAttackersPw : t.game.declareAttackers;
     const all = g.battlefield.filter((x) => x.controller === me && canAttack(x)).map((x) => x.iid);
-    primary = () => act({ type: 'declareAttackers', attackers: attackSel });
+    const targets = Object.fromEntries(Object.entries(attackAt).filter(([a]) => attackSel.includes(a)));
+    primary = () => act({ type: 'declareAttackers', attackers: attackSel, ...(Object.keys(targets).length ? { targets } : {}) });
     controls = (
       <>
         {attackSel.length < all.length && <button className="secondary" onClick={() => setAttackSel(all)}>{t.game.attackAll}</button>}
-        {attackSel.length > 0 && <button className="secondary" onClick={() => setAttackSel([])}>{t.game.clearSelection}</button>}
+        {attackSel.length > 0 && <button className="secondary" onClick={() => { setAttackSel([]); setAttackAt({}); }}>{t.game.clearSelection}</button>}
         <button className="primary" onClick={primary}>{attackSel.length ? t.game.attackWith(attackSel.length) : t.game.noAttack}</button>
       </>
     );
@@ -437,7 +450,8 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   const attackers = declaringAttack ? attackSel : g.attackers;
   const defender = opponent(g.active);
   for (const aid of attackers) {
-    if (!shownBlocks[aid]?.length) lines.push({ from: `perm:${aid}`, to: `player:${defender}`, kind: declaringAttack ? 'pending' : 'attack' });
+    const pw = declaringAttack ? attackAt[aid] : g.attackTargets?.[aid];
+    if (!shownBlocks[aid]?.length) lines.push({ from: `perm:${aid}`, to: pw ? `perm:${pw}` : `player:${defender}`, kind: declaringAttack ? 'pending' : 'attack' });
   }
   for (const item of g.stack) {
     for (const tg of item.targets.flat()) lines.push({ from: `stack:${item.iid}`, to: targetKey(tg), kind: 'target' });
@@ -468,6 +482,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
       !ghost &&
       (canActivate.has(perm.iid) ||
         (declaringAttack && perm.controller === me && canAttack(perm)) ||
+        (declaringAttack && perm.controller !== me && isPlaneswalker(perm.card) && attackSel.length > 0) ||
         (declaringBlocks && perm.controller === me && isCreature(perm.card) && !perm.tapped) ||
         (declaringBlocks && !!blockerSel && attackerIds.has(perm.iid) && canBlock(findPermanent(g, blockerSel)!, perm)));
     const classes = [
@@ -476,7 +491,8 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
       targeting && !targetable && !ghost && 'dimmed', perm.controller === me ? 'mine' : 'theirs',
     ].filter(Boolean).join(' ');
     const granted = [...new Set(perm.boosts.flatMap((b) => b.keywords))];
-    const counters = Object.entries(perm.counters).filter(([, n]) => n);
+    const counters = Object.entries(perm.counters).filter(([c, n]) => n && c !== 'loyalty');
+    const loyalty = isPlaneswalker(perm.card) ? perm.counters.loyalty ?? 0 : null;
     const hurt = perm.damage > 0;
     return (
       <div
@@ -493,6 +509,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
           </span>
         )}
         {perm.sick && isCreature(perm.card) && !hasKw(perm, 'haste') && <span className="sick" title={t.game.sick}>💤</span>}
+        {loyalty !== null && <span className="loyalty" title={t.game.loyaltyTitle}>{loyalty}</span>}
         {counters.length > 0 && <span className="counters">{counters.map(([c, n]) => t.game.counters(c, n!)).join(' ')}</span>}
         {granted.length > 0 && <span className="granted">{granted.join(', ')}</span>}
         {!ghost && floatsFor(`perm:${perm.iid}`)}

@@ -16,6 +16,7 @@ interface ScryfallFace {
   colors?: string[];
   power?: string;
   toughness?: string;
+  loyalty?: string;
   image_uris?: ScryfallImages;
 }
 
@@ -54,6 +55,7 @@ export function toCard(c: ScryfallCard): Card {
     rarity: c.rarity,
     power: c.power ?? face?.power,
     toughness: c.toughness ?? face?.toughness,
+    ...((c.loyalty ?? face?.loyalty) ? { loyalty: c.loyalty ?? face?.loyalty } : {}),
     keywords: c.keywords,
     ...(c.lang && c.lang !== 'en' ? localizedText(c) : {}),
   };

@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, findPayment, hasInstantSpeed, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, entersTapped, entersWithCounters, isToken, manaColors, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, entersTapped, entersWithCounters, isPlaneswalker, isToken, manaColors, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   type AbilitySpec, type Affected, type Amount, type CounterKind, type Effect, type Keyword, type ManaSource, type Selector,
   type ActivatedSpec, type ObjectEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -184,6 +184,8 @@ export type LogEntry =
   /** The controller chose not to use a "you may" ability. */
   | { k: 'declined'; card: string }
   | { k: 'attack'; p: PlayerId; cards: string[] }
+  | { k: 'attackPlaneswalker'; card: string; pw: string }
+  | { k: 'loyalty'; card: string; n: number }
   | { k: 'blocked'; card: string; by: string[] }
   | { k: 'damage'; card: string; n: number; target: string }
   | { k: 'damagePlayer'; card: string; n: number; p: PlayerId }
@@ -230,6 +232,8 @@ export interface GameState {
   pending: Pending | null;
   resolving: Resolving | null;
   attackers: string[];
+  /** Attackers attacking a planeswalker instead of the player: attacker iid → planeswalker iid. */
+  attackTargets?: Record<string, string>;
   /** attacker iid → blocker iids */
   blocks: Record<string, string[]>;
   winner: PlayerId | 'draw' | null;
@@ -264,7 +268,8 @@ export type Action =
   /** Activate ability number `index` (in activatedOf order) of a permanent you control. */
   | { type: 'activate'; iid: string; index: number; targets?: Target[][]; x?: number }
   | { type: 'pass' }
-  | { type: 'declareAttackers'; attackers: string[] }
+  /** `targets`: attackers that attack a planeswalker (attacker iid → planeswalker iid) instead of the player. */
+  | { type: 'declareAttackers'; attackers: string[]; targets?: Record<string, string> }
   | { type: 'declareBlockers'; blocks: Record<string, string[]> }
   | { type: 'choose'; answer: Answer }
   | { type: 'concede'; player: PlayerId }
@@ -278,6 +283,7 @@ export type GameErrorCode =
   | 'needsTarget' | 'tooManyTargets' | 'targetMustBe' | 'illegalTarget' | 'notEnoughMana' | 'declareBlockersFirst'
   | 'notAttackStep' | 'cannotAttack' | 'notBlockStep' | 'notAttacking' | 'menace' | 'cannotBlock'
   | 'makeChoiceFirst' | 'nothingToChoose' | 'badChoice' | 'badX'
+  | 'notEnoughLoyalty' | 'cannotAttackThat'
   | 'noSuchAbility' | 'activateTiming' | 'alreadyTapped' | 'summoningSick' | 'onceEachTurn' | 'notEnoughLife' | 'nothingToSacrifice';
 
 export type ErrorParams = Record<string, string | number>;
@@ -394,6 +400,11 @@ export function activationProblem(s: GameState, p: PlayerId, perm: Permanent, in
   if (spec.cost.tap && perm.tapped) return 'alreadyTapped';
   if (spec.cost.tap && isCreature(perm.card) && perm.sick && !hasKw(perm, 'haste')) return 'summoningSick';
   if (spec.once && perm.used?.includes(index)) return 'onceEachTurn';
+  if (spec.cost.loyalty !== undefined) {
+    // One loyalty ability per planeswalker each turn.
+    if (perm.used?.some((i) => activatedOf(perm.card)[i]?.cost.loyalty !== undefined)) return 'onceEachTurn';
+    if ((perm.counters.loyalty ?? 0) + spec.cost.loyalty < 0) return 'notEnoughLoyalty';
+  }
   if (spec.cost.life && s.players[p].life < spec.cost.life) return 'notEnoughLife';
   if (spec.cost.sacrifice && !sacrificeOptions(s, perm, spec).length) return 'nothingToSacrifice';
   if (!findPayment(sourcesFor(s, perm, spec), abilityCost(spec, x))) return 'notEnoughMana';
@@ -774,6 +785,7 @@ function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, op
     const n = counters === 'X' ? (opts.x ?? 0) : counters;
     if (n > 0) perm.counters = { '+1/+1': n };
   }
+  if (isPlaneswalker(inst.card)) perm.counters = { ...perm.counters, loyalty: startingLoyalty(inst.card) };
   d.battlefield.push(perm);
   fireObject(d, 'enters', perm);
   return perm;
@@ -886,6 +898,9 @@ function checkStateBased(d: GameState) {
     if (isCreature(perm.card) && (toughnessOf(perm) <= 0 || perm.deathtouched || perm.damage >= toughnessOf(perm))) {
       removePermanent(d, perm, 'graveyard');
       log(d, { k: 'dies', card: perm.card.name });
+    } else if (isPlaneswalker(perm.card) && !isCreature(perm.card) && (perm.counters.loyalty ?? 0) <= 0) {
+      removePermanent(d, perm, 'graveyard');
+      log(d, { k: 'destroyed', card: perm.card.name });
     }
   }
   if (d.winner !== null) return;
@@ -900,6 +915,10 @@ function dealDamage(d: GameState, source: CardInst, controller: PlayerId, target
   if (typeof target === 'number') {
     d.players[target].life -= amount;
     log(d, { k: 'damagePlayer', card: source.card.name, n: amount, p: target });
+  } else if (isPlaneswalker(target.card) && !isCreature(target.card)) {
+    // Damage to a planeswalker removes that many loyalty counters.
+    target.counters = { ...target.counters, loyalty: (target.counters.loyalty ?? 0) - amount };
+    log(d, { k: 'damage', card: source.card.name, n: amount, target: target.card.name });
   } else {
     target.damage += amount;
     if (hasKw(source, 'deathtouch')) target.deathtouched = true;
@@ -924,10 +943,13 @@ function resolveCombat(d: GameState) {
     for (const aid of d.attackers) {
       const a = get(aid);
       if (!a || !dealsNow(a)) continue;
+      // What it attacks: the player, or a planeswalker (no damage if that planeswalker is gone).
+      const pwIid = d.attackTargets?.[aid];
+      const attacked: Permanent | PlayerId | undefined = pwIid ? get(pwIid) : def;
       let remaining = powerOf(a);
       const declared = d.blocks[aid] ?? [];
       if (declared.length === 0) {
-        hits.push({ source: a, target: def, amount: remaining });
+        if (attacked !== undefined) hits.push({ source: a, target: attacked, amount: remaining });
         continue;
       }
       const blockers = declared.map(get).filter((x) => x !== undefined);
@@ -940,7 +962,7 @@ function resolveCombat(d: GameState) {
         remaining -= amount;
       });
       // A blocked creature only hits the player if it tramples (even if its blockers are gone).
-      if (trample && remaining > 0) hits.push({ source: a, target: def, amount: remaining });
+      if (trample && remaining > 0 && attacked !== undefined) hits.push({ source: a, target: attacked, amount: remaining });
     }
 
     for (const [aid, bids] of Object.entries(d.blocks)) {
@@ -1383,6 +1405,7 @@ function closeWindow(d: GameState, reason: WindowReason) {
   } else if (reason === 'block') {
     resolveCombat(d);
     d.attackers = [];
+    delete d.attackTargets;
     d.blocks = {};
     d.step = 'main2';
   } else if (reason === 'end') {
@@ -1549,7 +1572,11 @@ export function apply(state: GameState, action: Action): GameState {
       payMana(d, findPayment(sourcesFor(d, perm, spec), abilityCost(spec, x))!);
       if (spec.cost.tap) perm.tapped = true;
       if (spec.cost.life) d.players[p].life -= spec.cost.life;
-      if (spec.once) perm.used = [...(perm.used ?? []), action.index];
+      if (spec.once || spec.cost.loyalty !== undefined) perm.used = [...(perm.used ?? []), action.index];
+      if (spec.cost.loyalty !== undefined) {
+        perm.counters = { ...perm.counters, loyalty: (perm.counters.loyalty ?? 0) + spec.cost.loyalty };
+        log(d, { k: 'loyalty', card: perm.card.name, n: spec.cost.loyalty });
+      }
       const named = targets.flat().map((t) => targetName(d, t));
       d.abilities = (d.abilities ?? 0) + 1;
       const item: StackItem = {
@@ -1601,10 +1628,23 @@ export function apply(state: GameState, action: Action): GameState {
         d.step = 'main2';
         break;
       }
+      const targets: Record<string, string> = {};
+      for (const [aid, pwIid] of Object.entries(action.targets ?? {})) {
+        const pw = findPermanent(d, pwIid);
+        if (!attackers.some((a) => a.iid === aid) || !pw || pw.controller === p || !isPlaneswalker(pw.card)) {
+          throw new IllegalAction('cannotAttackThat');
+        }
+        targets[aid] = pwIid;
+      }
       for (const a of attackers) if (!hasKw(a, 'vigilance')) a.tapped = true;
       d.attackers = attackers.map((a) => a.iid);
+      if (Object.keys(targets).length) d.attackTargets = targets;
+      else delete d.attackTargets;
       d.blocks = {};
       log(d, { k: 'attack', p, cards: attackers.map((a) => a.card.name) });
+      for (const [aid, pwIid] of Object.entries(targets)) {
+        log(d, { k: 'attackPlaneswalker', card: findPermanent(d, aid)!.card.name, pw: findPermanent(d, pwIid)!.card.name });
+      }
       for (const a of attackers) fireObject(d, 'attacks', a);
       // The attacking player gets priority first.
       openWindow(d, 'attack', p, 0);

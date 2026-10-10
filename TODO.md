@@ -22,8 +22,8 @@ to show how much each step unlocks. Tick items as they land.
 - London mulligan, stack, priority windows, full control mode.
 - Activated abilities of permanents ("{T}: …", "{2}{R}: …", sacrifice and life costs), tokens (creatures, Treasure,
   Clue, Food), edicts. About a quarter of the 350 most-played cards with activated abilities have one simulated.
-- Anything else is cast "not simulated"; artifacts, enchantments and planeswalkers enter and only their triggers and
-  activated abilities work.
+- Anything else is cast "not simulated"; artifacts, enchantments and planeswalkers enter and only their triggers,
+  activated and loyalty abilities work.
 
 ## Step 0 — Foundations
 
@@ -79,7 +79,9 @@ Not simulated yet in triggers (recognized, logged as "not simulated"):
   onto the battlefield (tapped), then shuffle"; split destinations (Cultivate) are not simulated
 - [x] 23. Return from graveyard (828) — targets in graveyards ("target creature card from your graveyard"):
   return to hand or battlefield, exile; non-targeted returns are not simulated
-- [ ] 24. Planeswalkers: loyalty abilities, attacking them (278)
+- [x] 24. Planeswalkers: loyalty abilities, attacking them (278) — loyalty counters, one loyalty ability per turn at
+  sorcery speed, damage removes loyalty, creatures can attack them; "−X" abilities and static abilities are not
+  simulated. Cards saved before this change have no loyalty value and start at 3 (re-import the deck to fix)
 - [ ] 25. Mana pool and manual tapping; sources making 2+ mana
 
 ## Step 4 — Permanents with ongoing rules

@@ -4,7 +4,7 @@ import {
   type Action, type Answer, type CardInst, type Choice, type GameState, type Permanent, type PlayerId, type StackItem, type Target,
 } from './engine';
 import {
-  creatureValue, hasInstantSpeed, isToken, hasKeyword, isCreature, isInstantOrSorcery, isLandCard, manaColors,
+  creatureValue, hasInstantSpeed, isPlaneswalker, isToken, hasKeyword, isCreature, isInstantOrSorcery, isLandCard, manaColors,
   parseCost, spellSpec, type AbilitySpec, type Amount, type Effect,
 } from './rules';
 import type { Card } from '../../types';
@@ -20,7 +20,11 @@ export function botAction(s: GameState): Action {
   if (s.pending) return { type: 'choose', answer: answerChoice(s, s.pending.choice) };
   if (s.priority) return respond(s, me) ?? { type: 'pass' };
   if (s.step === 'block') return { type: 'declareBlockers', blocks: chooseBlocks(s, me) };
-  if (s.step === 'attack') return { type: 'declareAttackers', attackers: chooseAttackers(s, me) };
+  if (s.step === 'attack') {
+    const attackers = chooseAttackers(s, me);
+    const targets = chooseAttackTargets(s, me, attackers);
+    return { type: 'declareAttackers', attackers, ...(Object.keys(targets).length ? { targets } : {}) };
+  }
 
   const land = chooseLand(s, me);
   if (land) return { type: 'playLand', iid: land };
@@ -84,6 +88,34 @@ export function dies(victim: Permanent, killer: Permanent): boolean {
 const pumped = (perm: Permanent, e: Extract<Effect, { kind: 'pump' }>): Permanent => ({
   ...perm, boosts: [...perm.boosts, { power: e.power, toughness: e.toughness, keywords: e.keywords, until: 'endOfTurn' }],
 });
+
+/**
+ * Send attackers at the opponent's planeswalkers when they can finish one off, unless the
+ * attack is lethal for the player anyway. Smallest attackers first, one planeswalker at a time.
+ */
+function chooseAttackTargets(s: GameState, me: PlayerId, attackerIds: string[]): Record<string, string> {
+  const opp = opponent(me);
+  const attackers = attackerIds.map((iid) => findPermanent(s, iid)!).sort((a, b) => powerOf(a) - powerOf(b));
+  const total = attackers.reduce((n, a) => n + powerOf(a) * strikes(a), 0);
+  if (total >= s.players[opp].life) return {};
+  const walkers = s.battlefield
+    .filter((x) => x.controller === opp && isPlaneswalker(x.card) && !isCreature(x.card))
+    .sort((a, b) => (a.counters.loyalty ?? 0) - (b.counters.loyalty ?? 0));
+  const out: Record<string, string> = {};
+  let free = [...attackers];
+  for (const pw of walkers) {
+    const loyalty = pw.counters.loyalty ?? 0;
+    const team: Permanent[] = [];
+    for (const a of free) {
+      if (team.reduce((n, x) => n + powerOf(x) * strikes(x), 0) >= loyalty) break;
+      team.push(a);
+    }
+    if (team.reduce((n, x) => n + powerOf(x) * strikes(x), 0) < loyalty) continue;
+    for (const a of team) out[a.iid] = pw.iid;
+    free = free.filter((a) => !team.includes(a));
+  }
+  return out;
+}
 
 function chooseAttackers(s: GameState, me: PlayerId): string[] {
   const opp = opponent(me);
@@ -171,7 +203,36 @@ function chooseMainPhaseSpell(s: GameState, me: PlayerId): Action | null {
     const action = castWithGoodTarget(s, me, { iid, card });
     if (action) return action;
   }
-  return useAbility(s, me);
+  return usePlaneswalkers(s, me) ?? useAbility(s, me);
+}
+
+/**
+ * One loyalty ability per planeswalker each turn: a minus ability that removes something and
+ * leaves the planeswalker alive, otherwise a plus (or zero) ability, with targets if it needs them.
+ */
+function usePlaneswalkers(s: GameState, me: PlayerId): Action | null {
+  const byWalker = new Map<string, ReturnType<typeof activatable>>();
+  for (const a of activatable(s, me)) {
+    if (a.spec.cost.loyalty === undefined) continue;
+    byWalker.set(a.perm.iid, [...(byWalker.get(a.perm.iid) ?? []), a]);
+  }
+  for (const abilities of byWalker.values()) {
+    const plays = abilities.map(({ perm, index, spec }) => ({
+      loyalty: spec.cost.loyalty!, perm, spec,
+      act: (targets: Target[][]): Action => ({ type: 'activate', iid: perm.iid, index, ...(targets.length ? { targets } : {}) }),
+    }));
+    for (const p of plays.filter((x) => x.loyalty < 0 && (x.perm.counters.loyalty ?? 0) + x.loyalty > 0)) {
+      const action = playWithGoodTarget(s, me, { spec: p.spec.ability, hasX: false, maxX: 0, act: p.act });
+      if (action && hitsTheirPermanent(s, me, action)) return action;
+    }
+    for (const p of plays.filter((x) => x.loyalty >= 0).sort((a, b) => b.loyalty - a.loyalty)) {
+      const good = playWithGoodTarget(s, me, { spec: p.spec.ability, hasX: false, maxX: 0, act: p.act });
+      if (good) return good;
+      const targets = triggerTargets(s, me, p.spec.ability, false);
+      if (targets.every((ts, i) => ts.length >= p.spec.ability.targets[i].min)) return p.act(targets);
+    }
+  }
+  return null;
 }
 
 // ---------- Targets ----------
@@ -210,8 +271,10 @@ function intentOf(e: Effect): Intent {
 
 /** Would these effects kill the creature? */
 function kills(perm: Permanent, effects: Effect[]): boolean {
-  let damage = perm.damage;
-  let toughness = toughnessOf(perm);
+  // A planeswalker dies when damage takes all its loyalty.
+  const walker = isPlaneswalker(perm.card) && !isCreature(perm.card);
+  let damage = walker ? 0 : perm.damage;
+  let toughness = walker ? (perm.counters.loyalty ?? 0) : toughnessOf(perm);
   for (const e of effects) {
     if (e.kind === 'destroy') return true;
     if (e.kind === 'damage' || e.kind === 'damageAll') damage += num(e.amount);
@@ -392,7 +455,8 @@ function abilityPlays(s: GameState, me: PlayerId): (Play & { perm: Permanent; ta
   return activatable(s, me)
     // Never pay life (it could loop until death), except a little for a fetch land.
     .filter(({ spec }) => !spec.cost.life || (isLandSearch(spec.ability) && s.players[me].life > 6))
-    .filter(({ spec }) => spec.cost.tap || spec.cost.mana || spec.cost.sacrificeSelf) // free abilities could repeat forever
+    // Free abilities could repeat forever; loyalty abilities are once a turn and handled by usePlaneswalkers.
+    .filter(({ spec }) => (spec.cost.tap || spec.cost.mana || spec.cost.sacrificeSelf) && spec.cost.loyalty === undefined)
     .map(({ perm, index, spec }) => ({
       perm,
       spec: spec.ability,

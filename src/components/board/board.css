@@ -78,6 +78,11 @@
   background: rgba(0, 0, 0, 0.85); color: #fff; font-size: 0.8rem; font-weight: 800;
 }
 .perm .pt.hurt { color: #ff8a80; }
+.perm .loyalty {
+  position: absolute; right: 3px; bottom: 3px; min-width: 22px; padding: 0 5px; text-align: center;
+  background: #1c1c22; border: 1px solid #c9c9d6; border-radius: 4px 4px 10px 10px;
+  color: #fff; font-size: 0.8rem; font-weight: 800;
+}
 .perm .pt.pumped { color: #9be38f; }
 .perm .sick { position: absolute; left: 3px; top: 3px; font-size: 0.75rem; filter: drop-shadow(0 0 2px #000); }
 .perm .counters, .perm .granted {

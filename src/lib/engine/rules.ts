@@ -195,7 +195,7 @@ export interface TargetSpec {
 // ---------- Effects ----------
 
 /** Counter kinds placed on permanents. */
-export type CounterKind = '+1/+1' | '-1/-1';
+export type CounterKind = '+1/+1' | '-1/-1' | 'loyalty';
 
 /**
  * Who an effect applies to: the targets chosen for a slot, the controller, everyone / each opponent,
@@ -401,11 +401,13 @@ export function parseTargetPhrase(phrase: string): TargetSpec | null {
   const permanents = [...nouns].filter((n) => n !== 'player' && n !== 'opponent');
   if (nouns.has('opponent')) filter.controller = 'opponent';
   if (!permanents.length) return { kind: 'player', min, max, filter };
-  // Planeswalkers and battles aren't simulated yet: "creature or planeswalker" means creature.
-  const kinds = permanents.filter((n) => n !== 'planeswalker' && n !== 'battle');
+  // Battles aren't simulated: "creature or battle" means creature.
+  const kinds = permanents.filter((n) => n !== 'battle');
   if (players.length) {
-    if (!kinds.length) return { kind: 'player', min, max, filter }; // "target player or planeswalker"
-    return kinds.length === 1 && kinds[0] === 'creature' ? { kind: 'any', min, max, filter } : null;
+    // "target player or planeswalker": a player, or a permanent that is a planeswalker.
+    if (kinds.length === 1 && kinds[0] === 'planeswalker') return { kind: 'any', min, max, filter: { ...filter, types: ['planeswalker'] } };
+    if (!kinds.length) return { kind: 'player', min, max, filter };
+    return kinds.every((k) => k === 'creature' || k === 'planeswalker') ? { kind: 'any', min, max, filter } : null;
   }
   if (!kinds.length) return null;
   if (kinds.length === 1 && kinds[0] === 'creature') return { kind: 'creature', min, max, filter };
@@ -802,6 +804,8 @@ export interface ActivationCost {
   sacrifice?: { which: Selector; another: boolean };
   /** "Pay N life". */
   life: number;
+  /** Loyalty ability: loyalty counters added (positive) or removed (negative). */
+  loyalty?: number;
 }
 
 export interface ActivatedSpec {
@@ -833,8 +837,17 @@ export function activatedOf(card: Card): ActivatedSpec[] {
   for (const raw of frontText(card).split('\n')) {
     const line = raw.replace(/\s*\([^)]*\)/g, '').replace(/^[A-Z][A-Za-z' ]+ — /, '').trim();
     const m = line.match(/^([^:"]+): (.+)$/);
-    if (!m || /^[+−-]?\d+$/.test(m[1].trim()) || /^(?:\[|[+−])/.test(m[1])) continue; // loyalty abilities
+    if (!m) continue;
     let text = m[2];
+    // Loyalty abilities: "+1: …", "−3: …", "0: …" (activated as a sorcery, one per turn per planeswalker).
+    const loyalty = m[1].trim().match(/^\[?([+−-]?)(\d+)\]?$/);
+    if (loyalty) {
+      const n = Number(loyalty[2]) * (loyalty[1] === '−' || loyalty[1] === '-' ? -1 : 1);
+      const ability = UNSUPPORTED.test(text) ? NO_EFFECT : parseAbilityText(text, name);
+      out.push({ text: line, cost: { mana: '', tap: false, sacrificeSelf: false, life: 0, loyalty: n }, ability, sorcery: true, once: false });
+      continue;
+    }
+    if (/^(?:\[|[+−])/.test(m[1])) continue; // "−X: …" and other loyalty costs
     if (/\badd \{|\badd (?:one|two|three) mana|\badd [a-z]+ mana/i.test(text)) continue; // mana ability
     const cost: ActivationCost = { mana: '', tap: false, sacrificeSelf: false, life: 0 };
     let ok = true;
@@ -880,3 +893,11 @@ export function entersTapped(card: Card): boolean {
   const selves = selfWords(card.name).map(escapeRe).join('|');
   return new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)? tapped\\.(?:\\n|$)`, 'i').test(frontText(card));
 }
+
+/** A planeswalker's starting loyalty (3 for cards saved without it). */
+export function startingLoyalty(card: Card): number {
+  const n = parseInt(card.loyalty ?? '', 10);
+  return Number.isNaN(n) ? 3 : n;
+}
+
+export const isPlaneswalker = (card: Card) => cardTypes(card).includes('planeswalker');
