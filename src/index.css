@@ -114,6 +114,10 @@ footer { padding: 16px 20px; border-top: 1px solid var(--border); }
 .card-name { font-weight: 600; }
 
 /* Deck editor */
+.legality { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 12px; margin: 6px 0; border-radius: 8px; border: 1px solid var(--border); }
+.legality.ok { border-color: var(--ok); color: var(--ok); }
+.legality.bad { border-color: var(--danger); }
+.legality ul { margin: 0; padding-left: 18px; color: #ffb3ad; }
 .deck-header { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 14px 0 4px; }
 .deck-name-input { font-size: 1.4rem; font-weight: 700; flex: 1; min-width: 200px; }
 .deck-list li { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-radius: 4px; }

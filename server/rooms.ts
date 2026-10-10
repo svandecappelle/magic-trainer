@@ -40,6 +40,18 @@ export interface RoomManagerOptions {
   /** How long a room with nobody connected is kept so players can reconnect. */
   emptyRoomTtlMs?: number;
   rng?: () => number;
+  /**
+   * Checks a deck's cards against a trusted source and returns the trusted card data. Throws
+   * DeckCheckError for a card it doesn't know. Without it, the client's card data is used.
+   */
+  verifyDeck?: (deck: Card[]) => Promise<Card[]>;
+}
+
+/** A card the deck check doesn't recognize, or a check that couldn't run (`card` undefined). */
+export class DeckCheckError extends Error {
+  constructor(readonly card?: string) {
+    super(card ? `Unknown card: ${card}` : 'Card check failed');
+  }
 }
 
 export class RoomManager {
@@ -47,18 +59,53 @@ export class RoomManager {
   private where = new Map<Conn, { room: Room; seat: PlayerId }>();
   private ttl: number;
   private rng: () => number;
+  private verifyDeck?: (deck: Card[]) => Promise<Card[]>;
 
-  constructor({ emptyRoomTtlMs = 10 * 60_000, rng = Math.random }: RoomManagerOptions = {}) {
+  constructor({ emptyRoomTtlMs = 10 * 60_000, rng = Math.random, verifyDeck }: RoomManagerOptions = {}) {
     this.ttl = emptyRoomTtlMs;
     this.rng = rng;
+    this.verifyDeck = verifyDeck;
   }
 
-  handle(conn: Conn, raw: unknown) {
+  /** Runs a handler, sending rule and request errors back to the client. */
+  private run(conn: Conn, fn: () => void) {
+    try {
+      fn();
+    } catch (e) {
+      if (e instanceof ClientError || e instanceof IllegalAction) conn.send({ t: 'error', code: e.code, params: e.params });
+      else throw e;
+    }
+  }
+
+  /** Checks the deck (when a checker is set), then continues with the trusted cards. Returns a promise for tests. */
+  private withDeck(conn: Conn, rawDeck: unknown, then: (deck: Card[]) => void): Promise<void> {
+    const deck = cleanDeck(rawDeck);
+    if (!this.verifyDeck) {
+      then(deck);
+      return Promise.resolve();
+    }
+    return this.verifyDeck(deck).then(
+      (trusted) => this.run(conn, () => then(trusted)),
+      (e) => {
+        if (e instanceof DeckCheckError && e.card) conn.send({ t: 'error', code: 'invalidCard', params: { card: e.card } });
+        else conn.send({ t: 'error', code: 'cardCheckFailed' });
+      },
+    );
+  }
+
+  /** Handles one client message. Returns a promise when the work continues asynchronously (deck checks). */
+  handle(conn: Conn, raw: unknown): Promise<void> | void {
     try {
       const msg = raw as ClientMessage;
       switch (msg?.t) {
-        case 'create': return this.create(conn, cleanName(msg.name), cleanDeck(msg.deck));
-        case 'join': return this.join(conn, String(msg.code ?? '').toUpperCase().trim(), cleanName(msg.name), cleanDeck(msg.deck));
+        case 'create': {
+          const name = cleanName(msg.name);
+          return this.withDeck(conn, msg.deck, (deck) => this.create(conn, name, deck));
+        }
+        case 'join': {
+          const name = cleanName(msg.name);
+          return this.withDeck(conn, msg.deck, (deck) => this.join(conn, String(msg.code ?? '').toUpperCase().trim(), name, deck));
+        }
         case 'rejoin': return this.rejoin(conn, String(msg.code ?? ''), String(msg.token ?? ''));
         case 'action': return this.act(conn, msg.action);
         case 'rematch': return this.rematch(conn);
@@ -247,6 +294,14 @@ function cleanDeck(deck: unknown): Card[] {
       lang: optStr(c.lang)?.slice(0, 8),
       printedName: optStr(c.printedName),
       printedTypeLine: optStr(c.printedTypeLine),
+      loyalty: optStr(c.loyalty)?.slice(0, 4),
+      layout: optStr(c.layout)?.slice(0, 30),
+      faces: Array.isArray(c.faces) ? c.faces.slice(0, 4).map((f: Record<string, unknown>) => ({
+        name: str(f?.name, 200), manaCost: str(f?.manaCost, 100), typeLine: str(f?.typeLine, 200), oracleText: str(f?.oracleText),
+        colors: Array.isArray(f?.colors) ? f.colors.map(String).slice(0, 5) : undefined,
+        power: optStr(f?.power), toughness: optStr(f?.toughness), loyalty: optStr(f?.loyalty),
+        imageSmall: optStr(f?.imageSmall), imageNormal: optStr(f?.imageNormal),
+      })) : undefined,
     };
   });
 }

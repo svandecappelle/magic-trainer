@@ -134,8 +134,10 @@ get each face's cost and image (their text is rebuilt from the joined faces mean
 - [x] Choose the cleanup discard
 - [ ] Damage assignment order with several blockers (today: automatic)
 - [ ] Best-of-3 with sideboarding
-- [ ] Format legality checks (deck size, 4 copies, banned list)
-- [ ] Server-side deck validation (the server trusts client card data)
+- [x] Format legality checks (deck size, 4 copies, banned list) — in the deck editor, from Scryfall legalities;
+  "Refresh card data" re-fetches older saved cards
+- [x] Server-side deck validation — the server replaces card data with Scryfall's (by id) and refuses unknown
+  cards; CARD_CHECK=strict|lenient|off decides what happens when Scryfall is unreachable
 - [ ] Auto-pass leaks that you hold a castable instant (full control avoids it)
 - [ ] More than 2 players, Commander
 - [ ] Turn timer, reconnect timeout

@@ -1,4 +1,4 @@
-import type { Card } from '../types';
+import { FORMATS, type Card } from '../types';
 
 const API = 'https://api.scryfall.com';
 
@@ -34,6 +34,7 @@ export interface ScryfallCard extends ScryfallFace {
   keywords?: string[];
   lang?: string;
   layout?: string;
+  legalities?: Record<string, string>;
 }
 
 /** Convert a Scryfall card to our slim Card. Double-faced cards keep their data on card_faces. */
@@ -59,6 +60,7 @@ export function toCard(c: ScryfallCard): Card {
     toughness: c.toughness ?? face?.toughness,
     ...((c.loyalty ?? face?.loyalty) ? { loyalty: c.loyalty ?? face?.loyalty } : {}),
     ...(c.layout && c.layout !== 'normal' ? { layout: c.layout } : {}),
+    ...(c.legalities ? { legalities: Object.fromEntries(FORMATS.filter((f) => c.legalities![f]).map((f) => [f, c.legalities![f]])) } : {}),
     ...(c.card_faces?.length ? {
       faces: c.card_faces.map((f) => ({
         name: f.name ?? '', manaCost: f.mana_cost ?? '', typeLine: f.type_line ?? '', oracleText: f.oracle_text ?? '',
@@ -126,6 +128,25 @@ export async function fetchCardsByName(names: string[]): Promise<{ found: Card[]
     notFound.push(...body.not_found.map((n: { name: string }) => n.name));
   }
   return { found, notFound };
+}
+
+/** Look up cards by Scryfall id (refreshing saved card data, server-side deck checks). Unknown ids are left out. */
+export async function fetchCardsById(ids: string[]): Promise<Map<string, Card>> {
+  const out = new Map<string, Card>();
+  const unique = [...new Set(ids)];
+  for (let i = 0; i < unique.length; i += 75) {
+    const batch = unique.slice(i, i + 75);
+    await throttle();
+    const res = await fetch(`${API}/cards/collection`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'User-Agent': 'MagicTrainer/1.0' },
+      body: JSON.stringify({ identifiers: batch.map((id) => ({ id })) }),
+    });
+    if (!res.ok) throw new Error(`Scryfall error ${res.status}`);
+    const body = await res.json();
+    for (const c of body.data as ScryfallCard[]) out.set(c.id, toCard(c));
+  }
+  return out;
 }
 
 const exactNames = (names: string[]) => `(${names.map((n) => `!"${n.replace(/"/g, '\\"')}"`).join(' or ')})`;

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { actor, type GameState } from '../src/lib/engine/engine';
 import type { ServerMessage } from '../src/lib/multiplayer/protocol';
 import type { Card } from '../src/types';
+import { scryfallDeckCheck } from './cards';
 import { RoomManager, type Conn } from './rooms';
 
 class FakeConn implements Conn {
@@ -120,5 +121,46 @@ describe('RoomManager', () => {
     expect(c.last('error')!.code).toBe('unknownMessage');
     rooms.handle(c, null);
     expect(c.last('error')!.code).toBe('unknownMessage');
+  });
+});
+
+describe('deck check', () => {
+  const trusted: Card = { ...mountain, oracleText: '({T}: Add {R}.)', setName: 'Trusted' };
+  const lookup = async (ids: string[]) => new Map(ids.filter((id) => id === 'm').map((id) => [id, trusted]));
+
+  it('replaces client card data with trusted data, and refuses unknown cards', async () => {
+    const rooms = new RoomManager({ verifyDeck: scryfallDeckCheck('lenient', lookup) });
+    const alice = new FakeConn();
+    await rooms.handle(alice, { t: 'create', name: 'Alice', deck: deck.map((c) => ({ ...c, oracleText: 'Draw seven cards.' })) });
+    const code = alice.last('joined')!.code;
+    expect(rooms.rooms.get(code)!.seats[0].deck[0].setName).toBe('Trusted');
+    const bob = new FakeConn();
+    const fake = { ...mountain, id: 'forged', name: 'Black Lotus' };
+    await rooms.handle(bob, { t: 'join', code, name: 'Bob', deck: [...deck.slice(1), fake] });
+    expect(bob.last('error')).toMatchObject({ code: 'invalidCard', params: { card: 'Black Lotus' } });
+  });
+
+  it('accepts decks when Scryfall is unreachable, unless strict', async () => {
+    const down = async (): Promise<Map<string, Card>> => { throw new Error('offline'); };
+    const lenient = new RoomManager({ verifyDeck: scryfallDeckCheck('lenient', down) });
+    const a = new FakeConn();
+    const warn = console.warn;
+    console.warn = () => {};
+    await lenient.handle(a, { t: 'create', name: 'A', deck });
+    console.warn = warn;
+    expect(a.last('joined')).toBeDefined();
+    const strict = new RoomManager({ verifyDeck: scryfallDeckCheck('strict', down) });
+    const b = new FakeConn();
+    await strict.handle(b, { t: 'create', name: 'B', deck });
+    expect(b.last('error')).toMatchObject({ code: 'cardCheckFailed' });
+  });
+
+  it('keeps faces and loyalty of the cards a client sends', () => {
+    const rooms = new RoomManager();
+    const alice = new FakeConn();
+    const walker = { ...mountain, id: 'w', name: 'Walker', typeLine: 'Planeswalker', loyalty: '4', layout: 'modal_dfc', faces: [{ name: 'A', manaCost: '', typeLine: 'Land', oracleText: '' }] };
+    rooms.handle(alice, { t: 'create', name: 'Alice', deck: [...deck.slice(1), walker] });
+    const code = alice.last('joined')!.code;
+    expect(rooms.rooms.get(code)!.seats[0].deck.at(-1)).toMatchObject({ loyalty: '4', layout: 'modal_dfc', faces: [{ name: 'A' }] });
   });
 });

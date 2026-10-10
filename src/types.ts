@@ -36,6 +36,8 @@ export interface Card {
   layout?: string;
   /** Faces of a multi-face card, front first. Missing on older saved cards (rebuilt from the joined fields). */
   faces?: CardFace[];
+  /** Legality per format ("legal", "banned", "restricted", "not_legal"). Missing on older saved cards. */
+  legalities?: Partial<Record<string, string>>;
   /** Keyword abilities, e.g. ["Flying", "Lifelink"]. Missing on cards saved before v0.2. */
   keywords?: string[];
   /**

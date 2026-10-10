@@ -4,6 +4,8 @@ import { CardSearch } from '../components/CardSearch';
 import { DeckStats } from '../components/DeckStats';
 import { ManaCost } from '../components/ManaCost';
 import { formatDeckText, parseDeckText } from '../lib/deckText';
+import { checkDeck, type DeckIssue } from '../lib/legality';
+import { fetchCardsById } from '../lib/scryfall';
 import { resolveDecklist } from '../lib/importDeck';
 import { primaryType, TYPE_ORDER } from '../lib/stats';
 import { useT } from '../i18n';
@@ -22,6 +24,7 @@ export function DeckEditor() {
   const [textMode, setTextMode] = useState<'none' | 'import' | 'export'>('none');
   const [importText, setImportText] = useState('');
   const [importMsg, setImportMsg] = useState('');
+  const [refreshMsg, setRefreshMsg] = useState('');
 
   const ownedByName = useMemo(() => {
     const m = new Map<string, number>();
@@ -30,6 +33,31 @@ export function DeckEditor() {
   }, [collection]);
 
   if (!deck) return <div className="page"><p>{t.editor.notFound} <Link to="/decks">{t.editor.back}</Link></p></div>;
+
+  /** Re-fetch every card of the deck from Scryfall: legalities, faces, loyalty… for cards saved long ago. */
+  async function refreshCards() {
+    setRefreshMsg(t.editor.refreshing);
+    try {
+      const fresh = await fetchCardsById(deck!.entries.map((e) => e.card.id));
+      updateDeck(deck!.id, { entries: deck!.entries.map((e) => ({ ...e, card: fresh.get(e.card.id) ?? e.card })) });
+      setRefreshMsg(t.editor.refreshed(fresh.size));
+    } catch {
+      setRefreshMsg(t.editor.refreshFailed);
+    }
+  }
+
+  const issues = checkDeck(deck);
+  const issueText = (i: DeckIssue) => {
+    switch (i.kind) {
+      case 'tooFew': return t.editor.issues.tooFew(i.n, i.min);
+      case 'tooMany': return t.editor.issues.tooMany(i.n, i.max);
+      case 'sideboard': return t.editor.issues.sideboard(i.n, i.max);
+      case 'copies': return t.editor.issues.copies(show.nameOf(i.card), i.n, i.max);
+      case 'banned': return t.editor.issues.banned(show.nameOf(i.card));
+      case 'notLegal': return t.editor.issues.notLegal(show.nameOf(i.card));
+      case 'unknown': return t.editor.issues.unknown(i.n);
+    }
+  };
 
   async function runImport() {
     const lines = parseDeckText(importText);
@@ -98,6 +126,21 @@ export function DeckEditor() {
         <button className="secondary" onClick={() => setTextMode(textMode === 'export' ? 'none' : 'export')}>{t.editor.export}</button>
         <Link to={`/goldfish/${deck.id}`} className="button">{t.editor.goldfish}</Link>
       </div>
+
+      {deck.format !== 'casual' && (
+        <div className={`legality ${issues.length ? 'bad' : 'ok'}`}>
+          {issues.length === 0 ? (
+            <span>✓ {t.editor.legalIn(t.formats[deck.format as keyof typeof t.formats] ?? deck.format)}</span>
+          ) : (
+            <ul>
+              {issues.map((i, k) => <li key={k}>{issueText(i)}</li>)}
+            </ul>
+          )}
+          <span className="spacer" />
+          <button className="secondary small" onClick={refreshCards} title={t.editor.refreshHelp}>{t.editor.refresh}</button>
+          {refreshMsg && <span className="small muted">{refreshMsg}</span>}
+        </div>
+      )}
 
       {textMode === 'import' && (
         <div className="panel">

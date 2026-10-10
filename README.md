@@ -20,7 +20,9 @@ Over the internet, deploy with Docker (see [Deploying on a server](#deploying-on
 
 The server holds the authoritative game state: it validates every action with the same engine as the bot, and
 each player only receives what they may see (no libraries, no opponent hand). A reload rejoins the same seat.
-Known limitation: the server trusts the card data each client sends with its deck.
+The server checks every deck's cards against Scryfall (by card id) and uses Scryfall's data, so a modified client
+can't play altered cards. `CARD_CHECK=strict` refuses decks when Scryfall is unreachable (default `lenient`: the
+client's data is used then), `CARD_CHECK=off` disables the check.
 
 ## Deploying on a server (Docker + nginx)
 

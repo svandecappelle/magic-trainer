@@ -2,6 +2,7 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, normalize, resolve } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
+import { parseCardCheck, scryfallDeckCheck } from './cards';
 import { RoomManager, type Conn } from './rooms';
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -34,7 +35,9 @@ const server = createServer((req, res) => {
   createReadStream(file).pipe(res);
 });
 
-const rooms = new RoomManager();
+// Decks are checked against Scryfall (CARD_CHECK=strict|lenient|off, default lenient).
+const cardCheck = parseCardCheck(process.env.CARD_CHECK);
+const rooms = new RoomManager(cardCheck === 'off' ? {} : { verifyDeck: scryfallDeckCheck(cardCheck) });
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 2_000_000 });
 const alive = new WeakSet<WebSocket>();
 

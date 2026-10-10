@@ -18,7 +18,7 @@ export interface LobbyPlayer {
 
 /** Errors specific to the server; rule violations use the engine's codes. */
 export type ServerErrorCode =
-  | 'invalidMessage' | 'unknownMessage' | 'enterName' | 'deckSize' | 'invalidCard' | 'noRoom' | 'roomFull'
+  | 'invalidMessage' | 'unknownMessage' | 'enterName' | 'deckSize' | 'invalidCard' | 'cardCheckFailed' | 'noRoom' | 'roomFull'
   | 'gameGone' | 'notStarted' | 'invalidAction' | 'notYourTurn' | 'gameNotOver' | 'opponentLeft' | 'notInRoom';
 
 export type ErrorCode = GameErrorCode | ServerErrorCode;
