@@ -55,6 +55,13 @@ const log: LogMessages = {
   surveil: (e, c) => `${c.isMe(e.p) ? 'You surveil' : `${c.name(e.p)} surveils`} ${e.n} (${e.graveyard} into the graveyard)`,
   tapped: (e, c) => `${c.card(e.card)} is ${e.untap ? 'untapped' : 'tapped'}`,
   bounced: (e, c) => `${c.card(e.card)} returns to its owner's hand`,
+  sacrificed: (e, c) => `${c.card(e.card)} is sacrificed`,
+  token: (e, c) => `${c.isMe(e.p) ? 'You create' : `${c.name(e.p)} creates`} ${e.n === 1 ? `a ${e.card} token` : `${e.n} ${e.card} tokens`}`,
+  activate: (e, c) => {
+    const who = c.isMe(e.p) ? 'You activate' : `${c.name(e.p)} activates`;
+    const names = (e.targets ?? []).map((t) => ('card' in t ? c.card(t.card) : c.isMe(t.p) ? 'you' : c.name(t.p)));
+    return `${who} ${c.card(e.card)}'s ability${names.length ? ` targeting ${c.list(names)}` : ''}`;
+  },
   emptyLibrary: (e, c) => (c.isMe(e.p) ? "You can't draw from an empty library: you lose" : `${c.name(e.p)} can't draw from an empty library and loses`),
   concede: (e, c) => (c.isMe(e.p) ? 'You concede' : `${c.name(e.p)} concedes`),
   wins: (e, c) => (c.isMe(e.p) ? 'You win!' : `${c.name(e.p)} wins!`),
@@ -96,6 +103,13 @@ const errors: ErrorMessages = {
   nothingToChoose: () => 'There is nothing to choose',
   badChoice: () => 'That choice is not allowed',
   badX: () => 'X must be a whole number, 0 or more',
+  noSuchAbility: () => 'That permanent has no such ability',
+  activateTiming: () => "You can't activate that ability now",
+  alreadyTapped: (p) => `${p.card} is already tapped`,
+  summoningSick: (p) => `${p.card} just arrived: it can't use {T} abilities this turn`,
+  onceEachTurn: (p) => `${p.card}'s ability can only be activated once each turn`,
+  notEnoughLife: () => 'Not enough life to pay that cost',
+  nothingToSacrifice: (p) => `You have nothing to sacrifice for ${p.card}'s ability`,
   notEnoughMana: (p) => `Not enough mana for ${p.card}`,
   declareBlockersFirst: () => 'Declare blockers (or no blocks) to continue',
   notAttackStep: () => 'Not the declare attackers step',
@@ -399,6 +413,8 @@ export const en = {
       surveil: (p: { n: number }) => `Surveil ${p.n}: keep cards on top (in order) or put them into your graveyard.`,
       triggerTargets: (p: { card: string; kind: string }) => `${p.card}'s ability triggers: choose a target (${p.kind}).`,
       optional: (p: { card: string }) => `Use ${p.card}'s ability?`,
+      sacrifice: (p: { n: number }) => `Choose ${plural(p.n, 'permanent', 'permanents')} to sacrifice.`,
+      sacrificeCost: (p: { card: string }) => `Choose what to sacrifice for ${p.card}'s ability.`,
       arrange: 'Put each card where you want it, then confirm.',
       mode: (min: number, max: number) => (min === max ? `Choose ${plural(max, 'mode', 'modes')}.` : `Choose ${min} to ${max} modes.`),
       cards: (min: number, max: number) => (min === max ? `Choose ${plural(max, 'card', 'cards')}.` : `Choose ${min} to ${max} cards.`),
@@ -434,6 +450,7 @@ export const en = {
     mayRespond: (name: string) => `${name} may respond…`,
     choosingBlockers: (name: string) => `${name} is choosing blockers…`,
     thinking: (name: string) => `${name} is thinking…`,
+    chooseAbility: (card: string) => `Choose an ability of ${card}.`,
     chooseTarget: (kind: string) => `Choose a target (${kind}).`,
     onStack: (card: string, owner: string | null) =>
       `${owner === null ? 'Your' : `${owner}'s`} ${card} is on the stack. Respond with an instant, or pass.`,

@@ -2,9 +2,9 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, findPayment, hasInstantSpeed, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  manaColors, parseCost, power, spellSpec, toughness, triggersOf,
+  activatedOf, isToken, manaColors, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   type AbilitySpec, type Affected, type Amount, type CounterKind, type Effect, type Keyword, type ManaSource, type Selector,
-  type ObjectEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
+  type ActivatedSpec, type ObjectEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
 
 export type PlayerId = 0 | 1;
@@ -31,6 +31,8 @@ export interface Permanent extends CardInst {
   deathtouched: boolean;
   counters: Partial<Record<CounterKind, number>>;
   boosts: Boost[];
+  /** Indexes of "once each turn" abilities already activated this turn. */
+  used?: number[];
 }
 
 export interface StackItem extends CardInst {
@@ -106,7 +108,9 @@ export type ChoicePurpose =
   | 'scry'
   | 'surveil'
   | 'triggerTargets' // targets for a triggered ability going on the stack
-  | 'optional'; // "you may …" on resolution
+  | 'optional' // "you may …" on resolution
+  | 'sacrifice' // an edict: choose what to sacrifice
+  | 'sacrificeCost'; // "Sacrifice a creature:" when activating
 
 /** Where "arrange" choices may put cards (scry: top/bottom, surveil: top/graveyard). */
 export type ArrangeZone = 'top' | 'bottom' | 'graveyard';
@@ -138,8 +142,10 @@ export interface Pending {
    * What continues once answered: the end of turn, the spell or ability being resolved, or a
    * triggered ability waiting for targets (`trigger`).
    */
-  resume: 'cleanup' | 'effect' | 'trigger';
+  resume: 'cleanup' | 'effect' | 'trigger' | 'activation';
   trigger?: Triggered;
+  /** An ability whose cost includes sacrificing a permanent: it goes on the stack once chosen. */
+  activation?: { item: StackItem; named: LogTarget[] };
 }
 
 /** A spell or ability halfway through resolving (paused on a choice). */
@@ -168,6 +174,7 @@ export type LogEntry =
   | { k: 'keep'; p: PlayerId; n: number }
   | { k: 'playLand'; p: PlayerId; card: string }
   | { k: 'cast'; p: PlayerId; card: string; targets?: LogTarget[] }
+  | { k: 'activate'; p: PlayerId; card: string; targets?: LogTarget[] }
   | { k: 'enters'; card: string }
   /** A triggered ability goes on the stack. */
   | { k: 'triggers'; card: string; targets?: LogTarget[] }
@@ -197,6 +204,8 @@ export type LogEntry =
   | { k: 'surveil'; p: PlayerId; n: number; graveyard: number }
   | { k: 'tapped'; card: string; untap: boolean }
   | { k: 'bounced'; card: string }
+  | { k: 'sacrificed'; card: string }
+  | { k: 'token'; p: PlayerId; card: string; n: number }
   | { k: 'emptyLibrary'; p: PlayerId }
   | { k: 'concede'; p: PlayerId }
   | { k: 'wins'; p: PlayerId }
@@ -244,6 +253,8 @@ export type Action =
   | { type: 'playLand'; iid: string }
   /** `targets` has one list per target slot; `target` is a shorthand for a single-target spell. `x`: the value of X. */
   | { type: 'cast'; iid: string; targets?: Target[][]; target?: Target; x?: number }
+  /** Activate ability number `index` (in activatedOf order) of a permanent you control. */
+  | { type: 'activate'; iid: string; index: number; targets?: Target[][]; x?: number }
   | { type: 'pass' }
   | { type: 'declareAttackers'; attackers: string[] }
   | { type: 'declareBlockers'; blocks: Record<string, string[]> }
@@ -258,7 +269,8 @@ export type GameErrorCode =
   | 'landTiming' | 'landAlreadyPlayed' | 'notALand' | 'notASpell' | 'sorcerySpeed' | 'castTiming'
   | 'needsTarget' | 'tooManyTargets' | 'targetMustBe' | 'illegalTarget' | 'notEnoughMana' | 'declareBlockersFirst'
   | 'notAttackStep' | 'cannotAttack' | 'notBlockStep' | 'notAttacking' | 'menace' | 'cannotBlock'
-  | 'makeChoiceFirst' | 'nothingToChoose' | 'badChoice' | 'badX';
+  | 'makeChoiceFirst' | 'nothingToChoose' | 'badChoice' | 'badX'
+  | 'noSuchAbility' | 'activateTiming' | 'alreadyTapped' | 'summoningSick' | 'onceEachTurn' | 'notEnoughLife' | 'nothingToSacrifice';
 
 export type ErrorParams = Record<string, string | number>;
 
@@ -350,6 +362,72 @@ export function canCastNow(s: GameState, p: PlayerId, card: Card): boolean {
   if (isLandCard(card) || s.mulligan || s.pending || actor(s) !== p) return false;
   const timing = s.priority ? hasInstantSpeed(card) : isMainStep(s) && s.active === p;
   return timing && canPay(s, p, card);
+}
+
+// ---------- Activated abilities ----------
+
+/** The mana part of an ability's cost, with X set. */
+function abilityCost(spec: ActivatedSpec, x = 0) {
+  const cost = parseCost(spec.cost.mana);
+  return { ...cost, generic: cost.generic + x * (spec.cost.mana.match(/\{X\}/g) ?? []).length };
+}
+
+/** Mana sources that can pay for an ability of `perm`: not the permanent itself when it must tap. */
+const sourcesFor = (s: GameState, perm: Permanent, spec: ActivatedSpec) =>
+  manaSources(s, perm.controller).filter((m) => !(spec.cost.tap && m.iid === perm.iid));
+
+/** Why `p` can't activate this ability now (timing, tapping, mana, life), or null if they can. */
+export function activationProblem(s: GameState, p: PlayerId, perm: Permanent, index: number, x = 0): GameErrorCode | null {
+  const spec = activatedOf(perm.card)[index];
+  if (!spec || perm.controller !== p) return 'noSuchAbility';
+  if (s.mulligan || s.pending || actor(s) !== p) return 'activateTiming';
+  const sorcerySpeed = !s.priority && isMainStep(s) && s.active === p && !s.stack.length;
+  if (spec.sorcery ? !sorcerySpeed : !s.priority && !(isMainStep(s) && s.active === p)) return 'activateTiming';
+  if (spec.cost.tap && perm.tapped) return 'alreadyTapped';
+  if (spec.cost.tap && isCreature(perm.card) && perm.sick && !hasKw(perm, 'haste')) return 'summoningSick';
+  if (spec.once && perm.used?.includes(index)) return 'onceEachTurn';
+  if (spec.cost.life && s.players[p].life < spec.cost.life) return 'notEnoughLife';
+  if (spec.cost.sacrifice && !sacrificeOptions(s, perm, spec).length) return 'nothingToSacrifice';
+  if (!findPayment(sourcesFor(s, perm, spec), abilityCost(spec, x))) return 'notEnoughMana';
+  return null;
+}
+
+/** The largest X `p` can pay for an ability with {X} in its cost. */
+export function abilityMaxX(s: GameState, perm: Permanent, index: number): number {
+  const spec = activatedOf(perm.card)[index];
+  if (!spec?.cost.mana.includes('{X}')) return 0;
+  let x = 0;
+  while (findPayment(sourcesFor(s, perm, spec), abilityCost(spec, x + 1))) x++;
+  return x;
+}
+
+/** What may be sacrificed to pay an ability's "Sacrifice a creature" cost. */
+function sacrificeOptions(s: GameState, perm: Permanent, spec: ActivatedSpec): Permanent[] {
+  const cost = spec.cost.sacrifice!;
+  return matching(s, perm.controller, cost.which).filter((x) => x.controller === perm.controller && !(cost.another && x.iid === perm.iid));
+}
+
+/** The ability's costs are paid: it goes on the stack and the opponent may respond. */
+function finishActivation(d: GameState, item: StackItem, named: LogTarget[]) {
+  const p = item.controller;
+  d.stack.push(item);
+  log(d, { k: 'activate', p, card: item.card.name, ...(named.length ? { targets: named } : {}) });
+  if (d.priority) {
+    d.priority.passes = 0;
+    d.priority.player = opponent(p);
+  } else {
+    openWindow(d, 'main', opponent(p), 0);
+  }
+}
+
+/** Abilities `p` could activate right now with legal targets, as [permanent, index] pairs. */
+export function activatable(s: GameState, p: PlayerId): { perm: Permanent; index: number; spec: ActivatedSpec }[] {
+  return s.battlefield.flatMap((perm) =>
+    perm.controller !== p ? [] : activatedOf(perm.card).flatMap((spec, index) =>
+      spec.ability.effects.length && !activationProblem(s, p, perm, index) &&
+      spec.ability.targets.every((slot) => legalTargets(s, p, slot).length >= slot.min)
+        ? [{ perm, index, spec }] : []),
+  );
 }
 
 // ---------- Targets ----------
@@ -574,6 +652,7 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
       perm.tapped = false;
       perm.sick = false;
     }
+    delete perm.used;
   }
   log(d, { k: 'turn', n: d.turn, p });
   fireStep(d, 'upkeep');
@@ -633,8 +712,24 @@ const newPermanent = (inst: CardInst, controller: PlayerId): Permanent => ({
 
 function removePermanent(d: GameState, perm: Permanent, zone: 'graveyard' | 'exile') {
   d.battlefield = d.battlefield.filter((x) => x.iid !== perm.iid);
-  d.players[perm.controller][zone].push({ iid: perm.iid, card: perm.card });
+  // A token that leaves the battlefield ceases to exist (it still "dies").
+  if (!isToken(perm.card)) d.players[perm.controller][zone].push({ iid: perm.iid, card: perm.card });
   if (zone === 'graveyard' && isCreature(perm.card)) fireObject(d, 'dies', perm);
+}
+
+/** Taps the permanents paying for something; those whose mana ability sacrifices them (Treasure) are sacrificed. */
+function payMana(d: GameState, iids: string[]) {
+  for (const iid of iids) {
+    const perm = findPermanent(d, iid)!;
+    perm.tapped = true;
+    if (/\{T\}, Sacrifice [^:]*: Add/i.test(perm.card.oracleText)) sacrifice(d, perm);
+  }
+}
+
+/** Sacrifice a permanent (as a cost or an effect). */
+function sacrifice(d: GameState, perm: Permanent) {
+  removePermanent(d, perm, 'graveyard');
+  log(d, { k: 'sacrificed', card: perm.card.name });
 }
 
 /** A permanent enters: put it on the battlefield and check "enters" triggers (its own, landfall…). */
@@ -878,7 +973,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
             return { kind: 'yesNo', player: payer, purpose: 'payOrCounter', params: { card: target.card.name, n: e.unlessPays } };
           }
           if (payment && answer?.kind === 'yesNo' && answer.yes) {
-            for (const iid of payment) findPermanent(d, iid)!.tapped = true;
+            payMana(d, payment);
             log(d, { k: 'paid', p: payer, n: e.unlessPays, card: target.card.name });
             continue;
           }
@@ -1011,7 +1106,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
     case 'bounceAll':
       for (const perm of e.kind === 'bounceAll' ? matching(d, caster, e.which) : perms) {
         d.battlefield = d.battlefield.filter((x) => x.iid !== perm.iid);
-        d.players[perm.controller].hand.push({ iid: perm.iid, card: perm.card });
+        if (!isToken(perm.card)) d.players[perm.controller].hand.push({ iid: perm.iid, card: perm.card });
         log(d, { k: 'bounced', card: perm.card.name });
       }
       break;
@@ -1025,6 +1120,40 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         dealDamage(d, a, a.controller, b, powerOf(a));
         if (!e.oneSided) dealDamage(d, b, b.controller, a, powerOf(b));
       }
+      break;
+    }
+    case 'sacrifice':
+      // Players choose one after the other, like discarding.
+      for (let i = r.sub ?? 0; i < players.length; i++) {
+        const p = players[i];
+        const options = matching(d, p, e.which).filter((x) => x.controller === p);
+        const n = Math.min(amount(r, e.n), options.length);
+        if (!n) continue;
+        if (n === options.length) {
+          for (const perm of options) sacrifice(d, perm);
+          continue;
+        }
+        if (!answer || answer.kind !== 'cards') {
+          r.sub = i;
+          return { kind: 'cards', player: p, purpose: 'sacrifice', min: n, max: n, options, params: { n } };
+        }
+        for (const iid of answer.iids) sacrifice(d, findPermanent(d, iid)!);
+        answer = undefined;
+      }
+      r.sub = 0;
+      break;
+    case 'sacrificeSelf': {
+      const src = item.source ? findPermanent(d, item.source) : undefined;
+      if (src) sacrifice(d, src);
+      break;
+    }
+    case 'token': {
+      const n = amount(r, e.n);
+      for (let i = 0; i < n; i++) {
+        d.abilities = (d.abilities ?? 0) + 1;
+        enterBattlefield(d, { iid: `token-${d.abilities}`, card: tokenCard(e.token) }, caster);
+      }
+      if (n > 0) log(d, { k: 'token', p: caster, card: e.token.name, n });
       break;
     }
   }
@@ -1103,7 +1232,7 @@ function wantsPriority(d: GameState, p: PlayerId): boolean {
     if (reason === 'attack' && p === d.active) return false; // the attacker just acted
   }
   if (d.stack.at(-1)?.controller === p) return false; // don't respond to your own spell
-  return d.players[p].hand.some((c) => canCastNow(d, p, c.card) && hasUsefulTarget(d, p, c.card));
+  return d.players[p].hand.some((c) => canCastNow(d, p, c.card) && hasUsefulTarget(d, p, c.card)) || activatable(d, p).length > 0;
 }
 
 function openWindow(d: GameState, reason: WindowReason, player: PlayerId, passes: number) {
@@ -1261,6 +1390,9 @@ export function apply(state: GameState, action: Action): GameState {
       else if (pending.resume === 'trigger' && action.answer.kind === 'targets') {
         const t = pending.trigger!;
         pushAbility(d, t, checkTargets(d, t.controller, t.source.card, t.ability, action.answer.targets));
+      } else if (pending.resume === 'activation' && action.answer.kind === 'cards') {
+        sacrifice(d, findPermanent(d, action.answer.iids[0])!);
+        finishActivation(d, pending.activation!.item, pending.activation!.named);
       } else continueResolving(d, action.answer);
       break;
     }
@@ -1294,7 +1426,7 @@ export function apply(state: GameState, action: Action): GameState {
 
       const payment = findPayment(manaSources(d, p), costWithX(inst.card, x));
       if (!payment) throw new IllegalAction('notEnoughMana', { card: inst.card.name });
-      for (const iid of payment) findPermanent(d, iid)!.tapped = true;
+      payMana(d, payment);
       me.hand = me.hand.filter((c) => c !== inst);
       const named = targets.flat().map((t) => targetName(d, t));
       d.stack.push({ ...inst, controller: p, targets, ...(xCount(inst.card) ? { x } : {}) });
@@ -1308,6 +1440,41 @@ export function apply(state: GameState, action: Action): GameState {
       } else {
         openWindow(d, 'main', opponent(p), 0);
       }
+      break;
+    }
+
+    case 'activate': {
+      const perm = findPermanent(d, action.iid);
+      if (!perm) throw new IllegalAction('noSuchAbility');
+      const spec = activatedOf(perm.card)[action.index];
+      const x = spec?.cost.mana.includes('{X}') ? (action.x ?? 0) : 0;
+      if (!Number.isInteger(x) || x < 0) throw new IllegalAction('badX');
+      const problem = activationProblem(d, p, perm, action.index, x);
+      if (problem) throw new IllegalAction(problem, { card: perm.card.name });
+      const targets = checkTargets(d, p, perm.card, spec.ability, action.targets ?? []);
+
+      payMana(d, findPayment(sourcesFor(d, perm, spec), abilityCost(spec, x))!);
+      if (spec.cost.tap) perm.tapped = true;
+      if (spec.cost.life) d.players[p].life -= spec.cost.life;
+      if (spec.once) perm.used = [...(perm.used ?? []), action.index];
+      const named = targets.flat().map((t) => targetName(d, t));
+      d.abilities = (d.abilities ?? 0) + 1;
+      const item: StackItem = {
+        iid: `${perm.iid}-ability-${d.abilities}`, card: perm.card, controller: p, targets, ability: spec.ability, source: perm.iid,
+        ...(spec.cost.mana.includes('{X}') ? { x } : {}),
+      };
+      if (spec.cost.sacrifice) {
+        // The rest of the cost is paid; the player now picks what to sacrifice.
+        d.pending = {
+          choice: { kind: 'cards', player: p, purpose: 'sacrificeCost', min: 1, max: 1, options: sacrificeOptions(d, perm, spec), params: { card: perm.card.name } },
+          resume: 'activation',
+          activation: { item, named },
+        };
+        if (spec.cost.sacrificeSelf) sacrifice(d, perm);
+        break;
+      }
+      if (spec.cost.sacrificeSelf) sacrifice(d, perm);
+      finishActivation(d, item, named);
       break;
     }
 

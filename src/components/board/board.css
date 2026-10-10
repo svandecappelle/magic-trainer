@@ -183,6 +183,10 @@
 .prompt strong { font-size: 1rem; }
 .actions { display: flex; gap: 8px; align-items: center; }
 .actions button.primary { padding: 8px 18px; font-size: 1rem; font-weight: 700; }
+.actions .ability-option {
+  max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 0.82rem; font-weight: 500; background: var(--panel-2); color: var(--text); border: 1px solid var(--accent);
+}
 .key-hint { padding: 0 6px; font-size: 0.75rem; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; }
 .board-error {
   position: absolute; left: 50%; top: 100%; margin-top: 6px; z-index: 30; translate: -50% 0;

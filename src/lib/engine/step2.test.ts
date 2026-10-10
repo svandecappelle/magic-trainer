@@ -100,7 +100,7 @@ describe('step 2 trigger wordings', () => {
   it('recognizes but does not simulate conditional or unknown trigger text', () => {
     expect(triggersOf(creature('A', 1, 1, 'When A enters, if you control a Swamp, draw a card.'))[0].ability.effects).toEqual([]);
     expect(triggersOf(creature('A', 1, 1, 'Whenever a creature you control attacks, it gets +1/+0 until end of turn.'))[0].ability.effects).toEqual([]);
-    expect(triggersOf(creature('A', 1, 1, 'When A enters, create a 1/1 white Soldier creature token.'))[0].ability.effects).toEqual([]);
+    expect(triggersOf(creature('A', 1, 1, 'When A enters, exile target card from a graveyard.'))[0].ability.effects).toEqual([]);
     expect(triggersOf(creature('A', 1, 1, 'Flying\n{T}: Add {G}.'))).toEqual([]);
   });
 });

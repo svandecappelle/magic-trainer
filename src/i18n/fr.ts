@@ -66,6 +66,13 @@ const log: LogMessages = {
   surveil: (e, c) => `${c.isMe(e.p) ? 'Vous surveillez' : `${c.name(e.p)} surveille`} ${e.n} (${e.graveyard} au cimetière)`,
   tapped: (e, c) => `${c.card(e.card)} est ${e.untap ? 'dégagé' : 'engagé'}`,
   bounced: (e, c) => `${c.card(e.card)} retourne dans la main de son propriétaire`,
+  sacrificed: (e, c) => `${c.card(e.card)} est sacrifié`,
+  token: (e, c) => `${c.isMe(e.p) ? 'Vous créez' : `${c.name(e.p)} crée`} ${e.n === 1 ? `un jeton ${e.card}` : `${e.n} jetons ${e.card}`}`,
+  activate: (e, c) => {
+    const who = c.isMe(e.p) ? 'Vous activez' : `${c.name(e.p)} active`;
+    const names = (e.targets ?? []).map((t) => ('card' in t ? c.card(t.card) : c.isMe(t.p) ? 'vous' : c.name(t.p)));
+    return `${who} la capacité de ${c.card(e.card)}${names.length ? ` en ciblant ${c.list(names)}` : ''}`;
+  },
   emptyLibrary: (e, c) =>
     c.isMe(e.p) ? 'Vous ne pouvez pas piocher dans une bibliothèque vide : vous perdez' : `${c.name(e.p)} ne peut pas piocher dans une bibliothèque vide et perd`,
   concede: (e, c) => (c.isMe(e.p) ? 'Vous abandonnez' : `${c.name(e.p)} abandonne`),
@@ -108,6 +115,13 @@ const errors: ErrorMessages = {
   nothingToChoose: () => "Il n'y a rien à choisir",
   badChoice: () => "Ce choix n'est pas autorisé",
   badX: () => 'X doit être un nombre entier, 0 ou plus',
+  noSuchAbility: () => "Ce permanent n'a pas cette capacité",
+  activateTiming: () => 'Vous ne pouvez pas activer cette capacité maintenant',
+  alreadyTapped: (p) => `${p.card} est déjà engagé`,
+  summoningSick: (p) => `${p.card} vient d'arriver : il ne peut pas utiliser de capacité {T} ce tour-ci`,
+  onceEachTurn: (p) => `La capacité de ${p.card} ne peut être activée qu'une fois par tour`,
+  notEnoughLife: () => 'Pas assez de points de vie pour payer ce coût',
+  nothingToSacrifice: (p) => `Vous n'avez rien à sacrifier pour la capacité de ${p.card}`,
   notEnoughMana: (p) => `Pas assez de mana pour ${p.card}`,
   declareBlockersFirst: () => 'Déclarez les bloqueurs (ou aucun blocage) pour continuer',
   notAttackStep: () => "Ce n'est pas l'étape de déclaration des attaquants",
@@ -410,6 +424,8 @@ export const fr: Messages = {
       surveil: (p) => `Surveillance ${p.n} : gardez des cartes au-dessus (dans l'ordre) ou mettez-les au cimetière.`,
       triggerTargets: (p) => `La capacité de ${p.card} se déclenche : choisissez une cible (${p.kind}).`,
       optional: (p) => `Utiliser la capacité de ${p.card} ?`,
+      sacrifice: (p) => `Choisissez ${p.n === 1 ? 'un permanent' : `${p.n} permanents`} à sacrifier.`,
+      sacrificeCost: (p) => `Choisissez quoi sacrifier pour la capacité de ${p.card}.`,
       arrange: 'Placez chaque carte où vous voulez, puis confirmez.',
       mode: (min, max) => (min === max ? `Choisissez ${plural(max, 'mode', 'modes')}.` : `Choisissez de ${min} à ${max} modes.`),
       cards: (min, max) => (min === max ? `Choisissez ${plural(max, 'carte', 'cartes')}.` : `Choisissez de ${min} à ${max} cartes.`),
@@ -447,6 +463,7 @@ export const fr: Messages = {
     mayRespond: (name) => `${name} peut répondre…`,
     choosingBlockers: (name) => `${name} choisit ses bloqueurs…`,
     thinking: (name) => `${name} réfléchit…`,
+    chooseAbility: (card) => `Choisissez une capacité de ${card}.`,
     chooseTarget: (kind) => `Choisissez une cible (${kind}).`,
     onStack: (card, owner) =>
       `${card} ${owner === null ? '(le vôtre)' : `de ${owner}`} est sur la pile. Répondez avec un éphémère, ou passez.`,

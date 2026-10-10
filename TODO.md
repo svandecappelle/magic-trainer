@@ -20,7 +20,10 @@ to show how much each step unlocks. Tick items as they land.
   double strike, menace, flash.
 - Mana: basic land types and "{T}: Add …" (one mana per source, X = 0).
 - London mulligan, stack, priority windows, full control mode.
-- Anything else is cast "not simulated"; artifacts, enchantments and planeswalkers enter and only their triggers work.
+- Activated abilities of permanents ("{T}: …", "{2}{R}: …", sacrifice and life costs), tokens (creatures, Treasure,
+  Clue, Food), edicts. About a quarter of the 350 most-played cards with activated abilities have one simulated.
+- Anything else is cast "not simulated"; artifacts, enchantments and planeswalkers enter and only their triggers and
+  activated abilities work.
 
 ## Step 0 — Foundations
 
@@ -64,9 +67,12 @@ Not simulated yet in triggers (recognized, logged as "not simulated"):
 
 ## Step 3 — Activated abilities and resources
 
-- [ ] 18. Activated abilities "{T}: …", "{2}{R}: …" (2891)
-- [ ] 19. Sacrifice as cost or effect (2190)
-- [ ] 20. Tokens: creatures, Treasure, Clue, Food (2442)
+- [x] 18. Activated abilities "{T}: …", "{2}{R}: …" (2891) — costs: mana (with X), {T}, "Pay N life", sacrifice;
+  "activate only as a sorcery" / "once each turn". Other restrictions and costs (discard, remove counters, tap
+  another creature) are left out
+- [x] 19. Sacrifice as cost or effect (2190) — "Sacrifice this/a/another …" costs, edicts, "sacrifice this creature"
+- [x] 20. Tokens: creatures, Treasure, Clue, Food (2442) — "create N P/T color Type creature tokens (with keywords)";
+  tokens with their own abilities in quotes, copies, investigate and Blood are not simulated yet
 - [ ] 21. +1/+1 counters (1909) — spells that put counters work; still missing: "enters with counters", "for each counter"…
 - [ ] 22. Library search: tutors, ramp, fetchlands (680)
 - [ ] 23. Return from graveyard (828)

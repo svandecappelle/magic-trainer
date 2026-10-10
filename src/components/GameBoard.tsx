@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import {
-  actor, apply, canAttack, canBlock, canCastNow, findPermanent, hasKw, hasUsefulTarget, IllegalAction, isLegalTarget, isMainStep, maxX, opponent,
+  activatable, activationProblem, abilityMaxX, actor, apply, canAttack, canBlock, canCastNow, findPermanent, hasKw, hasUsefulTarget, IllegalAction, isLegalTarget, isMainStep, maxX, opponent,
   powerOf, toughnessOf, xCount,
   type Action, type CardInst, type GameState, type Permanent, type PlayerId, type Target,
 } from '../lib/engine/engine';
 import { errorText, logText, useT, type AppError } from '../i18n';
 import { useCardDisplay } from '../lib/cardLocale';
-import { isCreature, isLandCard, spellSpec, type AbilitySpec } from '../lib/engine/rules';
+import { activatedOf, isCreature, isLandCard, spellSpec, type AbilitySpec } from '../lib/engine/rules';
 import { ChoicePanel, choicePrompt } from './ChoicePanel';
 import { Lines, type Line } from './board/Lines';
 import { useBoardFx, type Float } from './board/useBoardFx';
@@ -70,9 +70,13 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
    */
   const [targeting, setTargeting] = useState<{
     iid: string; spec: AbilitySpec; slot: number; picked: Target[][]; x?: number; choice?: boolean; from?: string;
+    /** Set when activating ability number `activate` of permanent `iid`. */
+    activate?: number;
   } | null>(null);
-  /** Choosing X before casting a spell with {X} in its cost. */
-  const [xPick, setXPick] = useState<{ iid: string; card: Card; x: number; max: number } | null>(null);
+  /** Choosing X before casting a spell (or activating an ability, `ability`) with {X} in its cost. */
+  const [xPick, setXPick] = useState<{ iid: string; card: Card; x: number; max: number; ability?: number } | null>(null);
+  /** A permanent with several abilities was clicked: which one? */
+  const [abilityMenu, setAbilityMenu] = useState<Permanent | null>(null);
   const [attackSel, setAttackSel] = useState<string[]>([]);
   const [blockerSel, setBlockerSel] = useState<string | null>(null);
   const [blocks, setBlocks] = useState<Record<string, string[]>>({});
@@ -86,6 +90,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
       setTargeting({ iid: '', spec: { targets: c.slots, effects: [] }, slot: 0, picked: c.slots.map(() => []), choice: true, from: `perm:${c.source.iid}` });
     } else setTargeting(null);
     setXPick(null);
+    setAbilityMenu(null);
     setAttackSel([]);
     setBlockerSel(null);
     setBlocks({});
@@ -196,6 +201,10 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   function nextSlot(tg: NonNullable<typeof targeting>) {
     if (tg.slot + 1 < tg.spec.targets.length) return setTargeting({ ...tg, slot: tg.slot + 1 });
     if (tg.choice) return act({ type: 'choose', answer: { kind: 'targets', targets: tg.picked } });
+    if (tg.activate !== undefined) {
+      act({ type: 'activate', iid: tg.iid, index: tg.activate, targets: tg.picked, ...(tg.x === undefined ? {} : { x: tg.x }) });
+      return setTargeting(null);
+    }
     act({ type: 'cast', iid: tg.iid, targets: tg.picked, ...(tg.x === undefined ? {} : { x: tg.x }) });
     setTargeting(null);
   }
@@ -218,6 +227,26 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
 
   const declaringAttack = iAct && !g.priority && !g.pending && g.step === 'attack';
   const declaringBlocks = iAct && !g.priority && !g.pending && g.step === 'block';
+  /** Permanents with an ability you could activate right now. */
+  const canActivate = new Set(
+    iAct && !declaringAttack && !declaringBlocks && !targeting && !xPick ? activatable(g, me).map((a) => a.perm.iid) : [],
+  );
+
+  /** Activate an ability: choose X first if its cost has one, then its targets. */
+  function startActivation(perm: Permanent, index: number, x?: number) {
+    setAbilityMenu(null);
+    const spec = activatedOf(perm.card)[index];
+    const problem = activationProblem(g, me, perm, index, x ?? 0);
+    if (problem) return setError({ code: problem, params: { card: show.name(perm.card) } });
+    if (x === undefined && spec.cost.mana.includes('{X}')) {
+      const max = abilityMaxX(g, perm, index);
+      return setXPick({ iid: perm.iid, card: perm.card, x: max, max, ability: index });
+    }
+    const xs = x === undefined ? {} : { x };
+    if (!spec.ability.targets.length) return act({ type: 'activate', iid: perm.iid, index, ...xs });
+    setTargeting({ iid: perm.iid, spec: spec.ability, slot: 0, picked: spec.ability.targets.map(() => []), activate: index, from: `perm:${perm.iid}`, ...xs });
+    setError(null);
+  }
 
   function onPermanentClick(perm: Permanent) {
     if (targeting) return pickTarget({ kind: 'permanent', iid: perm.iid });
@@ -240,6 +269,13 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
         setBlockerSel(null);
         setError(null);
       }
+      return;
+    }
+    // Your own permanent with abilities: activate one.
+    if (perm.controller === me && !declaringAttack) {
+      const abilities = activatedOf(perm.card).map((spec, index) => ({ spec, index })).filter((a) => a.spec.ability.effects.length);
+      if (abilities.length === 1) startActivation(perm, abilities[0].index);
+      else if (abilities.length > 1) setAbilityMenu(perm);
     }
   }
 
@@ -289,11 +325,23 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     else prompt = t.game.choosing(oppName);
   } else if (!iAct) {
     prompt = g.priority ? t.game.mayRespond(oppName) : g.step === 'block' ? t.game.choosingBlockers(oppName) : t.game.thinking(oppName);
+  } else if (abilityMenu) {
+    prompt = t.game.chooseAbility(show.name(abilityMenu.card));
+    controls = (
+      <>
+        <button className="secondary" onClick={() => setAbilityMenu(null)}>{t.common.cancel}</button>
+        {activatedOf(abilityMenu.card).map((spec, index) => spec.ability.effects.length ? (
+          <button key={index} className="ability-option" title={spec.text} onClick={() => startActivation(abilityMenu, index)}>{spec.text}</button>
+        ) : null)}
+      </>
+    );
   } else if (xPick) {
     prompt = t.game.chooseX(show.name(xPick.card));
     const confirm = () => {
       setXPick(null);
-      castWithTargets(xPick.iid, xPick.card, xPick.x);
+      const perm = xPick.ability === undefined ? undefined : findPermanent(g, xPick.iid);
+      if (perm) startActivation(perm, xPick.ability!, xPick.x);
+      else castWithTargets(xPick.iid, xPick.card, xPick.x);
     };
     primary = confirm;
     controls = (
@@ -368,6 +416,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
         primaryRef.current();
       } else if (e.key === 'Escape') {
         setTargeting((tg) => (tg?.choice ? tg : null)); // a trigger's targets can't be cancelled
+        setAbilityMenu(null);
         setXPick(null);
         setBlockerSel(null);
         setZoneView(null);
@@ -417,7 +466,8 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     // Hints for what can be clicked right now.
     const canAct =
       !ghost &&
-      ((declaringAttack && perm.controller === me && canAttack(perm)) ||
+      (canActivate.has(perm.iid) ||
+        (declaringAttack && perm.controller === me && canAttack(perm)) ||
         (declaringBlocks && perm.controller === me && isCreature(perm.card) && !perm.tapped) ||
         (declaringBlocks && !!blockerSel && attackerIds.has(perm.iid) && canBlock(findPermanent(g, blockerSel)!, perm)));
     const classes = [

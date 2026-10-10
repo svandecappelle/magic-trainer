@@ -235,7 +235,44 @@ export type Effect =
   | { kind: 'damageAll'; amount: Amount; which: Selector; players?: 'each-player' | 'each-opponent' }
   | { kind: 'pumpAll'; power: number; toughness: number; keywords: Keyword[]; which: Selector }
   /** `a` and `b` deal damage equal to their power to each other; only `a` deals damage when `oneSided` ("bite"). */
-  | { kind: 'fight'; a: { slot: number }; b: { slot: number }; oneSided: boolean };
+  | { kind: 'fight'; a: { slot: number }; b: { slot: number }; oneSided: boolean }
+  /** Each affected player sacrifices N permanents of their choice ("edict"). */
+  | { kind: 'sacrifice'; n: Amount; to: Affected; which: Selector }
+  /** "Sacrifice this creature" as an effect (Ball Lightning). */
+  | { kind: 'sacrificeSelf' }
+  /** Create N tokens under the controller's control. */
+  | { kind: 'token'; n: Amount; token: TokenSpec };
+
+/** A token's characteristics; the engine turns it into a card. */
+export interface TokenSpec {
+  name: string;
+  typeLine: string;
+  colors: Color[];
+  power?: number;
+  toughness?: number;
+  keywords: Keyword[];
+  oracleText: string;
+}
+
+/** Predefined tokens ("create a Treasure token"). */
+export const PREDEFINED_TOKENS: Record<string, TokenSpec> = {
+  treasure: { name: 'Treasure', typeLine: 'Token Artifact — Treasure', colors: [], keywords: [], oracleText: '{T}, Sacrifice this artifact: Add one mana of any color.' },
+  clue: { name: 'Clue', typeLine: 'Token Artifact — Clue', colors: [], keywords: [], oracleText: '{2}, Sacrifice this artifact: Draw a card.' },
+  food: { name: 'Food', typeLine: 'Token Artifact — Food', colors: [], keywords: [], oracleText: '{2}, {T}, Sacrifice this artifact: You gain 3 life.' },
+};
+
+/** Is the card a token (created by the engine)? */
+export const isToken = (card: Card) => card.id.startsWith('token:');
+
+/** A token card. Tokens have no mana cost and no image. */
+export function tokenCard(t: TokenSpec): Card {
+  return {
+    id: `token:${t.name}`, name: t.name, manaCost: '', cmc: 0, typeLine: t.typeLine, oracleText: t.oracleText, colors: t.colors,
+    colorIdentity: t.colors, setCode: '', setName: '', rarity: 'token',
+    ...(t.power === undefined ? {} : { power: String(t.power), toughness: String(t.toughness) }),
+    keywords: t.keywords.map((k) => k.replace(/^./, (c) => c.toUpperCase())),
+  };
+}
 
 /** A spell's or ability's rules: what it targets and what it does, in text order. */
 export interface AbilitySpec {
@@ -375,7 +412,7 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** Ways rules text names its own card: "Goblin Guide", "Ragavan" (legends), "this creature". */
 function selfWords(name: string): string[] {
   const front = name.split(' // ')[0];
-  return [front, front.split(',')[0], 'this creature', 'this permanent', 'this artifact', 'this enchantment', 'this land'];
+  return [front, front.split(',')[0], 'this creature', 'this permanent', 'this artifact', 'this enchantment', 'this land', 'this token'];
 }
 
 /**
@@ -525,6 +562,27 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     return a && b && typeof a === 'object' && typeof b === 'object' ? { kind: 'fight', a, b, oneSided: true } : null;
   });
 
+  // Edicts: "Each opponent sacrifices a creature", "Target player sacrifices two creatures of their choice".
+  scan(new RegExp(`${PLAYER} sacrifices? (${AMOUNT}) ([a-z ,-]+?)(?: of (?:their|his or her) choice)?(?=\\.|,| and )`, 'gi'), (m) => {
+    const nouns = m[3].replace(/s$/, '').replace(/ies$/, 'y');
+    const which = selector(nouns.endsWith('creature') || nouns.endsWith('permanent') || nouns.endsWith('artifact') || nouns.endsWith('enchantment') || nouns.endsWith('land') ? nouns : '');
+    const to = which && who(m[1]);
+    return to && which && { kind: 'sacrifice', n: toAmount(m[2]), to, which };
+  });
+  // Tokens: "create two 1/1 white Soldier creature tokens with flying", "create a Treasure token".
+  scan(new RegExp(`\\b[Cc]reates? (${AMOUNT}) (\\d+)\\/(\\d+) ((?:(?:white|blue|black|red|green|colorless)(?:,? and |, | ))+)([A-Z][A-Za-z' -]*?) ((?:artifact |enchantment )?)creature tokens?(?: with ${KEYWORD_LIST})?(?=\\.|,| and |$)`, 'g'), (m) => {
+    const colors = m[4].toLowerCase().split(/,? and |, | /).filter((w) => COLOR_WORDS[w]).map((w) => COLOR_WORDS[w]);
+    const kws = keywordList(m[7]);
+    const types = `Token ${m[6] ? m[6].trim().replace(/^./, (c) => c.toUpperCase()) + ' ' : ''}Creature — ${m[5]}`;
+    return {
+      kind: 'token', n: toAmount(m[1]),
+      token: { name: m[5], typeLine: types, colors, power: Number(m[2]), toughness: Number(m[3]), keywords: kws, oracleText: kws.map((k) => k.replace(/^./, (c) => c.toUpperCase())).join(', ') },
+    };
+  });
+  scan(new RegExp(`\\bcreates? (${AMOUNT}) (Treasure|Clue|Food) tokens?`, 'gi'), (m) => ({
+    kind: 'token', n: toAmount(m[1]), token: PREDEFINED_TOKENS[m[2].toLowerCase()],
+  }));
+
   if (self) {
     // "it" only means the source when nothing else was targeted ("Target creature gets +1/+0. It gains…").
     const words = [...selfWords(self), ...(/\btargets?\b/i.test(text) ? [] : ['it'])].map(escapeRe).join('|');
@@ -538,6 +596,7 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     scan(new RegExp(`\\bput (${AMOUNT}) ([+-]1\\/[+-]1) counters? on ${SELF}(?=\\.|\\n|$|,)`, 'gi'), (m) => ({
       kind: 'addCounters', counter: m[2] as CounterKind, n: toAmount(m[1]), to: 'self',
     }));
+    scan(new RegExp(`(?:^|[.,] *|then )sacrifice ${SELF}(?=\\.|$)`, 'gi'), () => ({ kind: 'sacrificeSelf' }));
   }
 
   for (const { run } of matches.sort((a, b) => a.at - b.at)) {
@@ -651,7 +710,7 @@ export function triggersOf(card: Card): TriggerSpec[] {
       continue;
     }
 
-    const step = line.match(/^At the beginning of (your|each|each player's|each opponent's) (upkeep|end step), (.+)$/i);
+    const step = line.match(/^At the beginning of (your|each|each player's|each opponent's|the) (upkeep|end step), (.+)$/i);
     if (step) {
       const w = step[1].toLowerCase();
       const whose = w === 'your' ? 'you' : w === "each opponent's" ? 'opponent' : 'each';
@@ -667,5 +726,82 @@ export function triggersOf(card: Card): TriggerSpec[] {
     }
   }
   triggerCache.set(key, out);
+  return out;
+}
+
+// ---------- Activated abilities ----------
+
+/** What activating an ability costs, besides its mana. */
+export interface ActivationCost {
+  /** Mana symbols, e.g. "{2}{R}" (may contain {X}). */
+  mana: string;
+  tap: boolean;
+  /** "Sacrifice this creature". */
+  sacrificeSelf: boolean;
+  /** "Sacrifice a creature" / "Sacrifice another artifact": chosen when activating. */
+  sacrifice?: { which: Selector; another: boolean };
+  /** "Pay N life". */
+  life: number;
+}
+
+export interface ActivatedSpec {
+  /** The ability as printed, for menus. */
+  text: string;
+  cost: ActivationCost;
+  ability: AbilitySpec;
+  /** "Activate only as a sorcery." */
+  sorcery: boolean;
+  /** "Activate only once each turn." */
+  once: boolean;
+}
+
+const activatedCache = new Map<string, ActivatedSpec[]>();
+
+/**
+ * Activated abilities of a permanent card ("{T}: …", "{2}{R}, Sacrifice this creature: …").
+ * Mana abilities ("{T}: Add {G}") are handled by manaColors; loyalty abilities and costs the
+ * engine can't pay yet (sacrificing another permanent, discarding, removing counters…) are left out.
+ */
+export function activatedOf(card: Card): ActivatedSpec[] {
+  const key = `${card.name}\n${card.oracleText}`;
+  const cached = activatedCache.get(key);
+  if (cached) return cached;
+  const out: ActivatedSpec[] = [];
+  const name = card.name.split(' // ')[0];
+  const selves = selfWords(name).map((w) => w.toLowerCase());
+
+  for (const raw of frontText(card).split('\n')) {
+    const line = raw.replace(/\s*\([^)]*\)/g, '').replace(/^[A-Z][A-Za-z' ]+ — /, '').trim();
+    const m = line.match(/^([^:"]+): (.+)$/);
+    if (!m || /^[+−-]?\d+$/.test(m[1].trim()) || /^(?:\[|[+−])/.test(m[1])) continue; // loyalty abilities
+    let text = m[2];
+    if (/\badd \{|\badd (?:one|two|three) mana|\badd [a-z]+ mana/i.test(text)) continue; // mana ability
+    const cost: ActivationCost = { mana: '', tap: false, sacrificeSelf: false, life: 0 };
+    let ok = true;
+    for (const part of m[1].split(/,\s*/)) {
+      const p = part.trim();
+      if (/^(\{[^}]+\})+$/.test(p) && !p.includes('{T}') && !p.includes('{Q}')) cost.mana += p;
+      else if (p === '{T}') cost.tap = true;
+      else if (/^sacrifice /i.test(p) && selves.includes(p.slice('sacrifice '.length).toLowerCase())) cost.sacrificeSelf = true;
+      else if (/^sacrifice (?:a|an|another) /i.test(p)) {
+        const subject = triggerSubject(p.slice('sacrifice '.length), true);
+        if (subject) cost.sacrifice = subject;
+        else ok = false;
+      }
+      else if (/^pay (\d+) life$/i.test(p)) cost.life = Number(p.match(/\d+/)![0]);
+      else ok = false;
+    }
+    if (!ok) continue;
+    const sorcery = /Activate only as a sorcery/i.test(text);
+    const once = /Activate only once each turn/i.test(text);
+    // Other restrictions ("only during your turn", "only if …") aren't checked: leave the ability out.
+    if (/Activate (?:only|this ability only)/i.test(text.replace(/Activate only (?:as a sorcery|once each turn)\.?/gi, ''))) continue;
+    text = text.replace(/\s*Activate (?:only|this ability only)[^.]*\./gi, '').trim();
+    const optional = /^you may /i.test(text);
+    const body = optional ? `you ${text.slice('you may '.length)}` : text;
+    const ability = UNSUPPORTED.test(body) ? NO_EFFECT : parseAbilityText(body, name);
+    out.push({ text: line, cost, ability: optional && ability.effects.length ? { ...ability, optional } : ability, sorcery, once });
+  }
+  activatedCache.set(key, out);
   return out;
 }

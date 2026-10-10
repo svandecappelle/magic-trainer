@@ -1,10 +1,10 @@
 import {
-  actor, canAttack, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
+  abilityMaxX, activatable, actor, canAttack, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
   legalTargets, matching, maxX, opponent, powerOf, toughnessOf, xCount,
   type Action, type Answer, type CardInst, type Choice, type GameState, type Permanent, type PlayerId, type StackItem, type Target,
 } from './engine';
 import {
-  creatureValue, hasInstantSpeed, hasKeyword, isCreature, isInstantOrSorcery, isLandCard, manaColors,
+  creatureValue, hasInstantSpeed, isToken, hasKeyword, isCreature, isInstantOrSorcery, isLandCard, manaColors,
   parseCost, spellSpec, type AbilitySpec, type Amount, type Effect,
 } from './rules';
 import type { Card } from '../../types';
@@ -171,7 +171,7 @@ function chooseMainPhaseSpell(s: GameState, me: PlayerId): Action | null {
     const action = castWithGoodTarget(s, me, { iid, card });
     if (action) return action;
   }
-  return null;
+  return useAbility(s, me);
 }
 
 // ---------- Targets ----------
@@ -193,7 +193,7 @@ const num = (a: Amount) => (a === 'X' ? 0 : a);
 /** Is the effect bad for what it hits (removal, burn, discard…) or good (pump, card draw…)? */
 function intentOf(e: Effect): Intent {
   switch (e.kind) {
-    case 'damage': case 'destroy': case 'counter': case 'loseLife': case 'mill': case 'discard': case 'bounce': case 'bounceAll':
+    case 'damage': case 'destroy': case 'counter': case 'loseLife': case 'mill': case 'discard': case 'bounce': case 'bounceAll': case 'sacrifice':
       return 'harm';
     case 'tap':
       return e.untap ? 'neutral' : 'harm';
@@ -248,19 +248,38 @@ function massValue(s: GameState, me: PlayerId, effects: Effect[]): number {
 const asTarget = (x: Permanent | PlayerId): Target =>
   typeof x === 'number' ? { kind: 'player', player: x } : { kind: 'permanent', iid: x.iid };
 
-/**
- * Cast removal, burn, card draw, discard, board wipes… if there is a sensible target.
- * Counterspells and pump spells are kept for responses. X is as large as we can pay.
- */
+/** Something the bot can do with targets: a spell to cast or an ability to activate. */
+interface Play {
+  spec: AbilitySpec;
+  hasX: boolean;
+  /** The largest X affordable. */
+  maxX: number;
+  act: (targets: Target[][], x: number) => Action;
+}
+
 function castWithGoodTarget(s: GameState, me: PlayerId, inst: { iid: string; card: Card }, among?: Permanent[]): Action | null {
-  const x = maxX(s, me, inst.card);
-  if (xCount(inst.card) && x === 0) return null; // X = 0 would do nothing
-  const spec = withX(spellSpec(inst.card), x);
+  return playWithGoodTarget(s, me, {
+    spec: spellSpec(inst.card),
+    hasX: xCount(inst.card) > 0,
+    maxX: maxX(s, me, inst.card),
+    act: (targets, x) => ({ type: 'cast', iid: inst.iid, ...(targets.length ? { targets } : {}), ...(xCount(inst.card) ? { x } : {}) }),
+  }, among);
+}
+
+/**
+ * Cast removal, burn, card draw, discard, board wipes… (or activate such an ability) if there is a
+ * sensible target. Counterspells and pump spells are kept for responses. X is as large as we can pay.
+ */
+function playWithGoodTarget(s: GameState, me: PlayerId, play: Play, among?: Permanent[]): Action | null {
+  const x = play.maxX;
+  if (play.hasX && x === 0) return null; // X = 0 would do nothing
+  const spec = withX(play.spec, x);
   const { effects } = spec;
-  const cast = (targets: Target[][] = []): Action => ({
-    type: 'cast', iid: inst.iid, ...(targets.length ? { targets } : {}), ...(xCount(inst.card) ? { x } : {}),
-  });
+  const cast = (targets: Target[][] = []): Action => play.act(targets, x);
   if (!effects.length) return null; // not simulated: casting it would do nothing
+  // An edict needs something to hit.
+  const opp = opponent(me);
+  if (effects.some((e) => e.kind === 'sacrifice' && !matching(s, opp, e.which).some((x) => x.controller === opp))) return null;
   if (effects.some((e) => e.kind === 'counter' || (e.kind === 'pump' && intentOf(e) === 'help'))) return null; // used in response only
   if (effects.some((e) => e.kind === 'tap' && e.untap)) return null;
 
@@ -344,6 +363,52 @@ function chooseTarget(s: GameState, me: PlayerId, spec: AbilitySpec, among?: Per
   return perms.find((x) => x.controller === me) ?? null;
 }
 
+// ---------- Activated abilities ----------
+
+/** Abilities the bot may use now, with the rules it follows for their costs. */
+function abilityPlays(s: GameState, me: PlayerId): (Play & { perm: Permanent; tapsCreature: boolean; sacrifice: boolean; spendable: boolean })[] {
+  return activatable(s, me)
+    .filter(({ spec }) => !spec.cost.life) // never pay life: it could loop until death
+    .filter(({ spec }) => spec.cost.tap || spec.cost.mana || spec.cost.sacrificeSelf) // free abilities could repeat forever
+    .map(({ perm, index, spec }) => ({
+      perm,
+      spec: spec.ability,
+      hasX: spec.cost.mana.includes('{X}'),
+      maxX: abilityMaxX(s, perm, index),
+      tapsCreature: spec.cost.tap && isCreature(perm.card),
+      sacrifice: spec.cost.sacrificeSelf || !!spec.cost.sacrifice,
+      /** Clue, Food: made to be sacrificed. */
+      spendable: isToken(perm.card) && !isCreature(perm.card) && !spec.cost.sacrifice,
+      act: (targets: Target[][], x: number): Action => ({
+        type: 'activate', iid: perm.iid, index, ...(targets.length ? { targets } : {}), ...(spec.cost.mana.includes('{X}') ? { x } : {}),
+      }),
+    }));
+}
+
+/** Does the action hit one of the opponent's permanents (removal, as opposed to burn to the face or card draw)? */
+const hitsTheirPermanent = (s: GameState, me: PlayerId, action: Action) =>
+  action.type === 'activate' && (action.targets ?? []).flat().some((t) => t.kind === 'permanent' && findPermanent(s, t.iid)?.controller !== me);
+
+/**
+ * Use an ability. Tapping a creature or sacrificing a permanent has a price, so:
+ * creatures tap in the second main phase or at the end of the opponent's turn unless it removes
+ * something; sacrifices only to remove something, or when the source is about to die anyway.
+ */
+function useAbility(s: GameState, me: PlayerId, among?: Permanent[]): Action | null {
+  const top = s.stack.at(-1);
+  const doomed = (perm: Permanent) => !!top && top.controller !== me && top.targets.flat().some((t) => t.kind === 'permanent' && t.iid === perm.iid);
+  const freeTime = (s.active === me && s.step === 'main2' && !s.priority) || (s.priority?.reason === 'end' && s.active !== me);
+  for (const play of abilityPlays(s, me)) {
+    const action = playWithGoodTarget(s, me, play, among);
+    if (!action) continue;
+    const removal = hitsTheirPermanent(s, me, action);
+    if (play.sacrifice && !removal && !doomed(play.perm) && !(play.spendable && freeTime)) continue;
+    if (play.tapsCreature && !removal && !freeTime) continue;
+    return action;
+  }
+  return null;
+}
+
 // ---------- Responding with instants ----------
 
 function respond(s: GameState, me: PlayerId): Action | null {
@@ -369,7 +434,8 @@ function respond(s: GameState, me: PlayerId): Action | null {
     // Save a creature from a burn spell with a pump spell.
     const saved = saveFromBurn(s, me, top, withEffect('pump', 'help'));
     if (saved) return saved;
-    return null;
+    // A permanent about to be removed can still be sacrificed for value.
+    return useAbility(s, me);
   }
   if (top) return null; // our own spell is on top: let it resolve
 
@@ -381,6 +447,8 @@ function respond(s: GameState, me: PlayerId): Action | null {
       const action = castWithGoodTarget(s, me, c, attackers);
       if (action) return action;
     }
+    const shot = useAbility(s, me, attackers);
+    if (shot) return shot;
   }
   if (reason === 'block') {
     const trick = combatTrick(s, me, withEffect('pump', 'help'));
@@ -392,6 +460,7 @@ function respond(s: GameState, me: PlayerId): Action | null {
       const action = castWithGoodTarget(s, me, c);
       if (action) return action;
     }
+    return useAbility(s, me);
   }
   return null;
 }
@@ -444,7 +513,11 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
   switch (choice.kind) {
     case 'cards': {
       let options = [...choice.options];
-      if (!safe && choice.purpose === 'discardChosen') {
+      if (!safe && (choice.purpose === 'sacrifice' || choice.purpose === 'sacrificeCost')) {
+        // Give up what is worth least: tokens and small creatures first.
+        const worth = (c: CardInst) => (isCreature(c.card) ? creatureValue(c.card) : c.card.cmc) - (isToken(c.card) ? 1 : 0);
+        options.sort((a, b) => worth(a) - worth(b));
+      } else if (!safe && choice.purpose === 'discardChosen') {
         // Take their best card: the most expensive spell.
         options.sort((a, b) => b.card.cmc - a.card.cmc);
       } else if (!safe && (choice.purpose === 'cleanupDiscard' || choice.purpose === 'discard')) {
