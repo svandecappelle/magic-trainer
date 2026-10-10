@@ -72,7 +72,7 @@ describe('engine', () => {
   it('rejects illegal actions', () => {
     const s = board([{ card: forest, controller: 0 }], [bolt]);
     expect(() => apply(s, { type: 'cast', iid: 'h0', target: { kind: 'player', player: 1 } })).toThrow(IllegalAction);
-    expect(() => apply(s, { type: 'cast', iid: 'h0' })).toThrow(/needs a target/);
+    expect(() => apply(s, { type: 'cast', iid: 'h0' })).toThrow(/needsTarget/);
   });
 
   it('handles trample, deathtouch, lifelink and first strike in combat', () => {
@@ -97,7 +97,7 @@ describe('engine', () => {
       { card: creature('Bear', 2, 2), controller: 1 },
     ]);
     const atk = apply(s, { type: 'pass' });
-    expect(() => apply(atk, { type: 'declareAttackers', attackers: ['p1'] })).toThrow(/cannot attack/);
+    expect(() => apply(atk, { type: 'declareAttackers', attackers: ['p1'] })).toThrow(/cannotAttack/);
     // Only a flyer attacks and the Bear can't block it: the blockers step is skipped.
     const skipped = apply(atk, { type: 'declareAttackers', attackers: ['p0'] });
     expect(skipped.step).toBe('main2');
@@ -111,7 +111,7 @@ describe('engine', () => {
     ]);
     const blk = apply(apply(both, { type: 'pass' }), { type: 'declareAttackers', attackers: ['p0', 'p1'] });
     expect(blk.step).toBe('block');
-    expect(() => apply(blk, { type: 'declareBlockers', blocks: { p0: ['p2'] } })).toThrow(/cannot block/);
+    expect(() => apply(blk, { type: 'declareBlockers', blocks: { p0: ['p2'] } })).toThrow(/cannotBlock/);
   });
 });
 
@@ -170,11 +170,11 @@ describe('mulligans', () => {
     let s = newGame({ decks: [Array(40).fill(mountain), Array(40).fill(forest)], names: ['A', 'B'], first: 1, rng: () => 0.3 });
     expect(s.step).toBe('mulligan');
     expect(actor(s)).toBe(1);
-    expect(() => apply(s, { type: 'pass' })).toThrow(/keep your opening hand/);
+    expect(() => apply(s, { type: 'pass' })).toThrow(/keepFirst/);
 
     s = apply(s, { type: 'mulligan' });
     expect(s.players[1].hand).toHaveLength(7);
-    expect(() => apply(s, { type: 'keep', bottom: [] })).toThrow(/Choose 1 card/);
+    expect(() => apply(s, { type: 'keep', bottom: [] })).toThrow(/chooseBottom/);
     const bottom = s.players[1].hand[0].iid;
     s = apply(s, { type: 'keep', bottom: [bottom] });
     expect(s.players[1].hand).toHaveLength(6);
@@ -213,7 +213,7 @@ describe('instant speed', () => {
     let s = apply(base, { type: 'cast', iid: 'h0' });
     expect(s.stack).toHaveLength(1);
     expect(actor(s)).toBe(1);
-    expect(() => apply(s, { type: 'cast', iid: 'o0', target: { kind: 'spell', iid: 'h0' } })).toThrow(/noncreature/);
+    expect(() => apply(s, { type: 'cast', iid: 'o0', target: { kind: 'spell', iid: 'h0' } })).toThrow(/counterFilter/);
     s = apply(s, { type: 'cast', iid: 'o1', target: { kind: 'spell', iid: 'h0' } });
     expect(s.stack).toHaveLength(0);
     expect(s.priority).toBeNull();
@@ -241,7 +241,7 @@ describe('instant speed', () => {
     let s = withOpponentHand(board([{ card: mountain, controller: 1 }]), [sorcery, bolt]);
     s = apply(apply(s, { type: 'pass' }), { type: 'pass' }); // main1 → main2 → end of turn
     expect(s.priority).toMatchObject({ player: 1, reason: 'end' });
-    expect(() => apply(s, { type: 'cast', iid: 'o0', target: { kind: 'player', player: 0 } })).toThrow(/main phase/);
+    expect(() => apply(s, { type: 'cast', iid: 'o0', target: { kind: 'player', player: 0 } })).toThrow(/sorcerySpeed/);
     s = apply(s, { type: 'cast', iid: 'o1', target: { kind: 'player', player: 0 } });
     expect(s.players[0].life).toBe(17);
     expect(s.active).toBe(1); // turn passed after the window closed
@@ -257,7 +257,7 @@ describe('instant speed', () => {
     );
     s = apply(s, { type: 'cast', iid: 'h0', target: { kind: 'permanent', iid: 'p1' } });
     s = apply(s, { type: 'cast', iid: 'o0', target: { kind: 'permanent', iid: 'p1' } });
-    expect(s.log.some((l) => l.includes('fizzles'))).toBe(true);
+    expect(s.log.some((l) => l.k === 'fizzles')).toBe(true);
     expect(s.stack).toHaveLength(0);
   });
 });

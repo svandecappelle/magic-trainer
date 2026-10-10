@@ -18,6 +18,13 @@ export interface Card {
   toughness?: string;
   /** Keyword abilities, e.g. ["Flying", "Lifelink"]. Missing on cards saved before v0.2. */
   keywords?: string[];
+  /**
+   * Language of this printing (and of its images), e.g. "fr". Missing means English.
+   * name/typeLine/oracleText are always the English (Oracle) text; printed* hold the localized text.
+   */
+  lang?: string;
+  printedName?: string;
+  printedTypeLine?: string;
 }
 
 export type Board = 'main' | 'side';

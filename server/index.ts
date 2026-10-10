@@ -51,7 +51,7 @@ wss.on('connection', (ws) => {
     try {
       msg = JSON.parse(String(data));
     } catch {
-      conn.send({ t: 'error', message: 'Invalid message' });
+      conn.send({ t: 'error', code: 'invalidMessage' });
       return;
     }
     rooms.handle(conn, msg);

@@ -59,7 +59,7 @@ describe('RoomManager', () => {
     expect(actor(alice.state)).toBe(0);
 
     rooms.handle(bob, { t: 'action', action: { type: 'keep', bottom: [] } });
-    expect(bob.last('error')!.message).toMatch(/not your turn/);
+    expect(bob.last('error')!.code).toBe('notYourTurn');
     keepBoth(room);
     expect(alice.state.turn).toBe(1);
 
@@ -69,7 +69,7 @@ describe('RoomManager', () => {
     expect(bob.state.battlefield).toHaveLength(1);
 
     rooms.handle(alice, { t: 'action', action: { type: 'playLand', iid: alice.state.players[0].hand[0].iid } });
-    expect(alice.last('error')!.message).toMatch(/already played a land/);
+    expect(alice.last('error')!.code).toBe('landAlreadyPlayed');
   });
 
   it('lets a player reconnect to their seat with the token', () => {
@@ -106,12 +106,12 @@ describe('RoomManager', () => {
     const rooms = new RoomManager();
     const c = new FakeConn();
     rooms.handle(c, { t: 'create', name: 'A', deck: [mountain] });
-    expect(c.last('error')!.message).toMatch(/between/);
+    expect(c.last('error')).toMatchObject({ code: 'deckSize', params: { min: 20, max: 250 } });
     rooms.handle(c, { t: 'join', code: 'ZZZZZ', name: 'A', deck });
-    expect(c.last('error')!.message).toMatch(/No room/);
+    expect(c.last('error')).toMatchObject({ code: 'noRoom', params: { code: 'ZZZZZ' } });
     rooms.handle(c, { t: 'hack' });
-    expect(c.last('error')!.message).toBe('Unknown message');
+    expect(c.last('error')!.code).toBe('unknownMessage');
     rooms.handle(c, null);
-    expect(c.last('error')!.message).toBe('Unknown message');
+    expect(c.last('error')!.code).toBe('unknownMessage');
   });
 });

@@ -1,10 +1,14 @@
 import { useMemo, useState } from 'react';
 import { CardSearch } from '../components/CardSearch';
 import { ManaCost } from '../components/ManaCost';
+import { useT } from '../i18n';
+import { useCardDisplay } from '../lib/cardLocale';
 import { useApp } from '../store/useApp';
 import type { Card } from '../types';
 
 export function Collection() {
+  const t = useT();
+  const show = useCardDisplay();
   const collection = useApp((s) => s.collection);
   const addToCollection = useApp((s) => s.addToCollection);
   const [filter, setFilter] = useState('');
@@ -13,9 +17,9 @@ export function Collection() {
   const entries = useMemo(
     () =>
       Object.values(collection)
-        .filter((e) => e.card.name.toLowerCase().includes(filter.toLowerCase()))
-        .sort((a, b) => a.card.name.localeCompare(b.card.name)),
-    [collection, filter],
+        .filter((e) => `${e.card.name} ${show.name(e.card)}`.toLowerCase().includes(filter.toLowerCase()))
+        .sort((a, b) => show.name(a.card).localeCompare(show.name(b.card))),
+    [collection, filter, show],
   );
   const all = Object.values(collection);
   const totalCards = all.reduce((n, e) => n + e.qty + e.foilQty, 0);
@@ -24,39 +28,39 @@ export function Collection() {
 
   return (
     <div className="page">
-      <h1>Collection</h1>
+      <h1>{t.collection.title}</h1>
       <div className="stat-row">
-        <div><strong>{all.length}</strong> unique</div>
-        <div><strong>{totalCards}</strong> cards</div>
-        <div>≈ <strong>${totalValue.toFixed(2)}</strong></div>
+        <div><strong>{all.length}</strong> {t.collection.unique}</div>
+        <div><strong>{totalCards}</strong> {t.collection.cards}</div>
+        <div>≈ <strong>{t.price(totalValue)}</strong></div>
       </div>
 
       <div className="editor-layout">
         <section className="panel">
-          <h3>Add cards</h3>
+          <h3>{t.collection.addCards}</h3>
           <CardSearch
             onPreview={setPreview}
             actions={(card) => (
               <>
                 <button className="icon" onClick={() => addToCollection(card, 1)}>+1</button>
-                <button className="icon" title="Add a foil copy" onClick={() => addToCollection(card, 1, true)}>+★</button>
+                <button className="icon" title={t.collection.addFoil} onClick={() => addToCollection(card, 1, true)}>+★</button>
               </>
             )}
           />
         </section>
 
         <section className="panel">
-          <h3>Owned cards</h3>
-          <input type="search" placeholder="Filter by name" value={filter} onChange={(e) => setFilter(e.target.value)} />
+          <h3>{t.collection.owned}</h3>
+          <input type="search" placeholder={t.collection.filter} value={filter} onChange={(e) => setFilter(e.target.value)} />
           <table className="collection-table">
             <thead>
-              <tr><th>Card</th><th>Set</th><th>Qty</th><th>Foil</th><th>Price</th></tr>
+              <tr>{t.collection.columns.map((c) => <th key={c}>{c}</th>)}</tr>
             </thead>
             <tbody>
               {entries.map((e) => (
                 <tr key={e.card.id} onMouseEnter={() => setPreview(e.card)}>
                   <td>
-                    <span className="card-name">{e.card.name}</span> <ManaCost cost={e.card.manaCost} />
+                    <span className="card-name">{show.name(e.card)}</span> <ManaCost cost={e.card.manaCost} />
                   </td>
                   <td className="small muted" title={e.card.setName}>{e.card.setCode.toUpperCase()}</td>
                   <td>
@@ -69,19 +73,19 @@ export function Collection() {
                     {e.foilQty}
                     <button className="icon" onClick={() => addToCollection(e.card, 1, true)}>+</button>
                   </td>
-                  <td className="small">{e.card.priceUsd != null ? `$${e.card.priceUsd.toFixed(2)}` : '—'}</td>
+                  <td className="small">{e.card.priceUsd != null ? t.price(e.card.priceUsd) : '—'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {!entries.length && <p className="muted small">Nothing here yet. Search on the left to add cards.</p>}
+          {!entries.length && <p className="muted small">{t.collection.empty}</p>}
         </section>
 
         <aside className="panel side-column">
           {preview?.imageNormal ? (
-            <img className="card-preview" src={preview.imageNormal} alt={preview.name} />
+            <img className="card-preview" src={show.imageNormal(preview)} alt={show.name(preview)} />
           ) : (
-            <div className="card-preview placeholder muted small">Hover a card to preview it</div>
+            <div className="card-preview placeholder muted small">{t.common.hoverPreview}</div>
           )}
         </aside>
       </div>

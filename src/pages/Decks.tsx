@@ -1,12 +1,16 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { parseDecklist } from '../lib/deckText';
+import { useT } from '../i18n';
+import { useCardDisplay } from '../lib/cardLocale';
 import { resolveDecklist } from '../lib/importDeck';
 import { countCards } from '../lib/stats';
 import { useApp } from '../store/useApp';
 import { FORMATS } from '../types';
 
 export function Decks() {
+  const t = useT();
+  const show = useCardDisplay();
   const decks = useApp((s) => s.decks);
   const createDeck = useApp((s) => s.createDeck);
   const deleteDeck = useApp((s) => s.deleteDeck);
@@ -25,7 +29,7 @@ export function Decks() {
 
   function create(e: React.FormEvent) {
     e.preventDefault();
-    const id = createDeck(name.trim() || 'Untitled deck', format);
+    const id = createDeck(name.trim() || t.decks.untitled, format);
     navigate(`/decks/${id}`);
   }
 
@@ -40,15 +44,15 @@ export function Decks() {
     try {
       const { entries, notFound } = await resolveDecklist(parsed.lines);
       if (!entries.length) {
-        setImportResult({ message: `No cards found. Unknown: ${notFound.join(', ')}` });
+        setImportResult({ message: t.decks.noneFound(notFound) });
         return;
       }
-      const id = createDeck(importName.trim() || parsed.name || 'Imported deck', importFormat, entries);
+      const id = createDeck(importName.trim() || parsed.name || t.decks.importedName, importFormat, entries);
       if (!notFound.length) {
         navigate(`/decks/${id}`);
         return;
       }
-      setImportResult({ id, message: `Deck created, but these cards were not found: ${notFound.join(', ')}` });
+      setImportResult({ id, message: t.decks.partlyFound(notFound) });
     } catch (e) {
       setImportResult({ message: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -58,23 +62,22 @@ export function Decks() {
 
   return (
     <div className="page">
-      <h1>Decks</h1>
+      <h1>{t.decks.title}</h1>
       <form className="inline-form" onSubmit={create}>
-        <input placeholder="New deck name" value={name} onChange={(e) => setName(e.target.value)} />
+        <input placeholder={t.decks.newDeckName} value={name} onChange={(e) => setName(e.target.value)} />
         <select value={format} onChange={(e) => setFormat(e.target.value)}>
-          {FORMATS.map((f) => <option key={f}>{f}</option>)}
+          {FORMATS.map((f) => <option key={f} value={f}>{t.formats[f] ?? f}</option>)}
         </select>
-        <button type="submit">Create deck</button>
+        <button type="submit">{t.decks.createDeck}</button>
         <button type="button" className="secondary" onClick={() => setShowImport(!showImport)}>
-          Import decklist
+          {t.decks.importDecklist}
         </button>
       </form>
 
       {showImport && (
         <div className="panel import-panel">
           <p className="small muted">
-            Paste a decklist exported from MTG Arena, MTGO, Moxfield, Archidekt… or load a .txt file.
-            Lines look like <code>4 Lightning Bolt</code>; a <code>Sideboard</code> line starts the sideboard.
+            {t.decks.importHelp} {t.decks.importFormat}
           </p>
           <textarea
             rows={12}
@@ -86,49 +89,50 @@ export function Decks() {
             <input type="file" accept=".txt,.dec,text/plain" onChange={(e) => e.target.files?.[0] && loadFile(e.target.files[0])} />
           </div>
           <div className="row">
-            <input placeholder={parsed.name ?? 'Deck name'} value={importName} onChange={(e) => setImportName(e.target.value)} />
+            <input placeholder={parsed.name ?? t.decks.deckName} value={importName} onChange={(e) => setImportName(e.target.value)} />
             <select value={importFormat} onChange={(e) => setImportFormat(e.target.value)}>
-              {FORMATS.map((f) => <option key={f}>{f}</option>)}
+              {FORMATS.map((f) => <option key={f} value={f}>{t.formats[f] ?? f}</option>)}
             </select>
             <button onClick={runImport} disabled={importing || !parsed.lines.length}>
-              {importing ? 'Looking up cards…' : 'Import as new deck'}
+              {importing ? t.decks.lookingUp : t.decks.importAsNew}
             </button>
             <span className="small muted">
-              {parsed.lines.length > 0 && `${parsedCount('main')} main · ${parsedCount('side')} sideboard`}
+              {parsed.lines.length > 0 && t.decks.detected(parsedCount('main'), parsedCount('side'))}
             </span>
           </div>
           {importResult && (
             <p className="small">
               <span className={importResult.id ? '' : 'error'}>{importResult.message}</span>{' '}
-              {importResult.id && <Link to={`/decks/${importResult.id}`}>Open deck →</Link>}
+              {importResult.id && <Link to={`/decks/${importResult.id}`}>{t.decks.openDeck}</Link>}
             </p>
           )}
         </div>
       )}
 
       {decks.length === 0 ? (
-        <p className="muted">No decks yet. Create one, or import a decklist.</p>
+        <p className="muted">{t.decks.empty}</p>
       ) : (
         <div className="deck-grid">
           {[...decks]
             .sort((a, b) => b.updatedAt - a.updatedAt)
             .map((deck) => {
-              const cover = deck.entries.find((e) => e.card.imageSmall)?.card.imageSmall;
+              const coverCard = deck.entries.find((e) => e.card.imageSmall)?.card;
+              const cover = coverCard && show.imageSmall(coverCard);
               return (
                 <div key={deck.id} className="deck-tile">
                   {cover ? <img src={cover} alt="" /> : <div className="deck-cover-empty" />}
                   <div className="deck-tile-body">
                     <Link to={`/decks/${deck.id}`} className="card-name">{deck.name}</Link>
                     <div className="muted small">
-                      {deck.format} · {countCards(deck.entries)} cards
+                      {t.decks.tile(t.formats[deck.format] ?? deck.format, countCards(deck.entries))}
                     </div>
                     <div className="row">
-                      <Link to={`/goldfish/${deck.id}`} className="button secondary">Goldfish</Link>
+                      <Link to={`/goldfish/${deck.id}`} className="button secondary">{t.decks.goldfish}</Link>
                       <button
                         className="danger"
-                        onClick={() => confirm(`Delete "${deck.name}"?`) && deleteDeck(deck.id)}
+                        onClick={() => confirm(t.decks.confirmDelete(deck.name)) && deleteDeck(deck.id)}
                       >
-                        Delete
+                        {t.common.delete}
                       </button>
                     </div>
                   </div>

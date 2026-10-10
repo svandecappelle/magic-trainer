@@ -8,6 +8,8 @@ interface ScryfallImages {
 }
 
 interface ScryfallFace {
+  printed_name?: string;
+  printed_type_line?: string;
   mana_cost?: string;
   type_line?: string;
   oracle_text?: string;
@@ -28,6 +30,7 @@ export interface ScryfallCard extends ScryfallFace {
   set_name: string;
   rarity: string;
   keywords?: string[];
+  lang?: string;
 }
 
 /** Convert a Scryfall card to our slim Card. Double-faced cards keep their data on card_faces. */
@@ -52,7 +55,16 @@ export function toCard(c: ScryfallCard): Card {
     power: c.power ?? face?.power,
     toughness: c.toughness ?? face?.toughness,
     keywords: c.keywords,
+    ...(c.lang && c.lang !== 'en' ? localizedText(c) : {}),
   };
+}
+
+/** Printed (localized) name and type line of a non-English printing, if Scryfall has them. */
+function localizedText(c: ScryfallCard): Pick<Card, 'lang' | 'printedName' | 'printedTypeLine'> {
+  const faces = c.card_faces ?? [];
+  const facesName = faces.every((f) => f.printed_name) && faces.length ? faces.map((f) => f.printed_name).join(' // ') : undefined;
+  const facesType = faces.every((f) => f.printed_type_line) && faces.length ? faces.map((f) => f.printed_type_line).join(' // ') : undefined;
+  return { lang: c.lang, printedName: c.printed_name ?? facesName, printedTypeLine: c.printed_type_line ?? facesType };
 }
 
 // Scryfall asks clients to wait 50–100 ms between requests; queue them 100 ms apart.
@@ -69,10 +81,13 @@ export interface SearchResult {
   hasMore: boolean;
 }
 
-/** Full-text search using Scryfall syntax, e.g. "t:dragon c:r" or "lightning". */
-export async function searchCards(query: string, page = 1, signal?: AbortSignal): Promise<SearchResult> {
+/**
+ * Full-text search using Scryfall syntax, e.g. "t:dragon c:r" or "lightning".
+ * `multilingual` also matches names printed in other languages ("Foudre" finds Lightning Bolt).
+ */
+export async function searchCards(query: string, page = 1, signal?: AbortSignal, multilingual = false): Promise<SearchResult> {
   await throttle();
-  const url = `${API}/cards/search?q=${encodeURIComponent(query)}&page=${page}`;
+  const url = `${API}/cards/search?q=${encodeURIComponent(query)}&page=${page}${multilingual ? '&include_multilingual=true' : ''}`;
   const res = await fetch(url, { signal, headers: { Accept: 'application/json' } });
   if (res.status === 404) return { cards: [], total: 0, hasMore: false };
   if (!res.ok) throw new Error(`Scryfall error ${res.status}`);
@@ -98,4 +113,51 @@ export async function fetchCardsByName(names: string[]): Promise<{ found: Card[]
     notFound.push(...body.not_found.map((n: { name: string }) => n.name));
   }
   return { found, notFound };
+}
+
+const exactNames = (names: string[]) => `(${names.map((n) => `!"${n.replace(/"/g, '\\"')}"`).join(' or ')})`;
+
+/** All results of a search, following pagination. Returns [] when nothing matches. */
+async function searchAll(query: string, multilingual: boolean): Promise<ScryfallCard[]> {
+  const out: ScryfallCard[] = [];
+  let url: string | null = `${API}/cards/search?q=${encodeURIComponent(query)}${multilingual ? '&include_multilingual=true' : ''}`;
+  while (url) {
+    await throttle();
+    const res: Response = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (res.status === 404) break;
+    if (!res.ok) throw new Error(`Scryfall error ${res.status}`);
+    const body = await res.json();
+    out.push(...body.data);
+    url = body.has_more ? body.next_page : null;
+  }
+  return out;
+}
+
+/**
+ * A printing in `lang` for each English card name (when one exists), keyed by English name.
+ * Batched: one request per 20 names.
+ */
+export async function fetchPrintings(names: string[], lang: string): Promise<Map<string, Card>> {
+  const wanted = new Set(names);
+  const found = new Map<string, Card>();
+  for (let i = 0; i < names.length; i += 20) {
+    const results = await searchAll(`${exactNames(names.slice(i, i + 20))} lang:${lang}`, false);
+    // "!Lightning Bolt" also matches cards with that name on a face: keep exact names only.
+    for (const c of results) if (wanted.has(c.name) && !found.has(c.name)) found.set(c.name, toCard(c));
+  }
+  return found;
+}
+
+/** Look up cards by their printed name in any language ("Foudre"), keyed by that lowercased name. */
+export async function fetchByPrintedNames(names: string[]): Promise<Map<string, Card>> {
+  const found = new Map<string, Card>();
+  for (let i = 0; i < names.length; i += 20) {
+    for (const c of await searchAll(exactNames(names.slice(i, i + 20)), true)) {
+      const card = toCard(c);
+      for (const n of [card.printedName, card.printedName?.split(' // ')[0], card.name]) {
+        if (n && !found.has(n.toLowerCase())) found.set(n.toLowerCase(), card);
+      }
+    }
+  }
+  return found;
 }

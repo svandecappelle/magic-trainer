@@ -1,5 +1,5 @@
 import type { Card } from '../../types';
-import type { Action, CardInst, GameState, PlayerId, PlayerState } from '../engine/engine';
+import type { Action, CardInst, ErrorParams, GameErrorCode, GameState, PlayerId, PlayerState } from '../engine/engine';
 
 /** Messages the browser sends to the server. */
 export type ClientMessage =
@@ -16,6 +16,13 @@ export interface LobbyPlayer {
   wantsRematch: boolean;
 }
 
+/** Errors specific to the server; rule violations use the engine's codes. */
+export type ServerErrorCode =
+  | 'invalidMessage' | 'unknownMessage' | 'enterName' | 'deckSize' | 'invalidCard' | 'noRoom' | 'roomFull'
+  | 'gameGone' | 'notStarted' | 'invalidAction' | 'notYourTurn' | 'gameNotOver' | 'opponentLeft' | 'notInRoom';
+
+export type ErrorCode = GameErrorCode | ServerErrorCode;
+
 /** Messages the server sends to the browser. */
 export type ServerMessage =
   | { t: 'joined'; code: string; seat: PlayerId; token: string }
@@ -23,7 +30,7 @@ export type ServerMessage =
   | { t: 'state'; state: GameState }
   | { t: 'left' }
   /** `lostRoom`: the room or seat is gone (e.g. after a server restart); forget it. */
-  | { t: 'error'; message: string; lostRoom?: boolean };
+  | { t: 'error'; code: ErrorCode; params?: ErrorParams; lostRoom?: boolean };
 
 export const MIN_DECK_SIZE = 20;
 export const MAX_DECK_SIZE = 250;

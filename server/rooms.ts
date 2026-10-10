@@ -1,7 +1,7 @@
 import { randomInt, randomUUID } from 'node:crypto';
-import { actor, apply, IllegalAction, newGame, type GameState, type PlayerId } from '../src/lib/engine/engine';
+import { actor, apply, IllegalAction, newGame, type ErrorParams, type GameState, type PlayerId } from '../src/lib/engine/engine';
 import {
-  MAX_DECK_SIZE, MIN_DECK_SIZE, redact, type ClientMessage, type ServerMessage,
+  MAX_DECK_SIZE, MIN_DECK_SIZE, redact, type ClientMessage, type ServerErrorCode, type ServerMessage,
 } from '../src/lib/multiplayer/protocol';
 import type { Card } from '../src/types';
 
@@ -25,7 +25,14 @@ interface Room {
   expiry?: ReturnType<typeof setTimeout>;
 }
 
-class ClientError extends Error {}
+class ClientError extends Error {
+  constructor(
+    readonly code: ServerErrorCode,
+    readonly params: ErrorParams = {},
+  ) {
+    super(code);
+  }
+}
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O or 1/I
 
@@ -56,10 +63,10 @@ export class RoomManager {
         case 'action': return this.act(conn, msg.action);
         case 'rematch': return this.rematch(conn);
         case 'leave': return this.leave(conn);
-        default: throw new ClientError('Unknown message');
+        default: throw new ClientError('unknownMessage');
       }
     } catch (e) {
-      if (e instanceof ClientError || e instanceof IllegalAction) conn.send({ t: 'error', message: e.message });
+      if (e instanceof ClientError || e instanceof IllegalAction) conn.send({ t: 'error', code: e.code, params: e.params });
       else throw e;
     }
   }
@@ -87,8 +94,8 @@ export class RoomManager {
 
   private join(conn: Conn, code: string, name: string, deck: Card[]) {
     const room = this.rooms.get(code);
-    if (!room) throw new ClientError(`No room with code ${code}`);
-    if (room.seats.length >= 2) throw new ClientError('That room is full');
+    if (!room) throw new ClientError('noRoom', { code });
+    if (room.seats.length >= 2) throw new ClientError('roomFull');
     this.leave(conn, true);
     if (room.seats[0]?.name === name) name = `${name} (2)`;
     this.seat(conn, room, name, deck);
@@ -99,7 +106,7 @@ export class RoomManager {
     const room = this.rooms.get(code);
     const seat = room?.seats.findIndex((s) => s.token && s.token === token) ?? -1;
     if (!room || seat < 0) {
-      conn.send({ t: 'error', message: 'That game no longer exists', lostRoom: true });
+      conn.send({ t: 'error', code: 'gameGone', lostRoom: true });
       return;
     }
     const old = room.seats[seat].conn;
@@ -114,13 +121,13 @@ export class RoomManager {
 
   private act(conn: Conn, action: unknown) {
     const { room, seat } = this.locate(conn);
-    if (!room.game) throw new ClientError('The game has not started');
-    if (!action || typeof action !== 'object') throw new ClientError('Invalid action');
+    if (!room.game) throw new ClientError('notStarted');
+    if (!action || typeof action !== 'object') throw new ClientError('invalidAction');
     const a = action as Parameters<typeof apply>[1];
     if (a.type === 'concede') {
       room.game = apply(room.game, { type: 'concede', player: seat });
     } else {
-      if (actor(room.game) !== seat) throw new ClientError("It's not your turn to act");
+      if (actor(room.game) !== seat) throw new ClientError('notYourTurn');
       room.game = apply(room.game, a);
     }
     this.sendState(room);
@@ -128,8 +135,8 @@ export class RoomManager {
 
   private rematch(conn: Conn) {
     const { room, seat } = this.locate(conn);
-    if (!room.game || room.game.winner === null) throw new ClientError('The game is not over');
-    if (room.seats.length < 2) throw new ClientError('Your opponent has left');
+    if (!room.game || room.game.winner === null) throw new ClientError('gameNotOver');
+    if (room.seats.length < 2) throw new ClientError('opponentLeft');
     room.seats[seat].wantsRematch = true;
     if (room.seats.every((s) => s.wantsRematch)) this.startGame(room);
     else this.sendLobby(room);
@@ -178,7 +185,7 @@ export class RoomManager {
 
   private locate(conn: Conn) {
     const at = this.where.get(conn);
-    if (!at) throw new ClientError('You are not in a room');
+    if (!at) throw new ClientError('notInRoom');
     return at;
   }
 
@@ -207,7 +214,7 @@ export class RoomManager {
 
 function cleanName(name: unknown): string {
   const s = String(name ?? '').trim().slice(0, 24);
-  if (!s) throw new ClientError('Please enter a name');
+  if (!s) throw new ClientError('enterName');
   return s;
 }
 
@@ -220,10 +227,10 @@ const optStr = (v: unknown) => (typeof v === 'string' ? v.slice(0, 500) : undefi
  */
 function cleanDeck(deck: unknown): Card[] {
   if (!Array.isArray(deck) || deck.length < MIN_DECK_SIZE || deck.length > MAX_DECK_SIZE) {
-    throw new ClientError(`Decks must have between ${MIN_DECK_SIZE} and ${MAX_DECK_SIZE} cards`);
+    throw new ClientError('deckSize', { min: MIN_DECK_SIZE, max: MAX_DECK_SIZE });
   }
   return deck.map((c): Card => {
-    if (!c || typeof c !== 'object' || typeof c.name !== 'string') throw new ClientError('Invalid card in deck');
+    if (!c || typeof c !== 'object' || typeof c.name !== 'string') throw new ClientError('invalidCard');
     return {
       id: str(c.id, 64), name: str(c.name, 200), manaCost: str(c.manaCost, 100), cmc: Number(c.cmc) || 0,
       typeLine: str(c.typeLine, 200), oracleText: str(c.oracleText),
@@ -233,6 +240,9 @@ function cleanDeck(deck: unknown): Card[] {
       setCode: str(c.setCode, 10), setName: str(c.setName, 100), rarity: str(c.rarity, 20),
       power: optStr(c.power), toughness: optStr(c.toughness),
       keywords: Array.isArray(c.keywords) ? c.keywords.map(String).slice(0, 30) : undefined,
+      lang: optStr(c.lang)?.slice(0, 8),
+      printedName: optStr(c.printedName),
+      printedTypeLine: optStr(c.printedTypeLine),
     };
   });
 }

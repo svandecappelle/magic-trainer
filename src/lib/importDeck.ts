@@ -1,19 +1,27 @@
 import type { DeckEntry } from '../types';
 import type { ParsedLine } from './deckText';
-import { fetchCardsByName } from './scryfall';
+import { fetchByPrintedNames, fetchCardsByName } from './scryfall';
 
 /** Look up parsed decklist lines on Scryfall and turn them into deck entries. */
 export async function resolveDecklist(lines: ParsedLine[]): Promise<{ entries: DeckEntry[]; notFound: string[] }> {
   // Scryfall's name lookup rejects "Fire // Ice" but accepts "Fire", so send front-face names.
   const names = [...new Set(lines.map((l) => l.name.split(' // ')[0]))];
-  const { found, notFound } = await fetchCardsByName(names);
+  const { found, notFound: unknown } = await fetchCardsByName(names);
   const byName = new Map(found.map((c) => [c.name.toLowerCase(), c]));
   // Index front-face names too, so both "Fire" and "Fire // Ice" lines resolve.
   for (const c of found) byName.set(c.name.split(' // ')[0].toLowerCase(), c);
 
+  // Names in other languages ("4 Foudre"): look them up by printed name.
+  let notFound = unknown;
+  if (unknown.length) {
+    const printed = await fetchByPrintedNames(unknown);
+    for (const [name, card] of printed) if (!byName.has(name)) byName.set(name, card);
+    notFound = unknown.filter((n) => !byName.has(n.toLowerCase()));
+  }
+
   const entries: DeckEntry[] = [];
   for (const l of lines) {
-    const card = byName.get(l.name.toLowerCase());
+    const card = byName.get(l.name.toLowerCase()) ?? byName.get(l.name.split(' // ')[0].toLowerCase());
     if (!card) continue;
     // "Fire" and "Fire // Ice" lines on the same board resolve to the same card: merge them.
     const existing = entries.find((e) => e.card.id === card.id && e.board === l.board);

@@ -17,8 +17,9 @@ interface LifeState {
   nextTurn: () => void;
 }
 
+// An empty name shows a translated "Player N" placeholder.
 const makePlayers = (count: number, life: number, old: Player[] = []): Player[] =>
-  Array.from({ length: count }, (_, i) => ({ name: old[i]?.name ?? `Player ${i + 1}`, life, poison: 0 }));
+  Array.from({ length: count }, (_, i) => ({ name: old[i]?.name ?? '', life, poison: 0 }));
 
 export const useLife = create<LifeState>()(
   persist(

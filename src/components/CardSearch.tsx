@@ -1,4 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { useLang, useT } from '../i18n';
+import { useCardDisplay } from '../lib/cardLocale';
 import { searchCards } from '../lib/scryfall';
 import type { Card } from '../types';
 import { ManaCost } from './ManaCost';
@@ -10,6 +12,10 @@ interface Props {
 }
 
 export function CardSearch({ actions, onPreview }: Props) {
+  const t = useT();
+  const show = useCardDisplay();
+  // In other languages, also match names printed in that language ("Foudre").
+  const lang = useLang((s) => s.lang);
   const [query, setQuery] = useState('');
   const [cards, setCards] = useState<Card[]>([]);
   const [total, setTotal] = useState(0);
@@ -31,7 +37,7 @@ export function CardSearch({ actions, onPreview }: Props) {
       setLoading(true);
       setError('');
       try {
-        const res = await searchCards(q, 1, ctrl.signal);
+        const res = await searchCards(q, 1, ctrl.signal, lang !== 'en');
         setCards(res.cards);
         setTotal(res.total);
         setHasMore(res.hasMore);
@@ -46,12 +52,12 @@ export function CardSearch({ actions, onPreview }: Props) {
       clearTimeout(timer);
       ctrl.abort();
     };
-  }, [query]);
+  }, [query, lang]);
 
   async function loadMore() {
     setLoading(true);
     try {
-      const res = await searchCards(query.trim(), page + 1);
+      const res = await searchCards(query.trim(), page + 1, undefined, lang !== 'en');
       setCards((prev) => [...prev, ...res.cards]);
       setHasMore(res.hasMore);
       setPage(page + 1);
@@ -66,20 +72,20 @@ export function CardSearch({ actions, onPreview }: Props) {
     <div className="card-search">
       <input
         type="search"
-        placeholder='Search cards… (Scryfall syntax: "t:goblin c:r cmc<=2")'
+        placeholder={t.search.placeholder}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
       <div className="muted small">
-        {loading ? 'Searching…' : error ? <span className="error">{error}</span> : query.trim().length >= 2 ? `${total} results` : ''}
+        {loading ? t.search.searching : error ? <span className="error">{error}</span> : query.trim().length >= 2 ? t.search.results(total) : ''}
       </div>
       <ul className="result-list">
         {cards.map((card) => (
           <li key={card.id} onMouseEnter={() => onPreview?.(card)}>
             <div className="result-main">
-              <span className="card-name">{card.name}</span>
+              <span className="card-name">{show.name(card)}</span>
               <ManaCost cost={card.manaCost} />
-              <div className="muted small">{card.typeLine}</div>
+              <div className="muted small">{show.typeLine(card)}</div>
             </div>
             <div className="result-actions">{actions(card)}</div>
           </li>
@@ -87,7 +93,7 @@ export function CardSearch({ actions, onPreview }: Props) {
       </ul>
       {hasMore && !loading && (
         <button className="secondary" onClick={loadMore}>
-          Load more
+          {t.search.loadMore}
         </button>
       )}
     </div>

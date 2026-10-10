@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { AppError } from '../../i18n/types';
 import type { GameState, PlayerId } from '../engine/engine';
 import type { ClientMessage, LobbyPlayer, ServerMessage } from './protocol';
 
@@ -30,7 +31,7 @@ export function useGameSocket() {
   const [room, setRoom] = useState<{ code: string; seat: PlayerId } | null>(null);
   const [players, setPlayers] = useState<LobbyPlayer[]>([]);
   const [game, setGame] = useState<GameState | null>(null);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<AppError | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -63,20 +64,20 @@ export function useGameSocket() {
           case 'joined':
             setRoom({ code: msg.code, seat: msg.seat });
             writeSession({ code: msg.code, token: msg.token });
-            setError('');
+            setError(null);
             break;
           case 'lobby':
             setPlayers(msg.players);
             break;
           case 'state':
             setGame(msg.state);
-            setError('');
+            setError(null);
             break;
           case 'left':
             reset();
             break;
           case 'error':
-            setError(msg.message);
+            setError({ code: msg.code, params: msg.params });
             if (msg.lostRoom) reset();
             break;
         }
@@ -100,7 +101,7 @@ export function useGameSocket() {
   const send = useCallback((msg: ClientMessage) => {
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
-    else setError('Not connected to the game server');
+    else setError({ code: 'notConnected' });
   }, []);
 
   return { status, room, players, game, error, setError, send };

@@ -5,6 +5,7 @@ import { opponent } from '../lib/engine/engine';
 import { loadDeckCards } from '../lib/loadDeck';
 import { MIN_DECK_SIZE } from '../lib/multiplayer/protocol';
 import { useGameSocket } from '../lib/multiplayer/useGameSocket';
+import { errorText, useT } from '../i18n';
 import { useApp } from '../store/useApp';
 import { RulesNote } from './Play';
 
@@ -19,6 +20,7 @@ function savedName(): string {
 }
 
 export function Online() {
+  const t = useT();
   const decks = useApp((s) => s.decks);
   const { status, room, players, game, error, setError, send } = useGameSocket();
   const [name, setName] = useState(savedName);
@@ -28,8 +30,8 @@ export function Online() {
   const [copied, setCopied] = useState(false);
 
   async function enter(kind: 'create' | 'join') {
-    if (!name.trim()) return setError('Please enter your name');
-    if (kind === 'join' && !code.trim()) return setError('Enter the room code your friend gave you');
+    if (!name.trim()) return setError({ code: 'enterYourName' });
+    if (kind === 'join' && !code.trim()) return setError({ code: 'enterRoomCode' });
     try {
       localStorage.setItem(NAME_KEY, name.trim());
     } catch {
@@ -38,10 +40,10 @@ export function Online() {
     setBusy(true);
     try {
       const deck = await loadDeckCards(deckId, decks);
-      if (deck.length < MIN_DECK_SIZE) throw new Error(`Your deck needs at least ${MIN_DECK_SIZE} main-deck cards.`);
+      if (deck.length < MIN_DECK_SIZE) return setError({ code: 'deckTooSmall', params: { n: MIN_DECK_SIZE } });
       send(kind === 'create' ? { t: 'create', name, deck } : { t: 'join', code: code.trim().toUpperCase(), name, deck });
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError({ code: 'loadFailed', params: { message: e instanceof Error ? e.message : String(e) } });
     } finally {
       setBusy(false);
     }
@@ -50,9 +52,9 @@ export function Online() {
   const connection =
     status === 'open' ? null : (
       <div className="banner">
-        {status === 'connecting' ? 'Connecting to the game server…' : 'Disconnected from the game server, retrying…'}
+        {status === 'connecting' ? t.online.connecting : t.online.disconnected}
         <span className="small muted">
-          In development, start it with <code>npm run server</code>.
+          {t.online.devHint} <code>npm run server</code>.
         </span>
       </div>
     );
@@ -61,24 +63,24 @@ export function Online() {
   if (!room) {
     return (
       <div className="page">
-        <h1>Play Online</h1>
+        <h1>{t.online.title}</h1>
         {connection}
         <div className="panel online-setup">
           <label>
-            Your name <input value={name} maxLength={24} onChange={(e) => setName(e.target.value)} placeholder="Name" />
+            {t.online.yourName} <input value={name} maxLength={24} onChange={(e) => setName(e.target.value)} placeholder={t.online.namePlaceholder} />
           </label>
           <label>
-            Deck <select value={deckId} onChange={(e) => setDeckId(e.target.value)}><DeckOptions decks={decks} /></select>
+            {t.online.deck} <select value={deckId} onChange={(e) => setDeckId(e.target.value)}><DeckOptions decks={decks} /></select>
           </label>
           <div className="online-choices">
             <div>
-              <h3>Host a game</h3>
-              <p className="small muted">Get a room code to send to a friend.</p>
-              <button disabled={busy || status !== 'open'} onClick={() => enter('create')}>Create room</button>
+              <h3>{t.online.host}</h3>
+              <p className="small muted">{t.online.hostHint}</p>
+              <button disabled={busy || status !== 'open'} onClick={() => enter('create')}>{t.online.createRoom}</button>
             </div>
             <div>
-              <h3>Join a game</h3>
-              <p className="small muted">Enter the code your friend sent you.</p>
+              <h3>{t.online.join}</h3>
+              <p className="small muted">{t.online.joinHint}</p>
               <div className="row">
                 <input
                   className="room-code-input"
@@ -88,12 +90,12 @@ export function Online() {
                   onChange={(e) => setCode(e.target.value.toUpperCase())}
                   onKeyDown={(e) => e.key === 'Enter' && enter('join')}
                 />
-                <button disabled={busy || status !== 'open'} onClick={() => enter('join')}>Join</button>
+                <button disabled={busy || status !== 'open'} onClick={() => enter('join')}>{t.online.joinButton}</button>
               </div>
             </div>
           </div>
-          {busy && <div className="small muted">Loading cards…</div>}
-          {error && <div className="error small">{error}</div>}
+          {busy && <div className="small muted">{t.common.loadingCards}</div>}
+          {error && <div className="error small">{errorText(t, error)}</div>}
         </div>
         <RulesNote />
       </div>
@@ -104,10 +106,10 @@ export function Online() {
   if (!game) {
     return (
       <div className="page">
-        <h1>Play Online</h1>
+        <h1>{t.online.title}</h1>
         {connection}
         <div className="panel lobby">
-          <p>Send this room code to your opponent:</p>
+          <p>{t.online.sendCode}</p>
           <div className="row">
             <span className="room-code">{room.code}</span>
             <button
@@ -117,12 +119,12 @@ export function Online() {
                 setCopied(true);
               }}
             >
-              {copied ? 'Copied!' : 'Copy'}
+              {copied ? t.online.copied : t.online.copy}
             </button>
           </div>
-          <p className="muted">Waiting for an opponent to join…</p>
-          {error && <div className="error small">{error}</div>}
-          <button className="danger" onClick={() => send({ t: 'leave' })}>Leave room</button>
+          <p className="muted">{t.online.waiting}</p>
+          {error && <div className="error small">{errorText(t, error)}</div>}
+          <button className="danger" onClick={() => send({ t: 'leave' })}>{t.online.leaveRoom}</button>
         </div>
       </div>
     );
@@ -134,11 +136,11 @@ export function Online() {
   const iWantRematch = players[me]?.wantsRematch;
   const notice = (
     <>
-      {status !== 'open' && <div className="error">Reconnecting to the server…</div>}
-      {opp && !opp.connected && <div className="error">{opp.name} disconnected. They can reload the page to come back.</div>}
-      {opp?.wantsRematch && !iWantRematch && <div>{opp.name} wants a rematch.</div>}
-      {error && <div className="error">{error}</div>}
-      <div className="muted">Room {room.code}</div>
+      {status !== 'open' && <div className="error">{t.online.reconnecting}</div>}
+      {opp && !opp.connected && <div className="error">{t.online.oppDisconnected(opp.name)}</div>}
+      {opp?.wantsRematch && !iWantRematch && <div>{t.online.wantsRematch(opp.name)}</div>}
+      {error && <div className="error">{errorText(t, error)}</div>}
+      <div className="muted">{t.online.room(room.code)}</div>
     </>
   );
 
@@ -152,9 +154,9 @@ export function Online() {
         endControls={
           <>
             <button disabled={iWantRematch || !opp?.connected} onClick={() => send({ t: 'rematch' })}>
-              {iWantRematch ? `Waiting for ${opp?.name ?? 'opponent'}…` : 'Rematch'}
+              {iWantRematch ? t.online.waitingFor(opp?.name ?? t.online.opponent) : t.play.rematch}
             </button>
-            <button className="secondary" onClick={() => send({ t: 'leave' })}>Leave</button>
+            <button className="secondary" onClick={() => send({ t: 'leave' })}>{t.online.leave}</button>
           </>
         }
       />

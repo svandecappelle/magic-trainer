@@ -33,11 +33,23 @@ Known limitation: the server trusts the card data each client sends with its dec
 | `src/lib/engine/` | Simplified two-player rules engine with London mulligans, a stack and Arena-style priority windows (`engine.ts`), card rules parsing (`rules.ts`), heuristic bot (`bot.ts`), preset decks |
 | `src/lib/multiplayer/` | Client/server message types, hidden-information redaction, WebSocket hook |
 | `server/` | Node WebSocket game server: rooms, seats, reconnection (`rooms.ts`), HTTP/static wiring (`index.ts`) |
+| `src/i18n/` | Translations (`en.ts`, `fr.ts`), language store, log/error rendering |
 | `src/store/` | Zustand stores, persisted to `localStorage` |
 | `src/pages/` | One component per screen |
 | `src/components/` | Shared UI: card search, mana symbols, deck stats |
 
 All data stays in the browser (`localStorage`). Card data and images come from [Scryfall](https://scryfall.com/docs/api).
+
+### Languages
+
+The interface is available in English and French (detected from the browser, switchable in the menu).
+Cards are shown in the chosen language too: printed name, type line and card image of a printing in that
+language, fetched from Scryfall in batches and cached (`src/lib/cardLocale.ts`). Cards never printed in that
+language fall back to English. The rules engine always works on the English Oracle text.
+Decklists and searches accept card names in any language Scryfall knows ("4 Foudre").
+
+To add a language: copy `src/i18n/en.ts`, translate it (TypeScript checks that every entry exists), and
+register it in `src/i18n/index.ts`. Game logs and errors are structured data, rendered by each player's browser.
 
 ## Roadmap
 

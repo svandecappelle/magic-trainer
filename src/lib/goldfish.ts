@@ -12,6 +12,22 @@ export const ZONES: Zone[] = ['library', 'hand', 'battlefield', 'graveyard', 'ex
 
 export type Phase = 'mulligan' | 'bottoming' | 'playing';
 
+/** Log entries are data, rendered in the viewer's language (src/i18n). */
+export type GoldfishLogEntry = { turn: number } & (
+  | { k: 'newGame' }
+  | { k: 'mulligan'; keeping: number }
+  | { k: 'chooseBottom'; n: number }
+  | { k: 'onThePlay' }
+  | { k: 'onTheDraw' }
+  | { k: 'drew'; n: number }
+  | { k: 'libraryEmpty' }
+  | { k: 'move'; card: string; from: Zone; to: Zone }
+  | { k: 'untapDraw' }
+  | { k: 'shuffled' }
+);
+
+type LogEvent = GoldfishLogEntry extends infer E ? (E extends { turn: number } ? Omit<E, 'turn'> : never) : never;
+
 export interface GoldfishState {
   zones: Record<Zone, Instance[]>;
   phase: Phase;
@@ -21,7 +37,7 @@ export interface GoldfishState {
   /** Cards still to put on the bottom after a London mulligan. */
   toBottom: number;
   onThePlay: boolean;
-  log: string[];
+  log: GoldfishLogEntry[];
 }
 
 export type GoldfishAction =
@@ -74,15 +90,14 @@ function draw(state: GoldfishState, n: number): GoldfishState {
   };
 }
 
-function withLog(state: GoldfishState, msg: string): GoldfishState {
-  const prefix = state.turn > 0 ? `T${state.turn}: ` : '';
-  return { ...state, log: [...state.log, prefix + msg].slice(-50) };
+function withLog(state: GoldfishState, event: LogEvent): GoldfishState {
+  return { ...state, log: [...state.log, { ...event, turn: state.turn } as GoldfishLogEntry].slice(-50) };
 }
 
 function startPlaying(state: GoldfishState): GoldfishState {
   let s: GoldfishState = { ...state, phase: 'playing', turn: 1 };
   if (!s.onThePlay) s = draw(s, 1);
-  return withLog(s, s.onThePlay ? 'On the play, no draw' : 'On the draw, drew a card');
+  return withLog(s, { k: s.onThePlay ? 'onThePlay' : 'onTheDraw' });
 }
 
 function findZone(state: GoldfishState, iid: string): Zone | undefined {
@@ -98,14 +113,14 @@ export function createReducer(rng: Rng = Math.random) {
           rng,
         );
         const s: GoldfishState = { ...initialState, zones: { ...emptyZones(), library }, onThePlay: action.onThePlay };
-        return withLog(draw(s, 7), 'New game, drew 7');
+        return withLog(draw(s, 7), { k: 'newGame' });
       }
 
       case 'mulligan': {
         if (state.phase !== 'mulligan') return state;
         const library = shuffle([...state.zones.library, ...state.zones.hand], rng);
         const s = { ...state, mulligans: state.mulligans + 1, zones: { ...state.zones, library, hand: [] } };
-        return withLog(draw(s, 7), `Mulligan to ${7 - s.mulligans}`);
+        return withLog(draw(s, 7), { k: 'mulligan', keeping: 7 - s.mulligans });
       }
 
       case 'keep': {
@@ -113,7 +128,7 @@ export function createReducer(rng: Rng = Math.random) {
         if (state.mulligans === 0) return startPlaying(state);
         return withLog(
           { ...state, phase: 'bottoming', toBottom: Math.min(state.mulligans, state.zones.hand.length) },
-          `Kept, choose ${state.mulligans} card(s) to bottom`,
+          { k: 'chooseBottom', n: state.mulligans },
         );
       }
 
@@ -135,8 +150,8 @@ export function createReducer(rng: Rng = Math.random) {
 
       case 'draw': {
         const n = action.n ?? 1;
-        if (!state.zones.library.length) return withLog(state, 'Library is empty!');
-        return withLog(draw(state, n), n === 1 ? 'Drew a card' : `Drew ${n} cards`);
+        if (!state.zones.library.length) return withLog(state, { k: 'libraryEmpty' });
+        return withLog(draw(state, n), { k: 'drew', n });
       }
 
       case 'move': {
@@ -146,7 +161,7 @@ export function createReducer(rng: Rng = Math.random) {
         const moved = { ...card, tapped: false };
         const zones = { ...state.zones, [from]: state.zones[from].filter((c) => c.iid !== action.iid) };
         zones[action.to] = action.position === 'top' ? [moved, ...zones[action.to]] : [...zones[action.to], moved];
-        return withLog({ ...state, zones }, `${card.card.name}: ${from} → ${action.to}`);
+        return withLog({ ...state, zones }, { k: 'move', card: card.card.name, from, to: action.to });
       }
 
       case 'tap':
@@ -165,14 +180,14 @@ export function createReducer(rng: Rng = Math.random) {
           turn: state.turn + 1,
           zones: { ...state.zones, battlefield: state.zones.battlefield.map((c) => ({ ...c, tapped: false })) },
         };
-        return withLog(draw(s, 1), 'Untap, draw');
+        return withLog(draw(s, 1), { k: 'untapDraw' });
       }
 
       case 'life':
         return { ...state, life: state.life + action.delta };
 
       case 'shuffle':
-        return withLog({ ...state, zones: { ...state.zones, library: shuffle(state.zones.library, rng) } }, 'Shuffled library');
+        return withLog({ ...state, zones: { ...state.zones, library: shuffle(state.zones.library, rng) } }, { k: 'shuffled' });
     }
   };
 }

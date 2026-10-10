@@ -1,13 +1,15 @@
 import { useEffect, useReducer, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { goldfishReducer, initialState, type Instance, type Zone } from '../lib/goldfish';
+import { useT } from '../i18n';
+import { useCardDisplay } from '../lib/cardLocale';
+import { goldfishReducer, initialState, type GoldfishLogEntry, type Instance, type Zone } from '../lib/goldfish';
 import { isLand } from '../lib/stats';
 import { useApp } from '../store/useApp';
 import type { Card } from '../types';
 
 interface ZoneAction {
-  label: string;
-  title: string;
+  /** Key into t.goldfish.actions: [short label, tooltip]. */
+  key: string;
   to: Zone;
   position?: 'top' | 'bottom';
 }
@@ -15,27 +17,33 @@ interface ZoneAction {
 const ACTIONS: Record<Zone, ZoneAction[]> = {
   library: [],
   hand: [
-    { label: 'GY', title: 'Discard', to: 'graveyard' },
-    { label: 'Ex', title: 'Exile', to: 'exile' },
-    { label: 'Top', title: 'Put on top of library', to: 'library', position: 'top' },
+    { key: 'gy', to: 'graveyard' },
+    { key: 'ex', to: 'exile' },
+    { key: 'top', to: 'library', position: 'top' },
   ],
   battlefield: [
-    { label: 'Hand', title: 'Return to hand', to: 'hand' },
-    { label: 'GY', title: 'To graveyard', to: 'graveyard' },
-    { label: 'Ex', title: 'Exile', to: 'exile' },
+    { key: 'hand', to: 'hand' },
+    { key: 'gy', to: 'graveyard' },
+    { key: 'ex', to: 'exile' },
   ],
   graveyard: [
-    { label: 'Hand', title: 'Return to hand', to: 'hand' },
-    { label: 'BF', title: 'Return to battlefield', to: 'battlefield' },
-    { label: 'Ex', title: 'Exile', to: 'exile' },
+    { key: 'hand', to: 'hand' },
+    { key: 'bf', to: 'battlefield' },
+    { key: 'ex', to: 'exile' },
   ],
   exile: [
-    { label: 'Hand', title: 'Return to hand', to: 'hand' },
-    { label: 'BF', title: 'Put onto battlefield', to: 'battlefield' },
+    { key: 'hand', to: 'hand' },
+    { key: 'bf', to: 'battlefield' },
   ],
 };
 
 export function Goldfish() {
+  const t = useT();
+  const show = useCardDisplay();
+  const goldfishLogText = (e: GoldfishLogEntry) => {
+    const render = t.goldfish.log[e.k] as (entry: GoldfishLogEntry, zone: (z: Zone) => string, card: (n: string) => string) => string;
+    return t.goldfish.turnPrefix(e.turn) + render(e, (z) => t.zones[z], show.nameOf);
+  };
   const { deckId } = useParams();
   const decks = useApp((s) => s.decks);
   const deck = decks.find((d) => d.id === deckId);
@@ -54,10 +62,10 @@ export function Goldfish() {
   if (!deck) {
     return (
       <div className="page">
-        <h1>Goldfish</h1>
-        <p>Pick a deck to practice with. Draw opening hands, mulligan, and play turns solo.</p>
+        <h1>{t.goldfish.title}</h1>
+        <p>{t.goldfish.intro}</p>
         {decks.length === 0 ? (
-          <p className="muted">You have no decks yet. <Link to="/decks">Create one</Link>.</p>
+          <p className="muted">{t.goldfish.noDecks} <Link to="/decks">{t.goldfish.createOne}</Link>.</p>
         ) : (
           <ul className="plain-list">
             {decks.map((d) => (
@@ -83,14 +91,17 @@ export function Goldfish() {
 
   const renderCard = (zone: Zone, inst: Instance) => (
     <div key={inst.iid} className={`game-card ${inst.tapped ? 'tapped' : ''}`}>
-      <img src={inst.card.imageSmall ?? inst.card.imageNormal} alt={inst.card.name} title={inst.card.name} onClick={() => onCardClick(zone, inst)} />
+      <img src={show.imageSmall(inst.card)} alt={show.name(inst.card)} title={show.name(inst.card)} onClick={() => onCardClick(zone, inst)} />
       {phase === 'playing' && (
         <div className="game-card-actions">
-          {ACTIONS[zone].map((a) => (
-            <button key={a.label} title={a.title} onClick={() => dispatch({ type: 'move', iid: inst.iid, to: a.to, position: a.position })}>
-              {a.label}
-            </button>
-          ))}
+          {ACTIONS[zone].map((a) => {
+            const [label, title] = t.goldfish.actions[a.key];
+            return (
+              <button key={a.key} title={title} onClick={() => dispatch({ type: 'move', iid: inst.iid, to: a.to, position: a.position })}>
+                {label}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
@@ -106,53 +117,53 @@ export function Goldfish() {
           {decks.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
         <label className="small">
-          <input type="checkbox" checked={onThePlay} onChange={(e) => setOnThePlay(e.target.checked)} /> On the play
+          <input type="checkbox" checked={onThePlay} onChange={(e) => setOnThePlay(e.target.checked)} /> {t.goldfish.onThePlay}
         </label>
-        <button className="secondary" onClick={() => dispatch({ type: 'new', cards: mainCards(), onThePlay })}>New game</button>
+        <button className="secondary" onClick={() => dispatch({ type: 'new', cards: mainCards(), onThePlay })}>{t.goldfish.newGame}</button>
         <span className="spacer" />
-        <span>Turn <strong>{state.turn || '–'}</strong></span>
+        <span>{t.common.turn} <strong>{state.turn || '–'}</strong></span>
         <span className="life-mini">
           <button className="icon" onClick={() => dispatch({ type: 'life', delta: -1 })}>−</button>
           ♥ <strong>{state.life}</strong>
           <button className="icon" onClick={() => dispatch({ type: 'life', delta: 1 })}>+</button>
         </span>
-        <span title="Untapped lands">◈ {untappedLands}</span>
-        <span>Library <strong>{zones.library.length}</strong></span>
-        <button className="secondary" disabled={phase !== 'playing'} onClick={() => dispatch({ type: 'draw' })}>Draw</button>
-        <button className="secondary" disabled={phase !== 'playing'} onClick={() => dispatch({ type: 'shuffle' })}>Shuffle</button>
-        <button disabled={phase !== 'playing'} onClick={() => dispatch({ type: 'nextTurn' })}>Next turn ▶</button>
+        <span title={t.goldfish.untapped}>◈ {untappedLands}</span>
+        <span>{t.goldfish.library} <strong>{zones.library.length}</strong></span>
+        <button className="secondary" disabled={phase !== 'playing'} onClick={() => dispatch({ type: 'draw' })}>{t.goldfish.draw}</button>
+        <button className="secondary" disabled={phase !== 'playing'} onClick={() => dispatch({ type: 'shuffle' })}>{t.goldfish.shuffle}</button>
+        <button disabled={phase !== 'playing'} onClick={() => dispatch({ type: 'nextTurn' })}>{t.goldfish.nextTurn}</button>
       </div>
 
       {phase === 'mulligan' && (
         <div className="banner">
-          Opening hand ({zones.hand.length} cards{state.mulligans ? `, mulligan ${state.mulligans}` : ''}, {zones.hand.filter((c) => isLand(c.card)).length} lands).
-          <button onClick={() => dispatch({ type: 'keep' })}>Keep</button>
-          <button className="secondary" disabled={state.mulligans >= 6} onClick={() => dispatch({ type: 'mulligan' })}>Mulligan</button>
+          {t.goldfish.opening(zones.hand.length, state.mulligans, zones.hand.filter((c) => isLand(c.card)).length)}
+          <button onClick={() => dispatch({ type: 'keep' })}>{t.common.keep}</button>
+          <button className="secondary" disabled={state.mulligans >= 6} onClick={() => dispatch({ type: 'mulligan' })}>{t.common.mulligan}</button>
         </div>
       )}
       {phase === 'bottoming' && (
-        <div className="banner">London mulligan: click {state.toBottom} card(s) in your hand to put them on the bottom.</div>
+        <div className="banner">{t.goldfish.bottoming(state.toBottom)}</div>
       )}
 
       <div className="goldfish-layout">
         <div>
-          <h4>Battlefield <span className="muted small">(click a card to tap or untap it)</span></h4>
+          <h4>{t.goldfish.battlefield} <span className="muted small">{t.goldfish.battlefieldHint}</span></h4>
           <div className="zone battlefield">
             <div className="zone-row">{permanents.map((c) => renderCard('battlefield', c))}</div>
             <div className="zone-row">{lands.map((c) => renderCard('battlefield', c))}</div>
           </div>
-          <h4>Hand ({zones.hand.length}) <span className="muted small">(click a card to play it)</span></h4>
+          <h4>{t.goldfish.hand(zones.hand.length)} <span className="muted small">{t.goldfish.handHint}</span></h4>
           <div className="zone hand zone-row">{zones.hand.map((c) => renderCard('hand', c))}</div>
         </div>
 
         <div className="side-zones">
-          <h4>Graveyard ({zones.graveyard.length})</h4>
+          <h4>{t.goldfish.graveyard(zones.graveyard.length)}</h4>
           <div className="zone small-zone zone-row">{zones.graveyard.map((c) => renderCard('graveyard', c))}</div>
-          <h4>Exile ({zones.exile.length})</h4>
+          <h4>{t.goldfish.exile(zones.exile.length)}</h4>
           <div className="zone small-zone zone-row">{zones.exile.map((c) => renderCard('exile', c))}</div>
-          <h4>Log</h4>
+          <h4>{t.common.log}</h4>
           <ol className="log small">
-            {[...state.log].reverse().map((l, i) => <li key={i}>{l}</li>)}
+            {[...state.log].reverse().map((l, i) => <li key={i}>{goldfishLogText(l)}</li>)}
           </ol>
         </div>
       </div>
