@@ -246,3 +246,5 @@ footer { padding: 16px 20px; border-top: 1px solid var(--border); }
 .stack-item img { width: 76px; border-radius: 5px; }
 .stack-item.targetable { cursor: crosshair; }
 .lang-select { padding: 3px 6px; font-size: 0.85rem; }
+.full-control { display: flex; align-items: center; gap: 6px; margin-top: 12px; cursor: pointer; }
+.full-control + p { margin: 4px 0 10px; }

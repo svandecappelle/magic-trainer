@@ -47,6 +47,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     setBottomSel([]);
   }, [g.step, g.turn, g.priority?.player, g.stack.length, g.mulligan?.player, g.mulligan?.count[me]]);
 
+  const fullControl = g.fullControl?.[me] ?? false;
   const acting = actor(g);
   const iAct = acting === me;
 
@@ -286,7 +287,18 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
           {[...g.log].reverse().map((l, i) => <li key={i}>{logText(t, l, names, me, show.nameOf)}</li>)}
         </ol>
         {g.winner === null && (
-          <button className="danger" onClick={() => act({ type: 'concede', player: me })}>{t.game.concede}</button>
+          <>
+            <label className="full-control small" title={t.game.fullControlHint(fullControl)}>
+              <input
+                type="checkbox"
+                checked={fullControl}
+                onChange={(e) => act({ type: 'setFullControl', player: me, on: e.target.checked })}
+              />
+              {t.game.fullControl}
+            </label>
+            <p className="small muted">{t.game.fullControlHint(fullControl)}</p>
+            <button className="danger" onClick={() => act({ type: 'concede', player: me })}>{t.game.concede}</button>
+          </>
         )}
       </aside>
     </div>

@@ -72,6 +72,13 @@ describe('RoomManager', () => {
     expect(alice.last('error')!.code).toBe('landAlreadyPlayed');
   });
 
+  it('lets either player toggle full control at any time, for their own seat only', () => {
+    const { rooms, bob } = startedRoom();
+    rooms.handle(bob, { t: 'action', action: { type: 'setFullControl', player: 0, on: true } });
+    expect(bob.last('error')).toBeUndefined();
+    expect(bob.state.fullControl).toEqual([false, true]);
+  });
+
   it('lets a player reconnect to their seat with the token', () => {
     const { rooms, alice, code } = startedRoom();
     const token = alice.last('joined')!.token;

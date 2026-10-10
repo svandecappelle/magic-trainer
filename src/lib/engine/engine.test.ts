@@ -262,6 +262,59 @@ describe('instant speed', () => {
   });
 });
 
+describe('full control', () => {
+  it('stops at every window, including your own spell, only for the player who turned it on', () => {
+    let s = board([{ card: creature('Bear', 2, 2), controller: 0 }, { card: mountain, controller: 0 }], [creature('Goblin', 2, 2, [], '{R}')]);
+    // Allowed even when it is not your turn to act.
+    s = apply(s, { type: 'setFullControl', player: 1, on: true });
+    s = apply(s, { type: 'setFullControl', player: 0, on: true });
+    expect(s.fullControl).toEqual([true, true]);
+
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    expect(s.priority).toMatchObject({ player: 1, reason: 'main' });
+    s = apply(s, { type: 'pass' });
+    expect(s.priority).toMatchObject({ player: 0, reason: 'main' }); // respond to your own spell
+    s = apply(s, { type: 'pass' });
+    expect(s.priority).toBeNull();
+
+    s = apply(s, { type: 'pass' }); // main1 → beginning of combat
+    expect(s.priority).toMatchObject({ player: 1, reason: 'combat' });
+    s = apply(s, { type: 'pass' });
+    expect(s.step).toBe('attack');
+    s = apply(s, { type: 'declareAttackers', attackers: ['p0'] });
+    expect(s.priority).toMatchObject({ player: 0, reason: 'attack' }); // the attacker first
+    s = apply(apply(s, { type: 'pass' }), { type: 'pass' });
+    // Player 1 has nothing to block with: straight to the window after blocks.
+    expect(s.priority).toMatchObject({ player: 0, reason: 'block' });
+    s = apply(apply(s, { type: 'pass' }), { type: 'pass' }); // damage
+    expect(s.players[1].life).toBe(18);
+    s = apply(s, { type: 'pass' }); // end turn
+    expect(s.priority).toMatchObject({ player: 1, reason: 'end' });
+    s = apply(s, { type: 'pass' });
+    expect(s.active).toBe(1);
+    expect(s.priority).toMatchObject({ player: 0, reason: 'begin' });
+
+    // Without full control, the same game never stops for player 0 when they have nothing castable.
+    s = apply(s, { type: 'setFullControl', player: 0, on: false });
+    s = apply(s, { type: 'pass' });
+    expect(s.priority).toBeNull();
+    expect(actor(s)).toBe(1);
+  });
+
+  it('lets the defender remove a creature at beginning of combat, skipping combat if nothing can attack', () => {
+    let s = withOpponentHand(board([{ card: creature('Bear', 2, 2), controller: 0 }, { card: mountain, controller: 1 }]), [bolt]);
+    s = apply(s, { type: 'setFullControl', player: 1, on: true });
+    s = apply(s, { type: 'pass' });
+    expect(s.priority).toMatchObject({ player: 1, reason: 'combat' });
+    s = apply(s, { type: 'cast', iid: 'o0', target: { kind: 'permanent', iid: 'p0' } });
+    s = apply(s, { type: 'pass' }); // player 1 lets Bolt resolve, then passes again with an empty stack
+    expect(s.priority).toMatchObject({ player: 1, reason: 'combat' });
+    s = apply(s, { type: 'pass' });
+    expect(s.step).toBe('main2');
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toEqual(['Bear']);
+  });
+});
+
 describe('bot with instants', () => {
   it('saves its creature from burn with a pump spell, and mulligans a no-land hand', () => {
     let s = withOpponentHand(

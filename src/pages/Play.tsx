@@ -47,7 +47,8 @@ export function Play() {
       if (mine.length < 20 || theirs.length < 20) return setError({ code: 'decksTooSmall', params: { n: 20 } });
       const firstPlayer: PlayerId = first === 'me' ? ME : first === 'bot' ? BOT : Math.random() < 0.5 ? ME : BOT;
       // An empty name is displayed as "You" in the current language.
-      setGame(newGame({ decks: [mine, theirs], names: ['', t.play.botName], first: firstPlayer }));
+      // A rematch keeps the full control setting.
+      setGame(newGame({ decks: [mine, theirs], names: ['', t.play.botName], first: firstPlayer, fullControl: game?.fullControl }));
     } catch (e) {
       setError({ code: 'loadFailed', params: { message: e instanceof Error ? e.message : String(e) } });
     } finally {

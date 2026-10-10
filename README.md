@@ -30,7 +30,7 @@ Known limitation: the server trusts the card data each client sends with its dec
 | `src/lib/deckText.ts` | Parse / format text decklists (Arena, MTGO, plain) |
 | `src/lib/stats.ts` | Mana curve, color pips, type breakdown, hypergeometric odds |
 | `src/lib/goldfish.ts` | Pure game-state reducer for solo practice (zones, mulligan, turns) |
-| `src/lib/engine/` | Simplified two-player rules engine with London mulligans, a stack and Arena-style priority windows (`engine.ts`), card rules parsing (`rules.ts`), heuristic bot (`bot.ts`), preset decks |
+| `src/lib/engine/` | Simplified two-player rules engine with London mulligans, a stack and Arena-style priority windows with an optional per-player full control mode (`engine.ts`), card rules parsing (`rules.ts`), heuristic bot (`bot.ts`), preset decks |
 | `src/lib/multiplayer/` | Client/server message types, hidden-information redaction, WebSocket hook |
 | `server/` | Node WebSocket game server: rooms, seats, reconnection (`rooms.ts`), HTTP/static wiring (`index.ts`) |
 | `src/i18n/` | Translations (`en.ts`, `fr.ts`), language store, log/error rendering |

@@ -312,7 +312,7 @@ export const fr: Messages = {
     changeDecks: 'Changer de decks',
     botName: 'Bot',
     rules:
-      "Règles simplifiées. Mulligan London ; les éphémères et les cartes avec le flash peuvent être lancés quand vous avez la priorité : en réponse à un sort, après la déclaration des attaquants ou des bloqueurs, et en fin de tour (vous n'êtes sollicité que si vous avez quelque chose à lancer). Le combat gère le vol, la portée, la célérité, la vigilance, le piétinement, le contact mortel, le lien de vie, le défenseur, l'initiative, la double initiative et la menace. Les sorts qui infligent des blessures, détruisent ou exilent une créature, contrecarrent un sort, renforcent une créature, font piocher ou gagner des points de vie sont automatisés ; les autres effets (dont les capacités et déclenchements des créatures) ne sont pas encore simulés.",
+      "Règles simplifiées. Mulligan London ; les éphémères et les cartes avec le flash peuvent être lancés quand vous avez la priorité : en réponse à un sort, après la déclaration des attaquants ou des bloqueurs, et en fin de tour. Vous n'êtes sollicité que si vous avez quelque chose à lancer, sauf si vous activez le contrôle total pendant la partie. Le combat gère le vol, la portée, la célérité, la vigilance, le piétinement, le contact mortel, le lien de vie, le défenseur, l'initiative, la double initiative et la menace. Les sorts qui infligent des blessures, détruisent ou exilent une créature, contrecarrent un sort, renforcent une créature, font piocher ou gagner des points de vie sont automatisés ; les autres effets (dont les capacités et déclenchements des créatures) ne sont pas encore simulés.",
     buildDeck: 'Créez un deck',
     bringYourOwn: 'pour jouer avec le vôtre.',
     yourDecks: 'Vos decks',
@@ -355,7 +355,13 @@ export const fr: Messages = {
     turnLabel: (n, step) => `Tour ${n} · ${step}`,
     targetKinds,
     windows: {
+      begin: (myTurn) =>
+        myTurn ? 'Début de votre tour. Lancez un éphémère, ou passez.' : 'Début du tour adverse. Lancez un éphémère, ou passez.',
       main: () => 'Lancez un éphémère, ou passez.',
+      combat: (myTurn) =>
+        myTurn
+          ? 'Début du combat. Lancez un éphémère, ou passez.'
+          : "L'adversaire passe au combat. Lancez un éphémère avant la déclaration des attaquants, ou passez.",
       attack: (myTurn) =>
         myTurn ? 'Attaquants déclarés. Lancez un éphémère, ou passez.' : 'Vous êtes attaqué. Lancez un éphémère avant les blocages, ou passez.',
       block: () => 'Bloqueurs déclarés. Lancez une astuce de combat, ou passez aux blessures.',
@@ -391,6 +397,11 @@ export const fr: Messages = {
     blocks: (name) => `bloque ${name}`,
     sick: "Mal d'invocation",
     concede: 'Abandonner',
+    fullControl: 'Contrôle total',
+    fullControlHint: (on) =>
+      on
+        ? 'Vous recevez la priorité à chaque étape : au début du tour adverse et de son combat, après les attaquants et les bloqueurs, sur chaque sort (les vôtres aussi) et à la fin du tour adverse.'
+        : "Vous n'êtes sollicité que si vous avez un éphémère ou une carte avec le flash lançable maintenant. Activez cette option pour vous arrêter à chaque étape.",
   },
 
   log,

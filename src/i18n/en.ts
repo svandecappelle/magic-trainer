@@ -305,7 +305,7 @@ export const en = {
     changeDecks: 'Change decks',
     botName: 'Bot',
     rules:
-      'Simplified rules. London mulligans; instants and flash cards can be cast when you get priority: in response to a spell, after attackers or blockers are declared, and at end of turn (you are only asked when you hold something castable). Combat supports flying, reach, haste, vigilance, trample, deathtouch, lifelink, defender, first strike, double strike and menace. Spells that deal damage, destroy/exile a creature, counter a spell, pump a creature, draw cards or gain life are automated; other effects (including creature abilities and triggers) are not simulated yet.',
+      'Simplified rules. London mulligans; instants and flash cards can be cast when you get priority: in response to a spell, after attackers or blockers are declared, and at end of turn. You are only asked when you hold something castable, unless you turn on full control during a game. Combat supports flying, reach, haste, vigilance, trample, deathtouch, lifelink, defender, first strike, double strike and menace. Spells that deal damage, destroy/exile a creature, counter a spell, pump a creature, draw cards or gain life are automated; other effects (including creature abilities and triggers) are not simulated yet.',
     buildDeck: 'Build a deck',
     bringYourOwn: 'to bring your own.',
     yourDecks: 'Your decks',
@@ -348,7 +348,11 @@ export const en = {
     turnLabel: (n: number, step: string) => `Turn ${n} · ${step}`,
     targetKinds: { any: 'a creature or player', creature: 'a creature', player: 'a player', spell: 'a spell on the stack' },
     windows: {
+      begin: (myTurn: boolean): string =>
+        myTurn ? 'Start of your turn. Cast an instant, or pass.' : "Start of the opponent's turn. Cast an instant, or pass.",
       main: (): string => 'Cast an instant, or pass.',
+      combat: (myTurn: boolean): string =>
+        myTurn ? 'Beginning of combat. Cast an instant, or pass.' : 'The opponent is going to combat. Cast an instant before attackers are declared, or pass.',
       attack: (myTurn: boolean): string =>
         myTurn ? 'Attackers declared. Cast an instant, or pass.' : 'You are being attacked. Cast an instant before blocks, or pass.',
       block: (): string => 'Blockers declared. Cast a combat trick, or pass to deal damage.',
@@ -384,6 +388,11 @@ export const en = {
     blocks: (name: string) => `blocks ${name}`,
     sick: 'Summoning sick',
     concede: 'Concede',
+    fullControl: 'Full control',
+    fullControlHint: (on: boolean): string =>
+      on
+        ? "You get priority at every step: at the start of the opponent's turn and their beginning of combat, after attackers and blockers, on every spell (yours too) and at the end of the opponent's turn."
+        : 'You are only asked to respond when you hold an instant or flash card you can cast right now. Turn this on to stop at every step.',
   },
 
   log,

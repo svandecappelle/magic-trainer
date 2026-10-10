@@ -47,7 +47,9 @@ export type Step = 'mulligan' | 'main1' | 'attack' | 'block' | 'main2';
  * offered at these moments, and skipped for a player with nothing castable.
  */
 export type WindowReason =
+  | 'begin' // start of a turn, after the draw (full control only)
   | 'main' // a spell was cast in a main phase
+  | 'combat' // beginning of combat, before attackers (full control only)
   | 'attack' // attackers declared, before blocks
   | 'block' // blockers declared, before damage
   | 'end'; // end of turn
@@ -107,6 +109,11 @@ export interface GameState {
   blocks: Record<string, string[]>;
   winner: PlayerId | 'draw' | null;
   log: LogEntry[];
+  /**
+   * Per player: stop at every priority window instead of auto-passing when nothing is castable.
+   * Optional so states created before this option existed still load.
+   */
+  fullControl?: [boolean, boolean];
   /** Random generator state, so shuffles during the game are reproducible. Secret: redacted for clients. */
   seed: number;
 }
@@ -125,7 +132,9 @@ export type Action =
   | { type: 'pass' }
   | { type: 'declareAttackers'; attackers: string[] }
   | { type: 'declareBlockers'; blocks: Record<string, string[]> }
-  | { type: 'concede'; player: PlayerId };
+  | { type: 'concede'; player: PlayerId }
+  /** Allowed at any time, like conceding. */
+  | { type: 'setFullControl'; player: PlayerId; on: boolean };
 
 /** Why an action was refused. Rendered in the player's language (src/i18n). */
 export type GameErrorCode =
@@ -223,9 +232,11 @@ export interface NewGameOptions {
   rng?: Rng;
   /** Start with London mulligan decisions (default true). */
   mulligans?: boolean;
+  /** Players who stop at every priority window (see GameState.fullControl). */
+  fullControl?: [boolean, boolean];
 }
 
-export function newGame({ decks, names, first, rng = Math.random, mulligans = true }: NewGameOptions): GameState {
+export function newGame({ decks, names, first, rng = Math.random, mulligans = true, fullControl }: NewGameOptions): GameState {
   const player = (p: PlayerId): PlayerState => ({
     name: names[p],
     life: 20,
@@ -249,6 +260,7 @@ export function newGame({ decks, names, first, rng = Math.random, mulligans = tr
     winner: null,
     log: [{ k: 'goesFirst', p: first }],
     seed: Math.floor(rng() * 2 ** 32),
+    ...(fullControl ? { fullControl: [...fullControl] as [boolean, boolean] } : {}),
   };
   draw(d, 0, 7);
   draw(d, 1, 7);
@@ -298,6 +310,8 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
   }
   log(d, { k: 'turn', n: d.turn, p });
   if (!skipDraw) draw(d, p, 1);
+  // The active player has passed; the opponent may act before the first main phase.
+  if (d.winner === null) openWindow(d, 'begin', opponent(p), 1);
 }
 
 function endTurn(d: GameState) {
@@ -461,6 +475,13 @@ function resolveTop(d: GameState) {
 
 /** Whether `p` should be asked to act in a priority window (Arena-style auto-pass otherwise). */
 function wantsPriority(d: GameState, p: PlayerId): boolean {
+  if (d.fullControl?.[p]) return true;
+  const reason = d.priority!.reason;
+  if (!d.stack.length) {
+    // Like Arena, these stops are only made in full control.
+    if (reason === 'begin' || reason === 'combat') return false;
+    if (reason === 'attack' && p === d.active) return false; // the attacker just acted
+  }
   if (d.stack.at(-1)?.controller === p) return false; // don't respond to your own spell
   return d.players[p].hand.some((c) => canCastNow(d, p, c.card) && hasUsefulTarget(d, p, c.card));
 }
@@ -498,7 +519,10 @@ function passOnce(d: GameState) {
 
 /** Everyone passed with an empty stack: the game moves on. */
 function closeWindow(d: GameState, reason: WindowReason) {
-  if (reason === 'attack') {
+  if (reason === 'combat') {
+    // Attackers may have been removed during the window.
+    d.step = creaturesOf(d, d.active).some(canAttack) ? 'attack' : 'main2';
+  } else if (reason === 'attack') {
     d.attackers = d.attackers.filter((iid) => findPermanent(d, iid));
     if (!d.attackers.length) {
       d.step = 'main2';
@@ -533,6 +557,11 @@ export function apply(state: GameState, action: Action): GameState {
   if (action.type === 'concede') {
     d.winner = opponent(action.player);
     log(d, { k: 'concede', p: action.player });
+    return d;
+  }
+  if (action.type === 'setFullControl') {
+    d.fullControl = [...(d.fullControl ?? [false, false])] as [boolean, boolean];
+    d.fullControl[action.player] = action.on;
     return d;
   }
 
@@ -647,7 +676,8 @@ export function apply(state: GameState, action: Action): GameState {
         autoPass(d);
       } else if (d.step === 'main1') {
         // Skip combat entirely when nothing can attack.
-        d.step = creaturesOf(d, p).some(canAttack) ? 'attack' : 'main2';
+        if (creaturesOf(d, p).some(canAttack)) openWindow(d, 'combat', opponent(p), 1);
+        else d.step = 'main2';
       } else if (d.step === 'attack') {
         d.step = 'main2';
       } else if (d.step === 'main2') {
@@ -674,7 +704,8 @@ export function apply(state: GameState, action: Action): GameState {
       d.attackers = attackers.map((a) => a.iid);
       d.blocks = {};
       log(d, { k: 'attack', p, cards: attackers.map((a) => a.card.name) });
-      openWindow(d, 'attack', opponent(p), 1);
+      // The attacking player gets priority first.
+      openWindow(d, 'attack', p, 0);
       break;
     }
 

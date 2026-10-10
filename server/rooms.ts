@@ -126,6 +126,8 @@ export class RoomManager {
     const a = action as Parameters<typeof apply>[1];
     if (a.type === 'concede') {
       room.game = apply(room.game, { type: 'concede', player: seat });
+    } else if (a.type === 'setFullControl') {
+      room.game = apply(room.game, { type: 'setFullControl', player: seat, on: a.on === true });
     } else {
       if (actor(room.game) !== seat) throw new ClientError('notYourTurn');
       room.game = apply(room.game, a);
@@ -177,6 +179,8 @@ export class RoomManager {
       names: [a.name, b.name],
       first: this.rng() < 0.5 ? 0 : 1,
       rng: this.rng,
+      // A rematch keeps each seat's full control setting.
+      fullControl: room.game?.fullControl,
     });
     for (const s of room.seats) s.wantsRematch = false;
     this.sendLobby(room);
