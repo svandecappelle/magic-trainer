@@ -142,4 +142,5 @@ get each face's cost and image (their text is rebuilt from the joined faces mean
 - [ ] More than 2 players, Commander
 - [x] Turn timer, reconnect timeout — online: TURN_SECONDS per decision (default action on timeout, conceding after
   3 in a row), RECONNECT_SECONDS to come back (concede otherwise); countdown shown to both players
-- [ ] Bot: multi-blocks, mana planning, and logic for each new mechanic
+- [ ] Bot: mana planning (rituals, holding mana for instants). Done: multi-blocks (double blocks, menace), logic for
+  each mechanic added in steps 1–6

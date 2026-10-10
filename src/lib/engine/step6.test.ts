@@ -210,3 +210,21 @@ describe('damage assignment order', () => {
     expect(perm(s, 'Wall')).toBeUndefined();
   });
 });
+
+describe('bot multi-blocks', () => {
+  it('double-blocks a big attacker it can kill for less, and blocks menace with two when it must', () => {
+    let s = board({ mine: [creature('Giant', 5, 5)], theirs: [creature('A', 3, 3), creature('B', 3, 3)] });
+    s = advance(s, (x) => x.step === 'attack' && !x.priority);
+    s = apply(s, { type: 'declareAttackers', attackers: [iidOf(s, 'Giant')] });
+    s = advance(s, (x) => x.step === 'block' && !x.priority);
+    const block = botAction(s);
+    expect(block).toEqual({ type: 'declareBlockers', blocks: { [iidOf(s, 'Giant')]: [iidOf(s, 'A'), iidOf(s, 'B')].sort() } });
+
+    let t = board({ mine: [creature('Brute', 5, 5, 'Menace', { keywords: ['Menace'] })], theirs: [creature('A', 1, 1), creature('B', 1, 1)] });
+    t.players[1].life = 4;
+    t = advance(t, (x) => x.step === 'attack' && !x.priority);
+    t = apply(t, { type: 'declareAttackers', attackers: [iidOf(t, 'Brute')] });
+    t = advance(t, (x) => x.step === 'block' && !x.priority);
+    expect(botAction(t)).toMatchObject({ type: 'declareBlockers', blocks: { [iidOf(t, 'Brute')]: expect.arrayContaining([iidOf(t, 'A'), iidOf(t, 'B')]) } });
+  });
+});

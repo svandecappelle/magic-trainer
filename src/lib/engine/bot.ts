@@ -150,9 +150,17 @@ function chooseBlocks(s: GameState, me: PlayerId): Record<string, string[]> {
     list.sort((x, y) => creatureValue(x.card) - creatureValue(y.card))[0] as Permanent | undefined;
 
   for (const a of attackers) {
-    if (hasKw(a, 'menace')) continue; // would need two blockers; keep it simple
     const options = available.filter((b) => !used.has(b.iid) && canBlock(b, a));
     if (!options.length) continue;
+    // Menace needs two blockers; other attackers may be worth a double block when no single block is good.
+    const pair = chooseDoubleBlock(a, options, lifeAfter <= 0);
+    if (hasKw(a, 'menace') || (pair && !options.some((b) => !dies(b, a) || (dies(a, b) && creatureValue(a.card) >= creatureValue(b.card))))) {
+      if (!pair) continue;
+      for (const b of pair) used.add(b.iid);
+      blocks[a.iid] = pair.map((b) => b.iid);
+      lifeAfter += powerOf(a) * strikes(a);
+      continue;
+    }
 
     const pick =
       cheapest(options.filter((b) => dies(a, b) && !dies(b, a))) ?? // kill it and survive
@@ -169,6 +177,35 @@ function chooseBlocks(s: GameState, me: PlayerId): Record<string, string[]> {
     lifeAfter += prevented;
   }
   return blocks;
+}
+
+/**
+ * Two blockers for one attacker: together they must kill it, and what the attacker kills in return
+ * (it deals damage to them in order) must be worth less than it. When `mustBlock`, any pair that
+ * keeps us alive will do.
+ */
+function chooseDoubleBlock(a: Permanent, options: Permanent[], mustBlock: boolean): Permanent[] | null {
+  let best: { pair: Permanent[]; loss: number } | null = null;
+  for (let i = 0; i < options.length; i++) {
+    for (let j = i + 1; j < options.length; j++) {
+      const pair = [options[i], options[j]];
+      const damage = pair.reduce((n, b) => n + powerOf(b), 0);
+      const kills = pair.some((b) => hasKw(b, 'deathtouch')) || damage >= toughnessOf(a) - a.damage;
+      // The attacker kills the blockers it can, cheapest first (its controller orders them).
+      let left = powerOf(a) * strikes(a);
+      let loss = 0;
+      for (const b of [...pair].sort((x, y) => toughnessOf(x) - toughnessOf(y))) {
+        const need = hasKw(a, 'deathtouch') ? 1 : toughnessOf(b) - b.damage;
+        if (left >= need) {
+          left -= need;
+          loss += creatureValue(b.card);
+        }
+      }
+      const good = kills && loss < creatureValue(a.card);
+      if ((good || mustBlock) && (!best || loss < best.loss)) best = { pair, loss };
+    }
+  }
+  return best?.pair ?? null;
 }
 
 // ---------- Main phase ----------
