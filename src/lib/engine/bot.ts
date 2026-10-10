@@ -745,6 +745,11 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
       return { kind: 'cards', iids: options.slice(0, choice.min).map((c) => c.iid) };
     }
     case 'arrange': {
+      if (choice.purpose === 'damageOrder') {
+        // Kill the most: the blockers that need the least damage first.
+        const left = (c: CardInst) => { const p = findPermanent(s, c.iid); return p ? toughnessOf(p) - p.damage : 0; };
+        return { kind: 'arrange', zones: { top: [...choice.cards].sort((a, b) => left(a) - left(b)).map((c) => c.iid) } };
+      }
       const keep = choice.zones.includes('top') ? 'top' : choice.zones[0];
       if (safe || choice.zones.length < 2) return { kind: 'arrange', zones: { [keep]: choice.cards.map((c) => c.iid) } };
       // Scry/surveil: keep lands while short on them, and spells we can cast soon.

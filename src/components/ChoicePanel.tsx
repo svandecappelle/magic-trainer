@@ -20,6 +20,7 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
     case 'sacrifice': return t.game.choice.sacrifice({ n });
     case 'search': return t.game.choice.search({ n });
     case 'discardCost': return t.game.choice.discardCost({ card: card(String(p.card)), n: n || 1 });
+    case 'damageOrder': return t.game.choice.damageOrder({ card: card(String(p.card)) });
     case 'clone': return t.game.choice.clone({ card: card(String(p.card)) });
     case 'legendRule': return t.game.choice.legendRule({ card: card(String(p.card)) });
     case 'payLife': return t.game.choice.payLife({ card: card(String(p.card)), n });

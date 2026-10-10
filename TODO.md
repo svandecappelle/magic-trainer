@@ -132,7 +132,7 @@ get each face's cost and image (their text is rebuilt from the joined faces mean
 ## Game behaviour
 
 - [x] Choose the cleanup discard
-- [ ] Damage assignment order with several blockers (today: automatic)
+- [x] Damage assignment order with several blockers — the attacking player orders them; lethal damage in order
 - [ ] Best-of-3 with sideboarding
 - [x] Format legality checks (deck size, 4 copies, banned list) — in the deck editor, from Scryfall legalities;
   "Refresh card data" re-fetches older saved cards

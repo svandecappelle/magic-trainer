@@ -154,6 +154,7 @@ export type ChoicePurpose =
   | 'legendRule' // two legendary permanents with the same name: keep one
   | 'payLife' // shock lands: pay life or enter tapped
   | 'clone' // "enter as a copy of any creature": which one
+  | 'damageOrder' // an attacker blocked by several creatures: in which order its damage goes
   | 'sacrifice' // an edict: choose what to sacrifice
   | 'sacrificeCost' // "Sacrifice a creature:" when activating, or as a spell's additional cost
   | 'discardCost'; // a spell's additional cost: discard a card
@@ -188,7 +189,7 @@ export interface Pending {
    * What continues once answered: the end of turn, the spell or ability being resolved, or a
    * triggered ability waiting for targets (`trigger`).
    */
-  resume: 'cleanup' | 'effect' | 'trigger' | 'activation' | 'legend' | 'payLife' | 'castCost' | 'clone';
+  resume: 'cleanup' | 'effect' | 'trigger' | 'activation' | 'legend' | 'payLife' | 'castCost' | 'clone' | 'damageOrder';
   /** For clone: the window the resolving spell belongs to. */
   reason?: WindowReason;
   /** For payLife: the land that entered. */
@@ -294,8 +295,10 @@ export interface GameState {
   attackers: string[];
   /** Attackers attacking a planeswalker instead of the player: attacker iid → planeswalker iid. */
   attackTargets?: Record<string, string>;
-  /** attacker iid → blocker iids */
+  /** attacker iid → blocker iids, in damage assignment order */
   blocks: Record<string, string[]>;
+  /** Attackers whose blockers were already ordered (while asking). */
+  ordered?: string[];
   winner: PlayerId | 'draw' | null;
   log: LogEntry[];
   /**
@@ -1933,7 +1936,29 @@ function closeWindow(d: GameState, reason: WindowReason) {
 
 function setBlocks(d: GameState, blocks: Record<string, string[]>) {
   d.blocks = blocks;
-  openWindow(d, 'block', d.active, 0);
+  askDamageOrder(d);
+}
+
+/**
+ * Each attacker blocked by several creatures: its controller orders the blockers (damage goes to
+ * each in turn, lethal damage first). Then the block window opens.
+ */
+function askDamageOrder(d: GameState) {
+  const aid = Object.keys(d.blocks).find((a) => d.blocks[a].length > 1 && !d.ordered?.includes(a));
+  if (!aid) {
+    delete d.ordered;
+    return openWindow(d, 'block', d.active, 0);
+  }
+  d.ordered = [...(d.ordered ?? []), aid];
+  const attacker = findPermanent(d, aid)!;
+  d.pending = {
+    choice: {
+      kind: 'arrange', player: attacker.controller, purpose: 'damageOrder', zones: ['top'],
+      cards: d.blocks[aid].map((iid) => findPermanent(d, iid)!), params: { card: attacker.card.name },
+    },
+    resume: 'damageOrder',
+    iid: aid,
+  };
 }
 
 /**
@@ -2041,6 +2066,9 @@ export function apply(state: GameState, action: Action): GameState {
           d.players[perm.controller].life -= n;
         }
         if (perm) log(d, { k: 'shock', card: perm.card.name, paid: action.answer.yes ? n : 0 });
+      } else if (pending.resume === 'damageOrder' && action.answer.kind === 'arrange') {
+        d.blocks[pending.iid!] = action.answer.zones.top ?? d.blocks[pending.iid!];
+        askDamageOrder(d);
       } else if (pending.resume === 'clone' && action.answer.kind === 'cards') {
         const item = pending.activation!.item;
         const model = action.answer.iids[0] ? findPermanent(d, action.answer.iids[0]) : undefined;

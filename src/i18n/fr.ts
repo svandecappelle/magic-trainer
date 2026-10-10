@@ -462,6 +462,7 @@ export const fr: Messages = {
       surveil: (p) => `Surveillance ${p.n} : gardez des cartes au-dessus (dans l'ordre) ou mettez-les au cimetière.`,
       triggerTargets: (p) => `La capacité de ${p.card} se déclenche : choisissez une cible (${p.kind}).`,
       optional: (p) => `Utiliser la capacité de ${p.card} ?`,
+      damageOrder: (p) => `${p.card} est bloqué par plusieurs créatures : ordonnez-les (les blessures vont à la première jusqu'à être mortelles, puis à la suivante).`,
       clone: (p) => `${p.card} : choisissez une créature à copier (ou aucune).`,
       legendRule: (p) => `Règle des légendes : choisissez quel ${p.card} garder.`,
       payLife: (p) => `${p.card} : payer ${p.n} points de vie pour qu'il arrive dégagé ?`,

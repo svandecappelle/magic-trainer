@@ -456,6 +456,7 @@ export const en = {
       surveil: (p: { n: number }) => `Surveil ${p.n}: keep cards on top (in order) or put them into your graveyard.`,
       triggerTargets: (p: { card: string; kind: string }) => `${p.card}'s ability triggers: choose a target (${p.kind}).`,
       optional: (p: { card: string }) => `Use ${p.card}'s ability?`,
+      damageOrder: (p: { card: string }) => `${p.card} is blocked by several creatures: order them (damage goes to the first until it's lethal, then the next).`,
       clone: (p: { card: string }) => `${p.card}: choose a creature to copy (or none).`,
       legendRule: (p: { card: string }) => `Legend rule: choose which ${p.card} to keep.`,
       payLife: (p: { card: string; n: number }) => `${p.card}: pay ${p.n} life to have it enter untapped?`,

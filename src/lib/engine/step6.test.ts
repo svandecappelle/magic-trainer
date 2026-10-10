@@ -194,3 +194,19 @@ describe('step 6 in a game', () => {
     expect(s.log.some((e) => e.k === 'cast' && e.card === 'Fog')).toBe(true);
   });
 });
+
+describe('damage assignment order', () => {
+  it('lets the attacker order its blockers, lethal damage to the first', () => {
+    let s = board({ mine: [creature('Giant', 4, 4)], theirs: [creature('Wall', 0, 3), creature('Elf', 1, 1)] });
+    s = advance(s, (x) => x.step === 'attack' && !x.priority);
+    s = apply(s, { type: 'declareAttackers', attackers: [iidOf(s, 'Giant')] });
+    s = advance(s, (x) => x.step === 'block' && !x.priority);
+    s = apply(s, { type: 'declareBlockers', blocks: { [iidOf(s, 'Giant')]: [iidOf(s, 'Wall'), iidOf(s, 'Elf')] } });
+    expect(s.pending?.choice).toMatchObject({ kind: 'arrange', purpose: 'damageOrder', player: 0 });
+    s = apply(s, { type: 'choose', answer: { kind: 'arrange', zones: { top: [iidOf(s, 'Elf'), iidOf(s, 'Wall')] } } });
+    s = advance(s, (x) => x.step === 'main2');
+    // 1 to the Elf (lethal), 3 to the Wall (lethal): both die.
+    expect(perm(s, 'Elf')).toBeUndefined();
+    expect(perm(s, 'Wall')).toBeUndefined();
+  });
+});
