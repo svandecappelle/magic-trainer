@@ -1,8 +1,9 @@
 import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
-  findPayment, hasFirstStrike, hasInstantSpeed, hasKeyword, isCreature, isInstantOrSorcery, isLandCard, manaColors,
-  parseCost, parseEffects, power, targetKind, toughness, type ManaSource,
+  cardTypes, findPayment, hasInstantSpeed, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
+  manaColors, parseCost, power, spellSpec, toughness,
+  type AbilitySpec, type CounterKind, type Effect, type Keyword, type ManaSource, type TargetFilter, type TargetSpec,
 } from './rules';
 
 export type PlayerId = 0 | 1;
@@ -12,6 +13,14 @@ export interface CardInst {
   card: Card;
 }
 
+/** A lasting change to a permanent's power, toughness or abilities. */
+export interface Boost {
+  power: number;
+  toughness: number;
+  keywords: Keyword[];
+  until: 'endOfTurn';
+}
+
 export interface Permanent extends CardInst {
   controller: PlayerId;
   tapped: boolean;
@@ -19,14 +28,16 @@ export interface Permanent extends CardInst {
   sick: boolean;
   damage: number;
   deathtouched: boolean;
-  /** "Until end of turn" boosts from pump spells. */
-  pumpPower: number;
-  pumpToughness: number;
+  counters: Partial<Record<CounterKind, number>>;
+  boosts: Boost[];
 }
 
 export interface StackItem extends CardInst {
   controller: PlayerId;
-  target?: Target;
+  /** Chosen targets, one list per target slot of the spell or ability. */
+  targets: Target[][];
+  /** Set for an ability: the rules to resolve. `card` is its source, which stays where it is. */
+  ability?: AbilitySpec;
 }
 
 export interface PlayerState {
@@ -68,6 +79,54 @@ export interface MulliganState {
   kept: [boolean, boolean];
 }
 
+// ---------- Choices ----------
+
+/** Why a player is asked to choose; decides the prompt and how the bot answers. */
+export type ChoicePurpose =
+  | 'cleanupDiscard' // discard down to seven at end of turn
+  | 'payOrCounter'; // "counter target spell unless its controller pays {N}"
+
+/** Where "arrange" choices may put cards (scry: top/bottom, surveil: top/graveyard). */
+export type ArrangeZone = 'top' | 'bottom' | 'graveyard';
+
+/**
+ * A decision that pauses the game until `player` answers it with a `choose` action.
+ * `params` feed the prompt, e.g. the card name.
+ */
+export type Choice = { player: PlayerId; purpose: ChoicePurpose; params?: ErrorParams } & (
+  | { kind: 'cards'; min: number; max: number; options: CardInst[] }
+  /** Put each card in one of `zones`; for "top", listed first means on top. */
+  | { kind: 'arrange'; cards: CardInst[]; zones: ArrangeZone[] }
+  | { kind: 'mode'; min: number; max: number; modes: string[] }
+  | { kind: 'yesNo' }
+);
+
+export type Answer =
+  | { kind: 'cards'; iids: string[] }
+  | { kind: 'arrange'; zones: Partial<Record<ArrangeZone, string[]>> }
+  | { kind: 'mode'; modes: number[] }
+  | { kind: 'yesNo'; yes: boolean };
+
+export interface Pending {
+  choice: Choice;
+  /** What continues once answered: the end of turn, or the spell or ability being resolved. */
+  resume: 'cleanup' | 'effect';
+}
+
+/** A spell or ability halfway through resolving (paused on a choice). */
+export interface Resolving {
+  item: StackItem;
+  /** Targets still legal when resolution started, per slot. */
+  legal: Target[][];
+  /** Index of the effect to run next. */
+  next: number;
+  reason: WindowReason;
+}
+
+// ---------- Log ----------
+
+export type LogTarget = { card: string } | { p: PlayerId };
+
 /** Game log entries are data, rendered in each viewer's language (src/i18n). Card names stay as printed. */
 export type LogEntry =
   | { k: 'goesFirst'; p: PlayerId }
@@ -75,7 +134,7 @@ export type LogEntry =
   | { k: 'mulligan'; p: PlayerId; keeping: number }
   | { k: 'keep'; p: PlayerId; n: number }
   | { k: 'playLand'; p: PlayerId; card: string }
-  | { k: 'cast'; p: PlayerId; card: string; targetCard?: string; targetPlayer?: PlayerId }
+  | { k: 'cast'; p: PlayerId; card: string; targets?: LogTarget[] }
   | { k: 'enters'; card: string }
   | { k: 'attack'; p: PlayerId; cards: string[] }
   | { k: 'blocked'; card: string; by: string[] }
@@ -84,8 +143,10 @@ export type LogEntry =
   | { k: 'dies'; card: string }
   | { k: 'destroyed'; card: string }
   | { k: 'exiled'; card: string }
-  | { k: 'pump'; card: string; power: number; toughness: number }
+  | { k: 'pump'; card: string; power: number; toughness: number; keywords: Keyword[] }
+  | { k: 'counters'; card: string; counter: CounterKind; n: number }
   | { k: 'countered'; card: string }
+  | { k: 'paid'; p: PlayerId; n: number; card: string }
   | { k: 'fizzles'; card: string }
   | { k: 'notSimulated'; card: string }
   | { k: 'gainLife'; p: PlayerId; n: number }
@@ -104,6 +165,9 @@ export interface GameState {
   step: Step;
   priority: Priority | null;
   mulligan: MulliganState | null;
+  /** A choice someone must make before anything else happens. */
+  pending: Pending | null;
+  resolving: Resolving | null;
   attackers: string[];
   /** attacker iid → blocker iids */
   blocks: Record<string, string[]>;
@@ -128,10 +192,12 @@ export type Action =
   | { type: 'mulligan' }
   | { type: 'keep'; bottom: string[] }
   | { type: 'playLand'; iid: string }
-  | { type: 'cast'; iid: string; target?: Target }
+  /** `targets` has one list per target slot; `target` is a shorthand for a single-target spell. */
+  | { type: 'cast'; iid: string; targets?: Target[][]; target?: Target }
   | { type: 'pass' }
   | { type: 'declareAttackers'; attackers: string[] }
   | { type: 'declareBlockers'; blocks: Record<string, string[]> }
+  | { type: 'choose'; answer: Answer }
   | { type: 'concede'; player: PlayerId }
   /** Allowed at any time, like conceding. */
   | { type: 'setFullControl'; player: PlayerId; on: boolean };
@@ -140,8 +206,9 @@ export type Action =
 export type GameErrorCode =
   | 'gameOver' | 'keepFirst' | 'notMulliganTime' | 'noMoreMulligans' | 'chooseBottom' | 'notInHand'
   | 'landTiming' | 'landAlreadyPlayed' | 'notALand' | 'notASpell' | 'sorcerySpeed' | 'castTiming'
-  | 'needsTarget' | 'targetMustBe' | 'counterFilter' | 'notEnoughMana' | 'declareBlockersFirst'
-  | 'notAttackStep' | 'cannotAttack' | 'notBlockStep' | 'notAttacking' | 'menace' | 'cannotBlock';
+  | 'needsTarget' | 'tooManyTargets' | 'targetMustBe' | 'illegalTarget' | 'notEnoughMana' | 'declareBlockersFirst'
+  | 'notAttackStep' | 'cannotAttack' | 'notBlockStep' | 'notAttacking' | 'menace' | 'cannotBlock'
+  | 'makeChoiceFirst' | 'nothingToChoose' | 'badChoice';
 
 export type ErrorParams = Record<string, string | number>;
 
@@ -160,6 +227,7 @@ export const opponent = (p: PlayerId): PlayerId => (p === 0 ? 1 : 0);
 export function actor(s: GameState): PlayerId | null {
   if (s.winner !== null) return null;
   if (s.mulligan) return s.mulligan.player;
+  if (s.pending) return s.pending.choice.player;
   if (s.priority) return s.priority.player;
   return s.step === 'block' ? opponent(s.active) : s.active;
 }
@@ -171,8 +239,19 @@ export const findPermanent = (s: GameState, iid: string) => s.battlefield.find((
 export const creaturesOf = (s: GameState, p: PlayerId) =>
   s.battlefield.filter((x) => x.controller === p && isCreature(x.card));
 
-export const powerOf = (perm: Permanent) => power(perm.card) + perm.pumpPower;
-export const toughnessOf = (perm: Permanent) => toughness(perm.card) + perm.pumpToughness;
+const isPermanent = (x: CardInst): x is Permanent => 'boosts' in x;
+
+/** Keyword printed on the card or granted until end of turn. */
+export const hasKw = (x: CardInst, kw: Keyword) =>
+  hasKeyword(x.card, kw) || (isPermanent(x) && x.boosts.some((b) => b.keywords.includes(kw)));
+
+export const firstStrikes = (x: CardInst) => hasKw(x, 'first strike') || hasKw(x, 'double strike');
+
+const sum = (perm: Permanent, key: 'power' | 'toughness') => perm.boosts.reduce((n, b) => n + b[key], 0);
+const counterBonus = (perm: Permanent) => (perm.counters['+1/+1'] ?? 0) - (perm.counters['-1/-1'] ?? 0);
+
+export const powerOf = (perm: Permanent) => power(perm.card) + sum(perm, 'power') + counterBonus(perm);
+export const toughnessOf = (perm: Permanent) => toughness(perm.card) + sum(perm, 'toughness') + counterBonus(perm);
 
 export function manaSources(s: GameState, p: PlayerId): ManaSource[] {
   return s.battlefield
@@ -186,16 +265,14 @@ export const canPay = (s: GameState, p: PlayerId, card: Card) =>
 
 export function canAttack(perm: Permanent): boolean {
   return (
-    isCreature(perm.card) && !perm.tapped && (!perm.sick || hasKeyword(perm.card, 'haste')) &&
-    !hasKeyword(perm.card, 'defender') && powerOf(perm) > 0
+    isCreature(perm.card) && !perm.tapped && (!perm.sick || hasKw(perm, 'haste')) &&
+    !hasKw(perm, 'defender') && powerOf(perm) > 0
   );
 }
 
 export function canBlock(blocker: Permanent, attacker: Permanent): boolean {
   if (!isCreature(blocker.card) || blocker.tapped) return false;
-  if (hasKeyword(attacker.card, 'flying')) {
-    return hasKeyword(blocker.card, 'flying') || hasKeyword(blocker.card, 'reach');
-  }
+  if (hasKw(attacker, 'flying')) return hasKw(blocker, 'flying') || hasKw(blocker, 'reach');
   return true;
 }
 
@@ -203,25 +280,131 @@ export const isMainStep = (s: GameState) => s.step === 'main1' || s.step === 'ma
 
 /** Can `p` legally cast `card` right now (timing and mana; targets aside)? */
 export function canCastNow(s: GameState, p: PlayerId, card: Card): boolean {
-  if (isLandCard(card) || s.mulligan || actor(s) !== p) return false;
+  if (isLandCard(card) || s.mulligan || s.pending || actor(s) !== p) return false;
   const timing = s.priority ? hasInstantSpeed(card) : isMainStep(s) && s.active === p;
   return timing && canPay(s, p, card);
 }
 
-/** Does the spell have something sensible to target? (Counterspells need an opposing spell.) */
-export function hasUsefulTarget(s: GameState, p: PlayerId, card: Card): boolean {
-  const effects = parseEffects(card);
-  const kind = targetKind(effects);
-  if (kind === 'spell') {
-    const counter = effects.find((e) => e.kind === 'counter');
-    return s.stack.some((item) => item.controller !== p && counter?.kind === 'counter' && counterAllows(counter.filter, item.card));
-  }
-  if (kind === 'creature') return s.battlefield.some((x) => isCreature(x.card));
+// ---------- Targets ----------
+
+const blockerIds = (s: GameState) => Object.values(s.blocks).flat();
+
+/** Does a card (a permanent, or a spell on the stack) pass the filter, from `caster`'s point of view? */
+function matchesFilter(s: GameState, f: TargetFilter, caster: PlayerId, x: CardInst, controller: PlayerId): boolean {
+  const perm = isPermanent(x) ? x : undefined;
+  const types = cardTypes(x.card);
+  const colors = x.card.colors;
+  if (f.types && !f.types.some((t) => types.includes(t))) return false;
+  if (f.nonTypes?.some((t) => types.includes(t))) return false;
+  if (f.controller && (controller === caster) !== (f.controller === 'you')) return false;
+  if (f.colors && !f.colors.some((c) => colors.includes(c))) return false;
+  if (f.nonColors?.some((c) => colors.includes(c))) return false;
+  if (f.keyword && !hasKw(x, f.keyword)) return false;
+  if (f.withoutKeyword && hasKw(x, f.withoutKeyword)) return false;
+  if (f.maxManaValue !== undefined && x.card.cmc > f.maxManaValue) return false;
+  const pow = perm ? powerOf(perm) : power(x.card);
+  if (f.minPower !== undefined && pow < f.minPower) return false;
+  if (f.maxPower !== undefined && pow > f.maxPower) return false;
+  // Battlefield-only conditions.
+  if (f.tapped !== undefined && perm?.tapped !== f.tapped) return false;
+  const attacking = !!perm && s.attackers.includes(perm.iid);
+  const blocking = !!perm && blockerIds(s).includes(perm.iid);
+  if (f.attacking && !attacking) return false;
+  if (f.blocking && !blocking) return false;
+  if (f.inCombat && !attacking && !blocking) return false;
   return true;
 }
 
-const counterAllows = (filter: 'any' | 'creature' | 'noncreature', card: Card) =>
-  filter === 'any' || (filter === 'creature') === isCreature(card);
+/** Is `t` a legal choice for a target slot of a spell or ability controlled by `caster`? */
+export function isLegalTarget(s: GameState, caster: PlayerId, spec: TargetSpec, t: Target, selfIid?: string): boolean {
+  if (t.kind === 'player') {
+    if (spec.kind !== 'player' && spec.kind !== 'any') return false;
+    return !spec.filter.controller || (t.player === caster) === (spec.filter.controller === 'you');
+  }
+  if (t.kind === 'spell') {
+    const item = s.stack.find((x) => x.iid === t.iid);
+    if (spec.kind !== 'spell' || !item || item.iid === selfIid || item.ability) return false;
+    return matchesFilter(s, spec.filter, caster, item, item.controller);
+  }
+  const perm = findPermanent(s, t.iid);
+  if (!perm) return false;
+  const types = cardTypes(perm.card);
+  const kindOk =
+    spec.kind === 'creature' ? types.includes('creature')
+    : spec.kind === 'any' ? types.includes('creature') || types.includes('planeswalker')
+    : spec.kind === 'permanent';
+  return kindOk && matchesFilter(s, spec.filter, caster, perm, perm.controller);
+}
+
+/** Every legal choice for a target slot right now. */
+export function legalTargets(s: GameState, caster: PlayerId, spec: TargetSpec, selfIid?: string): Target[] {
+  const all: Target[] = [
+    ...([0, 1] as PlayerId[]).map((player): Target => ({ kind: 'player', player })),
+    ...s.battlefield.map((x): Target => ({ kind: 'permanent', iid: x.iid })),
+    ...s.stack.map((x): Target => ({ kind: 'spell', iid: x.iid })),
+  ];
+  return all.filter((t) => isLegalTarget(s, caster, spec, t, selfIid));
+}
+
+/** Could the spell be cast with legal targets right now? (A counterspell needs a spell to counter.) */
+export function hasUsefulTarget(s: GameState, p: PlayerId, card: Card): boolean {
+  return spellSpec(card).targets.every((spec) => legalTargets(s, p, spec).length >= spec.min);
+}
+
+const sameTarget = (a: Target, b: Target) =>
+  a.kind === b.kind && (a.kind === 'player' ? a.player === (b as typeof a).player : a.iid === (b as { iid: string }).iid);
+
+function targetName(s: GameState, t: Target): LogTarget {
+  if (t.kind === 'player') return { p: t.player };
+  const x = t.kind === 'spell' ? s.stack.find((i) => i.iid === t.iid) : findPermanent(s, t.iid);
+  return { card: x?.card.name ?? '?' };
+}
+
+/** Checks chosen targets against the spell's slots; returns them with one list per slot. */
+function checkTargets(s: GameState, caster: PlayerId, card: Card, spec: AbilitySpec, chosen: Target[][]): Target[][] {
+  if (chosen.length > spec.targets.length) throw new IllegalAction('tooManyTargets', { card: card.name });
+  return spec.targets.map((slot, i) => {
+    const ts = chosen[i] ?? [];
+    if (ts.length < slot.min) throw new IllegalAction('needsTarget', { card: card.name });
+    if (ts.length > slot.max) throw new IllegalAction('tooManyTargets', { card: card.name });
+    ts.forEach((t, j) => {
+      if (ts.slice(0, j).some((u) => sameTarget(t, u))) throw new IllegalAction('tooManyTargets', { card: card.name });
+      if (!isLegalTarget(s, caster, slot, t)) {
+        const kindOk =
+          (t.kind === 'player' && (slot.kind === 'player' || slot.kind === 'any')) ||
+          (t.kind === 'spell' && slot.kind === 'spell') ||
+          (t.kind === 'permanent' && slot.kind !== 'player' && slot.kind !== 'spell');
+        if (!kindOk) throw new IllegalAction('targetMustBe', { kind: slot.kind });
+        throw new IllegalAction('illegalTarget', { card: card.name });
+      }
+    });
+    return ts;
+  });
+}
+
+// ---------- Choices ----------
+
+/** Throws if `answer` doesn't answer `choice`. */
+export function validateAnswer(choice: Choice, answer: Answer): void {
+  const bad = () => new IllegalAction('badChoice');
+  if (answer.kind !== choice.kind) throw bad();
+  if (choice.kind === 'cards' && answer.kind === 'cards') {
+    const ids = new Set(answer.iids);
+    if (ids.size !== answer.iids.length || ids.size < choice.min || ids.size > choice.max) throw bad();
+    if (answer.iids.some((iid) => !choice.options.some((c) => c.iid === iid))) throw bad();
+  } else if (choice.kind === 'arrange' && answer.kind === 'arrange') {
+    const placed = Object.entries(answer.zones).flatMap(([zone, iids]) => {
+      if (!choice.zones.includes(zone as ArrangeZone)) throw bad();
+      return iids ?? [];
+    });
+    const expected = choice.cards.map((c) => c.iid).sort();
+    if (placed.length !== expected.length || [...placed].sort().some((iid, i) => iid !== expected[i])) throw bad();
+  } else if (choice.kind === 'mode' && answer.kind === 'mode') {
+    const modes = new Set(answer.modes);
+    if (modes.size !== answer.modes.length || modes.size < choice.min || modes.size > choice.max) throw bad();
+    if (answer.modes.some((m) => !Number.isInteger(m) || m < 0 || m >= choice.modes.length)) throw bad();
+  }
+}
 
 // ---------- Setup ----------
 
@@ -255,6 +438,8 @@ export function newGame({ decks, names, first, rng = Math.random, mulligans = tr
     step: 'mulligan',
     priority: null,
     mulligan: null,
+    pending: null,
+    resolving: null,
     attackers: [],
     blocks: {},
     winner: null,
@@ -314,26 +499,42 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
   if (d.winner === null) openWindow(d, 'begin', opponent(p), 1);
 }
 
+/** Cleanup step: the active player discards down to seven (their choice), then the turn passes. */
 function endTurn(d: GameState) {
+  const hand = d.players[d.active].hand;
+  const excess = hand.length - 7;
+  if (excess > 0) {
+    d.pending = {
+      choice: { kind: 'cards', player: d.active, purpose: 'cleanupDiscard', min: excess, max: excess, options: [...hand], params: { n: excess } },
+      resume: 'cleanup',
+    };
+    return;
+  }
+  finishTurn(d);
+}
+
+function finishCleanup(d: GameState, iids: string[]) {
+  const me = d.players[d.active];
+  for (const iid of iids) {
+    const inst = me.hand.find((c) => c.iid === iid)!;
+    me.hand = me.hand.filter((c) => c !== inst);
+    me.graveyard.push(inst);
+    log(d, { k: 'discard', p: d.active, card: inst.card.name });
+  }
+  finishTurn(d);
+}
+
+function finishTurn(d: GameState) {
   for (const perm of d.battlefield) {
     perm.damage = 0;
     perm.deathtouched = false;
-    perm.pumpPower = 0;
-    perm.pumpToughness = 0;
-  }
-  const me = d.players[d.active];
-  // Cleanup: discard down to 7, highest mana value first (simplification: no choice).
-  while (me.hand.length > 7) {
-    const worst = me.hand.reduce((a, b) => (b.card.cmc > a.card.cmc ? b : a));
-    me.hand = me.hand.filter((c) => c !== worst);
-    me.graveyard.push(worst);
-    log(d, { k: 'discard', p: d.active, card: worst.card.name });
+    perm.boosts = perm.boosts.filter((b) => b.until !== 'endOfTurn');
   }
   beginTurn(d, opponent(d.active), false);
 }
 
 const newPermanent = (inst: CardInst, controller: PlayerId): Permanent => ({
-  iid: inst.iid, card: inst.card, controller, tapped: false, sick: true, damage: 0, deathtouched: false, pumpPower: 0, pumpToughness: 0,
+  iid: inst.iid, card: inst.card, controller, tapped: false, sick: true, damage: 0, deathtouched: false, counters: {}, boosts: [],
 });
 
 function removePermanent(d: GameState, perm: Permanent, zone: 'graveyard' | 'exile') {
@@ -341,10 +542,16 @@ function removePermanent(d: GameState, perm: Permanent, zone: 'graveyard' | 'exi
   d.players[perm.controller][zone].push({ iid: perm.iid, card: perm.card });
 }
 
-/** State-based actions: lethal damage, 0 life. */
+/** State-based actions: +1/+1 and -1/-1 counters cancel out, 0 toughness, lethal damage, 0 life. */
 function checkStateBased(d: GameState) {
   for (const perm of [...d.battlefield]) {
-    if (isCreature(perm.card) && (perm.deathtouched || perm.damage >= toughnessOf(perm))) {
+    const plus = perm.counters['+1/+1'] ?? 0;
+    const minus = perm.counters['-1/-1'] ?? 0;
+    if (plus && minus) {
+      const both = Math.min(plus, minus);
+      perm.counters = { ...perm.counters, '+1/+1': plus - both, '-1/-1': minus - both };
+    }
+    if (isCreature(perm.card) && (toughnessOf(perm) <= 0 || perm.deathtouched || perm.damage >= toughnessOf(perm))) {
       removePermanent(d, perm, 'graveyard');
       log(d, { k: 'dies', card: perm.card.name });
     }
@@ -363,23 +570,21 @@ function dealDamage(d: GameState, source: CardInst, controller: PlayerId, target
     log(d, { k: 'damagePlayer', card: source.card.name, n: amount, p: target });
   } else {
     target.damage += amount;
-    if (hasKeyword(source.card, 'deathtouch')) target.deathtouched = true;
+    if (hasKw(source, 'deathtouch')) target.deathtouched = true;
     log(d, { k: 'damage', card: source.card.name, n: amount, target: target.card.name });
   }
-  if (hasKeyword(source.card, 'lifelink')) d.players[controller].life += amount;
+  if (hasKw(source, 'lifelink')) d.players[controller].life += amount;
 }
 
 function resolveCombat(d: GameState) {
   const def = opponent(d.active);
   const get = (iid: string) => findPermanent(d, iid);
-  const involved = [...d.attackers, ...Object.values(d.blocks).flat()].map(get).filter((x) => x !== undefined);
-  const strikeSteps = involved.some((x) => hasFirstStrike(x.card)) ? [true, false] : [false];
+  const involved = [...d.attackers, ...blockerIds(d)].map(get).filter((x) => x !== undefined);
+  const strikeSteps = involved.some(firstStrikes) ? [true, false] : [false];
 
   for (const firstStrikeStep of strikeSteps) {
     const dealsNow = (x: Permanent) =>
-      firstStrikeStep
-        ? hasFirstStrike(x.card)
-        : !hasKeyword(x.card, 'first strike') || hasKeyword(x.card, 'double strike');
+      firstStrikeStep ? firstStrikes(x) : !hasKw(x, 'first strike') || hasKw(x, 'double strike');
 
     // Collect all damage first: combat damage is dealt simultaneously.
     const hits: { source: Permanent; target: Permanent | PlayerId; amount: number }[] = [];
@@ -394,9 +599,9 @@ function resolveCombat(d: GameState) {
         continue;
       }
       const blockers = declared.map(get).filter((x) => x !== undefined);
-      const trample = hasKeyword(a.card, 'trample');
+      const trample = hasKw(a, 'trample');
       blockers.forEach((b, i) => {
-        const lethal = hasKeyword(a.card, 'deathtouch') ? 1 : Math.max(0, toughnessOf(b) - b.damage);
+        const lethal = hasKw(a, 'deathtouch') ? 1 : Math.max(0, toughnessOf(b) - b.damage);
         const isLast = i === blockers.length - 1;
         const amount = isLast && !trample ? remaining : Math.min(remaining, lethal);
         hits.push({ source: a, target: b, amount });
@@ -421,57 +626,132 @@ function resolveCombat(d: GameState) {
   }
 }
 
-// ---------- Stack and priority ----------
+// ---------- Resolving spells and abilities ----------
 
-function resolveTop(d: GameState) {
+const specOf = (item: StackItem): AbilitySpec => item.ability ?? spellSpec(item.card);
+
+/** What an effect applies to, looked up again now: earlier effects may have changed the game. */
+function affected(d: GameState, r: Resolving, to: Effect['to']): (Permanent | PlayerId | StackItem)[] {
+  if (to === 'you') return [r.item.controller];
+  if (to === 'each-opponent') return [opponent(r.item.controller)];
+  return (r.legal[to.slot] ?? []).flatMap((t): (Permanent | PlayerId | StackItem)[] => {
+    if (t.kind === 'player') return [t.player];
+    const x = t.kind === 'spell' ? d.stack.find((i) => i.iid === t.iid) : findPermanent(d, t.iid);
+    return x ? [x] : [];
+  });
+}
+
+/** Runs one effect. Returns a choice to pause on; it is run again with the answer. */
+function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choice | undefined {
+  const { item } = r;
+  const caster = item.controller;
+  const things = affected(d, r, e.to);
+  const players = things.filter((x): x is PlayerId => typeof x === 'number');
+  const perms = things.filter((x): x is Permanent => typeof x !== 'number' && isPermanent(x));
+  const spells = things.filter((x): x is StackItem => typeof x !== 'number' && !isPermanent(x));
+
+  switch (e.kind) {
+    case 'damage':
+      for (const t of [...players, ...perms]) dealDamage(d, item, caster, t, e.amount);
+      break;
+    case 'counter':
+      for (const target of spells) {
+        if (e.unlessPays) {
+          const payer = target.controller;
+          const payment = findPayment(manaSources(d, payer), { generic: e.unlessPays, colored: [] });
+          if (payment && !answer) {
+            return { kind: 'yesNo', player: payer, purpose: 'payOrCounter', params: { card: target.card.name, n: e.unlessPays } };
+          }
+          if (payment && answer?.kind === 'yesNo' && answer.yes) {
+            for (const iid of payment) findPermanent(d, iid)!.tapped = true;
+            log(d, { k: 'paid', p: payer, n: e.unlessPays, card: target.card.name });
+            continue;
+          }
+        }
+        d.stack = d.stack.filter((x) => x !== target);
+        d.players[target.controller].graveyard.push({ iid: target.iid, card: target.card });
+        log(d, { k: 'countered', card: target.card.name });
+      }
+      break;
+    case 'pump':
+      for (const perm of perms) {
+        perm.boosts.push({ power: e.power, toughness: e.toughness, keywords: e.keywords, until: 'endOfTurn' });
+        log(d, { k: 'pump', card: perm.card.name, power: e.power, toughness: e.toughness, keywords: e.keywords });
+      }
+      break;
+    case 'destroy':
+      for (const perm of perms) {
+        removePermanent(d, perm, e.exile ? 'exile' : 'graveyard');
+        log(d, { k: e.exile ? 'exiled' : 'destroyed', card: perm.card.name });
+      }
+      break;
+    case 'addCounters':
+      for (const perm of perms) {
+        perm.counters = { ...perm.counters, [e.counter]: (perm.counters[e.counter] ?? 0) + e.n };
+        log(d, { k: 'counters', card: perm.card.name, counter: e.counter, n: e.n });
+      }
+      break;
+    case 'draw':
+      for (const p of players) draw(d, p, e.n);
+      break;
+    case 'gainLife':
+      for (const p of players) {
+        d.players[p].life += e.n;
+        log(d, { k: 'gainLife', p, n: e.n });
+      }
+      break;
+  }
+  return undefined;
+}
+
+function startResolving(d: GameState, reason: WindowReason) {
   const item = d.stack.pop()!;
-  const owner = d.players[item.controller];
 
-  if (!isInstantOrSorcery(item.card)) {
+  if (!item.ability && !isInstantOrSorcery(item.card)) {
     d.battlefield.push(newPermanent(item, item.controller));
     log(d, { k: 'enters', card: item.card.name });
+    afterResolving(d, reason);
     return;
   }
 
-  // Targets are checked again on resolution: if the target is gone, the spell does nothing.
-  const t = item.target;
-  let target: Permanent | PlayerId | StackItem | undefined;
-  if (t?.kind === 'player') target = t.player;
-  else if (t?.kind === 'permanent') target = findPermanent(d, t.iid);
-  else if (t?.kind === 'spell') target = d.stack.find((x) => x.iid === t.iid);
-  if (t && target === undefined) {
+  // Targets are checked again on resolution. If none is still legal, the spell does nothing.
+  const spec = specOf(item);
+  const legal = item.targets.map((ts, slot) => ts.filter((t) => spec.targets[slot] && isLegalTarget(d, item.controller, spec.targets[slot], t, item.iid)));
+  if (item.targets.some((ts) => ts.length) && legal.every((ts) => !ts.length)) {
     log(d, { k: 'fizzles', card: item.card.name });
-    owner.graveyard.push({ iid: item.iid, card: item.card });
+    if (!item.ability) d.players[item.controller].graveyard.push({ iid: item.iid, card: item.card });
+    afterResolving(d, reason);
     return;
   }
-
-  const effects = parseEffects(item.card);
-  if (!effects.length) log(d, { k: 'notSimulated', card: item.card.name });
-  const perm = target !== undefined && typeof target !== 'number' && 'tapped' in target ? target : undefined;
-  for (const e of effects) {
-    if (e.kind === 'damage') {
-      const t = e.target === 'each-opponent' ? opponent(item.controller) : typeof target === 'number' ? target : perm;
-      if (t !== undefined) dealDamage(d, item, item.controller, t, e.amount);
-    } else if (e.kind === 'destroy' && perm && d.battlefield.includes(perm)) {
-      removePermanent(d, perm, e.exile ? 'exile' : 'graveyard');
-      log(d, { k: e.exile ? 'exiled' : 'destroyed', card: perm.card.name });
-    } else if (e.kind === 'pump' && perm) {
-      perm.pumpPower += e.power;
-      perm.pumpToughness += e.toughness;
-      log(d, { k: 'pump', card: perm.card.name, power: e.power, toughness: e.toughness });
-    } else if (e.kind === 'counter' && target !== undefined && typeof target !== 'number' && !('tapped' in target)) {
-      d.stack = d.stack.filter((x) => x !== target);
-      d.players[target.controller].graveyard.push({ iid: target.iid, card: target.card });
-      log(d, { k: 'countered', card: target.card.name });
-    } else if (e.kind === 'draw') {
-      draw(d, item.controller, e.n);
-    } else if (e.kind === 'gainLife') {
-      owner.life += e.n;
-      log(d, { k: 'gainLife', p: item.controller, n: e.n });
-    }
-  }
-  owner.graveyard.push({ iid: item.iid, card: item.card });
+  if (!spec.effects.length) log(d, { k: 'notSimulated', card: item.card.name });
+  d.resolving = { item, legal, next: 0, reason };
+  continueResolving(d);
 }
+
+function continueResolving(d: GameState, answer?: Answer) {
+  const r = d.resolving!;
+  const effects = specOf(r.item).effects;
+  while (r.next < effects.length) {
+    const choice = runEffect(d, r, effects[r.next], answer);
+    answer = undefined;
+    if (choice) {
+      d.pending = { choice, resume: 'effect' };
+      return;
+    }
+    r.next++;
+  }
+  d.resolving = null;
+  if (!r.item.ability) d.players[r.item.controller].graveyard.push({ iid: r.item.iid, card: r.item.card });
+  afterResolving(d, r.reason);
+}
+
+/** After something resolves, the active player gets priority again (except for a main phase spell). */
+function afterResolving(d: GameState, reason: WindowReason) {
+  checkStateBased(d);
+  d.priority = d.winner !== null || (!d.stack.length && reason === 'main') ? null : { player: d.active, passes: 0, reason };
+}
+
+// ---------- Priority ----------
 
 /** Whether `p` should be asked to act in a priority window (Arena-style auto-pass otherwise). */
 function wantsPriority(d: GameState, p: PlayerId): boolean {
@@ -492,7 +772,7 @@ function openWindow(d: GameState, reason: WindowReason, player: PlayerId, passes
 }
 
 function autoPass(d: GameState) {
-  while (d.priority && d.winner === null && !wantsPriority(d, d.priority.player)) passOnce(d);
+  while (d.priority && !d.pending && d.winner === null && !wantsPriority(d, d.priority.player)) passOnce(d);
 }
 
 function passOnce(d: GameState) {
@@ -502,19 +782,9 @@ function passOnce(d: GameState) {
     pr.player = opponent(pr.player);
     return;
   }
-  if (d.stack.length) {
-    resolveTop(d);
-    checkStateBased(d);
-    if (d.winner !== null || (!d.stack.length && pr.reason === 'main')) {
-      d.priority = null;
-      return;
-    }
-    // After something resolves, the active player gets priority again.
-    d.priority = { player: d.active, passes: 0, reason: pr.reason };
-    return;
-  }
   d.priority = null;
-  closeWindow(d, pr.reason);
+  if (d.stack.length) startResolving(d, pr.reason);
+  else closeWindow(d, pr.reason);
 }
 
 /** Everyone passed with an empty stack: the game moves on. */
@@ -548,6 +818,24 @@ function setBlocks(d: GameState, blocks: Record<string, string[]>) {
   openWindow(d, 'block', d.active, 0);
 }
 
+/**
+ * Puts an ability on the stack (for triggered and activated abilities). Its source stays where
+ * it is; the ability resolves like a spell, with the same effects. Both players then get priority.
+ */
+export function addAbility(state: GameState, source: CardInst, controller: PlayerId, spec: AbilitySpec, targets: Target[][] = []): GameState {
+  const d = structuredClone(state);
+  const n = d.stack.length + d.log.length;
+  d.stack.push({ iid: `${source.iid}-ability-${n}`, card: source.card, controller, targets, ability: spec });
+  if (d.priority) {
+    d.priority.passes = 0;
+    d.priority.player = d.active;
+    autoPass(d);
+  } else {
+    openWindow(d, 'main', d.active, 0);
+  }
+  return d;
+}
+
 // ---------- Actions ----------
 
 export function apply(state: GameState, action: Action): GameState {
@@ -571,6 +859,7 @@ export function apply(state: GameState, action: Action): GameState {
   if (d.mulligan && action.type !== 'mulligan' && action.type !== 'keep') {
     throw new IllegalAction('keepFirst');
   }
+  if (d.pending && action.type !== 'choose') throw new IllegalAction('makeChoiceFirst');
 
   switch (action.type) {
     case 'mulligan': {
@@ -608,6 +897,17 @@ export function apply(state: GameState, action: Action): GameState {
       break;
     }
 
+    case 'choose': {
+      const pending = d.pending;
+      if (!pending) throw new IllegalAction('nothingToChoose');
+      validateAnswer(pending.choice, action.answer);
+      d.pending = null;
+      if (pending.resume === 'cleanup' && action.answer.kind === 'cards') finishCleanup(d, action.answer.iids);
+      else continueResolving(d, action.answer);
+      autoPass(d);
+      break;
+    }
+
     case 'playLand': {
       if (d.priority || !isMainStep(d) || p !== d.active) throw new IllegalAction('landTiming');
       if (me.landPlayed) throw new IllegalAction('landAlreadyPlayed');
@@ -629,35 +929,17 @@ export function apply(state: GameState, action: Action): GameState {
         throw new IllegalAction('castTiming');
       }
 
-      const effects = parseEffects(inst.card);
-      const needs = targetKind(effects);
-      const targetLog: { targetCard?: string; targetPlayer?: PlayerId } = {};
-      if (needs) {
-        const t = action.target;
-        if (!t) throw new IllegalAction('needsTarget', { card: inst.card.name });
-        if (t.kind === 'player') {
-          if (needs !== 'any' && needs !== 'player') throw new IllegalAction('targetMustBe', { kind: needs });
-          targetLog.targetPlayer = t.player;
-        } else if (t.kind === 'permanent') {
-          const perm = findPermanent(d, t.iid);
-          if (needs !== 'any' && needs !== 'creature') throw new IllegalAction('targetMustBe', { kind: needs });
-          if (!perm || !isCreature(perm.card)) throw new IllegalAction('targetMustBe', { kind: 'creature' });
-          targetLog.targetCard = perm.card.name;
-        } else {
-          const counter = effects.find((e) => e.kind === 'counter');
-          const item = d.stack.find((x) => x.iid === t.iid);
-          if (needs !== 'spell' || !item || counter?.kind !== 'counter') throw new IllegalAction('targetMustBe', { kind: 'spell' });
-          if (!counterAllows(counter.filter, item.card)) throw new IllegalAction('counterFilter', { card: inst.card.name, filter: counter.filter });
-          targetLog.targetCard = item.card.name;
-        }
-      }
+      const spec = spellSpec(inst.card);
+      const chosen = action.targets ?? (action.target ? [[action.target]] : []);
+      const targets = checkTargets(d, p, inst.card, spec, chosen);
 
       const payment = findPayment(manaSources(d, p), parseCost(inst.card.manaCost));
       if (!payment) throw new IllegalAction('notEnoughMana', { card: inst.card.name });
       for (const iid of payment) findPermanent(d, iid)!.tapped = true;
       me.hand = me.hand.filter((c) => c !== inst);
-      d.stack.push({ ...inst, controller: p, target: needs ? action.target : undefined });
-      log(d, { k: 'cast', p, card: inst.card.name, ...targetLog });
+      const named = targets.flat().map((t) => targetName(d, t));
+      d.stack.push({ ...inst, controller: p, targets });
+      log(d, { k: 'cast', p, card: inst.card.name, ...(named.length ? { targets: named } : {}) });
 
       // The opponent may respond.
       if (d.priority) {
@@ -700,7 +982,7 @@ export function apply(state: GameState, action: Action): GameState {
         d.step = 'main2';
         break;
       }
-      for (const a of attackers) if (!hasKeyword(a.card, 'vigilance')) a.tapped = true;
+      for (const a of attackers) if (!hasKw(a, 'vigilance')) a.tapped = true;
       d.attackers = attackers.map((a) => a.iid);
       d.blocks = {};
       log(d, { k: 'attack', p, cards: attackers.map((a) => a.card.name) });
@@ -717,7 +999,7 @@ export function apply(state: GameState, action: Action): GameState {
         const a = findPermanent(d, aid);
         if (!a || !d.attackers.includes(aid)) throw new IllegalAction('notAttacking');
         if (!bids.length) continue;
-        if (hasKeyword(a.card, 'menace') && bids.length < 2) {
+        if (hasKw(a, 'menace') && bids.length < 2) {
           throw new IllegalAction('menace', { card: a.card.name });
         }
         for (const bid of bids) {

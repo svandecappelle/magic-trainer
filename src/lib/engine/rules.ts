@@ -132,73 +132,253 @@ export function findPayment(sources: ManaSource[], cost: Cost): string[] | null 
   return [...used, ...generic.map((s) => s.iid)];
 }
 
-// ---------- Spell effects ----------
+// ---------- Card types ----------
 
-export type DamageTarget = 'any' | 'creature' | 'player' | 'each-opponent';
+export type CardType = 'creature' | 'artifact' | 'enchantment' | 'land' | 'planeswalker' | 'instant' | 'sorcery' | 'battle';
+const CARD_TYPES: CardType[] = ['creature', 'artifact', 'enchantment', 'land', 'planeswalker', 'instant', 'sorcery', 'battle'];
 
-/** Which spells a counterspell may target, e.g. Negate: noncreature. */
-export type CounterFilter = 'any' | 'creature' | 'noncreature';
+/** Card types of the front face, e.g. "Artifact Creature — Golem" → artifact, creature. */
+export function cardTypes(card: Card): CardType[] {
+  const front = card.typeLine.split('//')[0].split('—')[0].toLowerCase();
+  return CARD_TYPES.filter((t) => front.includes(t));
+}
 
-export type Effect =
-  | { kind: 'damage'; amount: number; target: DamageTarget }
-  | { kind: 'counter'; filter: CounterFilter }
-  | { kind: 'pump'; power: number; toughness: number }
-  | { kind: 'destroy'; exile: boolean }
-  | { kind: 'draw'; n: number }
-  | { kind: 'gainLife'; n: number };
+const COLOR_WORDS: Record<string, Color> = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' };
 
-export type TargetKind = 'any' | 'creature' | 'player' | 'spell';
+/** Card colors as Color letters (colorless cards have none). */
+export const cardColors = (card: Card) => card.colors as Color[];
 
-const WORD_NUMBERS: Record<string, number> = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5 };
-const toNumber = (s: string) => WORD_NUMBERS[s.toLowerCase()] ?? Number(s);
+// ---------- Targets ----------
+
+/** Restrictions on a target, e.g. "target nonblack creature an opponent controls". All must hold. */
+export interface TargetFilter {
+  /** The card must have at least one of these types ("artifact or enchantment"). */
+  types?: CardType[];
+  /** The card must have none of these types ("nonland", "noncreature"). */
+  nonTypes?: CardType[];
+  /** For permanents and spells: who controls it. For players: "you" or "opponent". */
+  controller?: 'you' | 'opponent';
+  colors?: Color[];
+  nonColors?: Color[];
+  keyword?: Keyword;
+  withoutKeyword?: Keyword;
+  tapped?: boolean;
+  attacking?: boolean;
+  blocking?: boolean;
+  /** "attacking or blocking creature" */
+  inCombat?: boolean;
+  maxManaValue?: number;
+  minPower?: number;
+  maxPower?: number;
+}
 
 /**
- * Recognizes the most common instant/sorcery effects from oracle text. Anything else
- * is not simulated. Targeting restrictions such as "nonblack" are ignored, except
- * creature/noncreature on counterspells.
+ * What a target slot accepts. "any" is a creature, planeswalker or player; "permanent" is any
+ * permanent matching the filter's types.
  */
-export function parseEffects(card: Card): Effect[] {
-  if (!isInstantOrSorcery(card)) return [];
-  const text = frontText(card);
+export type TargetKind = 'any' | 'creature' | 'player' | 'spell' | 'permanent';
+
+export interface TargetSpec {
+  kind: TargetKind;
+  /** "up to two target creatures": min 0, max 2. */
+  min: number;
+  max: number;
+  filter: TargetFilter;
+}
+
+// ---------- Effects ----------
+
+/** Counter kinds placed on permanents. */
+export type CounterKind = '+1/+1' | '-1/-1';
+
+/** Who an effect applies to: the targets chosen for a slot, the controller, or each opponent. */
+export type Affected = { slot: number } | 'you' | 'each-opponent';
+
+export type Effect =
+  | { kind: 'damage'; amount: number; to: Affected }
+  /** "Counter target spell unless its controller pays {N}" when `unlessPays` is set. */
+  | { kind: 'counter'; to: Affected; unlessPays?: number }
+  /** "gets +N/+N (and gains …) until end of turn". Negative values shrink. */
+  | { kind: 'pump'; power: number; toughness: number; keywords: Keyword[]; to: Affected }
+  | { kind: 'destroy'; exile: boolean; to: Affected }
+  | { kind: 'draw'; n: number; to: Affected }
+  | { kind: 'gainLife'; n: number; to: Affected }
+  | { kind: 'addCounters'; counter: CounterKind; n: number; to: Affected };
+
+/** A spell's or ability's rules: what it targets and what it does, in text order. */
+export interface AbilitySpec {
+  targets: TargetSpec[];
+  effects: Effect[];
+}
+
+const WORD_NUMBERS: Record<string, number> = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7 };
+const toNumber = (s: string) => WORD_NUMBERS[s.toLowerCase()] ?? Number(s);
+const NUMBER = '(?:a|an|one|two|three|four|five|six|seven|\\d+)';
+
+const NOUNS: Record<string, string> = {
+  creature: 'creature', creatures: 'creature', player: 'player', players: 'player', opponent: 'opponent', opponents: 'opponent',
+  permanent: 'permanent', permanents: 'permanent', artifact: 'artifact', artifacts: 'artifact', enchantment: 'enchantment',
+  enchantments: 'enchantment', land: 'land', lands: 'land', planeswalker: 'planeswalker', planeswalkers: 'planeswalker',
+  spell: 'spell', spells: 'spell', battle: 'battle', battles: 'battle',
+};
+
+/**
+ * Parses a target phrase such as "target creature", "up to two target creatures you control",
+ * "target nonblack creature", "target artifact or enchantment", "any target", "target creature spell".
+ * Returns null for anything it doesn't fully understand, so unknown restrictions are never ignored.
+ */
+export function parseTargetPhrase(phrase: string): TargetSpec | null {
+  let text = phrase.trim().toLowerCase();
+  if (text === 'any target') return { kind: 'any', min: 1, max: 1, filter: {} };
+  const head = text.match(new RegExp(`^(?:(up to) (${NUMBER}) |(${NUMBER}) )?targets? (.+)$`));
+  if (!head) return null;
+  const count = toNumber(head[2] ?? head[3] ?? '1');
+  const [min, max] = head[1] ? [0, count] : [count, count];
+  text = head[4];
+  const filter: TargetFilter = {};
+
+  // Trailing clauses.
+  const isKeyword = (w: string): w is Keyword => (KEYWORDS as readonly string[]).includes(w);
+  // Each returns false when the clause isn't understood.
+  const suffixes: [RegExp, (m: RegExpMatchArray) => boolean][] = [
+    [/ you control$/, () => !!(filter.controller = 'you')],
+    [/ (?:an opponent controls|you don't control)$/, () => !!(filter.controller = 'opponent')],
+    [/ with mana value (\d+) or less$/, (m) => ((filter.maxManaValue = Number(m[1])), true)],
+    [/ with power (\d+) or greater$/, (m) => ((filter.minPower = Number(m[1])), true)],
+    [/ with power (\d+) or less$/, (m) => ((filter.maxPower = Number(m[1])), true)],
+    [/ without ([a-z ]+)$/, (m) => isKeyword(m[1]) && !!(filter.withoutKeyword = m[1])],
+    [/ with ([a-z ]+)$/, (m) => isKeyword(m[1]) && !!(filter.keyword = m[1])],
+  ];
+  for (let again = true; again; ) {
+    again = false;
+    for (const [re, apply] of suffixes) {
+      const m = text.match(re);
+      if (!m) continue;
+      if (!apply(m)) return null;
+      text = text.slice(0, m.index).trim();
+      again = true;
+    }
+  }
+
+  if (text.startsWith('attacking or blocking ')) {
+    filter.inCombat = true;
+    text = text.slice('attacking or blocking '.length);
+  }
+  // "creature or planeswalker", "artifact, enchantment, or land", "instant or sorcery spell"
+  const words = text.replace(/,? or |, /g, ' | ').split(' ');
+  const nouns = new Set<string>();
+  const adjectiveTypes: CardType[] = [];
+  for (const w of words) {
+    if (w === '|' || w === '') continue;
+    if (NOUNS[w]) nouns.add(NOUNS[w]);
+    else if (w === 'tapped' || w === 'untapped') filter.tapped = w === 'tapped';
+    else if (w === 'attacking') filter.attacking = true;
+    else if (w === 'blocking') filter.blocking = true;
+    else if (COLOR_WORDS[w]) (filter.colors ??= []).push(COLOR_WORDS[w]);
+    else if (w.startsWith('non') && COLOR_WORDS[w.slice(3).replace('-', '')]) (filter.nonColors ??= []).push(COLOR_WORDS[w.slice(3).replace('-', '')]);
+    else if (w.startsWith('non') && CARD_TYPES.includes(w.slice(3).replace('-', '') as CardType)) (filter.nonTypes ??= []).push(w.slice(3).replace('-', '') as CardType);
+    else if (CARD_TYPES.includes(w as CardType)) adjectiveTypes.push(w as CardType); // "creature spell", "instant or sorcery spell"
+    else return null;
+  }
+  if (!nouns.size) return null;
+  // A type word in a list is a noun: "target instant or sorcery" (no "spell" word) isn't a permanent.
+  if (adjectiveTypes.length && !nouns.has('spell')) {
+    if (adjectiveTypes.some((t) => t === 'instant' || t === 'sorcery')) return null;
+    for (const t of adjectiveTypes) nouns.add(t);
+  }
+
+  if (nouns.has('spell')) {
+    // "creature spell", "instant or sorcery spell": the other words are the spell's types.
+    const types = [...nouns].filter((n) => n !== 'spell');
+    if (types.some((t) => !CARD_TYPES.includes(t as CardType))) return null;
+    if (types.length) filter.types = types as CardType[];
+    return { kind: 'spell', min, max, filter };
+  }
+  const players = [...nouns].filter((n) => n === 'player' || n === 'opponent');
+  const permanents = [...nouns].filter((n) => n !== 'player' && n !== 'opponent');
+  if (nouns.has('opponent')) filter.controller = 'opponent';
+  if (!permanents.length) return { kind: 'player', min, max, filter };
+  // Planeswalkers and battles aren't simulated yet: "creature or planeswalker" means creature.
+  const kinds = permanents.filter((n) => n !== 'planeswalker' && n !== 'battle');
+  if (players.length) {
+    if (!kinds.length) return { kind: 'player', min, max, filter }; // "target player or planeswalker"
+    return kinds.length === 1 && kinds[0] === 'creature' ? { kind: 'any', min, max, filter } : null;
+  }
+  if (!kinds.length) return null;
+  if (kinds.length === 1 && kinds[0] === 'creature') return { kind: 'creature', min, max, filter };
+  if (!kinds.includes('permanent')) filter.types = kinds as CardType[];
+  return { kind: 'permanent', min, max, filter };
+}
+
+// "target …" up to a clause boundary; parsed by parseTargetPhrase.
+const TARGET = `(?:any target|(?:up to ${NUMBER} )?(?:${NUMBER} )?targets? [a-z0-9 ,'-]+?)`;
+/** Where a target phrase ends when nothing specific follows it. */
+const END = '(?=\\.|\\n|$|,? then |,? and )';
+const KEYWORD_LIST = `((?:${KEYWORDS.join('|')})(?:(?:,? and |, )(?:${KEYWORDS.join('|')}))*)`;
+
+/** Reads "flying and trample" / "first strike, vigilance, and lifelink". */
+const keywordList = (s: string | undefined) =>
+  (s ?? '').split(/,? and |, /).map((k) => k.trim()).filter(Boolean) as Keyword[];
+
+/**
+ * Recognizes common effects in rules text (a spell's text, or later an ability's).
+ * Anything else is not simulated. `name` is the card's own name, for "Shock deals 2 damage…".
+ */
+export function parseAbilityText(text: string): AbilitySpec {
+  const targets: TargetSpec[] = [];
   const effects: Effect[] = [];
+  /** Adds a target slot for the phrase, if understood and accepted by the effect. */
+  const slotFor = (phrase: string, accept: (spec: TargetSpec) => boolean = () => true): Affected | null => {
+    const spec = parseTargetPhrase(phrase);
+    if (!spec || !accept(spec)) return null;
+    targets.push(spec);
+    return { slot: targets.length - 1 };
+  };
+  // Effects are matched one pattern at a time but kept in text order, so slot numbers follow the text.
+  const matches: { at: number; run: () => Effect | null }[] = [];
+  const scan = (re: RegExp, make: (m: RegExpMatchArray) => Effect | null) => {
+    for (const m of text.matchAll(re)) matches.push({ at: m.index!, run: () => make(m) });
+  };
 
-  const dmg = text.match(
-    /deals (\d+) damage to (any target|target creature or planeswalker|target creature|target player or planeswalker|target player|target opponent or planeswalker|target opponent|each opponent)/i,
-  );
-  if (dmg) {
-    const t = dmg[2].toLowerCase();
-    const target: DamageTarget =
-      t === 'any target' ? 'any' : t.startsWith('target creature') ? 'creature' : t === 'each opponent' ? 'each-opponent' : 'player';
-    effects.push({ kind: 'damage', amount: Number(dmg[1]), target });
+  scan(new RegExp(`deals (\\d+) damage to (each opponent|${TARGET})${END}`, 'gi'), (m) => {
+    const to = m[2].toLowerCase() === 'each opponent' ? 'each-opponent' : slotFor(m[2]);
+    return to && { kind: 'damage', amount: Number(m[1]), to };
+  });
+  scan(new RegExp(`\\bcounter (${TARGET})(?:\\.|,| unless its controller pays \\{(\\d+)\\}\\.)`, 'gi'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'spell');
+    return to && { kind: 'counter', to, ...(m[2] ? { unlessPays: Number(m[2]) } : {}) };
+  });
+  scan(new RegExp(`(${TARGET}) (?:each )?gets? ([+-]\\d+)\\/([+-]\\d+)(?: and gains? ${KEYWORD_LIST})? until end of turn`, 'gi'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'creature');
+    return to && { kind: 'pump', power: Number(m[2]), toughness: Number(m[3]), keywords: keywordList(m[4]), to };
+  });
+  scan(new RegExp(`(${TARGET}) gains? ${KEYWORD_LIST} until end of turn`, 'gi'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'creature');
+    return to && { kind: 'pump', power: 0, toughness: 0, keywords: keywordList(m[2]), to };
+  });
+  scan(new RegExp(`\\b(destroy|exile) (${TARGET})${END}`, 'gi'), (m) => {
+    const to = slotFor(m[2], (spec) => spec.kind === 'creature' || spec.kind === 'permanent');
+    return to && { kind: 'destroy', exile: m[1].toLowerCase() === 'exile', to };
+  });
+  scan(new RegExp(`\\bput (${NUMBER}) ([+-]1\\/[+-]1) counters? on (${TARGET})${END}`, 'gi'), (m) => {
+    const to = slotFor(m[3], (spec) => spec.kind === 'creature');
+    return to && { kind: 'addCounters', counter: m[2] as CounterKind, n: toNumber(m[1]), to };
+  });
+  scan(new RegExp(`\\bdraw (${NUMBER}) cards?\\b`, 'gi'), (m) => ({ kind: 'draw', n: toNumber(m[1]), to: 'you' }));
+  scan(/\byou gain (\d+) life\b/gi, (m) => ({ kind: 'gainLife', n: Number(m[1]), to: 'you' }));
+
+  for (const { run } of matches.sort((a, b) => a.at - b.at)) {
+    const effect = run();
+    if (effect) effects.push(effect);
   }
-
-  const counter = text.match(/\bcounter target (noncreature |creature )?spell\b/i);
-  if (counter) {
-    const filter = (counter[1]?.trim().toLowerCase() ?? 'any') as CounterFilter;
-    effects.push({ kind: 'counter', filter });
-  }
-
-  const pump = text.match(/target creature gets \+(\d+)\/\+(\d+) until end of turn/i);
-  if (pump) effects.push({ kind: 'pump', power: Number(pump[1]), toughness: Number(pump[2]) });
-
-  const removal = text.match(/\b(destroy|exile) target (?:[\w-]+ )?creature\b/i);
-  if (removal) effects.push({ kind: 'destroy', exile: removal[1].toLowerCase() === 'exile' });
-
-  const draw = text.match(/\bdraw (a|one|two|three|four|five|\d+) cards?\b/i);
-  if (draw) effects.push({ kind: 'draw', n: toNumber(draw[1]) });
-
-  const gain = text.match(/\byou gain (\d+) life\b/i);
-  if (gain) effects.push({ kind: 'gainLife', n: Number(gain[1]) });
-
-  return effects;
+  return { targets, effects };
 }
 
-/** What the spell needs to target, if anything (one target per spell). */
-export function targetKind(effects: Effect[]): TargetKind | null {
-  for (const e of effects) {
-    if (e.kind === 'destroy' || e.kind === 'pump') return 'creature';
-    if (e.kind === 'counter') return 'spell';
-    if (e.kind === 'damage' && e.target !== 'each-opponent') return e.target;
-  }
-  return null;
+/** The rules of an instant or sorcery, from its front face text. Other cards have none. */
+export function spellSpec(card: Card): AbilitySpec {
+  if (!isInstantOrSorcery(card)) return { targets: [], effects: [] };
+  return parseAbilityText(frontText(card));
 }
+
+/** Just the effects of an instant or sorcery. */
+export const parseEffects = (card: Card): Effect[] => spellSpec(card).effects;

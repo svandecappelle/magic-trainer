@@ -3,7 +3,7 @@ import type { Card } from '../../types';
 import { botAction, fallbackAction } from './bot';
 import { actor, apply, IllegalAction, newGame, type GameState, type Permanent, type PlayerId } from './engine';
 import { hasInstantSpeed } from './rules';
-import { findPayment, manaColors, parseCost, parseEffects } from './rules';
+import { findPayment, manaColors, parseCost, parseEffects, spellSpec } from './rules';
 
 let n = 0;
 function card(partial: Partial<Card> & { name: string }): Card {
@@ -24,7 +24,7 @@ function board(perms: { card: Card; controller: PlayerId; tapped?: boolean; sick
   s.players[0].hand = hand.map((c, i) => ({ iid: `h${i}`, card: c }));
   s.battlefield = perms.map((x, i): Permanent => ({
     iid: `p${i}`, card: x.card, controller: x.controller, tapped: x.tapped ?? false, sick: x.sick ?? false, damage: 0, deathtouched: false,
-    pumpPower: 0, pumpToughness: 0,
+    counters: {}, boosts: [],
   }));
   return s;
 }
@@ -52,11 +52,14 @@ describe('rules', () => {
   it('reads mana abilities and spell effects', () => {
     expect(manaColors(card({ name: 'Elves', oracleText: '{T}: Add {G}.' }))).toEqual(['G']);
     expect(manaColors(card({ name: 'City', typeLine: 'Land', oracleText: '{T}: Add one mana of any color.' }))).toHaveLength(5);
-    expect(parseEffects(bolt)).toEqual([{ kind: 'damage', amount: 3, target: 'any' }]);
+    expect(spellSpec(bolt)).toEqual({
+      targets: [{ kind: 'any', min: 1, max: 1, filter: {} }],
+      effects: [{ kind: 'damage', amount: 3, to: { slot: 0 } }],
+    });
     const stp = card({ name: 'StP', typeLine: 'Instant', oracleText: 'Exile target creature. Its controller gains life equal to its power.' });
-    expect(parseEffects(stp)).toEqual([{ kind: 'destroy', exile: true }]);
+    expect(parseEffects(stp)).toEqual([{ kind: 'destroy', exile: true, to: { slot: 0 } }]);
     const divination = card({ name: 'Div', typeLine: 'Sorcery', oracleText: 'Draw two cards.' });
-    expect(parseEffects(divination)).toEqual([{ kind: 'draw', n: 2 }]);
+    expect(parseEffects(divination)).toEqual([{ kind: 'draw', n: 2, to: 'you' }]);
   });
 });
 
@@ -128,9 +131,9 @@ describe('bot', () => {
     const s = board([{ card: mountain, controller: 1 }, { card: creature('Bear', 2, 2), controller: 0 }]);
     s.active = 1;
     s.players[1].hand = [{ iid: 'b', card: bolt }];
-    expect(botAction(s)).toEqual({ type: 'cast', iid: 'b', target: { kind: 'permanent', iid: 'p1' } });
+    expect(botAction(s)).toEqual({ type: 'cast', iid: 'b', targets: [[{ kind: 'permanent', iid: 'p1' }]] });
     s.players[0].life = 3;
-    expect(botAction(s)).toEqual({ type: 'cast', iid: 'b', target: { kind: 'player', player: 0 } });
+    expect(botAction(s)).toEqual({ type: 'cast', iid: 'b', targets: [[{ kind: 'player', player: 0 }]] });
   });
 
   it('plays full bot-vs-bot games to completion', () => {
@@ -213,7 +216,7 @@ describe('instant speed', () => {
     let s = apply(base, { type: 'cast', iid: 'h0' });
     expect(s.stack).toHaveLength(1);
     expect(actor(s)).toBe(1);
-    expect(() => apply(s, { type: 'cast', iid: 'o0', target: { kind: 'spell', iid: 'h0' } })).toThrow(/counterFilter/);
+    expect(() => apply(s, { type: 'cast', iid: 'o0', target: { kind: 'spell', iid: 'h0' } })).toThrow(/illegalTarget/);
     s = apply(s, { type: 'cast', iid: 'o1', target: { kind: 'spell', iid: 'h0' } });
     expect(s.stack).toHaveLength(0);
     expect(s.priority).toBeNull();
@@ -233,7 +236,7 @@ describe('instant speed', () => {
     expect(s.step).toBe('main2');
     expect(s.battlefield.map((p) => p.card.name).sort()).toEqual(['Bear', 'Forest']);
     s = apply(s, { type: 'pass' }); // end turn
-    expect(s.battlefield.find((p) => p.card.name === 'Bear')!.pumpPower).toBe(0);
+    expect(s.battlefield.find((p) => p.card.name === 'Bear')!.boosts).toEqual([]);
   });
 
   it('offers an end-of-turn window, and casting a sorcery there is refused', () => {
@@ -323,7 +326,7 @@ describe('bot with instants', () => {
     );
     s.players[0].hand = [{ iid: 'h0', card: bolt }];
     s = apply(s, { type: 'cast', iid: 'h0', target: { kind: 'permanent', iid: 'p1' } });
-    expect(botAction(s)).toEqual({ type: 'cast', iid: 'o0', target: { kind: 'permanent', iid: 'p1' } });
+    expect(botAction(s)).toEqual({ type: 'cast', iid: 'o0', targets: [[{ kind: 'permanent', iid: 'p1' }]] });
 
     const m = newGame({ decks: [Array(40).fill(bolt), Array(40).fill(bolt)], names: ['A', 'B'], first: 0 });
     expect(botAction(m)).toEqual({ type: 'mulligan' });

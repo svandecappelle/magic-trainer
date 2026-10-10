@@ -1,3 +1,4 @@
+import type { Keyword } from '../lib/engine/rules';
 import type { ErrorMessages, GoldfishLogMessages, LogMessages } from './types';
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -5,6 +6,11 @@ const fmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2, minimumFr
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 const percent = new Intl.NumberFormat('en-US', { style: 'percent', maximumFractionDigits: 1, minimumFractionDigits: 1 });
 const lists = new Intl.ListFormat('en', { type: 'conjunction' });
+const signed = (n: number) => (n < 0 ? `${n}` : `+${n}`);
+const keywordNames: Record<Keyword, string> = {
+  flying: 'flying', reach: 'reach', haste: 'haste', vigilance: 'vigilance', trample: 'trample', deathtouch: 'deathtouch',
+  lifelink: 'lifelink', defender: 'defender', 'first strike': 'first strike', 'double strike': 'double strike', menace: 'menace', flash: 'flash',
+};
 
 const log: LogMessages = {
   goesFirst: (e, c) => (c.isMe(e.p) ? 'You go first' : `${c.name(e.p)} goes first`),
@@ -14,11 +20,8 @@ const log: LogMessages = {
   playLand: (e, c) => `${c.isMe(e.p) ? 'You play' : `${c.name(e.p)} plays`} ${c.card(e.card)}`,
   cast: (e, c) => {
     const who = c.isMe(e.p) ? 'You cast' : `${c.name(e.p)} casts`;
-    const target =
-      e.targetCard ? ` targeting ${c.card(e.targetCard)}`
-      : e.targetPlayer !== undefined ? ` targeting ${c.isMe(e.targetPlayer) ? 'you' : c.name(e.targetPlayer)}`
-      : '';
-    return `${who} ${c.card(e.card)}${target}`;
+    const names = (e.targets ?? []).map((t) => ('card' in t ? c.card(t.card) : c.isMe(t.p) ? 'you' : c.name(t.p)));
+    return `${who} ${c.card(e.card)}${names.length ? ` targeting ${c.list(names)}` : ''}`;
   },
   enters: (e, c) => `${c.card(e.card)} enters the battlefield`,
   attack: (e, c) => `${c.isMe(e.p) ? 'You attack' : `${c.name(e.p)} attacks`} with ${c.list(e.cards.map(c.card))}`,
@@ -28,7 +31,13 @@ const log: LogMessages = {
   dies: (e, c) => `${c.card(e.card)} dies`,
   destroyed: (e, c) => `${c.card(e.card)} is destroyed`,
   exiled: (e, c) => `${c.card(e.card)} is exiled`,
-  pump: (e, c) => `${c.card(e.card)} gets +${e.power}/+${e.toughness} until end of turn`,
+  pump: (e, c) => {
+    const stats = e.power || e.toughness ? `gets ${signed(e.power)}/${signed(e.toughness)}` : '';
+    const gains = e.keywords.length ? `gains ${c.list(e.keywords.map((k) => keywordNames[k]))}` : '';
+    return `${c.card(e.card)} ${[stats, gains].filter(Boolean).join(' and ')} until end of turn`;
+  },
+  counters: (e, c) => `${c.card(e.card)} gets ${e.n === 1 ? `a ${e.counter} counter` : `${e.n} ${e.counter} counters`}`,
+  paid: (e, c) => `${c.isMe(e.p) ? 'You pay' : `${c.name(e.p)} pays`} {${e.n}}: ${c.card(e.card)} is not countered`,
   countered: (e, c) => `${c.card(e.card)} is countered`,
   fizzles: (e, c) => `${c.card(e.card)} fizzles: its target is gone`,
   notSimulated: (e, c) => `(${c.card(e.card)}'s effect is not simulated)`,
@@ -69,7 +78,11 @@ const errors: ErrorMessages = {
   castTiming: () => 'Spells can only be cast in your main phase (or instants when you get priority)',
   needsTarget: (p) => `${p.card} needs a target`,
   targetMustBe: (p) => `The target must be ${en.game.targetKinds[p.kind as keyof typeof en.game.targetKinds] ?? p.kind}`,
-  counterFilter: (p) => `${p.card} can only counter ${p.filter} spells`,
+  tooManyTargets: (p) => `Too many targets for ${p.card}`,
+  illegalTarget: (p) => `${p.card} can't target that`,
+  makeChoiceFirst: () => 'Make the pending choice first',
+  nothingToChoose: () => 'There is nothing to choose',
+  badChoice: () => 'That choice is not allowed',
   notEnoughMana: (p) => `Not enough mana for ${p.card}`,
   declareBlockersFirst: () => 'Declare blockers (or no blocks) to continue',
   notAttackStep: () => 'Not the declare attackers step',
@@ -305,7 +318,7 @@ export const en = {
     changeDecks: 'Change decks',
     botName: 'Bot',
     rules:
-      'Simplified rules. London mulligans; instants and flash cards can be cast when you get priority: in response to a spell, after attackers or blockers are declared, and at end of turn. You are only asked when you hold something castable, unless you turn on full control during a game. Combat supports flying, reach, haste, vigilance, trample, deathtouch, lifelink, defender, first strike, double strike and menace. Spells that deal damage, destroy/exile a creature, counter a spell, pump a creature, draw cards or gain life are automated; other effects (including creature abilities and triggers) are not simulated yet.',
+      'Simplified rules. London mulligans; instants and flash cards can be cast when you get priority: in response to a spell, after attackers or blockers are declared, and at end of turn. You are only asked when you hold something castable, unless you turn on full control during a game. Combat supports flying, reach, haste, vigilance, trample, deathtouch, lifelink, defender, first strike, double strike and menace. Spells that deal damage, destroy or exile, counter a spell (also "unless its controller pays"), give +N/+N, -N/-N or keywords, put +1/+1 or -1/-1 counters, draw cards or gain life are automated, including several targets and restrictions such as "nonblack"; other effects (including creature abilities and triggers) are not simulated yet. See TODO.md for what comes next.',
     buildDeck: 'Build a deck',
     bringYourOwn: 'to bring your own.',
     yourDecks: 'Your decks',
@@ -345,8 +358,37 @@ export const en = {
     nameYou: (name: string) => `${name} (you)`,
     zones: (library: number, hand: number, graveyard: number) => `Library ${library} · Hand ${hand} · Graveyard ${graveyard}`,
     steps: { mulligan: 'Mulligans', main1: 'Main 1', attack: 'Attackers', block: 'Blockers', main2: 'Main 2' },
+    phases: { begin: 'Beginning', main1: 'Main 1', combat: 'Combat', block: 'Blockers', main2: 'Main 2', end: 'End' },
+    turnBanner: (mine: boolean, name: string) => (mine ? 'Your turn' : `${name}'s turn`),
+    turnOf: (mine: boolean, name: string) => (mine ? 'Your turn' : `${name}'s turn`),
+    attackAll: 'Attack with all',
+    clearSelection: 'Clear',
+    keyHint: 'Space',
+    zoneNames: { library: 'Library', hand: 'Hand', graveyard: 'Graveyard', exile: 'Exile' },
+    emptyZone: 'Empty',
+    close: 'Close',
+    target: 'Target',
     turnLabel: (n: number, step: string) => `Turn ${n} · ${step}`,
-    targetKinds: { any: 'a creature or player', creature: 'a creature', player: 'a player', spell: 'a spell on the stack' },
+    targetKinds: { any: 'a creature or player', creature: 'a creature', player: 'a player', spell: 'a spell on the stack', permanent: 'a permanent' },
+    /** Targets picked so far, while choosing several. */
+    targetsPicked: (n: number, min: number, max: number) =>
+      min === max ? `${n}/${max} chosen` : `${n} chosen (${min === 0 ? 'up to' : `${min} to`} ${max})`,
+    doneTargeting: 'Done',
+    choosing: (name: string) => `${name} is making a choice…`,
+    choice: {
+      cleanupDiscard: (p: { n: number }) => `End of turn: discard ${plural(p.n, 'card', 'cards')} to get down to seven.`,
+      payOrCounter: (p: { card: string; n: number }) => `Pay {${p.n}}, or ${p.card} is countered?`,
+      arrange: 'Put each card where you want it, then confirm.',
+      mode: (min: number, max: number) => (min === max ? `Choose ${plural(max, 'mode', 'modes')}.` : `Choose ${min} to ${max} modes.`),
+      cards: (min: number, max: number) => (min === max ? `Choose ${plural(max, 'card', 'cards')}.` : `Choose ${min} to ${max} cards.`),
+    },
+    payN: (n: number) => `Pay {${n}}`,
+    dontPay: "Don't pay",
+    yes: 'Yes',
+    no: 'No',
+    confirm: 'Confirm',
+    arrangeZones: { top: 'Top', bottom: 'Bottom', graveyard: 'Graveyard' },
+    counters: (counter: string, n: number) => `${counter} ×${n}`,
     windows: {
       begin: (myTurn: boolean): string =>
         myTurn ? 'Start of your turn. Cast an instant, or pass.' : "Start of the opponent's turn. Cast an instant, or pass.",

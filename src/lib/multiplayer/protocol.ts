@@ -48,5 +48,12 @@ export function redact(state: GameState, viewer: PlayerId): GameState {
     library: hide(p.library),
     hand: i === viewer ? p.hand : hide(p.hand),
   })) as [PlayerState, PlayerState];
-  return { ...state, players, seed: 0 };
+  // A choice among hidden cards (your hand, your library) is only shown to the player making it.
+  let pending = state.pending;
+  if (pending && pending.choice.player !== viewer) {
+    const c = pending.choice;
+    if (c.kind === 'cards') pending = { ...pending, choice: { ...c, options: hide(c.options) } };
+    if (c.kind === 'arrange') pending = { ...pending, choice: { ...c, cards: hide(c.cards) } };
+  }
+  return { ...state, players, pending, seed: 0 };
 }

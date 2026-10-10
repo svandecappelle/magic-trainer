@@ -66,7 +66,12 @@ describe('i18n', () => {
     expect(logText(en, attack, ['Alice', 'Bob'], 0)).toBe('You attack with Goblin and Ogre');
     expect(logText(en, attack, ['Alice', 'Bob'], 1)).toBe('Alice attacks with Goblin and Ogre');
     expect(logText(fr, attack, ['Alice', 'Bob'], 0)).toBe('Vous attaquez avec Goblin et Ogre');
-    expect(logText(fr, { k: 'cast', p: 1, card: 'Shock', targetPlayer: 0 }, ['Alice', 'Bob'], 0)).toBe('Bob lance Shock en vous ciblant');
+    expect(logText(fr, { k: 'cast', p: 1, card: 'Shock', targets: [{ p: 0 }] }, ['Alice', 'Bob'], 0)).toBe('Bob lance Shock en vous ciblant');
+    const growth: LogEntry = { k: 'pump', card: 'Rancor', power: 2, toughness: 0, keywords: ['trample'] };
+    expect(logText(en, growth, ['Alice', 'Bob'], 0)).toBe('Rancor gets +2/+0 and gains trample until end of turn');
+    expect(logText(fr, growth, ['Alice', 'Bob'], 0)).toBe("Rancor gagne +2/+0 et le piétinement jusqu'à la fin du tour");
+    expect(logText(en, { k: 'pump', card: 'Bear', power: -3, toughness: -3, keywords: [] }, ['A', 'B'], 0)).toBe('Bear gets -3/-3 until end of turn');
+    expect(logText(en, { k: 'cast', p: 0, card: 'Bolt', targets: [{ card: 'Bear' }, { p: 1 }] }, ['A', 'B'], 0)).toBe('You cast Bolt targeting Bear and B');
     expect(fr.home.summary(1, 0)).toBe('1 deck · 0 carte unique dans votre collection');
     expect(en.home.summary(1, 0)).toBe('1 deck · 0 unique cards in your collection');
   });

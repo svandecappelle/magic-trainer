@@ -1,4 +1,5 @@
 import type { Messages } from './en';
+import type { Keyword } from '../lib/engine/rules';
 import type { ErrorMessages, GoldfishLogMessages, LogMessages } from './types';
 
 /** French uses the singular for 0 and 1. */
@@ -7,10 +8,17 @@ const fmt = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2, minimumFr
 const money = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'USD' });
 const percent = new Intl.NumberFormat('fr-FR', { style: 'percent', maximumFractionDigits: 1, minimumFractionDigits: 1 });
 const lists = new Intl.ListFormat('fr', { type: 'conjunction' });
+const signed = (n: number) => (n < 0 ? `${n}` : `+${n}`);
+const keywordNames: Record<Keyword, string> = {
+  flying: 'le vol', reach: 'la portée', haste: 'la célérité', vigilance: 'la vigilance', trample: 'le piétinement',
+  deathtouch: 'le contact mortel', lifelink: 'le lien de vie', defender: 'défenseur', 'first strike': "l'initiative",
+  'double strike': 'la double initiative', menace: 'la menace', flash: 'le flash',
+};
 
-const targetKinds = { any: 'une créature ou un joueur', creature: 'une créature', player: 'un joueur', spell: 'un sort sur la pile' };
+const targetKinds = {
+  any: 'une créature ou un joueur', creature: 'une créature', player: 'un joueur', spell: 'un sort sur la pile', permanent: 'un permanent',
+};
 const kindName = (kind: string | number) => targetKinds[kind as keyof typeof targetKinds] ?? String(kind);
-const filterName = (filter: string | number) => (filter === 'creature' ? 'de créature' : filter === 'noncreature' ? 'non-créature' : '');
 
 const log: LogMessages = {
   goesFirst: (e, c) => (c.isMe(e.p) ? 'Vous commencez' : `${c.name(e.p)} commence`),
@@ -20,11 +28,11 @@ const log: LogMessages = {
   playLand: (e, c) => `${c.isMe(e.p) ? 'Vous jouez' : `${c.name(e.p)} joue`} ${c.card(e.card)}`,
   cast: (e, c) => {
     const who = c.isMe(e.p) ? 'Vous lancez' : `${c.name(e.p)} lance`;
-    const target =
-      e.targetCard ? ` en ciblant ${c.card(e.targetCard)}`
-      : e.targetPlayer !== undefined ? (c.isMe(e.targetPlayer) ? ' en vous ciblant' : ` en ciblant ${c.name(e.targetPlayer)}`)
-      : '';
-    return `${who} ${c.card(e.card)}${target}`;
+    const targets = e.targets ?? [];
+    // "en vous ciblant" when you are the only target.
+    if (targets.length === 1 && 'p' in targets[0] && c.isMe(targets[0].p)) return `${who} ${c.card(e.card)} en vous ciblant`;
+    const names = targets.map((t) => ('card' in t ? c.card(t.card) : c.isMe(t.p) ? 'vous' : c.name(t.p)));
+    return `${who} ${c.card(e.card)}${names.length ? ` en ciblant ${c.list(names)}` : ''}`;
   },
   enters: (e, c) => `${c.card(e.card)} arrive sur le champ de bataille`,
   attack: (e, c) => `${c.isMe(e.p) ? 'Vous attaquez' : `${c.name(e.p)} attaque`} avec ${c.list(e.cards.map(c.card))}`,
@@ -34,7 +42,13 @@ const log: LogMessages = {
   dies: (e, c) => `${c.card(e.card)} meurt`,
   destroyed: (e, c) => `${c.card(e.card)} est détruit`,
   exiled: (e, c) => `${c.card(e.card)} est exilé`,
-  pump: (e, c) => `${c.card(e.card)} gagne +${e.power}/+${e.toughness} jusqu'à la fin du tour`,
+  pump: (e, c) => {
+    const stats = e.power || e.toughness ? `${signed(e.power)}/${signed(e.toughness)}` : '';
+    const gains = e.keywords.length ? c.list(e.keywords.map((k) => keywordNames[k])) : '';
+    return `${c.card(e.card)} gagne ${[stats, gains].filter(Boolean).join(' et ')} jusqu'à la fin du tour`;
+  },
+  counters: (e, c) => `${c.card(e.card)} reçoit ${e.n === 1 ? `un marqueur ${e.counter}` : `${e.n} marqueurs ${e.counter}`}`,
+  paid: (e, c) => `${c.isMe(e.p) ? 'Vous payez' : `${c.name(e.p)} paie`} {${e.n}} : ${c.card(e.card)} n'est pas contrecarré`,
   countered: (e, c) => `${c.card(e.card)} est contrecarré`,
   fizzles: (e, c) => `${c.card(e.card)} n'a plus de cible et n'a aucun effet`,
   notSimulated: (e, c) => `(l'effet de ${c.card(e.card)} n'est pas simulé)`,
@@ -76,7 +90,11 @@ const errors: ErrorMessages = {
   castTiming: () => 'Les sorts se lancent pendant votre phase principale (ou les éphémères quand vous avez la priorité)',
   needsTarget: (p) => `${p.card} a besoin d'une cible`,
   targetMustBe: (p) => `La cible doit être ${kindName(p.kind)}`,
-  counterFilter: (p) => `${p.card} ne peut contrecarrer que les sorts ${filterName(p.filter)}`,
+  tooManyTargets: (p) => `Trop de cibles pour ${p.card}`,
+  illegalTarget: (p) => `${p.card} ne peut pas cibler cela`,
+  makeChoiceFirst: () => "Faites d'abord le choix en attente",
+  nothingToChoose: () => "Il n'y a rien à choisir",
+  badChoice: () => "Ce choix n'est pas autorisé",
   notEnoughMana: (p) => `Pas assez de mana pour ${p.card}`,
   declareBlockersFirst: () => 'Déclarez les bloqueurs (ou aucun blocage) pour continuer',
   notAttackStep: () => "Ce n'est pas l'étape de déclaration des attaquants",
@@ -312,7 +330,7 @@ export const fr: Messages = {
     changeDecks: 'Changer de decks',
     botName: 'Bot',
     rules:
-      "Règles simplifiées. Mulligan London ; les éphémères et les cartes avec le flash peuvent être lancés quand vous avez la priorité : en réponse à un sort, après la déclaration des attaquants ou des bloqueurs, et en fin de tour. Vous n'êtes sollicité que si vous avez quelque chose à lancer, sauf si vous activez le contrôle total pendant la partie. Le combat gère le vol, la portée, la célérité, la vigilance, le piétinement, le contact mortel, le lien de vie, le défenseur, l'initiative, la double initiative et la menace. Les sorts qui infligent des blessures, détruisent ou exilent une créature, contrecarrent un sort, renforcent une créature, font piocher ou gagner des points de vie sont automatisés ; les autres effets (dont les capacités et déclenchements des créatures) ne sont pas encore simulés.",
+      "Règles simplifiées. Mulligan London ; les éphémères et les cartes avec le flash peuvent être lancés quand vous avez la priorité : en réponse à un sort, après la déclaration des attaquants ou des bloqueurs, et en fin de tour. Vous n'êtes sollicité que si vous avez quelque chose à lancer, sauf si vous activez le contrôle total pendant la partie. Le combat gère le vol, la portée, la célérité, la vigilance, le piétinement, le contact mortel, le lien de vie, le défenseur, l'initiative, la double initiative et la menace. Les sorts qui infligent des blessures, détruisent ou exilent, contrecarrent un sort (y compris « à moins que son contrôleur ne paie »), donnent +N/+N, -N/-N ou des capacités, placent des marqueurs +1/+1 ou -1/-1, font piocher ou gagner des points de vie sont automatisés, avec plusieurs cibles et des restrictions comme « non-noire » ; les autres effets (dont les capacités et déclenchements des créatures) ne sont pas encore simulés. Voir TODO.md pour la suite.",
     buildDeck: 'Créez un deck',
     bringYourOwn: 'pour jouer avec le vôtre.',
     yourDecks: 'Vos decks',
@@ -352,8 +370,36 @@ export const fr: Messages = {
     nameYou: (name) => `${name} (vous)`,
     zones: (library, hand, graveyard) => `Bibliothèque ${library} · Main ${hand} · Cimetière ${graveyard}`,
     steps: { mulligan: 'Mulligans', main1: 'Principale 1', attack: 'Attaquants', block: 'Bloqueurs', main2: 'Principale 2' },
+    phases: { begin: 'Début', main1: 'Principale 1', combat: 'Combat', block: 'Bloqueurs', main2: 'Principale 2', end: 'Fin' },
+    turnBanner: (mine, name) => (mine ? 'Votre tour' : `Tour de ${name}`),
+    turnOf: (mine, name) => (mine ? 'Votre tour' : `Tour de ${name}`),
+    attackAll: 'Attaquer avec tout',
+    clearSelection: 'Effacer',
+    keyHint: 'Espace',
+    zoneNames: { library: 'Bibliothèque', hand: 'Main', graveyard: 'Cimetière', exile: 'Exil' },
+    emptyZone: 'Vide',
+    close: 'Fermer',
+    target: 'Cible',
     turnLabel: (n, step) => `Tour ${n} · ${step}`,
     targetKinds,
+    targetsPicked: (n, min, max) =>
+      min === max ? `${n}/${max} choisie(s)` : `${n} choisie(s) (${min === 0 ? "jusqu'à" : `de ${min} à`} ${max})`,
+    doneTargeting: 'Terminé',
+    choosing: (name) => `${name} fait un choix…`,
+    choice: {
+      cleanupDiscard: (p) => `Fin du tour : défaussez ${plural(p.n, 'carte', 'cartes')} pour revenir à sept.`,
+      payOrCounter: (p) => `Payer {${p.n}}, ou ${p.card} est contrecarré ?`,
+      arrange: 'Placez chaque carte où vous voulez, puis confirmez.',
+      mode: (min, max) => (min === max ? `Choisissez ${plural(max, 'mode', 'modes')}.` : `Choisissez de ${min} à ${max} modes.`),
+      cards: (min, max) => (min === max ? `Choisissez ${plural(max, 'carte', 'cartes')}.` : `Choisissez de ${min} à ${max} cartes.`),
+    },
+    payN: (n) => `Payer {${n}}`,
+    dontPay: 'Ne pas payer',
+    yes: 'Oui',
+    no: 'Non',
+    confirm: 'Confirmer',
+    arrangeZones: { top: 'Dessus', bottom: 'Dessous', graveyard: 'Cimetière' },
+    counters: (counter, n) => `${counter} ×${n}`,
     windows: {
       begin: (myTurn) =>
         myTurn ? 'Début de votre tour. Lancez un éphémère, ou passez.' : 'Début du tour adverse. Lancez un éphémère, ou passez.',
