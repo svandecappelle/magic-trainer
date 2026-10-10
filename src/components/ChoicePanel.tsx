@@ -5,11 +5,18 @@ import { useT } from '../i18n';
 import type { Messages } from '../i18n/en';
 import type { Card } from '../types';
 
-/** The prompt line for a choice the viewer has to make. `card` localizes card names. */
-export function choicePrompt(t: Messages, choice: Choice, card: (englishName: string) => string): string {
+/** The prompt line for a choice the viewer has to make. `card` localizes card names; `names` are the players' names. */
+export function choicePrompt(t: Messages, choice: Choice, card: (englishName: string) => string, names: [string, string]): string {
   const p = choice.params ?? {};
-  if (choice.purpose === 'cleanupDiscard') return t.game.choice.cleanupDiscard({ n: Number(p.n) });
-  if (choice.purpose === 'payOrCounter') return t.game.choice.payOrCounter({ card: card(String(p.card)), n: Number(p.n) });
+  const n = Number(p.n);
+  switch (choice.purpose) {
+    case 'cleanupDiscard': return t.game.choice.cleanupDiscard({ n });
+    case 'payOrCounter': return t.game.choice.payOrCounter({ card: card(String(p.card)), n });
+    case 'discard': return t.game.choice.discard({ n });
+    case 'discardChosen': return t.game.choice.discardChosen({ n, who: names[Number(p.p) as 0 | 1] });
+    case 'scry': return t.game.choice.scry({ n });
+    case 'surveil': return t.game.choice.surveil({ n });
+  }
   if (choice.kind === 'cards') return t.game.choice.cards(choice.min, choice.max);
   if (choice.kind === 'mode') return t.game.choice.mode(choice.min, choice.max);
   return t.game.choice.arrange;

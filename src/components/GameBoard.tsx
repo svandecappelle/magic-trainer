@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
-  actor, apply, canAttack, canBlock, canCastNow, findPermanent, hasKw, hasUsefulTarget, IllegalAction, isLegalTarget, isMainStep, opponent,
-  powerOf, toughnessOf,
+  actor, apply, canAttack, canBlock, canCastNow, findPermanent, hasKw, hasUsefulTarget, IllegalAction, isLegalTarget, isMainStep, maxX, opponent,
+  powerOf, toughnessOf, xCount,
   type Action, type CardInst, type GameState, type Permanent, type PlayerId, type Target,
 } from '../lib/engine/engine';
 import { errorText, logText, useT, type AppError } from '../i18n';
@@ -62,7 +62,9 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
 
   // Selection state for multi-click interactions.
   /** Casting a spell with targets: the slot being filled and the targets picked so far, per slot. */
-  const [targeting, setTargeting] = useState<{ iid: string; spec: AbilitySpec; slot: number; picked: Target[][] } | null>(null);
+  const [targeting, setTargeting] = useState<{ iid: string; spec: AbilitySpec; slot: number; picked: Target[][]; x?: number } | null>(null);
+  /** Choosing X before casting a spell with {X} in its cost. */
+  const [xPick, setXPick] = useState<{ iid: string; card: Card; x: number; max: number } | null>(null);
   const [attackSel, setAttackSel] = useState<string[]>([]);
   const [blockerSel, setBlockerSel] = useState<string | null>(null);
   const [blocks, setBlocks] = useState<Record<string, string[]>>({});
@@ -71,6 +73,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   // Reset selections whenever the game moves on.
   useEffect(() => {
     setTargeting(null);
+    setXPick(null);
     setAttackSel([]);
     setBlockerSel(null);
     setBlocks({});
@@ -111,19 +114,34 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
       setBottomSel((sel) => (sel.includes(iid) ? sel.filter((x) => x !== iid) : [...sel, iid]));
       return;
     }
-    if (targeting?.iid === iid) return setTargeting(null);
+    if (targeting?.iid === iid || xPick?.iid === iid) {
+      setTargeting(null);
+      return setXPick(null);
+    }
     if (isLandCard(card)) return act({ type: 'playLand', iid });
-    const spec = spellSpec(card);
-    if (spec.targets.length) {
+    if (xCount(card)) {
       if (!canCastNow(g, me, card)) {
         return setError({ code: g.priority ? 'cannotCastNow' : 'notEnoughMana', params: { card: show.name(card) } });
       }
-      if (!hasUsefulTarget(g, me, card)) return setError({ code: 'nothingToTarget', params: { card: show.name(card) } });
-      setTargeting({ iid, spec, slot: 0, picked: spec.targets.map(() => []) });
-      setError(null);
-    } else {
-      act({ type: 'cast', iid });
+      const max = maxX(g, me, card);
+      setTargeting(null);
+      setXPick({ iid, card, x: max, max });
+      return setError(null);
     }
+    castWithTargets(iid, card);
+  }
+
+  /** Cast now, or start picking targets first. */
+  function castWithTargets(iid: string, card: Card, x?: number) {
+    const spec = spellSpec(card);
+    const xs = x === undefined ? {} : { x };
+    if (!spec.targets.length) return act({ type: 'cast', iid, ...xs });
+    if (!canCastNow(g, me, card)) {
+      return setError({ code: g.priority ? 'cannotCastNow' : 'notEnoughMana', params: { card: show.name(card) } });
+    }
+    if (!hasUsefulTarget(g, me, card)) return setError({ code: 'nothingToTarget', params: { card: show.name(card) } });
+    setTargeting({ iid, spec, slot: 0, picked: spec.targets.map(() => []), ...xs });
+    setError(null);
   }
 
   const slotSpec = targeting ? targeting.spec.targets[targeting.slot] : null;
@@ -133,7 +151,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   /** Move on to the next target slot, casting the spell after the last one. */
   function nextSlot(tg: NonNullable<typeof targeting>) {
     if (tg.slot + 1 < tg.spec.targets.length) return setTargeting({ ...tg, slot: tg.slot + 1 });
-    act({ type: 'cast', iid: tg.iid, targets: tg.picked });
+    act({ type: 'cast', iid: tg.iid, targets: tg.picked, ...(tg.x === undefined ? {} : { x: tg.x }) });
     setTargeting(null);
   }
 
@@ -222,10 +240,26 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
       );
     }
   } else if (g.pending) {
-    if (g.pending.choice.player === me) prompt = choicePrompt(t, g.pending.choice, show.nameOf);
+    if (g.pending.choice.player === me) prompt = choicePrompt(t, g.pending.choice, show.nameOf, names);
     else prompt = t.game.choosing(oppName);
   } else if (!iAct) {
     prompt = g.priority ? t.game.mayRespond(oppName) : g.step === 'block' ? t.game.choosingBlockers(oppName) : t.game.thinking(oppName);
+  } else if (xPick) {
+    prompt = t.game.chooseX(show.name(xPick.card));
+    const confirm = () => {
+      setXPick(null);
+      castWithTargets(xPick.iid, xPick.card, xPick.x);
+    };
+    primary = confirm;
+    controls = (
+      <>
+        <button className="secondary" onClick={() => setXPick(null)}>{t.common.cancel}</button>
+        <button className="secondary" disabled={xPick.x <= 0} onClick={() => setXPick({ ...xPick, x: xPick.x - 1 })}>−</button>
+        <strong className="x-value">{t.game.xValue(xPick.x)}</strong>
+        <button className="secondary" disabled={xPick.x >= xPick.max} onClick={() => setXPick({ ...xPick, x: xPick.x + 1 })}>+</button>
+        <button className="primary" onClick={confirm}>{t.game.confirm}</button>
+      </>
+    );
   } else if (targeting && slotSpec) {
     const n = targeting.picked[targeting.slot].length;
     const several = slotSpec.max > 1 || slotSpec.min < slotSpec.max;
@@ -286,6 +320,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
         primaryRef.current();
       } else if (e.key === 'Escape') {
         setTargeting(null);
+        setXPick(null);
         setBlockerSel(null);
         setZoneView(null);
       }
@@ -491,7 +526,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
               const playable = isLandCard(card)
                 ? iAct && !g.priority && !g.pending && !g.mulligan && isMainStep(g) && g.active === me && !g.players[me].landPlayed
                 : canCastNow(g, me, card) && hasUsefulTarget(g, me, card);
-              const selected = targeting?.iid === iid || bottomSel.includes(iid);
+              const selected = targeting?.iid === iid || xPick?.iid === iid || bottomSel.includes(iid);
               const offset = i - (myHand.length - 1) / 2;
               return (
                 <div

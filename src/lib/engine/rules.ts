@@ -168,6 +168,7 @@ export interface TargetFilter {
   /** "attacking or blocking creature" */
   inCombat?: boolean;
   maxManaValue?: number;
+  minManaValue?: number;
   minPower?: number;
   maxPower?: number;
 }
@@ -191,19 +192,47 @@ export interface TargetSpec {
 /** Counter kinds placed on permanents. */
 export type CounterKind = '+1/+1' | '-1/-1';
 
-/** Who an effect applies to: the targets chosen for a slot, the controller, or each opponent. */
-export type Affected = { slot: number } | 'you' | 'each-opponent';
+/** Who an effect applies to: the targets chosen for a slot, the controller, or everyone / each opponent. */
+export type Affected = { slot: number } | 'you' | 'each-opponent' | 'each-player';
+
+/** A number in rules text; "X" is the value chosen when casting. */
+export type Amount = number | 'X';
+
+/** Which permanents an "all …" / "each …" effect touches, e.g. "creatures you don't control". */
+export interface Selector {
+  kind: 'creature' | 'permanent';
+  filter: TargetFilter;
+}
+
+/** How a discard is chosen: by the discarding player, at random, or by the spell's controller from a revealed hand. */
+export type DiscardMode = 'choose' | 'random' | 'casterChooses';
 
 export type Effect =
-  | { kind: 'damage'; amount: number; to: Affected }
+  | { kind: 'damage'; amount: Amount; to: Affected }
   /** "Counter target spell unless its controller pays {N}" when `unlessPays` is set. */
   | { kind: 'counter'; to: Affected; unlessPays?: number }
   /** "gets +N/+N (and gains …) until end of turn". Negative values shrink. */
   | { kind: 'pump'; power: number; toughness: number; keywords: Keyword[]; to: Affected }
   | { kind: 'destroy'; exile: boolean; to: Affected }
-  | { kind: 'draw'; n: number; to: Affected }
-  | { kind: 'gainLife'; n: number; to: Affected }
-  | { kind: 'addCounters'; counter: CounterKind; n: number; to: Affected };
+  | { kind: 'draw'; n: Amount; to: Affected }
+  | { kind: 'gainLife'; n: Amount; to: Affected }
+  | { kind: 'loseLife'; n: Amount; to: Affected }
+  | { kind: 'addCounters'; counter: CounterKind; n: Amount; to: Affected }
+  /** `filter` limits what the spell's controller may pick ("a nonland card") with casterChooses. */
+  | { kind: 'discard'; n: Amount; to: Affected; mode: DiscardMode; filter?: TargetFilter }
+  | { kind: 'mill'; n: Amount; to: Affected }
+  | { kind: 'scry'; n: Amount }
+  | { kind: 'surveil'; n: Amount }
+  | { kind: 'tap'; untap: boolean; to: Affected }
+  /** Return to its owner's hand. */
+  | { kind: 'bounce'; to: Affected }
+  | { kind: 'bounceAll'; which: Selector }
+  | { kind: 'destroyAll'; exile: boolean; which: Selector }
+  /** Damage to each matching creature, and optionally to each player or each opponent. */
+  | { kind: 'damageAll'; amount: Amount; which: Selector; players?: 'each-player' | 'each-opponent' }
+  | { kind: 'pumpAll'; power: number; toughness: number; keywords: Keyword[]; which: Selector }
+  /** `a` and `b` deal damage equal to their power to each other; only `a` deals damage when `oneSided` ("bite"). */
+  | { kind: 'fight'; a: { slot: number }; b: { slot: number }; oneSided: boolean };
 
 /** A spell's or ability's rules: what it targets and what it does, in text order. */
 export interface AbilitySpec {
@@ -214,6 +243,9 @@ export interface AbilitySpec {
 const WORD_NUMBERS: Record<string, number> = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7 };
 const toNumber = (s: string) => WORD_NUMBERS[s.toLowerCase()] ?? Number(s);
 const NUMBER = '(?:a|an|one|two|three|four|five|six|seven|\\d+)';
+/** A number or X. */
+const AMOUNT = '(?:a|an|one|two|three|four|five|six|seven|\\d+|X)';
+const toAmount = (s: string): Amount => (s.toUpperCase() === 'X' ? 'X' : toNumber(s));
 
 const NOUNS: Record<string, string> = {
   creature: 'creature', creatures: 'creature', player: 'player', players: 'player', opponent: 'opponent', opponents: 'opponent',
@@ -242,8 +274,9 @@ export function parseTargetPhrase(phrase: string): TargetSpec | null {
   // Each returns false when the clause isn't understood.
   const suffixes: [RegExp, (m: RegExpMatchArray) => boolean][] = [
     [/ you control$/, () => !!(filter.controller = 'you')],
-    [/ (?:an opponent controls|you don't control)$/, () => !!(filter.controller = 'opponent')],
+    [/ (?:an opponent controls|you don't control|your opponents control)$/, () => !!(filter.controller = 'opponent')],
     [/ with mana value (\d+) or less$/, (m) => ((filter.maxManaValue = Number(m[1])), true)],
+    [/ with mana value (\d+) or greater$/, (m) => ((filter.minManaValue = Number(m[1])), true)],
     [/ with power (\d+) or greater$/, (m) => ((filter.minPower = Number(m[1])), true)],
     [/ with power (\d+) or less$/, (m) => ((filter.maxPower = Number(m[1])), true)],
     [/ without ([a-z ]+)$/, (m) => isKeyword(m[1]) && !!(filter.withoutKeyword = m[1])],
@@ -316,6 +349,18 @@ const TARGET = `(?:any target|(?:up to ${NUMBER} )?(?:${NUMBER} )?targets? [a-z0
 const END = '(?=\\.|\\n|$|,? then |,? and )';
 const KEYWORD_LIST = `((?:${KEYWORDS.join('|')})(?:(?:,? and |, )(?:${KEYWORDS.join('|')}))*)`;
 
+/** "nonland", "noncreature, nonland", "instant or sorcery" (card words in "choose a … card"). */
+function cardWordsFilter(words: string): TargetFilter | null {
+  const filter: TargetFilter = {};
+  for (const w of words.toLowerCase().replace(/,? or |, /g, ' ').split(' ').filter(Boolean)) {
+    const type = w.replace(/^non-?/, '') as CardType;
+    if (!CARD_TYPES.includes(type)) return null;
+    if (w.startsWith('non')) (filter.nonTypes ??= []).push(type);
+    else (filter.types ??= []).push(type);
+  }
+  return filter;
+}
+
 /** Reads "flying and trample" / "first strike, vigilance, and lifelink". */
 const keywordList = (s: string | undefined) =>
   (s ?? '').split(/,? and |, /).map((k) => k.trim()).filter(Boolean) as Keyword[];
@@ -335,14 +380,36 @@ export function parseAbilityText(text: string): AbilitySpec {
     return { slot: targets.length - 1 };
   };
   // Effects are matched one pattern at a time but kept in text order, so slot numbers follow the text.
-  const matches: { at: number; run: () => Effect | null }[] = [];
-  const scan = (re: RegExp, make: (m: RegExpMatchArray) => Effect | null) => {
+  const matches: { at: number; run: () => Effect | Effect[] | null }[] = [];
+  const scan = (re: RegExp, make: (m: RegExpMatchArray) => Effect | Effect[] | null) => {
     for (const m of text.matchAll(re)) matches.push({ at: m.index!, run: () => make(m) });
   };
 
-  scan(new RegExp(`deals (\\d+) damage to (each opponent|${TARGET})${END}`, 'gi'), (m) => {
-    const to = m[2].toLowerCase() === 'each opponent' ? 'each-opponent' : slotFor(m[2]);
-    return to && { kind: 'damage', amount: Number(m[1]), to };
+  /** "each player" / "target opponent" / "you" as the subject or object of an effect. */
+  const who = (phrase: string | undefined): Affected | null => {
+    const w = (phrase ?? 'you').toLowerCase();
+    if (w === 'you') return 'you';
+    if (w === 'each opponent') return 'each-opponent';
+    if (w === 'each player') return 'each-player';
+    return slotFor(w, (spec) => spec.kind === 'player');
+  };
+  /** "creatures you don't control" → which permanents an "all"/"each" effect touches. */
+  const selector = (phrase: string): Selector | null => {
+    const spec = parseTargetPhrase(`target ${phrase.replace(/^(?:all|other) /i, '')}`);
+    if (!spec || (spec.kind !== 'creature' && spec.kind !== 'permanent')) return null;
+    return { kind: spec.kind, filter: spec.filter };
+  };
+  const PLAYER = '(target player|target opponent|each player|each opponent|you)';
+
+  scan(new RegExp(`deals (\\d+|X) damage to (each opponent|each player|${TARGET})${END}`, 'gi'), (m) => {
+    const w = m[2].toLowerCase();
+    const to = w === 'each opponent' ? 'each-opponent' : w === 'each player' ? 'each-player' : slotFor(m[2]);
+    return to && { kind: 'damage', amount: toAmount(m[1]), to };
+  });
+  scan(/deals (\d+|X) damage to each (creature[a-z ,'-]*?)(?: and each (player|opponent))?(?=\.)/gi, (m) => {
+    const which = selector(m[2].replace(/^creature/i, 'creatures'));
+    const players = m[3] ? (m[3].toLowerCase() === 'player' ? 'each-player' : 'each-opponent') : undefined;
+    return which && { kind: 'damageAll', amount: toAmount(m[1]), which, ...(players ? { players } : {}) };
   });
   scan(new RegExp(`\\bcounter (${TARGET})(?:\\.|,| unless its controller pays \\{(\\d+)\\}\\.)`, 'gi'), (m) => {
     const to = slotFor(m[1], (spec) => spec.kind === 'spell');
@@ -356,20 +423,98 @@ export function parseAbilityText(text: string): AbilitySpec {
     const to = slotFor(m[1], (spec) => spec.kind === 'creature');
     return to && { kind: 'pump', power: 0, toughness: 0, keywords: keywordList(m[2]), to };
   });
+  scan(new RegExp(`\\b((?:all |other )?creatures(?: you control| you don't control| your opponents control)?) get ([+-]\\d+)\\/([+-]\\d+)(?: and gain ${KEYWORD_LIST})? until end of turn`, 'gi'), (m) => {
+    const which = selector(m[1]);
+    return which && { kind: 'pumpAll', power: Number(m[2]), toughness: Number(m[3]), keywords: keywordList(m[4]), which };
+  });
+  scan(new RegExp(`\\b((?:all |other )?creatures(?: you control| you don't control| your opponents control)?) gain ${KEYWORD_LIST} until end of turn`, 'gi'), (m) => {
+    const which = selector(m[1]);
+    return which && { kind: 'pumpAll', power: 0, toughness: 0, keywords: keywordList(m[2]), which };
+  });
   scan(new RegExp(`\\b(destroy|exile) (${TARGET})${END}`, 'gi'), (m) => {
     const to = slotFor(m[2], (spec) => spec.kind === 'creature' || spec.kind === 'permanent');
     return to && { kind: 'destroy', exile: m[1].toLowerCase() === 'exile', to };
   });
-  scan(new RegExp(`\\bput (${NUMBER}) ([+-]1\\/[+-]1) counters? on (${TARGET})${END}`, 'gi'), (m) => {
-    const to = slotFor(m[3], (spec) => spec.kind === 'creature');
-    return to && { kind: 'addCounters', counter: m[2] as CounterKind, n: toNumber(m[1]), to };
+  scan(new RegExp(`\\b(destroy|exile) (?:all|each) ([a-z0-9 ,'-]+?)${END}`, 'gi'), (m) => {
+    const which = selector(m[2]);
+    return which && { kind: 'destroyAll', exile: m[1].toLowerCase() === 'exile', which };
   });
-  scan(new RegExp(`\\bdraw (${NUMBER}) cards?\\b`, 'gi'), (m) => ({ kind: 'draw', n: toNumber(m[1]), to: 'you' }));
-  scan(/\byou gain (\d+) life\b/gi, (m) => ({ kind: 'gainLife', n: Number(m[1]), to: 'you' }));
+  scan(new RegExp(`\\bput (${AMOUNT}) ([+-]1\\/[+-]1) counters? on (${TARGET})${END}`, 'gi'), (m) => {
+    const to = slotFor(m[3], (spec) => spec.kind === 'creature');
+    return to && { kind: 'addCounters', counter: m[2] as CounterKind, n: toAmount(m[1]), to };
+  });
+  // Drawing: "Draw two cards", "Target player draws X cards", "Each player draws a card".
+  scan(new RegExp(`(?:^|[^a-z])draw (${AMOUNT}) cards?\\b`, 'gi'), (m) => ({ kind: 'draw', n: toAmount(m[1]), to: 'you' }));
+  scan(new RegExp(`${PLAYER} draws (${AMOUNT}) cards?\\b(?! and loses)`, 'gi'), (m) => {
+    const to = who(m[1]);
+    return to && { kind: 'draw', n: toAmount(m[2]), to };
+  });
+  // Sign in Blood: "Target player draws two cards and loses 2 life."
+  scan(new RegExp(`${PLAYER} draws (${AMOUNT}) cards? and loses (\\d+|X) life`, 'gi'), (m) => {
+    const to = who(m[1]);
+    return to && [{ kind: 'draw', n: toAmount(m[2]), to }, { kind: 'loseLife', n: toAmount(m[3]), to }];
+  });
+  // Life.
+  scan(new RegExp(`${PLAYER} gains? (\\d+|X) life\\b`, 'gi'), (m) => {
+    const to = who(m[1]);
+    return to && { kind: 'gainLife', n: toAmount(m[2]), to };
+  });
+  scan(new RegExp(`${PLAYER} loses? (\\d+|X) life\\b`, 'gi'), (m) => {
+    const to = who(m[1]);
+    return to && { kind: 'loseLife', n: toAmount(m[2]), to };
+  });
+  // Discard: "Target player discards two cards", "… discards a card at random", "Draw two cards, then discard a card".
+  scan(new RegExp(`${PLAYER} discards (${AMOUNT}) cards?( at random)?`, 'gi'), (m) => {
+    const to = who(m[1]);
+    return to && { kind: 'discard', n: toAmount(m[2]), to, mode: m[3] ? 'random' : 'choose' };
+  });
+  scan(new RegExp(`(?:^|[.,] *|then )discard (${AMOUNT}) cards?( at random)?`, 'gi'), (m) => ({
+    kind: 'discard', n: toAmount(m[1]), to: 'you', mode: m[2] ? 'random' : 'choose',
+  }));
+  // Duress / Thoughtseize: "Target opponent reveals their hand. You choose a nonland card from it. That player discards that card."
+  scan(/(target player|target opponent) reveals (?:their|his or her) hand\. you choose an? ([a-z, -]+?) card from it\. that player discards that card/gi, (m) => {
+    const filter = cardWordsFilter(m[2]);
+    const to = filter && who(m[1]);
+    return to && filter && { kind: 'discard', n: 1, to, mode: 'casterChooses', filter };
+  });
+  // Mill.
+  scan(new RegExp(`${PLAYER} mills? (${AMOUNT}) cards?`, 'gi'), (m) => {
+    const to = who(m[1]);
+    return to && { kind: 'mill', n: toAmount(m[2]), to };
+  });
+  scan(new RegExp(`(?:^|[.,] *|then )mill (${AMOUNT}) cards?`, 'gi'), (m) => ({ kind: 'mill', n: toAmount(m[1]), to: 'you' }));
+  scan(/\bscry (\d+|X)\b/gi, (m) => ({ kind: 'scry', n: toAmount(m[1]) }));
+  scan(/\bsurveil (\d+|X)\b/gi, (m) => ({ kind: 'surveil', n: toAmount(m[1]) }));
+  // Tap / untap.
+  scan(new RegExp(`(?:^|[.,] *|then |and )(tap|untap) (${TARGET})${END}`, 'gi'), (m) => {
+    const to = slotFor(m[2], (spec) => spec.kind === 'creature' || spec.kind === 'permanent');
+    return to && { kind: 'tap', untap: m[1].toLowerCase() === 'untap', to };
+  });
+  // Bounce.
+  scan(new RegExp(`\\breturn (${TARGET}) to (?:its|their) (?:owner's|owners') hands?`, 'gi'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'creature' || spec.kind === 'permanent');
+    return to && { kind: 'bounce', to };
+  });
+  scan(/\breturn all ([a-z0-9 ,'-]+?) to (?:its|their) (?:owner's|owners') hands?/gi, (m) => {
+    const which = selector(m[1]);
+    return which && { kind: 'bounceAll', which };
+  });
+  // Fight and "bite".
+  scan(new RegExp(`(${TARGET}) fights (${TARGET}|another target creature)${END}`, 'gi'), (m) => {
+    const a = slotFor(m[1], (spec) => spec.kind === 'creature');
+    const b = a && slotFor(m[2].replace(/^another /i, ''), (spec) => spec.kind === 'creature');
+    return a && b && typeof a === 'object' && typeof b === 'object' ? { kind: 'fight', a, b, oneSided: false } : null;
+  });
+  scan(new RegExp(`(${TARGET}) deals damage equal to its power to (${TARGET}|another target creature)${END}`, 'gi'), (m) => {
+    const a = slotFor(m[1], (spec) => spec.kind === 'creature');
+    const b = a && slotFor(m[2].replace(/^another /i, ''), (spec) => spec.kind === 'creature' || spec.kind === 'any');
+    return a && b && typeof a === 'object' && typeof b === 'object' ? { kind: 'fight', a, b, oneSided: true } : null;
+  });
 
   for (const { run } of matches.sort((a, b) => a.at - b.at)) {
     const effect = run();
-    if (effect) effects.push(effect);
+    if (Array.isArray(effect)) effects.push(...effect);
+    else if (effect) effects.push(effect);
   }
   return { targets, effects };
 }

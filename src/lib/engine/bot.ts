@@ -1,12 +1,13 @@
 import {
   actor, canAttack, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
-  legalTargets, opponent, powerOf, toughnessOf,
+  legalTargets, matching, maxX, opponent, powerOf, toughnessOf, xCount,
   type Action, type Answer, type CardInst, type Choice, type GameState, type Permanent, type PlayerId, type StackItem, type Target,
 } from './engine';
 import {
   creatureValue, hasInstantSpeed, hasKeyword, isCreature, isInstantOrSorcery, isLandCard, manaColors,
-  parseCost, parseEffects, spellSpec, type AbilitySpec, type Effect,
+  parseCost, spellSpec, type AbilitySpec, type Amount, type Effect,
 } from './rules';
+import type { Card } from '../../types';
 
 /**
  * A heuristic opponent. It never looks at hidden information (your hand or library)
@@ -167,7 +168,7 @@ function chooseMainPhaseSpell(s: GameState, me: PlayerId): Action | null {
       if (s.step === 'main2' || (isCreature(card) && hasKeyword(card, 'haste'))) return { type: 'cast', iid };
       continue;
     }
-    const action = castWithGoodTarget(s, me, iid, spellSpec(card));
+    const action = castWithGoodTarget(s, me, { iid, card });
     if (action) return action;
   }
   return null;
@@ -177,12 +178,34 @@ function chooseMainPhaseSpell(s: GameState, me: PlayerId): Action | null {
 
 type Intent = 'harm' | 'help' | 'neutral';
 
-/** Is the effect bad for what it hits (removal, burn, shrinking) or good (pump, +1/+1 counters)? */
+/** The spell's rules with X replaced by a number, so amounts can be compared. */
+function withX(spec: AbilitySpec, x: number): AbilitySpec {
+  const n = (a: Amount) => (a === 'X' ? x : a);
+  const effects = spec.effects.map((e): Effect => {
+    if (e.kind === 'damage' || e.kind === 'damageAll') return { ...e, amount: n(e.amount) };
+    if ('n' in e) return { ...e, n: n(e.n) } as Effect;
+    return e;
+  });
+  return { ...spec, effects };
+}
+const num = (a: Amount) => (a === 'X' ? 0 : a);
+
+/** Is the effect bad for what it hits (removal, burn, discard…) or good (pump, card draw…)? */
 function intentOf(e: Effect): Intent {
-  if (e.kind === 'damage' || e.kind === 'destroy' || e.kind === 'counter') return 'harm';
-  if (e.kind === 'pump') return e.power < 0 || e.toughness < 0 ? 'harm' : 'help';
-  if (e.kind === 'addCounters') return e.counter === '-1/-1' ? 'harm' : 'help';
-  return 'neutral';
+  switch (e.kind) {
+    case 'damage': case 'destroy': case 'counter': case 'loseLife': case 'mill': case 'discard': case 'bounce': case 'bounceAll':
+      return 'harm';
+    case 'tap':
+      return e.untap ? 'neutral' : 'harm';
+    case 'pump':
+      return e.power < 0 || e.toughness < 0 ? 'harm' : 'help';
+    case 'addCounters':
+      return e.counter === '-1/-1' ? 'harm' : 'help';
+    case 'draw': case 'gainLife':
+      return 'help';
+    default:
+      return 'neutral';
+  }
 }
 
 /** Would these effects kill the creature? */
@@ -191,35 +214,100 @@ function kills(perm: Permanent, effects: Effect[]): boolean {
   let toughness = toughnessOf(perm);
   for (const e of effects) {
     if (e.kind === 'destroy') return true;
-    if (e.kind === 'damage') damage += e.amount;
-    if (e.kind === 'pump') toughness += e.toughness;
-    if (e.kind === 'addCounters' && e.counter === '-1/-1') toughness -= e.n;
+    if (e.kind === 'damage' || e.kind === 'damageAll') damage += num(e.amount);
+    if (e.kind === 'pump' || e.kind === 'pumpAll') toughness += e.toughness;
+    if (e.kind === 'addCounters' && e.counter === '-1/-1') toughness -= num(e.n);
   }
   return toughness <= 0 || damage >= toughness;
+}
+
+/**
+ * Value of what a board-wide effect would kill: theirs minus ours.
+ * Wraths are only worth it when they hurt the opponent clearly more.
+ */
+function massValue(s: GameState, me: PlayerId, effects: Effect[]): number {
+  let score = 0;
+  for (const e of effects) {
+    if (e.kind !== 'destroyAll' && e.kind !== 'damageAll' && e.kind !== 'pumpAll' && e.kind !== 'bounceAll') continue;
+    for (const perm of matching(s, me, e.which)) {
+      if (!isCreature(perm.card)) {
+        if (e.kind === 'destroyAll') score += perm.controller === me ? -1 : 1;
+        continue;
+      }
+      // Bounced creatures count for half: they come back.
+      const dead = e.kind === 'destroyAll' || e.kind === 'bounceAll' || kills(perm, [e]);
+      const value = (dead ? creatureValue(perm.card) : e.kind === 'pumpAll' ? (e.power + e.toughness) / 2 : 0) / (e.kind === 'bounceAll' ? 2 : 1);
+      // A pump is good for our creatures; a kill is good on theirs.
+      const good = e.kind === 'pumpAll' && !dead ? perm.controller === me : perm.controller !== me;
+      score += good ? value : -value;
+    }
+  }
+  return score;
 }
 
 const asTarget = (x: Permanent | PlayerId): Target =>
   typeof x === 'number' ? { kind: 'player', player: x } : { kind: 'permanent', iid: x.iid };
 
 /**
- * Cast removal, burn, card draw, life gain or +1/+1 counters if there is a sensible target.
- * Counterspells and pump spells are kept for responses. Only single-target-slot spells.
+ * Cast removal, burn, card draw, discard, board wipes… if there is a sensible target.
+ * Counterspells and pump spells are kept for responses. X is as large as we can pay.
  */
-function castWithGoodTarget(s: GameState, me: PlayerId, iid: string, spec: AbilitySpec, among?: Permanent[]): Action | null {
+function castWithGoodTarget(s: GameState, me: PlayerId, inst: { iid: string; card: Card }, among?: Permanent[]): Action | null {
+  const x = maxX(s, me, inst.card);
+  if (xCount(inst.card) && x === 0) return null; // X = 0 would do nothing
+  const spec = withX(spellSpec(inst.card), x);
   const { effects } = spec;
+  const cast = (targets: Target[][] = []): Action => ({
+    type: 'cast', iid: inst.iid, ...(targets.length ? { targets } : {}), ...(xCount(inst.card) ? { x } : {}),
+  });
   if (!effects.length) return null; // not simulated: casting it would do nothing
   if (effects.some((e) => e.kind === 'counter' || (e.kind === 'pump' && intentOf(e) === 'help'))) return null; // used in response only
-  if (!spec.targets.length) return { type: 'cast', iid };
+  if (effects.some((e) => e.kind === 'tap' && e.untap)) return null;
+
+  const mass = effects.some((e) => e.kind === 'destroyAll' || e.kind === 'damageAll' || e.kind === 'pumpAll' || e.kind === 'bounceAll');
+  if (mass) {
+    if (among) return null;
+    // Positive pumps only before attacking; wipes when they clearly favour us.
+    const pumpOnly = effects.every((e) => e.kind !== 'destroyAll' && e.kind !== 'damageAll' && e.kind !== 'bounceAll' && !(e.kind === 'pumpAll' && e.toughness < 0));
+    if (pumpOnly && !(s.step === 'main1' && s.active === me && creaturesOf(s, me).some(canAttack))) return null;
+    if (massValue(s, me, effects) < (pumpOnly ? 3 : 2)) return null;
+  }
+
+  const fight = effects.find((e) => e.kind === 'fight');
+  if (fight?.kind === 'fight') {
+    const pair = chooseFight(s, me, spec, fight);
+    return pair ? cast(pair) : null;
+  }
+  if (!spec.targets.length) return cast();
   if (spec.targets.length > 1) return null;
   const target = chooseTarget(s, me, spec, among);
-  return target === null ? null : { type: 'cast', iid, targets: [[asTarget(target)]] };
+  return target === null ? null : cast([[asTarget(target)]]);
+}
+
+/** Pick our creature and theirs for a fight or "bite": ours must kill theirs (and survive a real fight). */
+function chooseFight(s: GameState, me: PlayerId, spec: AbilitySpec, e: Extract<Effect, { kind: 'fight' }>): Target[][] | null {
+  const slotA = spec.targets[e.a.slot];
+  const slotB = spec.targets[e.b.slot];
+  const legal = (slot: typeof slotA) => legalTargets(s, me, slot).flatMap((t) => (t.kind === 'permanent' ? [findPermanent(s, t.iid)!] : []));
+  const mine = legal(slotA).filter((x) => x.controller === me).sort((a, b) => powerOf(b) - powerOf(a));
+  const theirs = legal(slotB).filter((x) => x.controller !== me).sort((a, b) => creatureValue(b.card) - creatureValue(a.card));
+  for (const t of theirs) {
+    const m = mine.find((x) => powerOf(x) >= toughnessOf(t) - t.damage && (e.oneSided || powerOf(t) < toughnessOf(x) - x.damage));
+    if (m) {
+      const out: Target[][] = spec.targets.map(() => []);
+      out[e.a.slot] = [{ kind: 'permanent', iid: m.iid }];
+      out[e.b.slot] = [{ kind: 'permanent', iid: t.iid }];
+      return out;
+    }
+  }
+  return null;
 }
 
 /** The best target for slot 0 of a spell, among legal ones (and `among`, if given). */
 function chooseTarget(s: GameState, me: PlayerId, spec: AbilitySpec, among?: Permanent[]): Permanent | PlayerId | null {
   const opp = opponent(me);
   const slot = spec.targets[0];
-  const onSlot = spec.effects.filter((e) => typeof e.to === 'object' && e.to.slot === 0);
+  const onSlot = spec.effects.filter((e) => 'to' in e && typeof e.to === 'object' && e.to.slot === 0);
   const harm = onSlot.some((e) => intentOf(e) === 'harm');
   const legal = legalTargets(s, me, slot);
   const perms = legal
@@ -227,15 +315,29 @@ function chooseTarget(s: GameState, me: PlayerId, spec: AbilitySpec, among?: Per
     .map((t) => findPermanent(s, (t as { iid: string }).iid)!)
     .filter((x) => !among || among.includes(x))
     .sort((a, b) => creatureValue(b.card) - creatureValue(a.card));
+  const canPick = (p: PlayerId) => !among && legal.some((t) => t.kind === 'player' && t.player === p);
 
+  if (slot.kind === 'player') {
+    // Discard, mill, life loss on the opponent; card draw and life gain for us. Drawing outweighs a
+    // little life loss (Sign in Blood goes on ourselves) unless the loss is lethal for the opponent.
+    const lethal = onSlot.some((e) => e.kind === 'loseLife' && num(e.n) >= s.players[opp].life);
+    const p = lethal || (harm && !onSlot.some((e) => e.kind === 'draw')) ? opp : me;
+    if (!canPick(p)) return null;
+    if (onSlot.some((e) => e.kind === 'discard') && !s.players[opp].hand.length) return null;
+    return p;
+  }
   if (harm) {
     const theirs = perms.filter((x) => x.controller === opp);
     const dmg = onSlot.find((e) => e.kind === 'damage');
-    const canGoFace = !among && legal.some((t) => t.kind === 'player' && t.player === opp);
-    if (dmg?.kind === 'damage' && canGoFace && dmg.amount >= s.players[opp].life) return opp;
+    const canGoFace = canPick(opp);
+    if (dmg?.kind === 'damage' && canGoFace && num(dmg.amount) >= s.players[opp].life) return opp;
     const killable = theirs.find((x) => kills(x, onSlot));
     if (killable) return killable;
-    if (onSlot.some((e) => e.kind === 'destroy')) return theirs[0] ?? null;
+    if (onSlot.some((e) => e.kind === 'destroy' || e.kind === 'bounce')) return theirs[0] ?? null;
+    // Tapping: their best untapped creature, before we attack.
+    if (onSlot.some((e) => e.kind === 'tap')) {
+      return s.active === me && s.step === 'main1' ? (theirs.find((x) => !x.tapped && isCreature(x.card)) ?? null) : null;
+    }
     return canGoFace && dmg ? opp : null;
   }
   // Helpful effects go on our own best creature.
@@ -250,7 +352,10 @@ function respond(s: GameState, me: PlayerId): Action | null {
   const spells = castable(s, me).filter((c) => hasInstantSpeed(c.card) && hasUsefulTarget(s, me, c.card));
   const withEffect = (kind: Effect['kind'], intent?: Intent) =>
     spells
-      .map((c) => ({ ...c, spec: spellSpec(c.card), effects: parseEffects(c.card) }))
+      .map((c) => {
+        const spec = withX(spellSpec(c.card), maxX(s, me, c.card));
+        return { ...c, spec, effects: spec.effects };
+      })
       .filter((c) => c.spec.targets.length <= 1 && c.effects.some((e) => e.kind === kind && (!intent || intentOf(e) === intent)));
 
   if (top && top.controller === opp) {
@@ -273,7 +378,7 @@ function respond(s: GameState, me: PlayerId): Action | null {
     // Before blocks: shoot down the best attacker we can kill.
     const attackers = s.attackers.map((iid) => findPermanent(s, iid)).filter((x) => x !== undefined);
     for (const c of [...withEffect('destroy'), ...withEffect('damage'), ...withEffect('pump', 'harm')]) {
-      const action = castWithGoodTarget(s, me, c.iid, c.spec, attackers);
+      const action = castWithGoodTarget(s, me, c, attackers);
       if (action) return action;
     }
   }
@@ -284,7 +389,7 @@ function respond(s: GameState, me: PlayerId): Action | null {
   if (reason === 'end' && s.active === opp) {
     // End of the opponent's turn: use mana that would otherwise go to waste.
     for (const c of spells) {
-      const action = castWithGoodTarget(s, me, c.iid, spellSpec(c.card));
+      const action = castWithGoodTarget(s, me, c);
       if (action) return action;
     }
   }
@@ -305,11 +410,12 @@ function saveFromBurn(s: GameState, me: PlayerId, top: StackItem, pumps: PumpSpe
   const t = top.targets[0]?.[0];
   if (t?.kind !== 'permanent') return null;
   const victim = findPermanent(s, t.iid);
-  const dmg = parseEffects(top.card).find((e) => e.kind === 'damage');
+  const dmg = withX(spellSpec(top.card), top.x ?? 0).effects.find((e) => e.kind === 'damage');
   if (!victim || victim.controller !== me || !dmg || dmg.kind !== 'damage') return null;
+  const amount = num(dmg.amount);
   const left = toughnessOf(victim) - victim.damage;
-  if (dmg.amount < left) return null;
-  const pump = pumps.find((p) => left + pumpOf(p).toughness > dmg.amount && canPump(s, me, p, victim));
+  if (amount < left) return null;
+  const pump = pumps.find((p) => left + pumpOf(p).toughness > amount && canPump(s, me, p, victim));
   return pump ? { type: 'cast', iid: pump.iid, targets: [[{ kind: 'permanent', iid: victim.iid }]] } : null;
 }
 
@@ -338,7 +444,10 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
   switch (choice.kind) {
     case 'cards': {
       let options = [...choice.options];
-      if (!safe && choice.purpose === 'cleanupDiscard') {
+      if (!safe && choice.purpose === 'discardChosen') {
+        // Take their best card: the most expensive spell.
+        options.sort((a, b) => b.card.cmc - a.card.cmc);
+      } else if (!safe && (choice.purpose === 'cleanupDiscard' || choice.purpose === 'discard')) {
         // Discard what we can use least: extra lands beyond what the hand needs, then the most expensive spells.
         const lands = options.filter((c) => isLandCard(c.card));
         const spells = options.filter((c) => !isLandCard(c.card)).sort((a, b) => b.card.cmc - a.card.cmc);
@@ -348,9 +457,17 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
       return { kind: 'cards', iids: options.slice(0, choice.min).map((c) => c.iid) };
     }
     case 'arrange': {
-      // Keep everything on top in the same order: always valid.
-      const zone = choice.zones.includes('top') ? 'top' : choice.zones[0];
-      return { kind: 'arrange', zones: { [zone]: choice.cards.map((c) => c.iid) } };
+      const keep = choice.zones.includes('top') ? 'top' : choice.zones[0];
+      if (safe || choice.zones.length < 2) return { kind: 'arrange', zones: { [keep]: choice.cards.map((c) => c.iid) } };
+      // Scry/surveil: keep lands while short on them, and spells we can cast soon.
+      const away = choice.zones.find((z) => z !== 'top')!;
+      const lands = s.battlefield.filter((x) => x.controller === choice.player && isLandCard(x.card)).length +
+        s.players[choice.player].hand.filter((c) => isLandCard(c.card)).length;
+      const wanted = (c: CardInst) => (isLandCard(c.card) ? lands < 5 : c.card.cmc <= lands + 1);
+      return {
+        kind: 'arrange',
+        zones: { top: choice.cards.filter(wanted).map((c) => c.iid), [away]: choice.cards.filter((c) => !wanted(c)).map((c) => c.iid) },
+      };
     }
     case 'mode':
       return { kind: 'mode', modes: Array.from({ length: choice.min }, (_, i) => i) };

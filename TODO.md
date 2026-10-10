@@ -6,9 +6,12 @@ to show how much each step unlocks. Tick items as they land.
 
 ## Already supported
 
-- Instants/sorceries, with any number of target slots and target restrictions: fixed damage (any target, creature,
-  player, each opponent), counter (with type filters, or "unless its controller pays {N}"), ±N/±N and keyword grants
-  until end of turn, destroy/exile target creature or permanent, +1/+1 and -1/-1 counters, draw N, gain N life.
+- Instants/sorceries, with any number of target slots and target restrictions: damage (fixed or X; any target,
+  creature, player, each opponent/player), counter (with type filters, or "unless its controller pays {N}"), ±N/±N and
+  keyword grants until end of turn, destroy/exile, +1/+1 and -1/-1 counters, draw (you / target player / each player),
+  gain and lose life, discard (chosen, random, Duress-style), mill, scry, surveil, tap/untap, bounce, board wipes
+  ("destroy all/each", "damage to each creature", "creatures you control get…", "return all…"), fight and "bite".
+- About half of the 350 most-played Modern instants and sorceries are simulated (Oct 2026 sample).
 - Keywords: flying, reach, haste, vigilance, trample, deathtouch, lifelink, defender, first strike,
   double strike, menace, flash.
 - Mana: basic land types and "{T}: Add …" (one mana per source, X = 0).
@@ -26,17 +29,17 @@ to show how much each step unlocks. Tick items as they land.
 
 ## Step 1 — Simple spell effects
 
-- [ ] 1. Draw, other wordings: target player draws, draw then discard (2388 cards)
-- [ ] 2. Discard: random, you choose, target player chooses (1222)
-- [ ] 3. Life loss / drain (652)
-- [ ] 4. Mill (437)
-- [ ] 5. Scry / surveil (379 / 214)
-- [ ] 6. Tap / untap target (386)
-- [ ] 7. X spells (345)
+- [x] 1. Draw, other wordings: target player draws, each player draws, draw then discard (2388 cards)
+- [x] 2. Discard: random, you choose, target player chooses, Duress-style (1222)
+- [x] 3. Life loss / drain (652)
+- [x] 4. Mill (437)
+- [x] 5. Scry / surveil (379 / 214)
+- [x] 6. Tap / untap target (386) — "doesn't untap during its next untap step" is not simulated yet
+- [x] 7. X spells (345) — X in the cost and in amounts; "divided as you choose" is not simulated
 - [x] 8. -N/-N until end of turn (303) — came with 0.4
-- [ ] 9. Bounce (215+)
-- [ ] 10. Board wipes: destroy all, damage to each creature (211)
-- [ ] 11. Fight (98)
+- [x] 9. Bounce (215+), including "return all …"
+- [x] 10. Board wipes: destroy all/each, damage to each creature (and player), creatures get ±N/±N (211)
+- [x] 11. Fight and "bite" (98)
 
 ## Step 2 — Triggered abilities
 

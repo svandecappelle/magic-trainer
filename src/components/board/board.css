@@ -325,3 +325,4 @@
   .stack-card.top img { width: 80px; }
 }
 @media (max-width: 640px) { .toasts { max-width: 90%; } }
+.x-value { min-width: 56px; text-align: center; }

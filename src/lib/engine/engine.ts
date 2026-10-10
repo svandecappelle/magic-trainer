@@ -3,7 +3,8 @@ import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, findPayment, hasInstantSpeed, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
   manaColors, parseCost, power, spellSpec, toughness,
-  type AbilitySpec, type CounterKind, type Effect, type Keyword, type ManaSource, type TargetFilter, type TargetSpec,
+  type AbilitySpec, type Affected, type Amount, type CounterKind, type Effect, type Keyword, type ManaSource, type Selector,
+  type TargetFilter, type TargetSpec,
 } from './rules';
 
 export type PlayerId = 0 | 1;
@@ -38,6 +39,8 @@ export interface StackItem extends CardInst {
   targets: Target[][];
   /** Set for an ability: the rules to resolve. `card` is its source, which stays where it is. */
   ability?: AbilitySpec;
+  /** The value chosen for X when cast. */
+  x?: number;
 }
 
 export interface PlayerState {
@@ -84,7 +87,11 @@ export interface MulliganState {
 /** Why a player is asked to choose; decides the prompt and how the bot answers. */
 export type ChoicePurpose =
   | 'cleanupDiscard' // discard down to seven at end of turn
-  | 'payOrCounter'; // "counter target spell unless its controller pays {N}"
+  | 'payOrCounter' // "counter target spell unless its controller pays {N}"
+  | 'discard' // "discard a card": the discarding player chooses
+  | 'discardChosen' // Duress: the spell's controller chooses from a revealed hand
+  | 'scry'
+  | 'surveil';
 
 /** Where "arrange" choices may put cards (scry: top/bottom, surveil: top/graveyard). */
 export type ArrangeZone = 'top' | 'bottom' | 'graveyard';
@@ -120,6 +127,8 @@ export interface Resolving {
   legal: Target[][];
   /** Index of the effect to run next. */
   next: number;
+  /** Within an effect that asks several players in turn ("each player discards"), who is next. */
+  sub?: number;
   reason: WindowReason;
 }
 
@@ -150,7 +159,14 @@ export type LogEntry =
   | { k: 'fizzles'; card: string }
   | { k: 'notSimulated'; card: string }
   | { k: 'gainLife'; p: PlayerId; n: number }
-  | { k: 'discard'; p: PlayerId; card: string }
+  /** `cleanup`: discarding down to seven at end of turn. */
+  | { k: 'discard'; p: PlayerId; card: string; cleanup?: boolean }
+  | { k: 'loseLife'; p: PlayerId; n: number }
+  | { k: 'mill'; p: PlayerId; n: number }
+  | { k: 'scry'; p: PlayerId; n: number; bottom: number }
+  | { k: 'surveil'; p: PlayerId; n: number; graveyard: number }
+  | { k: 'tapped'; card: string; untap: boolean }
+  | { k: 'bounced'; card: string }
   | { k: 'emptyLibrary'; p: PlayerId }
   | { k: 'concede'; p: PlayerId }
   | { k: 'wins'; p: PlayerId }
@@ -192,8 +208,8 @@ export type Action =
   | { type: 'mulligan' }
   | { type: 'keep'; bottom: string[] }
   | { type: 'playLand'; iid: string }
-  /** `targets` has one list per target slot; `target` is a shorthand for a single-target spell. */
-  | { type: 'cast'; iid: string; targets?: Target[][]; target?: Target }
+  /** `targets` has one list per target slot; `target` is a shorthand for a single-target spell. `x`: the value of X. */
+  | { type: 'cast'; iid: string; targets?: Target[][]; target?: Target; x?: number }
   | { type: 'pass' }
   | { type: 'declareAttackers'; attackers: string[] }
   | { type: 'declareBlockers'; blocks: Record<string, string[]> }
@@ -208,7 +224,7 @@ export type GameErrorCode =
   | 'landTiming' | 'landAlreadyPlayed' | 'notALand' | 'notASpell' | 'sorcerySpeed' | 'castTiming'
   | 'needsTarget' | 'tooManyTargets' | 'targetMustBe' | 'illegalTarget' | 'notEnoughMana' | 'declareBlockersFirst'
   | 'notAttackStep' | 'cannotAttack' | 'notBlockStep' | 'notAttacking' | 'menace' | 'cannotBlock'
-  | 'makeChoiceFirst' | 'nothingToChoose' | 'badChoice';
+  | 'makeChoiceFirst' | 'nothingToChoose' | 'badChoice' | 'badX';
 
 export type ErrorParams = Record<string, string | number>;
 
@@ -260,8 +276,25 @@ export function manaSources(s: GameState, p: PlayerId): ManaSource[] {
     .filter((x) => x.colors.length > 0);
 }
 
-export const canPay = (s: GameState, p: PlayerId, card: Card) =>
-  findPayment(manaSources(s, p), parseCost(card.manaCost)) !== null;
+/** How many {X} the cost has (Fireball: 1, some spells: 2). */
+export const xCount = (card: Card) => (card.manaCost.split('//')[0].match(/\{X\}/g) ?? []).length;
+
+/** The cost to pay, with X set. */
+export function costWithX(card: Card, x = 0) {
+  const cost = parseCost(card.manaCost);
+  return { ...cost, generic: cost.generic + x * xCount(card) };
+}
+
+export const canPay = (s: GameState, p: PlayerId, card: Card, x = 0) =>
+  findPayment(manaSources(s, p), costWithX(card, x)) !== null;
+
+/** The largest X `p` can pay for right now (0 when the card has no X, or none can be paid). */
+export function maxX(s: GameState, p: PlayerId, card: Card): number {
+  if (!xCount(card)) return 0;
+  let x = 0;
+  while (canPay(s, p, card, x + 1)) x++;
+  return x;
+}
 
 export function canAttack(perm: Permanent): boolean {
   return (
@@ -302,6 +335,7 @@ function matchesFilter(s: GameState, f: TargetFilter, caster: PlayerId, x: CardI
   if (f.keyword && !hasKw(x, f.keyword)) return false;
   if (f.withoutKeyword && hasKw(x, f.withoutKeyword)) return false;
   if (f.maxManaValue !== undefined && x.card.cmc > f.maxManaValue) return false;
+  if (f.minManaValue !== undefined && x.card.cmc < f.minManaValue) return false;
   const pow = perm ? powerOf(perm) : power(x.card);
   if (f.minPower !== undefined && pow < f.minPower) return false;
   if (f.maxPower !== undefined && pow > f.maxPower) return false;
@@ -335,6 +369,18 @@ export function isLegalTarget(s: GameState, caster: PlayerId, spec: TargetSpec, 
     : spec.kind === 'permanent';
   return kindOk && matchesFilter(s, spec.filter, caster, perm, perm.controller);
 }
+
+/** Permanents an "all …"/"each …" effect controlled by `caster` touches. */
+export function matching(s: GameState, caster: PlayerId, which: Selector): Permanent[] {
+  const spec: TargetSpec = { kind: which.kind, min: 0, max: 0, filter: which.filter };
+  return s.battlefield.filter((x) => isLegalTarget(s, caster, spec, { kind: 'permanent', iid: x.iid }));
+}
+
+/** Does the card match a filter of card words ("nonland", "creature")? Used for cards in hand. */
+export const cardMatches = (card: Card, f: TargetFilter) => {
+  const types = cardTypes(card);
+  return (!f.types || f.types.some((t) => types.includes(t))) && !f.nonTypes?.some((t) => types.includes(t));
+};
 
 /** Every legal choice for a target slot right now. */
 export function legalTargets(s: GameState, caster: PlayerId, spec: TargetSpec, selfIid?: string): Target[] {
@@ -519,7 +565,7 @@ function finishCleanup(d: GameState, iids: string[]) {
     const inst = me.hand.find((c) => c.iid === iid)!;
     me.hand = me.hand.filter((c) => c !== inst);
     me.graveyard.push(inst);
-    log(d, { k: 'discard', p: d.active, card: inst.card.name });
+    log(d, { k: 'discard', p: d.active, card: inst.card.name, cleanup: true });
   }
   finishTurn(d);
 }
@@ -631,9 +677,11 @@ function resolveCombat(d: GameState) {
 const specOf = (item: StackItem): AbilitySpec => item.ability ?? spellSpec(item.card);
 
 /** What an effect applies to, looked up again now: earlier effects may have changed the game. */
-function affected(d: GameState, r: Resolving, to: Effect['to']): (Permanent | PlayerId | StackItem)[] {
+function affected(d: GameState, r: Resolving, to: Affected): (Permanent | PlayerId | StackItem)[] {
   if (to === 'you') return [r.item.controller];
   if (to === 'each-opponent') return [opponent(r.item.controller)];
+  // Each player, starting with the active player.
+  if (to === 'each-player') return [d.active, opponent(d.active)];
   return (r.legal[to.slot] ?? []).flatMap((t): (Permanent | PlayerId | StackItem)[] => {
     if (t.kind === 'player') return [t.player];
     const x = t.kind === 'spell' ? d.stack.find((i) => i.iid === t.iid) : findPermanent(d, t.iid);
@@ -641,18 +689,26 @@ function affected(d: GameState, r: Resolving, to: Effect['to']): (Permanent | Pl
   });
 }
 
+const amount = (r: Resolving, a: Amount) => (a === 'X' ? (r.item.x ?? 0) : a);
+
+function moveToGraveyard(d: GameState, p: PlayerId, inst: CardInst, from: 'hand' | 'library') {
+  const ps = d.players[p];
+  ps[from] = ps[from].filter((c) => c.iid !== inst.iid);
+  ps.graveyard.push(inst);
+}
+
 /** Runs one effect. Returns a choice to pause on; it is run again with the answer. */
 function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choice | undefined {
   const { item } = r;
   const caster = item.controller;
-  const things = affected(d, r, e.to);
+  const things = 'to' in e ? affected(d, r, e.to) : [];
   const players = things.filter((x): x is PlayerId => typeof x === 'number');
   const perms = things.filter((x): x is Permanent => typeof x !== 'number' && isPermanent(x));
   const spells = things.filter((x): x is StackItem => typeof x !== 'number' && !isPermanent(x));
 
   switch (e.kind) {
     case 'damage':
-      for (const t of [...players, ...perms]) dealDamage(d, item, caster, t, e.amount);
+      for (const t of [...players, ...perms]) dealDamage(d, item, caster, t, amount(r, e.amount));
       break;
     case 'counter':
       for (const target of spells) {
@@ -679,27 +735,139 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         log(d, { k: 'pump', card: perm.card.name, power: e.power, toughness: e.toughness, keywords: e.keywords });
       }
       break;
+    case 'pumpAll':
+      for (const perm of matching(d, caster, e.which)) {
+        perm.boosts.push({ power: e.power, toughness: e.toughness, keywords: e.keywords, until: 'endOfTurn' });
+        log(d, { k: 'pump', card: perm.card.name, power: e.power, toughness: e.toughness, keywords: e.keywords });
+      }
+      break;
     case 'destroy':
       for (const perm of perms) {
         removePermanent(d, perm, e.exile ? 'exile' : 'graveyard');
         log(d, { k: e.exile ? 'exiled' : 'destroyed', card: perm.card.name });
       }
       break;
+    case 'destroyAll':
+      for (const perm of matching(d, caster, e.which)) {
+        removePermanent(d, perm, e.exile ? 'exile' : 'graveyard');
+        log(d, { k: e.exile ? 'exiled' : 'destroyed', card: perm.card.name });
+      }
+      break;
+    case 'damageAll': {
+      const n = amount(r, e.amount);
+      for (const perm of matching(d, caster, e.which)) if (isCreature(perm.card)) dealDamage(d, item, caster, perm, n);
+      if (e.players) for (const p of affected(d, r, e.players) as PlayerId[]) dealDamage(d, item, caster, p, n);
+      break;
+    }
     case 'addCounters':
       for (const perm of perms) {
-        perm.counters = { ...perm.counters, [e.counter]: (perm.counters[e.counter] ?? 0) + e.n };
-        log(d, { k: 'counters', card: perm.card.name, counter: e.counter, n: e.n });
+        const n = amount(r, e.n);
+        perm.counters = { ...perm.counters, [e.counter]: (perm.counters[e.counter] ?? 0) + n };
+        log(d, { k: 'counters', card: perm.card.name, counter: e.counter, n });
       }
       break;
     case 'draw':
-      for (const p of players) draw(d, p, e.n);
+      for (const p of players) draw(d, p, amount(r, e.n));
       break;
     case 'gainLife':
       for (const p of players) {
-        d.players[p].life += e.n;
-        log(d, { k: 'gainLife', p, n: e.n });
+        d.players[p].life += amount(r, e.n);
+        log(d, { k: 'gainLife', p, n: amount(r, e.n) });
       }
       break;
+    case 'loseLife':
+      for (const p of players) {
+        d.players[p].life -= amount(r, e.n);
+        log(d, { k: 'loseLife', p, n: amount(r, e.n) });
+      }
+      break;
+    case 'mill':
+      for (const p of players) {
+        const milled = d.players[p].library.slice(0, amount(r, e.n));
+        for (const inst of milled) moveToGraveyard(d, p, inst, 'library');
+        log(d, { k: 'mill', p, n: milled.length });
+      }
+      break;
+    case 'discard':
+      // Players are asked one after the other; `r.sub` remembers who is next.
+      for (let i = r.sub ?? 0; i < players.length; i++) {
+        const p = players[i];
+        const hand = d.players[p].hand;
+        if (e.mode === 'random') {
+          for (let k = 0; k < amount(r, e.n) && hand.length; k++) {
+            const inst = d.players[p].hand[Math.floor(random(d) * d.players[p].hand.length)];
+            moveToGraveyard(d, p, inst, 'hand');
+            log(d, { k: 'discard', p, card: inst.card.name });
+          }
+          continue;
+        }
+        const options = e.mode === 'casterChooses' && e.filter ? hand.filter((c) => cardMatches(c.card, e.filter!)) : hand;
+        const n = Math.min(amount(r, e.n), options.length);
+        if (!n) continue;
+        if (!answer || answer.kind !== 'cards') {
+          r.sub = i;
+          const chooser = e.mode === 'casterChooses' ? caster : p;
+          const purpose = e.mode === 'casterChooses' ? 'discardChosen' : 'discard';
+          return { kind: 'cards', player: chooser, purpose, min: n, max: n, options: [...options], params: { n, p } };
+        }
+        for (const iid of answer.iids) {
+          const inst = hand.find((c) => c.iid === iid)!;
+          moveToGraveyard(d, p, inst, 'hand');
+          log(d, { k: 'discard', p, card: inst.card.name });
+        }
+        answer = undefined;
+      }
+      r.sub = 0;
+      break;
+    case 'scry':
+    case 'surveil': {
+      const top = d.players[caster].library.slice(0, amount(r, e.n));
+      if (!top.length) break;
+      if (!answer || answer.kind !== 'arrange') {
+        const zones: ArrangeZone[] = e.kind === 'scry' ? ['top', 'bottom'] : ['top', 'graveyard'];
+        return { kind: 'arrange', player: caster, purpose: e.kind, cards: top, zones, params: { n: top.length } };
+      }
+      const ps = d.players[caster];
+      const byIid = (iid: string) => top.find((c) => c.iid === iid)!;
+      const rest = ps.library.slice(top.length);
+      const onTop = (answer.zones.top ?? []).map(byIid);
+      const away = (answer.zones[e.kind === 'scry' ? 'bottom' : 'graveyard'] ?? []).map(byIid);
+      if (e.kind === 'scry') {
+        ps.library = [...onTop, ...rest, ...away];
+        log(d, { k: 'scry', p: caster, n: top.length, bottom: away.length });
+      } else {
+        ps.library = [...onTop, ...rest];
+        ps.graveyard.push(...away);
+        log(d, { k: 'surveil', p: caster, n: top.length, graveyard: away.length });
+      }
+      break;
+    }
+    case 'tap':
+      for (const perm of perms) {
+        perm.tapped = !e.untap;
+        log(d, { k: 'tapped', card: perm.card.name, untap: e.untap });
+      }
+      break;
+    case 'bounce':
+    case 'bounceAll':
+      for (const perm of e.kind === 'bounceAll' ? matching(d, caster, e.which) : perms) {
+        d.battlefield = d.battlefield.filter((x) => x.iid !== perm.iid);
+        d.players[perm.controller].hand.push({ iid: perm.iid, card: perm.card });
+        log(d, { k: 'bounced', card: perm.card.name });
+      }
+      break;
+    case 'fight': {
+      const [a] = affected(d, r, e.a) as Permanent[];
+      const [b] = affected(d, r, e.b);
+      if (!a || b === undefined) break;
+      if (typeof b === 'number') {
+        dealDamage(d, a, a.controller, b, powerOf(a));
+      } else if (isPermanent(b)) {
+        dealDamage(d, a, a.controller, b, powerOf(a));
+        if (!e.oneSided) dealDamage(d, b, b.controller, a, powerOf(b));
+      }
+      break;
+    }
   }
   return undefined;
 }
@@ -932,13 +1100,15 @@ export function apply(state: GameState, action: Action): GameState {
       const spec = spellSpec(inst.card);
       const chosen = action.targets ?? (action.target ? [[action.target]] : []);
       const targets = checkTargets(d, p, inst.card, spec, chosen);
+      const x = xCount(inst.card) ? (action.x ?? 0) : 0;
+      if (!Number.isInteger(x) || x < 0) throw new IllegalAction('badX');
 
-      const payment = findPayment(manaSources(d, p), parseCost(inst.card.manaCost));
+      const payment = findPayment(manaSources(d, p), costWithX(inst.card, x));
       if (!payment) throw new IllegalAction('notEnoughMana', { card: inst.card.name });
       for (const iid of payment) findPermanent(d, iid)!.tapped = true;
       me.hand = me.hand.filter((c) => c !== inst);
       const named = targets.flat().map((t) => targetName(d, t));
-      d.stack.push({ ...inst, controller: p, targets });
+      d.stack.push({ ...inst, controller: p, targets, ...(xCount(inst.card) ? { x } : {}) });
       log(d, { k: 'cast', p, card: inst.card.name, ...(named.length ? { targets: named } : {}) });
 
       // The opponent may respond.
