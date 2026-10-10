@@ -91,6 +91,7 @@ const log: LogMessages = {
   },
   emptyLibrary: (e, c) =>
     c.isMe(e.p) ? 'Vous ne pouvez pas piocher dans une bibliothèque vide : vous perdez' : `${c.name(e.p)} ne peut pas piocher dans une bibliothèque vide et perd`,
+  timedOut: (e, c) => (c.isMe(e.p) ? "Temps écoulé : l'action par défaut a été jouée" : `${c.name(e.p)} a dépassé son temps : action par défaut jouée`),
   concede: (e, c) => (c.isMe(e.p) ? 'Vous abandonnez' : `${c.name(e.p)} abandonne`),
   wins: (e, c) => (c.isMe(e.p) ? 'Vous gagnez !' : `${c.name(e.p)} gagne !`),
   draw: () => 'La partie est nulle',
@@ -403,6 +404,9 @@ export const fr: Messages = {
   },
 
   online: {
+    yourClock: (time) => `Votre temps pour agir : ${time}`,
+    theirClock: (name, time) => `Temps de ${name} pour agir : ${time}`,
+    reconnectClock: (name, time) => `${name} a ${time} pour se reconnecter, sinon il abandonne`,
     title: 'Jouer en ligne',
     connecting: 'Connexion au serveur de jeu…',
     disconnected: 'Déconnecté du serveur de jeu, nouvelle tentative…',

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DeckOptions } from '../components/DeckOptions';
 import { GameBoard } from '../components/GameBoard';
 import { opponent } from '../lib/engine/engine';
@@ -22,7 +22,14 @@ function savedName(): string {
 export function Online() {
   const t = useT();
   const decks = useApp((s) => s.decks);
-  const { status, room, players, game, error, setError, send } = useGameSocket();
+  const { status, room, players, game, error, setError, send, clock } = useGameSocket();
+  // Ticks while a clock runs, to show the countdown.
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!clock) return;
+    const timer = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(timer);
+  }, [clock]);
   const [name, setName] = useState(savedName);
   const [deckId, setDeckId] = useState(decks[0]?.id ?? 'preset-red');
   const [code, setCode] = useState('');
@@ -138,6 +145,14 @@ export function Online() {
     <>
       {status !== 'open' && <div className="error">{t.online.reconnecting}</div>}
       {opp && !opp.connected && <div className="error">{t.online.oppDisconnected(opp.name)}</div>}
+      {clock && (() => {
+        const left = Math.max(0, Math.ceil((clock.deadline - now) / 1000));
+        const time = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+        const mine = clock.player === me;
+        const text = clock.kind === 'reconnect' ? t.online.reconnectClock(players[clock.player]?.name ?? '', time)
+          : mine ? t.online.yourClock(time) : t.online.theirClock(players[clock.player]?.name ?? '', time);
+        return <div className={`clock ${mine && left <= 20 ? 'error' : ''}`}>⏱ {text}</div>;
+      })()}
       {opp?.wantsRematch && !iWantRematch && <div>{t.online.wantsRematch(opp.name)}</div>}
       {error && <div className="error">{errorText(t, error)}</div>}
       <div className="muted">{t.online.room(room.code)}</div>

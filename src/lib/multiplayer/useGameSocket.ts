@@ -32,6 +32,8 @@ export function useGameSocket() {
   const [players, setPlayers] = useState<LobbyPlayer[]>([]);
   const [game, setGame] = useState<GameState | null>(null);
   const [error, setError] = useState<AppError | null>(null);
+  /** The running clock, with its deadline in this browser's time. */
+  const [clock, setClock] = useState<{ player: PlayerId; deadline: number; kind: 'turn' | 'reconnect' } | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -73,8 +75,12 @@ export function useGameSocket() {
             setGame(msg.state);
             setError(null);
             break;
+          case 'clock':
+            setClock(msg.clock ? { player: msg.clock.player, kind: msg.clock.kind, deadline: Date.now() + msg.clock.ms } : null);
+            break;
           case 'left':
             reset();
+            setClock(null);
             break;
           case 'error':
             setError({ code: msg.code, params: msg.params });
@@ -104,5 +110,5 @@ export function useGameSocket() {
     else setError({ code: 'notConnected' });
   }, []);
 
-  return { status, room, players, game, error, setError, send };
+  return { status, room, players, game, error, setError, clock, send };
 }

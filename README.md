@@ -23,6 +23,9 @@ each player only receives what they may see (no libraries, no opponent hand). A 
 The server checks every deck's cards against Scryfall (by card id) and uses Scryfall's data, so a modified client
 can't play altered cards. `CARD_CHECK=strict` refuses decks when Scryfall is unreachable (default `lenient`: the
 client's data is used then), `CARD_CHECK=off` disables the check.
+Online games have clocks: `TURN_SECONDS` (default 120) per decision, after which the server plays the default action
+(pass, keep, no blocks…) and concedes after three timeouts in a row; `RECONNECT_SECONDS` (default 180) for a
+disconnected player to come back before conceding. 0 disables either.
 
 ## Deploying on a server (Docker + nginx)
 

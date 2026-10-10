@@ -1,4 +1,5 @@
 import { randomInt, randomUUID } from 'node:crypto';
+import { fallbackAction } from '../src/lib/engine/bot';
 import { actor, apply, IllegalAction, newGame, type ErrorParams, type GameState, type PlayerId } from '../src/lib/engine/engine';
 import {
   MAX_DECK_SIZE, MIN_DECK_SIZE, redact, type ClientMessage, type ServerErrorCode, type ServerMessage,
@@ -23,7 +24,14 @@ interface Room {
   seats: Seat[];
   game: GameState | null;
   expiry?: ReturnType<typeof setTimeout>;
+  /** The running clock: a decision to make, or a disconnected player to come back. */
+  clock?: { timer: ReturnType<typeof setTimeout>; player: PlayerId; kind: 'turn' | 'reconnect'; endsAt: number };
+  /** Consecutive decisions each player let time out. */
+  timeouts?: [number, number];
 }
+
+/** Timeouts in a row after which a player concedes. */
+const MAX_TIMEOUTS = 3;
 
 class ClientError extends Error {
   constructor(
@@ -45,6 +53,10 @@ export interface RoomManagerOptions {
    * DeckCheckError for a card it doesn't know. Without it, the client's card data is used.
    */
   verifyDeck?: (deck: Card[]) => Promise<Card[]>;
+  /** Time to make each decision; the server then plays a default action. 0: no limit. */
+  decisionMs?: number;
+  /** Time a disconnected player has to come back before conceding. 0: no limit. */
+  reconnectMs?: number;
 }
 
 /** A card the deck check doesn't recognize, or a check that couldn't run (`card` undefined). */
@@ -60,11 +72,15 @@ export class RoomManager {
   private ttl: number;
   private rng: () => number;
   private verifyDeck?: (deck: Card[]) => Promise<Card[]>;
+  private decisionMs: number;
+  private reconnectMs: number;
 
-  constructor({ emptyRoomTtlMs = 10 * 60_000, rng = Math.random, verifyDeck }: RoomManagerOptions = {}) {
+  constructor({ emptyRoomTtlMs = 10 * 60_000, rng = Math.random, verifyDeck, decisionMs = 0, reconnectMs = 0 }: RoomManagerOptions = {}) {
     this.ttl = emptyRoomTtlMs;
     this.rng = rng;
     this.verifyDeck = verifyDeck;
+    this.decisionMs = decisionMs;
+    this.reconnectMs = reconnectMs;
   }
 
   /** Runs a handler, sending rule and request errors back to the client. */
@@ -124,6 +140,7 @@ export class RoomManager {
     this.where.delete(conn);
     at.room.seats[at.seat].conn = null;
     this.sendLobby(at.room);
+    this.armClock(at.room);
     this.expireIfEmpty(at.room);
   }
 
@@ -164,6 +181,7 @@ export class RoomManager {
     conn.send({ t: 'joined', code, seat: seat as PlayerId, token });
     this.sendLobby(room);
     if (room.game) conn.send({ t: 'state', state: redact(room.game, seat as PlayerId) });
+    this.armClock(room);
   }
 
   private act(conn: Conn, action: unknown) {
@@ -178,6 +196,7 @@ export class RoomManager {
     } else {
       if (actor(room.game) !== seat) throw new ClientError('notYourTurn');
       room.game = apply(room.game, a);
+      if (room.timeouts) room.timeouts[seat] = 0;
     }
     this.sendState(room);
   }
@@ -242,6 +261,48 @@ export class RoomManager {
 
   private sendState(room: Room) {
     room.seats.forEach((s, i) => s.conn?.send({ t: 'state', state: redact(room.game!, i as PlayerId) }));
+    this.armClock(room);
+  }
+
+  /**
+   * Starts the clock that fits the room: a disconnected player must come back in time, otherwise
+   * the player who must act must decide in time. Each state change restarts it.
+   */
+  private armClock(room: Room) {
+    if (room.clock) clearTimeout(room.clock.timer);
+    room.clock = undefined;
+    const game = room.game;
+    if (game && game.winner === null && room.seats.length === 2) {
+      const away = room.seats.findIndex((s) => !s.conn);
+      const who = away >= 0 ? (away as PlayerId) : actor(game);
+      const kind = away >= 0 ? 'reconnect' : 'turn';
+      const ms = kind === 'reconnect' ? this.reconnectMs : this.decisionMs;
+      if (who !== null && ms > 0) {
+        const timer = setTimeout(() => (kind === 'reconnect' ? this.reconnectExpired(room, who) : this.decisionExpired(room, who)), ms);
+        room.clock = { timer, player: who, kind, endsAt: Date.now() + ms };
+      }
+    }
+    const clock = room.clock ? { player: room.clock.player, ms: room.clock.endsAt - Date.now(), kind: room.clock.kind } : null;
+    for (const s of room.seats) s.conn?.send({ t: 'clock', clock });
+  }
+
+  /** Out of time for a decision: play the default action (pass, keep, no blocks…); conceding after a few in a row. */
+  private decisionExpired(room: Room, player: PlayerId) {
+    const game = room.game;
+    if (!game || game.winner !== null || actor(game) !== player) return;
+    const timeouts = (room.timeouts ??= [0, 0]);
+    timeouts[player]++;
+    let next = apply(game, timeouts[player] >= MAX_TIMEOUTS ? { type: 'concede', player } : fallbackAction(game));
+    next = { ...next, log: [...next.log, { k: 'timedOut', p: player }] };
+    room.game = next;
+    this.sendState(room);
+  }
+
+  /** A disconnected player didn't come back in time: they concede. */
+  private reconnectExpired(room: Room, player: PlayerId) {
+    if (!room.game || room.game.winner !== null || room.seats[player].conn) return;
+    room.game = apply(room.game, { type: 'concede', player });
+    this.sendState(room);
   }
 
   private sendLobby(room: Room) {
@@ -257,6 +318,7 @@ export class RoomManager {
 
   private deleteRoom(room: Room) {
     clearTimeout(room.expiry);
+    if (room.clock) clearTimeout(room.clock.timer);
     this.rooms.delete(room.code);
   }
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { actor, type GameState } from '../src/lib/engine/engine';
 import type { ServerMessage } from '../src/lib/multiplayer/protocol';
 import type { Card } from '../src/types';
@@ -162,5 +162,53 @@ describe('deck check', () => {
     rooms.handle(alice, { t: 'create', name: 'Alice', deck: [...deck.slice(1), walker] });
     const code = alice.last('joined')!.code;
     expect(rooms.rooms.get(code)!.seats[0].deck.at(-1)).toMatchObject({ loyalty: '4', layout: 'modal_dfc', faces: [{ name: 'A' }] });
+  });
+});
+
+describe('clocks', () => {
+  function timedRoom() {
+    const rooms = new RoomManager({ rng: () => 0.1, decisionMs: 1000, reconnectMs: 5000 });
+    const alice = new FakeConn();
+    const bob = new FakeConn();
+    rooms.handle(alice, { t: 'create', name: 'Alice', deck });
+    const code = alice.last('joined')!.code;
+    rooms.handle(bob, { t: 'join', code, name: 'Bob', deck });
+    return { rooms, alice, bob, code };
+  }
+
+  it('plays the default action when time runs out, and concedes after three in a row', () => {
+    vi.useFakeTimers();
+    try {
+      const { alice, bob } = timedRoom();
+      expect(alice.last('clock')!.clock).toMatchObject({ player: 0, kind: 'turn' });
+      vi.advanceTimersByTime(1000); // Alice doesn't decide on her opening hand: she keeps it
+      expect(alice.state.log.at(-1)).toEqual({ k: 'timedOut', p: 0 });
+      expect(alice.state.mulligan?.player).toBe(1);
+      vi.advanceTimersByTime(1000); // Bob keeps too
+      // Alice now idles through her turn: two more timeouts then she concedes on the third.
+      for (let i = 0; i < 10 && alice.state.winner === null; i++) vi.advanceTimersByTime(1000);
+      expect(bob.state.winner).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives a disconnected player time to come back, then concedes for them', () => {
+    vi.useFakeTimers();
+    try {
+      const { rooms, alice, bob, code } = timedRoom();
+      const token = bob.messages.find((m) => m.t === 'joined')!.token;
+      rooms.disconnect(bob);
+      expect(alice.last('clock')!.clock).toMatchObject({ player: 1, kind: 'reconnect' });
+      vi.advanceTimersByTime(4000);
+      const back = new FakeConn();
+      rooms.handle(back, { t: 'rejoin', code, token });
+      expect(back.last('clock')!.clock).toMatchObject({ kind: 'turn' });
+      rooms.disconnect(back);
+      vi.advanceTimersByTime(5000);
+      expect(alice.state.winner).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

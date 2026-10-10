@@ -5,6 +5,10 @@ services:
     restart: unless-stopped
     environment:
       PORT: 8787
+      # Online games: seconds per decision and to reconnect (0 = no limit); deck check against Scryfall.
+      TURN_SECONDS: ${TURN_SECONDS:-120}
+      RECONNECT_SECONDS: ${RECONNECT_SECONDS:-180}
+      CARD_CHECK: ${CARD_CHECK:-lenient}
     # Only reachable from the server itself: nginx faces the internet. The host port can be changed with
     # MAGIC_TRAINER_PORT (make install PORT=…). Use "8787:8787" to expose it directly, e.g. for a test without nginx.
     ports:

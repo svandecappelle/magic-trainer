@@ -277,6 +277,8 @@ export type LogEntry =
   | { k: 'search'; p: PlayerId; n: number; dest: 'hand' | 'battlefield' }
   | { k: 'emptyLibrary'; p: PlayerId }
   | { k: 'concede'; p: PlayerId }
+  /** An online player ran out of time: the server played the default action for them. */
+  | { k: 'timedOut'; p: PlayerId }
   | { k: 'wins'; p: PlayerId }
   | { k: 'draw' };
 

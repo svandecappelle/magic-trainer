@@ -84,6 +84,7 @@ const log: LogMessages = {
     return `${who} ${c.card(e.card)}'s ability${names.length ? ` targeting ${c.list(names)}` : ''}`;
   },
   emptyLibrary: (e, c) => (c.isMe(e.p) ? "You can't draw from an empty library: you lose" : `${c.name(e.p)} can't draw from an empty library and loses`),
+  timedOut: (e, c) => (c.isMe(e.p) ? 'You ran out of time: default action played' : `${c.name(e.p)} ran out of time: default action played`),
   concede: (e, c) => (c.isMe(e.p) ? 'You concede' : `${c.name(e.p)} concedes`),
   wins: (e, c) => (c.isMe(e.p) ? 'You win!' : `${c.name(e.p)} wins!`),
   draw: () => 'The game is a draw',
@@ -396,6 +397,9 @@ export const en = {
   },
 
   online: {
+    yourClock: (time: string) => `Your time to act: ${time}`,
+    theirClock: (name: string, time: string) => `${name}'s time to act: ${time}`,
+    reconnectClock: (name: string, time: string) => `${name} has ${time} to reconnect, or concedes`,
     title: 'Play Online',
     connecting: 'Connecting to the game server…',
     disconnected: 'Disconnected from the game server, retrying…',

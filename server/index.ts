@@ -37,7 +37,13 @@ const server = createServer((req, res) => {
 
 // Decks are checked against Scryfall (CARD_CHECK=strict|lenient|off, default lenient).
 const cardCheck = parseCardCheck(process.env.CARD_CHECK);
-const rooms = new RoomManager(cardCheck === 'off' ? {} : { verifyDeck: scryfallDeckCheck(cardCheck) });
+// Clocks for online games: TURN_SECONDS per decision (default 120), RECONNECT_SECONDS to come back (default 180); 0 = none.
+const seconds = (value: string | undefined, fallback: number) => (value === undefined || value === '' || Number.isNaN(Number(value)) ? fallback : Number(value));
+const rooms = new RoomManager({
+  ...(cardCheck === 'off' ? {} : { verifyDeck: scryfallDeckCheck(cardCheck) }),
+  decisionMs: seconds(process.env.TURN_SECONDS, 120) * 1000,
+  reconnectMs: seconds(process.env.RECONNECT_SECONDS, 180) * 1000,
+});
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 2_000_000 });
 const alive = new WeakSet<WebSocket>();
 

@@ -140,5 +140,6 @@ get each face's cost and image (their text is rebuilt from the joined faces mean
   cards; CARD_CHECK=strict|lenient|off decides what happens when Scryfall is unreachable
 - [ ] Auto-pass leaks that you hold a castable instant (full control avoids it)
 - [ ] More than 2 players, Commander
-- [ ] Turn timer, reconnect timeout
+- [x] Turn timer, reconnect timeout — online: TURN_SECONDS per decision (default action on timeout, conceding after
+  3 in a row), RECONNECT_SECONDS to come back (concede otherwise); countdown shown to both players
 - [ ] Bot: multi-blocks, mana planning, and logic for each new mechanic

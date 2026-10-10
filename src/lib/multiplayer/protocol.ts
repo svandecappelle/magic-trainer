@@ -29,6 +29,11 @@ export type ServerMessage =
   | { t: 'lobby'; code: string; players: LobbyPlayer[] }
   | { t: 'state'; state: GameState }
   | { t: 'left' }
+  /**
+   * Who is on the clock and how long they have left (ms): to make a decision ("turn"), or to come back
+   * after disconnecting ("reconnect"). null when no clock runs.
+   */
+  | { t: 'clock'; clock: { player: PlayerId; ms: number; kind: 'turn' | 'reconnect' } | null }
   /** `lostRoom`: the room or seat is gone (e.g. after a server restart); forget it. */
   | { t: 'error'; code: ErrorCode; params?: ErrorParams; lostRoom?: boolean };
 
