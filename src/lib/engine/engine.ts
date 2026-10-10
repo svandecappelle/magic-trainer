@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, findPayment, hasInstantSpeed, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, entersTapped, entersWithCounters, isPlaneswalker, isToken, manaColors, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, cardColors, entersTappedRule, entersWithCounters, protectionsOf, staticsOf, wardCost, isPlaneswalker, isToken, manaColors, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   type AbilitySpec, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type ObjectEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -33,6 +33,10 @@ export interface Permanent extends CardInst {
   boosts: Boost[];
   /** Indexes of "once each turn" abilities already activated this turn. */
   used?: number[];
+  /** Aura or Equipment: the permanent it is attached to. */
+  attachedTo?: string;
+  /** What static abilities (anthems, Auras, Equipment) give it right now; recomputed by the engine. */
+  statics?: { power: number; toughness: number; keywords: Keyword[]; cantAttack?: boolean; cantBlock?: boolean };
 }
 
 export interface StackItem extends CardInst {
@@ -52,6 +56,8 @@ export interface Triggered {
   source: CardInst;
   controller: PlayerId;
   ability: AbilitySpec;
+  /** Targets fixed by the rules instead of chosen (ward targets the spell that targeted it). */
+  targets?: Target[][];
 }
 
 /** One mana in a pool: its possible colors, and the permanent that made it (to untap it again). */
@@ -118,6 +124,8 @@ export type ChoicePurpose =
   | 'search' // library search: find up to N matching cards
   | 'triggerTargets' // targets for a triggered ability going on the stack
   | 'optional' // "you may …" on resolution
+  | 'legendRule' // two legendary permanents with the same name: keep one
+  | 'payLife' // shock lands: pay life or enter tapped
   | 'sacrifice' // an edict: choose what to sacrifice
   | 'sacrificeCost'; // "Sacrifice a creature:" when activating
 
@@ -151,7 +159,9 @@ export interface Pending {
    * What continues once answered: the end of turn, the spell or ability being resolved, or a
    * triggered ability waiting for targets (`trigger`).
    */
-  resume: 'cleanup' | 'effect' | 'trigger' | 'activation';
+  resume: 'cleanup' | 'effect' | 'trigger' | 'activation' | 'legend' | 'payLife';
+  /** For payLife: the land that entered. */
+  iid?: string;
   trigger?: Triggered;
   /** An ability whose cost includes sacrificing a permanent: it goes on the stack once chosen. */
   activation?: { item: StackItem; named: LogTarget[] };
@@ -216,6 +226,10 @@ export type LogEntry =
   | { k: 'tapped'; card: string; untap: boolean }
   | { k: 'bounced'; card: string }
   | { k: 'sacrificed'; card: string }
+  | { k: 'attached'; card: string; to: string }
+  | { k: 'legendRule'; card: string }
+  /** A shock land: `paid` life to enter untapped, or entered tapped. */
+  | { k: 'shock'; card: string; paid: number }
   | { k: 'token'; p: PlayerId; card: string; n: number }
   /** A card left a graveyard: back to hand, onto the battlefield, or exiled. */
   | { k: 'returned'; card: string; dest: 'hand' | 'battlefield' }
@@ -251,6 +265,8 @@ export interface GameState {
    * Optional so states created before this option existed still load.
    */
   fullControl?: [boolean, boolean];
+  /** Lands that entered asking "pay N life or enter tapped", asked once nothing else is going on. */
+  lifeChoices?: { iid: string; n: number }[];
   /** Triggered abilities not on the stack yet. Optional so older saved states still load. */
   triggered?: Triggered[];
   /** Counter for ability ids on the stack. */
@@ -331,15 +347,18 @@ const isPermanent = (x: object): x is Permanent => 'boosts' in x;
 
 /** Keyword printed on the card or granted until end of turn. */
 export const hasKw = (x: CardInst, kw: Keyword) =>
-  hasKeyword(x.card, kw) || (isPermanent(x) && x.boosts.some((b) => b.keywords.includes(kw)));
+  hasKeyword(x.card, kw) || (isPermanent(x) && (x.boosts.some((b) => b.keywords.includes(kw)) || !!x.statics?.keywords.includes(kw)));
 
 export const firstStrikes = (x: CardInst) => hasKw(x, 'first strike') || hasKw(x, 'double strike');
 
 const sum = (perm: Permanent, key: 'power' | 'toughness') => perm.boosts.reduce((n, b) => n + b[key], 0);
 const counterBonus = (perm: Permanent) => (perm.counters['+1/+1'] ?? 0) - (perm.counters['-1/-1'] ?? 0);
 
-export const powerOf = (perm: Permanent) => power(perm.card) + sum(perm, 'power') + counterBonus(perm);
-export const toughnessOf = (perm: Permanent) => toughness(perm.card) + sum(perm, 'toughness') + counterBonus(perm);
+export const powerOf = (perm: Permanent) => power(perm.card) + sum(perm, 'power') + counterBonus(perm) + (perm.statics?.power ?? 0);
+export const toughnessOf = (perm: Permanent) => toughness(perm.card) + sum(perm, 'toughness') + counterBonus(perm) + (perm.statics?.toughness ?? 0);
+
+/** Does `perm` have protection from a source of these colors? */
+const protectedFrom = (perm: Permanent, source: Card) => protectionsOf(perm.card).some((c) => cardColors(source).includes(c));
 
 /** Can this permanent be tapped for mana now? */
 export const canTapForMana = (perm: Permanent) =>
@@ -386,12 +405,13 @@ export function maxX(s: GameState, p: PlayerId, card: Card): number {
 export function canAttack(perm: Permanent): boolean {
   return (
     isCreature(perm.card) && !perm.tapped && (!perm.sick || hasKw(perm, 'haste')) &&
-    !hasKw(perm, 'defender') && powerOf(perm) > 0
+    !hasKw(perm, 'defender') && powerOf(perm) > 0 && !perm.statics?.cantAttack
   );
 }
 
 export function canBlock(blocker: Permanent, attacker: Permanent): boolean {
-  if (!isCreature(blocker.card) || blocker.tapped) return false;
+  if (!isCreature(blocker.card) || blocker.tapped || blocker.statics?.cantBlock) return false;
+  if (protectedFrom(attacker, blocker.card)) return false;
   if (hasKw(attacker, 'flying')) return hasKw(blocker, 'flying') || hasKw(blocker, 'reach');
   return true;
 }
@@ -458,6 +478,7 @@ function finishActivation(d: GameState, item: StackItem, named: LogTarget[]) {
   const p = item.controller;
   d.stack.push(item);
   log(d, { k: 'activate', p, card: item.card.name, ...(named.length ? { targets: named } : {}) });
+  fireWard(d, item);
   if (d.priority) {
     d.priority.passes = 0;
     d.priority.player = opponent(p);
@@ -525,8 +546,22 @@ function matchesFilter(s: GameState, f: TargetFilter, caster: PlayerId, x: CardI
   return true;
 }
 
-/** Is `t` a legal choice for a target slot of a spell or ability controlled by `caster`? */
-export function isLegalTarget(s: GameState, caster: PlayerId, spec: TargetSpec, t: Target, selfIid?: string): boolean {
+/**
+ * Is `t` a legal choice for a target slot of a spell or ability controlled by `caster`? `source` is the
+ * card targeting (for protection from its colors): when unknown, protection isn't checked.
+ */
+export function isLegalTarget(s: GameState, caster: PlayerId, spec: TargetSpec, t: Target, selfIid?: string, source?: Card): boolean {
+  if (!fitsSpec(s, caster, spec, t, selfIid)) return false;
+  if (t.kind !== 'permanent') return true;
+  // Targeting restrictions: hexproof (against opponents), shroud, protection.
+  const perm = findPermanent(s, t.iid)!;
+  if (hasKw(perm, 'shroud')) return false;
+  if (hasKw(perm, 'hexproof') && perm.controller !== caster) return false;
+  return !(source && protectedFrom(perm, source));
+}
+
+/** Does `t` match the slot's kind and restrictions (without targeting rules: also used for "all …" effects)? */
+function fitsSpec(s: GameState, caster: PlayerId, spec: TargetSpec, t: Target, selfIid?: string): boolean {
   if (t.kind === 'player') {
     if (spec.kind !== 'player' && spec.kind !== 'any') return false;
     return !spec.filter.controller || (t.player === caster) === (spec.filter.controller === 'you');
@@ -537,7 +572,7 @@ export function isLegalTarget(s: GameState, caster: PlayerId, spec: TargetSpec, 
   }
   if (t.kind === 'spell') {
     const item = s.stack.find((x) => x.iid === t.iid);
-    if (spec.kind !== 'spell' || !item || item.iid === selfIid || item.ability) return false;
+    if (spec.kind !== 'spell' || !item || item.iid === selfIid || (item.ability && !spec.filter.abilities)) return false;
     return matchesFilter(s, spec.filter, caster, item, item.controller);
   }
   const perm = findPermanent(s, t.iid);
@@ -553,7 +588,7 @@ export function isLegalTarget(s: GameState, caster: PlayerId, spec: TargetSpec, 
 /** Permanents an "all …"/"each …" effect controlled by `caster` touches. */
 export function matching(s: GameState, caster: PlayerId, which: Selector): Permanent[] {
   const spec: TargetSpec = { kind: which.kind, min: 0, max: 0, filter: which.filter };
-  return s.battlefield.filter((x) => isLegalTarget(s, caster, spec, { kind: 'permanent', iid: x.iid }));
+  return s.battlefield.filter((x) => fitsSpec(s, caster, spec, { kind: 'permanent', iid: x.iid }));
 }
 
 /** Does the card match a filter of card words ("nonland", "creature")? Used for cards in hand. */
@@ -564,19 +599,19 @@ export const cardMatches = (card: Card, f: TargetFilter) => {
 };
 
 /** Every legal choice for a target slot right now. */
-export function legalTargets(s: GameState, caster: PlayerId, spec: TargetSpec, selfIid?: string): Target[] {
+export function legalTargets(s: GameState, caster: PlayerId, spec: TargetSpec, selfIid?: string, source?: Card): Target[] {
   const all: Target[] = [
     ...([0, 1] as PlayerId[]).map((player): Target => ({ kind: 'player', player })),
     ...s.battlefield.map((x): Target => ({ kind: 'permanent', iid: x.iid })),
     ...s.stack.map((x): Target => ({ kind: 'spell', iid: x.iid })),
     ...(spec.kind === 'card' ? [0, 1].flatMap((p) => s.players[p].graveyard.map((c): Target => ({ kind: 'card', iid: c.iid }))) : []),
   ];
-  return all.filter((t) => isLegalTarget(s, caster, spec, t, selfIid));
+  return all.filter((t) => isLegalTarget(s, caster, spec, t, selfIid, source));
 }
 
 /** Could the spell be cast with legal targets right now? (A counterspell needs a spell to counter.) */
 export function hasUsefulTarget(s: GameState, p: PlayerId, card: Card): boolean {
-  return spellSpec(card).targets.every((spec) => legalTargets(s, p, spec).length >= spec.min);
+  return spellSpec(card).targets.every((spec) => legalTargets(s, p, spec, undefined, card).length >= spec.min);
 }
 
 const sameTarget = (a: Target, b: Target) =>
@@ -597,7 +632,7 @@ function checkTargets(s: GameState, caster: PlayerId, card: Card, spec: AbilityS
     if (ts.length > slot.max) throw new IllegalAction('tooManyTargets', { card: card.name });
     ts.forEach((t, j) => {
       if (ts.slice(0, j).some((u) => sameTarget(t, u))) throw new IllegalAction('tooManyTargets', { card: card.name });
-      if (!isLegalTarget(s, caster, slot, t)) {
+      if (!isLegalTarget(s, caster, slot, t, undefined, card)) {
         const kindOk =
           (t.kind === 'player' && (slot.kind === 'player' || slot.kind === 'any')) ||
           (t.kind === 'spell' && slot.kind === 'spell') ||
@@ -838,7 +873,19 @@ function sacrifice(d: GameState, perm: Permanent) {
 /** A permanent enters: put it on the battlefield and check "enters" triggers (its own, landfall…). */
 function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, opts: { x?: number; tapped?: boolean } = {}): Permanent {
   const perm = newPermanent(inst, controller);
-  if (opts.tapped || entersTapped(inst.card)) perm.tapped = true;
+  const rule = entersTappedRule(inst.card);
+  const otherLands = d.battlefield.filter((x) => x.controller === controller && isLandCard(x.card));
+  if (opts.tapped || rule?.kind === 'always') perm.tapped = true;
+  else if (rule?.kind === 'unlessSubtypes') {
+    const subtypesOf = (c: Card) => (c.typeLine.split('//')[0].toLowerCase().split('—')[1] ?? '').split(' ');
+    perm.tapped = !otherLands.some((x) => rule.subtypes.some((t) => subtypesOf(x.card).includes(t)));
+  } else if (rule?.kind === 'unlessOtherLands') {
+    perm.tapped = (rule.max !== undefined && otherLands.length > rule.max) || (rule.min !== undefined && otherLands.length < rule.min);
+  } else if (rule?.kind === 'payLife') {
+    // Asked once nothing else is going on (see settle); tapped until then.
+    perm.tapped = true;
+    (d.lifeChoices ??= []).push({ iid: perm.iid, n: rule.n });
+  }
   const counters = entersWithCounters(inst.card);
   if (counters !== null) {
     const n = counters === 'X' ? (opts.x ?? 0) : counters;
@@ -903,6 +950,26 @@ function fireCast(d: GameState, p: PlayerId, card: Card) {
   }
 }
 
+/**
+ * Ward: a permanent targeted by an opponent's spell or ability triggers "counter it unless its controller
+ * pays {N}".
+ */
+function fireWard(d: GameState, item: StackItem) {
+  const seen = new Set<string>();
+  for (const t of item.targets.flat()) {
+    if (t.kind !== 'permanent' || seen.has(t.iid)) continue;
+    seen.add(t.iid);
+    const perm = findPermanent(d, t.iid);
+    const n = perm ? wardCost(perm.card) : 0;
+    if (!perm || !n || perm.controller === item.controller) continue;
+    (d.triggered ??= []).push({
+      source: { iid: perm.iid, card: perm.card }, controller: perm.controller,
+      ability: { targets: [{ kind: 'spell', min: 1, max: 1, filter: { abilities: true } }], effects: [{ kind: 'counter', to: { slot: 0 }, unlessPays: n }] },
+      targets: [[{ kind: 'spell', iid: item.iid }]],
+    });
+  }
+}
+
 function pushAbility(d: GameState, t: Triggered, targets: Target[][]) {
   d.abilities = (d.abilities ?? 0) + 1;
   d.stack.push({
@@ -910,6 +977,7 @@ function pushAbility(d: GameState, t: Triggered, targets: Target[][]) {
   });
   const named = targets.flat().map((tg) => targetName(d, tg));
   log(d, { k: 'triggers', card: t.source.card.name, ...(named.length ? { targets: named } : {}) });
+  fireWard(d, d.stack.at(-1)!);
   // Both players get priority again, starting with the active player.
   if (d.priority) {
     d.priority.passes = 0;
@@ -933,7 +1001,11 @@ function flushTrigger(d: GameState): boolean {
     pushAbility(d, t, []);
     return true;
   }
-  if (slots.some((slot) => legalTargets(d, t.controller, slot).length < slot.min)) {
+  if (t.targets) {
+    pushAbility(d, t, t.targets);
+    return true;
+  }
+  if (slots.some((slot) => legalTargets(d, t.controller, slot, undefined, t.source.card).length < slot.min)) {
     log(d, { k: 'noTarget', card: t.source.card.name });
     return true;
   }
@@ -947,6 +1019,7 @@ function flushTrigger(d: GameState): boolean {
 
 /** State-based actions: +1/+1 and -1/-1 counters cancel out, 0 toughness, lethal damage, 0 life. */
 function checkStateBased(d: GameState) {
+  refreshStatics(d);
   for (const perm of [...d.battlefield]) {
     const plus = perm.counters['+1/+1'] ?? 0;
     const minus = perm.counters['-1/-1'] ?? 0;
@@ -954,7 +1027,8 @@ function checkStateBased(d: GameState) {
       const both = Math.min(plus, minus);
       perm.counters = { ...perm.counters, '+1/+1': plus - both, '-1/-1': minus - both };
     }
-    if (isCreature(perm.card) && (toughnessOf(perm) <= 0 || perm.deathtouched || perm.damage >= toughnessOf(perm))) {
+    const lethal = (perm.deathtouched || perm.damage >= toughnessOf(perm)) && !hasKw(perm, 'indestructible');
+    if (isCreature(perm.card) && (toughnessOf(perm) <= 0 || lethal)) {
       removePermanent(d, perm, 'graveyard');
       log(d, { k: 'dies', card: perm.card.name });
     } else if (isPlaneswalker(perm.card) && !isCreature(perm.card) && (perm.counters.loyalty ?? 0) <= 0) {
@@ -962,6 +1036,21 @@ function checkStateBased(d: GameState) {
       log(d, { k: 'destroyed', card: perm.card.name });
     }
   }
+  // Auras on something they can't enchant any more go to the graveyard; Equipment just falls off.
+  for (const perm of [...d.battlefield]) {
+    if (!perm.attachedTo && !auraTarget(perm.card)) continue;
+    const host = perm.attachedTo ? findPermanent(d, perm.attachedTo) : undefined;
+    const aura = auraTarget(perm.card);
+    if (aura) {
+      if (!host || !fitsSpec(d, perm.controller, aura, { kind: 'permanent', iid: host.iid }) || protectedFrom(host, perm.card)) {
+        removePermanent(d, perm, 'graveyard');
+        log(d, { k: 'destroyed', card: perm.card.name });
+      }
+    } else if (!host || !isCreature(host.card) || host.controller !== perm.controller || protectedFrom(host, perm.card)) {
+      delete perm.attachedTo;
+    }
+  }
+  refreshStatics(d);
   if (d.winner !== null) return;
   const dead = ([0, 1] as PlayerId[]).filter((p) => d.players[p].life <= 0);
   if (dead.length === 2) d.winner = 'draw';
@@ -969,8 +1058,30 @@ function checkStateBased(d: GameState) {
   if (d.winner !== null) log(d, d.winner === 'draw' ? { k: 'draw' } : { k: 'wins', p: d.winner });
 }
 
+/** Recomputes what static abilities give each creature (anthems, Auras, Equipment). */
+function refreshStatics(d: GameState) {
+  for (const perm of d.battlefield) delete perm.statics;
+  for (const src of d.battlefield) {
+    for (const st of staticsOf(src.card)) {
+      const hosts = typeof st.who === 'string'
+        ? (src.attachedTo ? [findPermanent(d, src.attachedTo)].filter((x) => x !== undefined) : [])
+        : matching(d, src.controller, st.who.which).filter((x) => !(typeof st.who !== 'string' && st.who.other && x.iid === src.iid));
+      for (const h of hosts) {
+        if (!isCreature(h.card)) continue;
+        const b = (h.statics ??= { power: 0, toughness: 0, keywords: [] });
+        b.power += st.power;
+        b.toughness += st.toughness;
+        for (const k of st.keywords) if (!b.keywords.includes(k)) b.keywords.push(k);
+        if (st.cantAttack) b.cantAttack = true;
+        if (st.cantBlock) b.cantBlock = true;
+      }
+    }
+  }
+}
+
 function dealDamage(d: GameState, source: CardInst, controller: PlayerId, target: Permanent | PlayerId, amount: number) {
   if (amount <= 0) return;
+  if (typeof target !== 'number' && protectedFrom(target, source.card)) return; // protection prevents it
   if (typeof target === 'number') {
     d.players[target].life -= amount;
     log(d, { k: 'damagePlayer', card: source.card.name, n: amount, p: target });
@@ -987,6 +1098,7 @@ function dealDamage(d: GameState, source: CardInst, controller: PlayerId, target
 }
 
 function resolveCombat(d: GameState) {
+  refreshStatics(d);
   const def = opponent(d.active);
   const get = (iid: string) => findPermanent(d, iid);
   const involved = [...d.attackers, ...blockerIds(d)].map(get).filter((x) => x !== undefined);
@@ -1116,7 +1228,8 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
           }
         }
         d.stack = d.stack.filter((x) => x !== target);
-        d.players[target.controller].graveyard.push({ iid: target.iid, card: target.card });
+        // A countered ability just leaves the stack; a spell goes to the graveyard.
+        if (!target.ability) d.players[target.controller].graveyard.push({ iid: target.iid, card: target.card });
         log(d, { k: 'countered', card: target.card.name });
       }
       break;
@@ -1134,6 +1247,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       break;
     case 'destroy':
       for (const perm of perms) {
+        if (!e.exile && hasKw(perm, 'indestructible')) continue;
         removePermanent(d, perm, e.exile ? 'exile' : 'graveyard');
         log(d, { k: e.exile ? 'exiled' : 'destroyed', card: perm.card.name });
       }
@@ -1178,6 +1292,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
     }
     case 'destroyAll':
       for (const perm of matching(d, caster, e.which)) {
+        if (!e.exile && hasKw(perm, 'indestructible')) continue;
         removePermanent(d, perm, e.exile ? 'exile' : 'graveyard');
         log(d, { k: e.exile ? 'exiled' : 'destroyed', card: perm.card.name });
       }
@@ -1317,6 +1432,15 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       }
       r.sub = 0;
       break;
+    case 'attach': {
+      const src = item.source ? findPermanent(d, item.source) : undefined;
+      const host = perms[0];
+      if (src && host && host.controller === src.controller) {
+        src.attachedTo = host.iid;
+        log(d, { k: 'attached', card: src.card.name, to: host.card.name });
+      }
+      break;
+    }
     case 'addMana': {
       const ps = d.players[caster];
       ps.pool = [...(ps.pool ?? []), ...e.units.map((colors) => ({ colors }))];
@@ -1344,15 +1468,28 @@ function startResolving(d: GameState, reason: WindowReason) {
   const item = d.stack.pop()!;
 
   if (!item.ability && !isInstantOrSorcery(item.card)) {
+    // An Aura needs its target to still be legal; it enters attached to it.
+    const aura = auraTarget(item.card);
+    const host = item.targets[0]?.[0];
+    if (aura && (!host || !isLegalTarget(d, item.controller, aura, host, item.iid, item.card))) {
+      log(d, { k: 'fizzles', card: item.card.name });
+      d.players[item.controller].graveyard.push({ iid: item.iid, card: item.card });
+      afterResolving(d, reason);
+      return;
+    }
     log(d, { k: 'enters', card: item.card.name });
-    enterBattlefield(d, { iid: item.iid, card: item.card }, item.controller, { x: item.x });
+    const perm = enterBattlefield(d, { iid: item.iid, card: item.card }, item.controller, { x: item.x });
+    if (aura && host?.kind === 'permanent') {
+      perm.attachedTo = host.iid;
+      log(d, { k: 'attached', card: perm.card.name, to: findPermanent(d, host.iid)!.card.name });
+    }
     afterResolving(d, reason);
     return;
   }
 
   // Targets are checked again on resolution. If none is still legal, the spell does nothing.
   const spec = specOf(item);
-  const legal = item.targets.map((ts, slot) => ts.filter((t) => spec.targets[slot] && isLegalTarget(d, item.controller, spec.targets[slot], t, item.iid)));
+  const legal = item.targets.map((ts, slot) => ts.filter((t) => spec.targets[slot] && isLegalTarget(d, item.controller, spec.targets[slot], t, item.iid, item.card)));
   if (item.targets.some((ts) => ts.length) && legal.every((ts) => !ts.length)) {
     log(d, { k: 'fizzles', card: item.card.name });
     if (!item.ability) d.players[item.controller].graveyard.push({ iid: item.iid, card: item.card });
@@ -1428,6 +1565,7 @@ function settle(d: GameState) {
   for (;;) {
     checkStateBased(d);
     if (d.winner !== null || d.pending || d.mulligan) return;
+    if (askLegendRule(d) || askLifeChoice(d)) return;
     if (d.triggered?.length) {
       if (!flushTrigger(d)) return;
       continue;
@@ -1435,6 +1573,32 @@ function settle(d: GameState) {
     if (!d.priority || wantsPriority(d, d.priority.player)) return;
     passOnce(d);
   }
+}
+
+/** Legend rule: a player controlling two legendary permanents with the same name keeps one. */
+function askLegendRule(d: GameState): boolean {
+  for (const perm of d.battlefield) {
+    if (!/\bLegendary\b/.test(perm.card.typeLine.split('//')[0])) continue;
+    const same = d.battlefield.filter((x) => x.controller === perm.controller && x.card.name === perm.card.name);
+    if (same.length < 2) continue;
+    d.pending = {
+      choice: { kind: 'cards', player: perm.controller, purpose: 'legendRule', min: 1, max: 1, options: same, params: { card: perm.card.name } },
+      resume: 'legend',
+    };
+    return true;
+  }
+  return false;
+}
+
+/** Shock lands: "pay 2 life, or it enters tapped". */
+function askLifeChoice(d: GameState): boolean {
+  const next = d.lifeChoices?.shift();
+  if (!d.lifeChoices?.length) delete d.lifeChoices;
+  if (!next) return false;
+  const perm = findPermanent(d, next.iid);
+  if (!perm) return askLifeChoice(d);
+  d.pending = { choice: { kind: 'yesNo', player: perm.controller, purpose: 'payLife', params: { card: perm.card.name, n: next.n } }, resume: 'payLife', iid: perm.iid };
+  return true;
 }
 
 function passOnce(d: GameState) {
@@ -1573,6 +1737,23 @@ export function apply(state: GameState, action: Action): GameState {
       else if (pending.resume === 'trigger' && action.answer.kind === 'targets') {
         const t = pending.trigger!;
         pushAbility(d, t, checkTargets(d, t.controller, t.source.card, t.ability, action.answer.targets));
+      } else if (pending.resume === 'legend' && action.answer.kind === 'cards') {
+        const keep = action.answer.iids[0];
+        for (const opt of (pending.choice as { options: CardInst[] }).options) {
+          const perm = findPermanent(d, opt.iid);
+          if (perm && perm.iid !== keep) {
+            removePermanent(d, perm, 'graveyard');
+            log(d, { k: 'legendRule', card: perm.card.name });
+          }
+        }
+      } else if (pending.resume === 'payLife' && action.answer.kind === 'yesNo') {
+        const perm = findPermanent(d, pending.iid!);
+        const n = Number(pending.choice.params?.n ?? 0);
+        if (perm && action.answer.yes) {
+          perm.tapped = false;
+          d.players[perm.controller].life -= n;
+        }
+        if (perm) log(d, { k: 'shock', card: perm.card.name, paid: action.answer.yes ? n : 0 });
       } else if (pending.resume === 'activation' && action.answer.kind === 'cards') {
         sacrifice(d, findPermanent(d, action.answer.iids[0])!);
         finishActivation(d, pending.activation!.item, pending.activation!.named);
@@ -1613,6 +1794,7 @@ export function apply(state: GameState, action: Action): GameState {
       d.stack.push({ ...inst, controller: p, targets, ...(xCount(inst.card) ? { x } : {}) });
       log(d, { k: 'cast', p, card: inst.card.name, ...(named.length ? { targets: named } : {}) });
       fireCast(d, p, inst.card);
+      fireWard(d, d.stack.at(-1)!);
 
       // The opponent may respond.
       if (d.priority) {

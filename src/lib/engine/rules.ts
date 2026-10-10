@@ -6,6 +6,7 @@ import type { Card } from '../../types';
 export const KEYWORDS = [
   'flying', 'reach', 'haste', 'vigilance', 'trample', 'deathtouch', 'lifelink',
   'defender', 'first strike', 'double strike', 'menace', 'flash', 'prowess',
+  'hexproof', 'shroud', 'indestructible',
 ] as const;
 export type Keyword = (typeof KEYWORDS)[number];
 
@@ -222,6 +223,8 @@ export interface TargetFilter {
   blocking?: boolean;
   /** "attacking or blocking creature" */
   inCombat?: boolean;
+  /** For spell targets: abilities on the stack may be chosen too (ward counters abilities). */
+  abilities?: boolean;
   maxManaValue?: number;
   minManaValue?: number;
   minPower?: number;
@@ -309,7 +312,9 @@ export type Effect =
   /** Mana into the controller's pool (rituals: "Add {B}{B}{B}"). One entry per mana, with its possible colors. */
   | { kind: 'addMana'; units: Color[][] }
   /** Search your library for up to `n` matching cards, then shuffle. */
-  | { kind: 'search'; n: number; filter: TargetFilter; dest: 'hand' | 'battlefield'; tapped: boolean };
+  | { kind: 'search'; n: number; filter: TargetFilter; dest: 'hand' | 'battlefield'; tapped: boolean }
+  /** Equip: attach the ability's source to the target. */
+  | { kind: 'attach'; to: Affected };
 
 /** A token's characteristics; the engine turns it into a card. */
 export interface TokenSpec {
@@ -514,7 +519,7 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** Ways rules text names its own card: "Goblin Guide", "Ragavan" (legends), "this creature". */
 function selfWords(name: string): string[] {
   const front = name.split(' // ')[0];
-  return [front, front.split(',')[0], 'this creature', 'this permanent', 'this artifact', 'this enchantment', 'this land', 'this token'];
+  return [front, front.split(',')[0], 'this creature', 'this permanent', 'this artifact', 'this enchantment', 'this land', 'this token', 'this aura', 'this equipment'];
 }
 
 /**
@@ -733,6 +738,9 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
 
 /** The rules of an instant or sorcery, from its front face text. Other cards have none. */
 export function spellSpec(card: Card): AbilitySpec {
+  // An Aura spell targets what it will enchant.
+  const aura = auraTarget(card);
+  if (aura) return { targets: [aura], effects: [] };
   if (!isInstantOrSorcery(card)) return { targets: [], effects: [] };
   return parseAbilityText(frontText(card));
 }
@@ -898,6 +906,15 @@ export function activatedOf(card: Card): ActivatedSpec[] {
 
   for (const raw of frontText(card).split('\n')) {
     const line = raw.replace(/\s*\([^)]*\)/g, '').replace(/^[A-Z][A-Za-z' ]+ — /, '').trim();
+    // "Equip {2}": attach to target creature you control, as a sorcery.
+    const equip = line.match(/^Equip ((?:\{[^}]+\})+)$/);
+    if (equip) {
+      out.push({
+        text: line, cost: { mana: equip[1], tap: false, sacrificeSelf: false, life: 0 }, sorcery: true, once: false,
+        ability: { targets: [{ kind: 'creature', min: 1, max: 1, filter: { controller: 'you' } }], effects: [{ kind: 'attach', to: { slot: 0 } }] },
+      });
+      continue;
+    }
     const m = line.match(/^([^:"]+): (.+)$/);
     if (!m) continue;
     let text = m[2];
@@ -963,3 +980,126 @@ export function startingLoyalty(card: Card): number {
 }
 
 export const isPlaneswalker = (card: Card) => cardTypes(card).includes('planeswalker');
+
+// ---------- Static abilities ----------
+
+/** What a static ability changes on the creatures it applies to. */
+export interface StaticSpec {
+  /** The creature this Aura / Equipment is attached to, or every creature matching a selector (anthems). */
+  who: 'enchanted' | 'equipped' | { which: Selector; other: boolean };
+  power: number;
+  toughness: number;
+  keywords: Keyword[];
+  cantAttack?: boolean;
+  cantBlock?: boolean;
+}
+
+/** "Other Elf creatures you control", "White creatures you control", "Creatures your opponents control". */
+function anthemSubject(subject: string): { which: Selector; other: boolean } | null {
+  const words = subject.split(' ');
+  const other = words[0].toLowerCase() === 'other';
+  if (other) words.shift();
+  const filter: TargetFilter = {};
+  let i = 0;
+  for (; i < words.length && !/^creatures?$/i.test(words[i]); i++) {
+    const w = words[i];
+    const lower = w.toLowerCase();
+    if (COLOR_WORDS[lower]) (filter.colors ??= []).push(COLOR_WORDS[lower]);
+    else if (lower.startsWith('non') && COLOR_WORDS[lower.slice(3)]) (filter.nonColors ??= []).push(COLOR_WORDS[lower.slice(3)]);
+    else if (lower === 'artifact' || lower === 'enchantment') (filter.types ??= []).push(lower);
+    else if (/^[A-Z][a-z]+$/.test(w)) (filter.subtypes ??= []).push(lower); // a creature type: Elf, Goblin…
+    else return null;
+  }
+  const rest = words.slice(i + 1).join(' ').toLowerCase();
+  if (i === words.length) return null;
+  if (rest === 'you control') filter.controller = 'you';
+  else if (rest === 'your opponents control' || rest === "you don't control") filter.controller = 'opponent';
+  else if (rest !== '') return null;
+  return { which: { kind: 'creature', filter }, other };
+}
+
+const staticCache = new Map<string, StaticSpec[]>();
+
+/** Static abilities of a permanent card: anthems, and what an Aura or Equipment gives. */
+export function staticsOf(card: Card): StaticSpec[] {
+  const key = `${card.name}\n${card.oracleText}`;
+  const cached = staticCache.get(key);
+  if (cached) return cached;
+  const out: StaticSpec[] = [];
+  for (const raw of frontText(card).split('\n')) {
+    const line = raw.replace(/\s*\([^)]*\)/g, '').trim();
+    const kws = (text: string | undefined) => keywordList(text?.toLowerCase());
+    const attached = line.match(/^(Enchanted|Equipped) creature (.+)\.$/);
+    if (attached) {
+      const who = attached[1] === 'Enchanted' ? 'enchanted' : 'equipped';
+      const body = attached[2];
+      const pump = body.match(new RegExp(`^gets ([+-]\\d+)\\/([+-]\\d+)(?: and has ${KEYWORD_LIST})?$`, 'i'));
+      const has = body.match(new RegExp(`^has ${KEYWORD_LIST}$`, 'i'));
+      if (pump) out.push({ who, power: Number(pump[1]), toughness: Number(pump[2]), keywords: kws(pump[3]) });
+      else if (has) out.push({ who, power: 0, toughness: 0, keywords: kws(has[1]) });
+      else if (/^can't attack or block$/i.test(body)) out.push({ who, power: 0, toughness: 0, keywords: [], cantAttack: true, cantBlock: true });
+      else if (/^can't attack$/i.test(body)) out.push({ who, power: 0, toughness: 0, keywords: [], cantAttack: true });
+      else if (/^can't block$/i.test(body)) out.push({ who, power: 0, toughness: 0, keywords: [], cantBlock: true });
+      continue;
+    }
+    const anthem = line.match(/^((?:Other )?[A-Za-z ]*?[Cc]reatures?(?: you control| your opponents control| you don't control)?) (?:get ([+-]\d+)\/([+-]\d+)(?: and have (.+))?|have (.+))\.$/);
+    if (anthem) {
+      const subject = anthemSubject(anthem[1]);
+      const keywordText = anthem[4] ?? anthem[5];
+      const keywords = keywordText ? kws(keywordText) : [];
+      if (!subject || (keywordText && !keywords.every((k) => (KEYWORDS as readonly string[]).includes(k)))) continue;
+      out.push({ who: subject, power: Number(anthem[2] ?? 0), toughness: Number(anthem[3] ?? 0), keywords });
+    }
+  }
+  staticCache.set(key, out);
+  return out;
+}
+
+/** What an Aura can enchant ("Enchant creature", "Enchant creature you control", "Enchant land"), as a target. */
+export function auraTarget(card: Card): TargetSpec | null {
+  if (!/\bAura\b/.test(card.typeLine.split('//')[0])) return null;
+  const m = frontText(card).match(/^Enchant ([a-z ,]+?)\s*$/im);
+  return m ? parseTargetPhrase(`target ${m[1]}`) : null;
+}
+
+/** "Ward {2}": the mana an opponent must pay for each spell or ability targeting it (0 if none). */
+export function wardCost(card: Card): number {
+  const m = frontText(card).match(/(?:^|\n|, )Ward \{(\d+)\}/i);
+  return m ? Number(m[1]) : 0;
+}
+
+/** "Protection from red", "protection from white and from blue": colors it is protected from. */
+export function protectionsOf(card: Card): Color[] {
+  const out: Color[] = [];
+  for (const m of frontText(card).matchAll(/protection from ((?:(?:white|blue|black|red|green)(?:,? and from |, from |, )?)+)/gi)) {
+    for (const w of m[1].toLowerCase().split(/,? and from |, from |, /)) if (COLOR_WORDS[w]) out.push(COLOR_WORDS[w]);
+  }
+  return out;
+}
+
+export type EntersTappedRule =
+  | { kind: 'always' }
+  /** "unless you control a Plains or an Island" */
+  | { kind: 'unlessSubtypes'; subtypes: string[] }
+  /** Fast lands "unless you control two or fewer other lands" (max), slow lands "two or more" (min). */
+  | { kind: 'unlessOtherLands'; max?: number; min?: number }
+  /** Shock lands: "As this land enters, you may pay 2 life. If you don't, it enters tapped." */
+  | { kind: 'payLife'; n: number };
+
+/** When a permanent enters tapped. */
+export function entersTappedRule(card: Card): EntersTappedRule | null {
+  const text = frontText(card);
+  const selves = selfWords(card.name).map(escapeRe).join('|');
+  if (entersTapped(card)) return { kind: 'always' };
+  const unless = text.match(new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)? tapped unless you control (.+?)\\.`, 'i'));
+  if (unless) {
+    const what = unless[1].toLowerCase();
+    const lands = what.match(/^(two|three) or (fewer|more) other lands$/);
+    if (lands) return { kind: 'unlessOtherLands', [lands[2] === 'fewer' ? 'max' : 'min']: toNumber(lands[1]) };
+    const types = what.split(/,? or |, /).map((w) => w.replace(/^an? /, ''));
+    if (types.every((t) => LAND_TYPES.includes(t))) return { kind: 'unlessSubtypes', subtypes: types };
+    return null;
+  }
+  const shock = text.match(/As (?:this land|this permanent) enters(?: the battlefield)?, you may pay (\d+) life\. If you don't, it enters(?: the battlefield)? tapped\./i);
+  return shock ? { kind: 'payLife', n: Number(shock[1]) } : null;
+}

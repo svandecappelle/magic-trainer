@@ -22,8 +22,9 @@ to show how much each step unlocks. Tick items as they land.
 - London mulligan, stack, priority windows, full control mode.
 - Activated abilities of permanents ("{T}: …", "{2}{R}: …", sacrifice and life costs), tokens (creatures, Treasure,
   Clue, Food), edicts. About a quarter of the 350 most-played cards with activated abilities have one simulated.
-- Anything else is cast "not simulated"; artifacts, enchantments and planeswalkers enter and only their triggers,
-  activated and loyalty abilities work.
+- Static abilities: anthems and lords, Auras, Equipment, hexproof / shroud / indestructible / ward / protection,
+  legend rule, lands entering tapped.
+- Anything else is cast "not simulated"; other artifacts and enchantments only have their triggers and activated abilities.
 
 ## Step 0 — Foundations
 
@@ -88,13 +89,17 @@ Not simulated yet in triggers (recognized, logged as "not simulated"):
 
 ## Step 4 — Permanents with ongoing rules
 
-- [ ] 26. Auras (805)
-- [ ] 27. Equipment (516)
-- [ ] 28. Anthems / static buffs (479)
-- [ ] 29. Lands entering tapped (525) — unconditional "enters tapped" works; "unless you control…" not yet
-- [ ] 30. Hexproof, indestructible, ward (316)
-- [ ] 31. Protection (104)
-- [ ] 32. Legend rule
+- [x] 26. Auras (805) — "Enchant …" targets when cast, attached on resolution, "enchanted creature gets/has/can't
+  attack or block", into the graveyard when what they enchant leaves. Auras with other effects (control, triggers on
+  the enchanted creature) are not simulated
+- [x] 27. Equipment (516) — "Equip {N}" (sorcery speed), "equipped creature gets/has", falls off when the creature leaves
+- [x] 28. Anthems / static buffs (479) — "(Other) [color/type] creatures you control get +N/+N (and have …)", lords;
+  conditional statics ("as long as …") and non-creature statics are not simulated
+- [x] 29. Lands entering tapped (525) — always, "unless you control a Forest or a Plains", fast lands, slow lands,
+  shock lands (pay 2 life or enter tapped)
+- [x] 30. Hexproof, indestructible, ward (316) — and shroud; ward {N} (mana only) counters unless paid
+- [x] 31. Protection (104) — protection from colors: targeting, damage, blocking, Auras/Equipment
+- [x] 32. Legend rule — its controller chooses which one to keep
 
 ## Step 5 — Special card types and costs
 

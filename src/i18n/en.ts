@@ -9,7 +9,7 @@ const lists = new Intl.ListFormat('en', { type: 'conjunction' });
 const signed = (n: number) => (n < 0 ? `${n}` : `+${n}`);
 const keywordNames: Record<Keyword, string> = {
   flying: 'flying', reach: 'reach', haste: 'haste', vigilance: 'vigilance', trample: 'trample', deathtouch: 'deathtouch',
-  lifelink: 'lifelink', defender: 'defender', 'first strike': 'first strike', 'double strike': 'double strike', menace: 'menace', flash: 'flash', prowess: 'prowess',
+  lifelink: 'lifelink', defender: 'defender', 'first strike': 'first strike', 'double strike': 'double strike', menace: 'menace', flash: 'flash', prowess: 'prowess', hexproof: 'hexproof', shroud: 'shroud', indestructible: 'indestructible',
 };
 
 const log: LogMessages = {
@@ -56,6 +56,9 @@ const log: LogMessages = {
   tapped: (e, c) => `${c.card(e.card)} is ${e.untap ? 'untapped' : 'tapped'}`,
   bounced: (e, c) => `${c.card(e.card)} returns to its owner's hand`,
   sacrificed: (e, c) => `${c.card(e.card)} is sacrificed`,
+  attached: (e, c) => `${c.card(e.card)} is attached to ${c.card(e.to)}`,
+  legendRule: (e, c) => `${c.card(e.card)} goes to the graveyard (legend rule)`,
+  shock: (e, c) => (e.paid ? `${c.card(e.card)} enters untapped (${e.paid} life paid)` : `${c.card(e.card)} enters tapped`),
   attackPlaneswalker: (e, c) => `${c.card(e.card)} attacks ${c.card(e.pw)}`,
   loyalty: (e, c) => `${c.card(e.card)}: ${e.n > 0 ? '+' : ''}${e.n} loyalty`,
   returned: (e, c) => `${c.card(e.card)} returns from the graveyard ${e.dest === 'hand' ? "to its owner's hand" : 'to the battlefield'}`,
@@ -426,6 +429,8 @@ export const en = {
       surveil: (p: { n: number }) => `Surveil ${p.n}: keep cards on top (in order) or put them into your graveyard.`,
       triggerTargets: (p: { card: string; kind: string }) => `${p.card}'s ability triggers: choose a target (${p.kind}).`,
       optional: (p: { card: string }) => `Use ${p.card}'s ability?`,
+      legendRule: (p: { card: string }) => `Legend rule: choose which ${p.card} to keep.`,
+      payLife: (p: { card: string; n: number }) => `${p.card}: pay ${p.n} life to have it enter untapped?`,
       search: (p: { n: number }) => `Search your library: choose up to ${plural(p.n, 'card', 'cards')}.`,
       sacrifice: (p: { n: number }) => `Choose ${plural(p.n, 'permanent', 'permanents')} to sacrifice.`,
       sacrificeCost: (p: { card: string }) => `Choose what to sacrifice for ${p.card}'s ability.`,
@@ -435,6 +440,8 @@ export const en = {
     },
     payN: (n: number) => `Pay {${n}}`,
     dontPay: "Don't pay",
+    payLifeN: (n: number) => `Pay ${n} life`,
+    enterTapped: 'Enter tapped',
     yes: 'Yes',
     no: 'No',
     confirm: 'Confirm',

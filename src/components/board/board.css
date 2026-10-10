@@ -73,6 +73,14 @@
 .perm.dimmed { filter: brightness(0.5) saturate(0.6); }
 .perm.leaving { pointer-events: none; animation: perm-leave 0.65s ease-in forwards; }
 
+/* Auras and Equipment peek out above the permanent they're attached to. */
+.perm-host { position: relative; padding-top: calc(var(--n) * var(--perm-w) * 0.22); }
+.perm-host > .attached { position: absolute; left: 0; top: calc(var(--i) * var(--perm-w) * 0.22); z-index: 0; }
+.perm-host > .attached .perm { animation: none; }
+.perm-host > .perm { z-index: 1; }
+.lands .perm-host { padding-top: calc(var(--n) * var(--land-w) * 0.3); }
+.lands .perm-host > .attached { top: calc(var(--i) * var(--land-w) * 0.3); }
+.lands .perm-host > .attached .perm img { width: var(--land-w); }
 .perm .pt {
   position: absolute; right: 3px; bottom: 3px; padding: 0 5px; border-radius: 4px;
   background: rgba(0, 0, 0, 0.85); color: #fff; font-size: 0.8rem; font-weight: 800;

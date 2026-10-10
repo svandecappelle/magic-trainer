@@ -4,7 +4,7 @@ import {
   type Action, type Answer, type CardInst, type Choice, type GameState, type Permanent, type PlayerId, type StackItem, type Target,
 } from './engine';
 import {
-  creatureValue, hasInstantSpeed, isPlaneswalker, isToken, hasKeyword, isCreature, isInstantOrSorcery, isLandCard, manaColors,
+  auraTarget, creatureValue, hasInstantSpeed, isPlaneswalker, isToken, staticsOf, hasKeyword, isCreature, isInstantOrSorcery, isLandCard, manaColors,
   parseCost, spellSpec, type AbilitySpec, type Amount, type Effect,
 } from './rules';
 import type { Card } from '../../types';
@@ -197,6 +197,12 @@ function chooseMainPhaseSpell(s: GameState, me: PlayerId): Action | null {
   for (const { iid, card } of castable(s, me)) {
     if (!isInstantOrSorcery(card)) {
       // Creatures and other permanents: before combat only if they can attack right away.
+      const aura = auraTarget(card);
+      if (aura) {
+        const host = chooseAuraHost(s, me, card);
+        if (host) return { type: 'cast', iid, targets: [[{ kind: 'permanent', iid: host.iid }]] };
+        continue;
+      }
       if (s.step === 'main2' || (isCreature(card) && hasKeyword(card, 'haste'))) return { type: 'cast', iid };
       continue;
     }
@@ -312,17 +318,36 @@ const asTarget = (x: Permanent | PlayerId): Target =>
   typeof x === 'number' ? { kind: 'player', player: x } : { kind: 'permanent', iid: x.iid };
 
 /** Something the bot can do with targets: a spell to cast or an ability to activate. */
+/**
+ * Where an Aura goes: a helpful one ("gets +2/+2", "has flying") on our best creature, a harmful one
+ * ("can't attack or block", "-2/-2") on their best creature.
+ */
+function chooseAuraHost(s: GameState, me: PlayerId, card: Card): Permanent | null {
+  const statics = staticsOf(card).filter((st) => st.who === 'enchanted');
+  if (!statics.length) return null;
+  const score = statics.reduce((n, st) => n + st.power + st.toughness + st.keywords.length * 1.5 - (st.cantAttack ? 4 : 0) - (st.cantBlock ? 2 : 0), 0);
+  const want = score >= 0 ? me : opponent(me);
+  const hosts = legalTargets(s, me, auraTarget(card)!, undefined, card)
+    .flatMap((t) => (t.kind === 'permanent' ? [findPermanent(s, t.iid)!] : []))
+    .filter((x) => x.controller === want && isCreature(x.card))
+    .sort((a, b) => creatureValue(b.card) - creatureValue(a.card));
+  return hosts[0] ?? null;
+}
+
 interface Play {
   spec: AbilitySpec;
   hasX: boolean;
   /** The largest X affordable. */
   maxX: number;
   act: (targets: Target[][], x: number) => Action;
+  /** The card targeting, for protection from its colors. */
+  source?: Card;
 }
 
 function castWithGoodTarget(s: GameState, me: PlayerId, inst: { iid: string; card: Card }, among?: Permanent[]): Action | null {
   return playWithGoodTarget(s, me, {
     spec: spellSpec(inst.card),
+    source: inst.card,
     hasX: xCount(inst.card) > 0,
     maxX: maxX(s, me, inst.card),
     act: (targets, x) => ({ type: 'cast', iid: inst.iid, ...(targets.length ? { targets } : {}), ...(xCount(inst.card) ? { x } : {}) }),
@@ -368,7 +393,7 @@ function playWithGoodTarget(s: GameState, me: PlayerId, play: Play, among?: Perm
     const card = chooseGraveCard(s, me, spec);
     return card ? cast([[card]]) : null;
   }
-  const target = chooseTarget(s, me, spec, among);
+  const target = chooseTarget(s, me, spec, among, play.source);
   return target === null ? null : cast([[asTarget(target)]]);
 }
 
@@ -392,12 +417,12 @@ function chooseFight(s: GameState, me: PlayerId, spec: AbilitySpec, e: Extract<E
 }
 
 /** The best target for slot 0 of a spell, among legal ones (and `among`, if given). */
-function chooseTarget(s: GameState, me: PlayerId, spec: AbilitySpec, among?: Permanent[]): Permanent | PlayerId | null {
+function chooseTarget(s: GameState, me: PlayerId, spec: AbilitySpec, among?: Permanent[], source?: Card): Permanent | PlayerId | null {
   const opp = opponent(me);
   const slot = spec.targets[0];
   const onSlot = spec.effects.filter((e) => 'to' in e && typeof e.to === 'object' && e.to.slot === 0);
   const harm = onSlot.some((e) => intentOf(e) === 'harm');
-  const legal = legalTargets(s, me, slot);
+  const legal = legalTargets(s, me, slot, undefined, source);
   const perms = legal
     .filter((t) => t.kind === 'permanent')
     .map((t) => findPermanent(s, (t as { iid: string }).iid)!)
@@ -458,6 +483,8 @@ function abilityPlays(s: GameState, me: PlayerId): (Play & { perm: Permanent; ta
     .filter(({ spec }) => !spec.cost.life || (isLandSearch(spec.ability) && s.players[me].life > 6))
     // Free abilities could repeat forever; loyalty abilities are once a turn and handled by usePlaneswalkers.
     .filter(({ spec }) => (spec.cost.tap || spec.cost.mana || spec.cost.sacrificeSelf) && spec.cost.loyalty === undefined)
+    // Equipment already on a creature stays there.
+    .filter(({ perm, spec }) => !(spec.ability.effects.some((e) => e.kind === 'attach') && perm.attachedTo && findPermanent(s, perm.attachedTo)))
     .map(({ perm, index, spec }) => ({
       perm,
       spec: spec.ability,
@@ -601,7 +628,11 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
   switch (choice.kind) {
     case 'cards': {
       let options = [...choice.options];
-      if (!safe && (choice.purpose === 'sacrifice' || choice.purpose === 'sacrificeCost')) {
+      if (!safe && choice.purpose === 'legendRule') {
+        // Keep the copy with the most counters (loyalty, +1/+1).
+        const counters = (c: CardInst) => Object.values(findPermanent(s, c.iid)?.counters ?? {}).reduce((n, x) => n + (x ?? 0), 0);
+        options.sort((a, b) => counters(b) - counters(a));
+      } else if (!safe && (choice.purpose === 'sacrifice' || choice.purpose === 'sacrificeCost')) {
         // Give up what is worth least: tokens and small creatures first.
         const worth = (c: CardInst) => (isCreature(c.card) ? creatureValue(c.card) : c.card.cmc) - (isToken(c.card) ? 1 : 0);
         options.sort((a, b) => worth(a) - worth(b));
@@ -643,6 +674,8 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
       return { kind: 'mode', modes: Array.from({ length: choice.min }, (_, i) => i) };
     case 'yesNo':
       // Paying to keep our spell is worth it; our own "you may" abilities are used.
+      // Shock lands: pay while life is comfortable.
+      if (choice.purpose === 'payLife') return { kind: 'yesNo', yes: !safe && s.players[choice.player].life > 10 };
       return { kind: 'yesNo', yes: !safe && (choice.purpose === 'payOrCounter' || choice.purpose === 'optional') };
     case 'targets':
       return { kind: 'targets', targets: triggerTargets(s, choice.player, { targets: choice.slots, effects: triggerEffects(s, choice) }, safe) };

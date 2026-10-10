@@ -19,6 +19,8 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
     case 'optional': return t.game.choice.optional({ card: card(String(p.card)) });
     case 'sacrifice': return t.game.choice.sacrifice({ n });
     case 'search': return t.game.choice.search({ n });
+    case 'legendRule': return t.game.choice.legendRule({ card: card(String(p.card)) });
+    case 'payLife': return t.game.choice.payLife({ card: card(String(p.card)), n });
     case 'sacrificeCost': return t.game.choice.sacrificeCost({ card: card(String(p.card)) });
     case 'triggerTargets':
       if (choice.kind === 'targets') {
@@ -58,11 +60,15 @@ export function ChoicePanel({ choice, onAnswer, onPreview }: Props) {
   );
 
   if (choice.kind === 'yesNo') {
-    const pay = choice.purpose === 'payOrCounter';
+    const n = Number(choice.params?.n);
+    const [yes, no] =
+      choice.purpose === 'payOrCounter' ? [t.game.payN(n), t.game.dontPay]
+      : choice.purpose === 'payLife' ? [t.game.payLifeN(n), t.game.enterTapped]
+      : [t.game.yes, t.game.no];
     return (
       <div className="choice-panel">
-        <button onClick={() => onAnswer({ kind: 'yesNo', yes: true })}>{pay ? t.game.payN(Number(choice.params?.n)) : t.game.yes}</button>
-        <button className="secondary" onClick={() => onAnswer({ kind: 'yesNo', yes: false })}>{pay ? t.game.dontPay : t.game.no}</button>
+        <button onClick={() => onAnswer({ kind: 'yesNo', yes: true })}>{yes}</button>
+        <button className="secondary" onClick={() => onAnswer({ kind: 'yesNo', yes: false })}>{no}</button>
       </div>
     );
   }

@@ -12,7 +12,7 @@ const signed = (n: number) => (n < 0 ? `${n}` : `+${n}`);
 const keywordNames: Record<Keyword, string> = {
   flying: 'le vol', reach: 'la portée', haste: 'la célérité', vigilance: 'la vigilance', trample: 'le piétinement',
   deathtouch: 'le contact mortel', lifelink: 'le lien de vie', defender: 'défenseur', 'first strike': "l'initiative",
-  'double strike': 'la double initiative', menace: 'la menace', flash: 'le flash', prowess: 'la prouesse',
+  'double strike': 'la double initiative', menace: 'la menace', flash: 'le flash', prowess: 'la prouesse', hexproof: 'la défense talismanique', shroud: 'le linceul', indestructible: "l'indestructibilité",
 };
 
 const targetKinds = {
@@ -67,6 +67,9 @@ const log: LogMessages = {
   tapped: (e, c) => `${c.card(e.card)} est ${e.untap ? 'dégagé' : 'engagé'}`,
   bounced: (e, c) => `${c.card(e.card)} retourne dans la main de son propriétaire`,
   sacrificed: (e, c) => `${c.card(e.card)} est sacrifié`,
+  attached: (e, c) => `${c.card(e.card)} est attaché à ${c.card(e.to)}`,
+  legendRule: (e, c) => `${c.card(e.card)} va au cimetière (règle des légendes)`,
+  shock: (e, c) => (e.paid ? `${c.card(e.card)} arrive dégagé (${e.paid} points de vie payés)` : `${c.card(e.card)} arrive engagé`),
   attackPlaneswalker: (e, c) => `${c.card(e.card)} attaque ${c.card(e.pw)}`,
   loyalty: (e, c) => `${c.card(e.card)} : ${e.n > 0 ? '+' : ''}${e.n} loyauté`,
   returned: (e, c) => `${c.card(e.card)} revient du cimetière ${e.dest === 'hand' ? 'dans la main de son propriétaire' : 'sur le champ de bataille'}`,
@@ -432,6 +435,8 @@ export const fr: Messages = {
       surveil: (p) => `Surveillance ${p.n} : gardez des cartes au-dessus (dans l'ordre) ou mettez-les au cimetière.`,
       triggerTargets: (p) => `La capacité de ${p.card} se déclenche : choisissez une cible (${p.kind}).`,
       optional: (p) => `Utiliser la capacité de ${p.card} ?`,
+      legendRule: (p) => `Règle des légendes : choisissez quel ${p.card} garder.`,
+      payLife: (p) => `${p.card} : payer ${p.n} points de vie pour qu'il arrive dégagé ?`,
       search: (p) => `Cherchez dans votre bibliothèque : choisissez jusqu'à ${p.n} carte${p.n > 1 ? 's' : ''}.`,
       sacrifice: (p) => `Choisissez ${p.n === 1 ? 'un permanent' : `${p.n} permanents`} à sacrifier.`,
       sacrificeCost: (p) => `Choisissez quoi sacrifier pour la capacité de ${p.card}.`,
@@ -441,6 +446,8 @@ export const fr: Messages = {
     },
     payN: (n) => `Payer {${n}}`,
     dontPay: 'Ne pas payer',
+    payLifeN: (n) => `Payer ${n} points de vie`,
+    enterTapped: 'Arriver engagé',
     yes: 'Oui',
     no: 'Non',
     confirm: 'Confirmer',

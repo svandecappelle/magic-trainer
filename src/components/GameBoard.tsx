@@ -197,7 +197,12 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   }
 
   const slotSpec = targeting ? targeting.spec.targets[targeting.slot] : null;
-  const canTarget = (tg: Target) => !!slotSpec && isLegalTarget(g, me, slotSpec, tg);
+  /** The card doing the targeting (for protection from its colors). */
+  const targetingSource = targeting
+    ? (g.players[me].hand.find((c) => c.iid === targeting.iid)?.card ?? findPermanent(g, targeting.iid)?.card ??
+      (g.pending?.choice.kind === 'targets' ? g.pending.choice.source.card : undefined))
+    : undefined;
+  const canTarget = (tg: Target) => !!slotSpec && isLegalTarget(g, me, slotSpec, tg, undefined, targetingSource);
   const isPicked = (tg: Target) => !!targeting && targeting.picked.flat().some((x) => sameTarget(x, tg));
 
   /** Move on to the next target slot, casting the spell after the last one. */
@@ -496,7 +501,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
       targetable && 'targetable', picked && 'picked', canAct && 'actionable', ghost && 'leaving',
       targeting && !targetable && !ghost && 'dimmed', perm.controller === me ? 'mine' : 'theirs',
     ].filter(Boolean).join(' ');
-    const granted = [...new Set(perm.boosts.flatMap((b) => b.keywords))];
+    const granted = [...new Set([...perm.boosts.flatMap((b) => b.keywords), ...(perm.statics?.keywords ?? [])])];
     const counters = Object.entries(perm.counters).filter(([c, n]) => n && c !== 'loyalty');
     const loyalty = isPlaneswalker(perm.card) ? perm.counters.loyalty ?? 0 : null;
     const hurt = perm.damage > 0;
@@ -510,7 +515,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
       >
         <img src={show.imageSmall(perm.card)} alt={show.name(perm.card)} draggable={false} />
         {isCreature(perm.card) && (
-          <span className={`pt ${hurt ? 'hurt' : ''} ${perm.boosts.length || counters.length ? 'pumped' : ''}`}>
+          <span className={`pt ${hurt ? 'hurt' : ''} ${perm.boosts.length || counters.length || perm.statics?.power || perm.statics?.toughness ? 'pumped' : ''}`}>
             {powerOf(perm)}/{toughnessOf(perm) - perm.damage}
           </span>
         )}
@@ -524,9 +529,25 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   };
 
   /** One battlefield row, with permanents that just left still fading out where they were. */
+  // Auras and Equipment are drawn behind what they're attached to, whoever controls them.
+  const attachedTo = (perm: Permanent) => (perm.attachedTo && findPermanent(g, perm.attachedTo) ? perm.attachedTo : null);
+  const attachments = (host: Permanent) => g.battlefield.filter((x) => x.attachedTo === host.iid && attachedTo(x));
+  const withAttachments = (perm: Permanent) => {
+    const on = attachments(perm);
+    if (!on.length) return renderPermanent(perm);
+    return (
+      <div key={`host-${perm.iid}`} className="perm-host" style={{ '--n': on.length } as CSSProperties}>
+        {on.map((a, i) => (
+          <div key={a.iid} className="attached" style={{ '--i': i } as CSSProperties}>{renderPermanent(a)}</div>
+        ))}
+        {renderPermanent(perm)}
+      </div>
+    );
+  };
+
   const row = (p: PlayerId, lands: boolean) => {
-    const perms = g.battlefield.filter((x) => x.controller === p && isLandCard(x.card) === lands);
-    const items = perms.map((perm) => renderPermanent(perm));
+    const perms = g.battlefield.filter((x) => x.controller === p && isLandCard(x.card) === lands && !attachedTo(x));
+    const items = perms.map((perm) => withAttachments(perm));
     for (const ghost of fx.ghosts) {
       if (ghost.perm.controller !== p || isLandCard(ghost.perm.card) !== lands) continue;
       items.splice(Math.min(ghost.index, items.length), 0, renderPermanent(ghost.perm, true));
@@ -642,7 +663,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
             <div className="choice-dock">
               <div className="choice-panel">
                 <div className="choice-cards">
-                  {legalTargets(g, me, slotSpec).map((tg) => {
+                  {legalTargets(g, me, slotSpec, undefined, targetingSource).map((tg) => {
                     const found = tg.kind === 'card' ? findInGraveyard(g, tg.iid) : undefined;
                     if (!found) return null;
                     return (
