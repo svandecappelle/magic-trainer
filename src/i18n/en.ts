@@ -559,6 +559,9 @@ export const en = {
     modeNotSimulated: 'This mode is not simulated',
     poisonTitle: 'Poison counters: 10 and you lose',
     commanderDamageTitle: 'Most combat damage taken from one commander (21 loses)',
+    commanderTax: (n: number) => `Commander tax: {${n}} more to cast it again from the command zone`,
+    commanderTitle: 'Commander',
+    noCommanderInDeck: (deck: string) => `${deck} has no commander: in the deck editor, use 👑 on its commander (it plays without one otherwise).`,
     chooseAbility: (card: string) => `Choose an ability of ${card}.`,
     chooseTarget: (kind: string) => `Choose a target (${kind}).`,
     onStack: (card: string, owner: string | null) =>

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import {
   activatable, activationProblem, abilityMaxX, actor, apply, canAttack, canTapForMana, canUntapForMana, castCost, castOptions, castSources,
-  landFaces, findInGraveyard, legalTargets, canBlock, findPermanent, hasKw, IllegalAction, isActivePlayer, isLegalTarget, isMainStep, firstOpponent, opponentsOf, teammatesOf, teamPlayers, wonBy,
+  landFaces, findInGraveyard, legalTargets, canBlock, findPermanent, hasKw, IllegalAction, isActivePlayer, mulliganBottom, isLegalTarget, isMainStep, firstOpponent, opponentsOf, teammatesOf, teamPlayers, wonBy,
   powerOf, toughnessOf, xCount,
   type Action, type CardInst, type CastOption, type GameState, type Permanent, type PlayerId, type Target,
 } from '../lib/engine/engine';
@@ -379,7 +379,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     prompt = g.winner === 'draw' ? t.game.drawGame : wonBy(g, me) ? t.game.youWin : t.game.theyWin(teamName(g.winner));
     controls = endControls;
   } else if (g.mulligan) {
-    const need = Math.min(g.mulligan.count[me], g.players[me].hand.length);
+    const need = mulliganBottom(g, me);
     if (!iAct) {
       prompt = g.mulligan.kept[me] ? t.game.oppDeciding(oppName) : t.game.oppDecidesFirst(oppName);
     } else if (need > 0) {
@@ -627,6 +627,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
             {powerOf(perm)}/{toughnessOf(perm) - perm.damage}
           </span>
         )}
+        {perm.commander && <span className="crown" title={t.game.commanderTitle}>👑</span>}
         {perm.sick && isCreature(perm.card) && !hasKw(perm, 'haste') && <span className="sick" title={t.game.sick}>💤</span>}
         {loyalty !== null && <span className="loyalty" title={t.game.loyaltyTitle}>{loyalty}</span>}
         {counters.length > 0 && <span className="counters">{counters.map(([c, n]) => t.game.counters(c, n!)).join(' ')}</span>}
@@ -815,6 +816,27 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
         <div className="player-bar mine">
           {hud(me)}
           {mates.map((m) => <Fragment key={m}>{hud(m)}</Fragment>)}
+          {/* Your command zone: commanders are cast from here, like cards in hand (with their tax). */}
+          {(g.players[me].command?.length ?? 0) > 0 && (
+            <div className="command-zone" title={t.game.zoneNames.command}>
+              {g.players[me].command!.map((c) => {
+                const castable = castOptions(g, me, c.iid).length > 0;
+                const tax = 2 * (g.players[me].commanderCasts?.[c.iid] ?? 0);
+                return (
+                  <div
+                    key={c.iid}
+                    className={`hand-card commander-card ${castable ? 'playable' : ''}`}
+                    onClick={() => iAct && playCard(c.iid, c.card)}
+                    {...zoomable(c.card)}
+                  >
+                    <img src={show.imageSmall(c.card)} alt={show.name(c.card)} draggable={false} />
+                    <span className="crown" title={t.game.zoneNames.command}>👑</span>
+                    {tax > 0 && <span className="tax" title={t.game.commanderTax(tax)}>+{tax}</span>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <div className="my-hand">
             {myHand.map(({ iid, card }, i) => {
               const playable = (landFaces(card).length > 0 && canPlayLand) || castOptions(g, me, iid).length > 0;

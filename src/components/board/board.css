@@ -156,7 +156,8 @@
 .mana-G { background: #3e9f5e; }
 .mana-C { background: #c8c8c8; }
 .mana-any { background: conic-gradient(#f8f3d6, #4a90d9, #8c7f8f, #e0533f, #3e9f5e, #f8f3d6); }
-.hud .zones { display: flex; gap: 8px; align-items: center; color: var(--muted); }
+.hud .zones { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; color: var(--muted); }
+.hud .zones > * { white-space: nowrap; }
 .hud .poison { color: #9be38f; font-weight: 700; }
 .zone-chip {
   padding: 0 6px; font-size: 0.78rem; font-weight: 500; color: var(--text);
@@ -191,6 +192,15 @@
   animation: draw-in 0.4s ease-out;
 }
 .hand-card:last-child { flex-shrink: 0; }
+/* Command zone, next to the hand. */
+.command-zone { display: flex; gap: 6px; align-items: flex-end; padding-top: 10px; flex: 0 0 auto; }
+.command-zone .hand-card { flex: 0 0 var(--hand-w); margin: 0; }
+.hand-card .crown, .perm .crown { position: absolute; top: -8px; left: 50%; translate: -50% 0; font-size: 1rem; filter: drop-shadow(0 0 2px #000); }
+.perm .crown { top: -6px; font-size: 0.85rem; z-index: 2; }
+.hand-card .tax {
+  position: absolute; right: 4px; top: 4px; padding: 0 6px; border-radius: 10px;
+  background: #b5544f; color: #fff; font-size: 0.8rem; font-weight: 800; box-shadow: 0 1px 4px #000;
+}
 .hand-card img { width: var(--hand-w); max-width: none; display: block; border-radius: 6px; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6); }
 .hand-card.playable { filter: none; }
 .hand-card.playable img { box-shadow: 0 0 0 2px var(--ok), 0 0 12px rgba(92, 184, 92, 0.5); }

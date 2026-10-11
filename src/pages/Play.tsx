@@ -25,6 +25,12 @@ export function Play() {
   const [twoHeaded, setTwoHeaded] = useState(false);
   const [commander, setCommander] = useState(false);
   const [allyDeck, setAllyDeck] = useState('preset-red');
+  // A Commander deck turns Commander rules on; without a commander in it, say how to set one.
+  const chosen = decks.find((d) => d.id === myDeck);
+  useEffect(() => {
+    if (chosen?.format === 'commander') setCommander(true);
+  }, [chosen?.format]);
+  const missingCommander = commander && !!chosen && !chosen.entries.some((e) => e.board === 'commander');
   const [botDeck2, setBotDeck2] = useState('preset-red');
   const [first, setFirst] = useState<'random' | 'me' | 'bot'>('random');
   const [loading, setLoading] = useState(false);
@@ -139,6 +145,7 @@ export function Play() {
             </select>
           </label>
           <button onClick={start} disabled={loading}>{loading ? t.common.loadingCards : t.play.start}</button>
+          {missingCommander && <div className="error small">{t.game.noCommanderInDeck(chosen!.name)}</div>}
           {error && <div className="error small">{errorText(t, error)}</div>}
         </div>
         <RulesNote />

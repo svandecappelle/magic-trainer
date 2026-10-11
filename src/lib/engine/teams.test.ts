@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
 import { botAction } from './bot';
-import { actor, apply, newGame, opponentsOf, teammatesOf, wonBy, type GameState, type Permanent, type PlayerId } from './engine';
+import { actor, apply, mulliganBottom, newGame, opponentsOf, teammatesOf, wonBy, type GameState, type Permanent, type PlayerId } from './engine';
 
 let n = 0;
 function card(partial: Partial<Card> & { name: string }): Card {
@@ -208,5 +208,85 @@ describe('bots in a team', () => {
     s.players[1].hand = [{ iid: 'shock', card: spell('Shock', 'Shock deals 2 damage to any target.', 'Instant') }];
     s.turnHead = 1; // the teammate's main phase
     expect(botAction(s)).toMatchObject({ type: 'cast', iid: 'shock', targets: [[{ kind: 'permanent', iid: 'foe' }]] });
+  });
+});
+
+describe('Commander rules', () => {
+  const boss = creature('Boss', 3, 3, { typeLine: 'Legendary Creature — Giant', manaCost: '{1}', cmc: 1 });
+  const game = (mulligans = false) => newGame({
+    decks: [Array(40).fill(mountain), Array(40).fill(mountain)], names: ['A', 'B'], first: 0, rng: () => 0.5, mulligans,
+    mode: { commander: true }, commanders: [[boss], []],
+  });
+
+  it('makes the first mulligan free (Commander and Two-Headed Giant), not in a duel', () => {
+    let s = game(true);
+    s = apply(s, { type: 'mulligan' });
+    expect(mulliganBottom(s, 0)).toBe(0);
+    s = apply(s, { type: 'mulligan' });
+    expect(mulliganBottom(s, 0)).toBe(1);
+    let t = twoHeaded({ mulligans: true });
+    t = apply(t, { type: 'mulligan' });
+    expect(mulliganBottom(t, 0)).toBe(0);
+    let duel = newGame({ decks: [Array(30).fill(mountain), Array(30).fill(mountain)], names: ['A', 'B'], first: 0, rng: () => 0.5 });
+    duel = apply(duel, { type: 'mulligan' });
+    expect(mulliganBottom(duel, 0)).toBe(1);
+  });
+
+  it('adds {2} of tax for each cast from the command zone', () => {
+    let s = game();
+    lands(s, 0, 9);
+    const recast = () => {
+      s = apply(s, { type: 'cast', iid: '0-cmd-0' });
+      const tapped = s.battlefield.filter((p) => p.card.name === 'Mountain' && p.tapped).length;
+      // Send it back (destroyed: the command zone, not the graveyard) and untap for the next cast.
+      s.battlefield.find((p) => p.iid === '0-cmd-0')!.damage = 99;
+      s = apply(s, { type: 'pass' });
+      s = { ...s, active: 0, step: 'main1', priority: null, turnHead: 0 };
+      s.battlefield.forEach((p) => (p.tapped = false));
+      return tapped;
+    };
+    expect([recast(), recast(), recast()]).toEqual([1, 3, 5]);
+    expect(s.players[0].commanderCasts).toEqual({ '0-cmd-0': 3 });
+  });
+
+  it('sends the commander back to the command zone when countered, exiled or bounced, and it still dies', () => {
+    const artist = creature('Artist', 0, 1, { oracleText: 'Whenever another creature dies, you gain 1 life.' });
+    let s = game();
+    lands(s, 0, 2);
+    put(s, 0, artist, 'artist');
+    s = apply(s, { type: 'cast', iid: '0-cmd-0' });
+    const exile = spell('Exile', 'Exile target creature.', 'Instant');
+    const bounce = spell('Bounce', "Return target creature to its owner's hand.", 'Instant');
+    const doom = spell('Doom', 'Destroy target creature.', 'Instant');
+    s.players[0].hand = [{ iid: 'x', card: exile }, { iid: 'b', card: bounce }, { iid: 'd', card: doom }];
+    lands(s, 0, 3);
+    for (const iid of ['x']) {
+      s = apply(s, { type: 'cast', iid, target: { kind: 'permanent', iid: '0-cmd-0' } });
+      expect(s.players[0].command!.map((c) => c.iid)).toEqual(['0-cmd-0']);
+      expect(s.players[0].exile).toEqual([]);
+    }
+    s = { ...s, active: 0, step: 'main1', priority: null };
+    s = apply(s, { type: 'cast', iid: '0-cmd-0' });
+    s = apply(s, { type: 'cast', iid: 'b', target: { kind: 'permanent', iid: '0-cmd-0' } });
+    expect(s.players[0].hand.some((c) => c.iid === '0-cmd-0')).toBe(false);
+    expect(s.players[0].command!.map((c) => c.iid)).toEqual(['0-cmd-0']);
+    const life = s.players[0].life;
+    s.battlefield.forEach((p) => (p.tapped = false));
+    s = apply(s, { type: 'cast', iid: '0-cmd-0' });
+    s = apply(s, { type: 'cast', iid: 'd', target: { kind: 'permanent', iid: '0-cmd-0' } });
+    expect(s.players[0].command!.map((c) => c.iid)).toEqual(['0-cmd-0']);
+    expect(s.players[0].life).toBe(life + 1); // "dies" triggers still see it die
+  });
+
+  it('does not make a copy of a commander a commander', () => {
+    let s = game();
+    lands(s, 0, 2);
+    const cmd = put(s, 0, boss, '0-cmd-0');
+    cmd.commander = true;
+    s.players[0].command = [];
+    s.players[0].hand = [{ iid: 'm', card: spell('Mirror', "Create a token that's a copy of target creature you control.") }];
+    s = apply(s, { type: 'cast', iid: 'm', target: { kind: 'permanent', iid: '0-cmd-0' } });
+    const copy = s.battlefield.find((p) => p.iid !== '0-cmd-0' && p.card.name === 'Boss');
+    expect(copy?.commander).toBeUndefined();
   });
 });

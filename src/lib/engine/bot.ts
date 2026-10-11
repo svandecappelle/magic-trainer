@@ -1,5 +1,5 @@
 import {
-  abilityMaxX, activatable, actor, firstOpponent, isActivePlayer, opponentsOf, teamOf, canAttack, castCost, castOptions, castSources, findInGraveyard, landFaces, manaSources, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
+  abilityMaxX, activatable, actor, firstOpponent, mulliganBottom, isActivePlayer, opponentsOf, teamOf, canAttack, castCost, castOptions, castSources, findInGraveyard, landFaces, manaSources, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
   legalTargets, matching, maxX, powerOf, toughnessOf, xCount,
   type Action, type Answer, type CastOption, type CardInst, type Choice, type GameState, type Permanent, type PlayerId, type StackItem, type Target,
 } from './engine';
@@ -40,7 +40,7 @@ export function botAction(s: GameState): Action {
 export function fallbackAction(s: GameState): Action {
   const me = actor(s);
   if (s.mulligan && me !== null) {
-    const n = Math.min(s.mulligan.count[me], s.players[me].hand.length);
+    const n = mulliganBottom(s, me);
     return { type: 'keep', bottom: s.players[me].hand.slice(0, n).map((c) => c.iid) };
   }
   if (s.pending) return { type: 'choose', answer: answerChoice(s, s.pending.choice, true) };
@@ -58,7 +58,7 @@ function mulliganDecision(s: GameState, me: PlayerId): Action {
   const lands = hand.filter((c) => isLandCard(c.card)).length;
   const keepable = taken >= 2 || (lands >= 2 && lands <= 5);
   if (!keepable) return { type: 'mulligan' };
-  return { type: 'keep', bottom: chooseBottom(hand, Math.min(taken, hand.length)) };
+  return { type: 'keep', bottom: chooseBottom(hand, mulliganBottom(s, me)) };
 }
 
 /** Put cards on the bottom to keep the land/spell balance near 40% lands, expensive spells first. */

@@ -448,6 +448,16 @@ function nextTeamLead(s: GameState, p: PlayerId): PlayerId {
   const teams = teamsOf(s);
   return teams[(teamOf(s, p) + 1) % teams.length][0];
 }
+/**
+ * Cards p puts on the bottom when keeping: one per mulligan taken, except that the first mulligan is free in
+ * multiplayer games (Two-Headed Giant) and in Commander.
+ */
+export function mulliganBottom(s: GameState, p: PlayerId): number {
+  const taken = s.mulligan?.count[p] ?? 0;
+  const free = s.teams || s.mode?.commander ? 1 : 0;
+  return Math.min(Math.max(0, taken - free), s.players[p].hand.length);
+}
+
 /** Poison counters that make a player (or a team) lose. */
 export const poisonLimit = (s: GameState) => (s.teams ? 15 : 10);
 
@@ -2237,14 +2247,14 @@ export function apply(state: GameState, action: Action): GameState {
       me.library = shuffle([...me.library, ...me.hand], () => random(d));
       me.hand = [];
       draw(d, p, 7);
-      log(d, { k: 'mulligan', p, keeping: 7 - m.count[p] });
+      log(d, { k: 'mulligan', p, keeping: 7 - mulliganBottom(d, p) });
       break;
     }
 
     case 'keep': {
       const m = d.mulligan;
       if (!m) throw new IllegalAction('notMulliganTime');
-      const need = Math.min(m.count[p], me.hand.length);
+      const need = mulliganBottom(d, p);
       const bottom = [...new Set(action.bottom ?? [])];
       if (bottom.length !== need) throw new IllegalAction('chooseBottom', { n: need });
       for (const iid of bottom) {

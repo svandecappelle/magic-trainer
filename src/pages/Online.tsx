@@ -31,6 +31,11 @@ export function Online() {
   const [bestOf, setBestOf] = useState<1 | 3>(1);
   const [twoHeaded, setTwoHeaded] = useState(false);
   const [commander, setCommander] = useState(false);
+  const chosen = decks.find((d) => d.id === deckId);
+  useEffect(() => {
+    if (chosen?.format === 'commander') setCommander(true);
+  }, [chosen?.format]);
+  const missingCommander = !!chosen && !chosen.entries.some((e) => e.board === 'commander') && (commander || chosen.format === 'commander');
   // Your deck and sideboard for this match (changed by sideboarding), kept across reloads of the page.
   const [cards, setCardsState] = useState<{ main: Card[]; side: Card[] } | null>(() => {
     try {
@@ -151,6 +156,7 @@ export function Online() {
               </div>
             </div>
           </div>
+          {missingCommander && <div className="error small">{t.game.noCommanderInDeck(chosen!.name)}</div>}
           {busy && <div className="small muted">{t.common.loadingCards}</div>}
           {error && <div className="error small">{errorText(t, error)}</div>}
         </div>

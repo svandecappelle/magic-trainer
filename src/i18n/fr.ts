@@ -567,6 +567,9 @@ export const fr: Messages = {
     modeNotSimulated: "Ce mode n'est pas simulé",
     poisonTitle: 'Marqueurs poison : à 10, la partie est perdue',
     commanderDamageTitle: "Le plus de blessures de combat reçues d'un même commandant (21 : partie perdue)",
+    commanderTax: (n) => `Taxe de commandant : {${n}} de plus pour le relancer depuis la zone de commandement`,
+    commanderTitle: 'Commandant',
+    noCommanderInDeck: (deck) => `${deck} n'a pas de commandant : dans l'éditeur de deck, utilisez 👑 sur son commandant (sinon il joue sans).`,
     chooseAbility: (card) => `Choisissez une capacité de ${card}.`,
     chooseTarget: (kind) => `Choisissez une cible (${kind}).`,
     onStack: (card, owner) =>
