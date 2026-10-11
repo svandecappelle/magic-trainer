@@ -195,11 +195,11 @@ come before rare ones.
 - [ ] 606 Loyalty abilities: done; 606.3 one per turn per planeswalker — check "activate an additional time" effects
 - [ ] 608.2b A spell with only illegal targets fizzles (done); partial fizzle of a multi-target spell keeps its
   other parts (check every effect type)
-- [ ] 609.4 "Can't" beats "can" ("can't gain life", "can't be countered", "can't cast spells")
+- [ ] 101.2 "Can't" beats "can" ("can't gain life", "can't be countered", "can't cast spells")
 - [ ] 611.2c Continuous effects from resolved spells lock their affected set (Glorious Anthem vs "creatures you
   control get +1/+1 until end of turn" for creatures entering later)
 - [ ] 616 Ordering several replacement effects (affected player or controller chooses)
-- [ ] 702.21 Split second, 117.1 "cast only as a sorcery" exceptions ("as though it had flash")
+- [ ] 702.61 Split second, 609.4 "as though" exceptions ("as though it had flash")
 
 ### State-based actions (704)
 
@@ -216,11 +216,11 @@ Done: 704.5a–j, m, n, q and 704.6a–d.
 - [ ] 301.7 Vehicles and crew (702.122); 301.5 Fortifications
 - [ ] 310 Battles (attack a battle, defense counters, defeated → cast the back face)
 - [ ] 714 Sagas and 716 Classes (level up)
-- [ ] 712 Double-faced cards that transform (701.27): daybound/nightbound (702.145, day/night 730), "transform
+- [ ] 712 Double-faced cards that transform (701.27): daybound/nightbound (702.145, day/night 731), "transform
   it", meld (701.42); only modal double-faced cards are supported
 - [ ] 114 Emblems (planeswalker ultimates)
 - [ ] 111.10 Predefined tokens: Blood, Map, Powerstone, Incubator, Gold, Shard; Clue, Food, Treasure done
-- [ ] 724–725 The monarch and the initiative (Undercity dungeon)
+- [ ] 725–726 The monarch and the initiative (Undercity dungeon)
 - [ ] 702.26 Phasing
 - [ ] 708 Face-down spells and permanents: morph, megamorph, disguise, manifest, manifest dread, cloak
 - [ ] 713 Substitute cards; 715 adventurer cards done; 718 prototype; 719 case; 720 omen; 721 station
@@ -238,7 +238,7 @@ Casting and costs:
 - [ ] Suspend (time counters), foretell, plot, madness, miracle, evoke, dash, blitz, escape, unearth, embalm,
   eternalize, encore, disturb, retrace, jump-start, aftermath, rebound, buyback
 - [ ] Overload, entwine, spree, escalate, splice, bargain, casualty, emerge, offering, spectacle, surge, prowl,
-  improvise, assist, emerge, squad, offspring, gift
+  improvise, assist, squad, offspring, gift
 - [ ] Ninjutsu, bestow, mutate, reconfigure, living weapon, for mirrodin!, crew
 - [ ] Cumulative upkeep, echo, fading, vanishing, level up, outlast, scavenge, reinforce, transfigure
 - [ ] Partner, partner with, companion (702.139: sideboard companion, 3 mana to put it in hand), backgrounds
@@ -248,13 +248,12 @@ Others:
 
 ### Keyword actions (701) not simulated
 
-- [ ] Regenerate (701.19), goad (701.38), investigate (701.36, Clue tokens exist), explore (701.44), amass (701.47),
-  adapt (701.46), monstrosity (701.37), bolster (701.39), support, populate (701.30), connive (701.50),
+- [ ] Regenerate (701.19), goad (701.15), investigate (701.16, Clue tokens exist), explore (701.44), amass (701.47),
+  adapt (701.46), monstrosity (701.37), bolster (701.39), support, populate (701.36), connive (701.50),
   incubate (701.53), venture into the dungeon (701.49), the Ring tempts you (701.54), double (701.10),
   exchange (701.12), vote (701.38), clash, planeswalk, manifest dread, collect evidence (701.59), suspect (701.60),
   forage, endure, harness, airbend…
-- [ ] Reveal and "look at" (701.16) as player choices (today revealed cards are only logged)
-- [ ] Shuffle effects that let a player search a hidden zone and "fail to find" (701.23b: done for searches)
+- [ ] Reveal and "look at" (701.20) as player choices (today revealed cards are only logged)
 
 ### Starting and ending the game (103–104)
 
@@ -272,7 +271,7 @@ Others:
   for the whole team
 - [ ] 903.9a Commander: the owner chooses to move the commander to the command zone (today always)
 - [ ] 903.10a Commander damage is tracked per commander and per player hit (today the defending team's first player)
-- [ ] 903.3c Partner / Background / Friends forever (two commanders)
+- [ ] 702.124 Partner / Background / Friends forever (two commanders)
 - [ ] 903.5c–d Color identity checks done in the editor; 903.5b singleton checked by the legality check
 - [ ] 806–809 Free-for-all, range of influence, attack multiple players, Emperor: not supported
 - [ ] 901–902 Planechase, Vanguard, Archenemy (904), Conspiracy drafting (905): out of scope
