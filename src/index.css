@@ -215,6 +215,7 @@ footer { padding: 16px 20px; border-top: 1px solid var(--border); }
 @media (max-width: 640px) { .online-choices { grid-template-columns: 1fr; } }
 .room-code-input { width: 110px; font-family: ui-monospace, monospace; font-size: 1.1rem; letter-spacing: 0.2em; text-transform: uppercase; }
 .lobby { max-width: 520px; }
+.teams-lobby { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 10px 0; }
 .room-code { font-family: ui-monospace, monospace; font-size: 2.2rem; font-weight: 800; letter-spacing: 0.25em; color: var(--accent); }
 .play-notice .clock { font-weight: 600; }
 .play-notice { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }

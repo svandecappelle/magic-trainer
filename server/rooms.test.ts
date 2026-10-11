@@ -248,3 +248,29 @@ describe('best of 3', () => {
     expect([...fresh.hand, ...fresh.library].some((c) => c.card.name === 'Island')).toBe(false);
   });
 });
+
+describe('Two-Headed Giant rooms', () => {
+  it('seats four players in two teams, starts when full, and shows teammates their hands', () => {
+    const rooms = new RoomManager({ rng: () => 0.1 });
+    const conns = [0, 1, 2, 3].map(() => new FakeConn());
+    rooms.handle(conns[0], { t: 'create', name: 'A', deck, size: 4, commander: true });
+    const code = conns[0].last('joined')!.code;
+    rooms.handle(conns[1], { t: 'join', code, name: 'A', deck });
+    rooms.handle(conns[2], { t: 'join', code, name: 'C', deck });
+    expect(conns[0].last('state')).toBeUndefined(); // waiting for the fourth player
+    rooms.handle(conns[3], { t: 'join', code, name: 'D', deck });
+    expect(conns[1].last('lobby')).toMatchObject({ size: 4, mode: { twoHeaded: true, commander: true } });
+    expect(conns[1].last('lobby')!.players.map((p) => p.name)).toEqual(['A', 'A (2)', 'C', 'D']);
+    const view = conns[0].state;
+    expect(view.teams).toEqual([[0, 1], [2, 3]]);
+    expect(view.players.map((p) => p.life)).toEqual([60, 60, 60, 60]);
+    expect(view.players[1].hand[0].card.name).toBe('Mountain'); // the teammate's hand
+    expect(view.players[2].hand[0].card.name).toBe('Hidden card');
+    // Only the player to act may act; conceding loses for the whole team.
+    rooms.handle(conns[2], { t: 'action', action: { type: 'keep', bottom: [] } });
+    expect(conns[2].last('error')).toMatchObject({ code: 'notYourTurn' });
+    rooms.handle(conns[3], { t: 'action', action: { type: 'concede', player: 3 } });
+    expect(conns[0].state.winner).toBe(0);
+    expect(conns[0].last('lobby')!.match).toMatchObject({ wins: [1, 0] });
+  });
+});

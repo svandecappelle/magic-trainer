@@ -35,6 +35,8 @@ export function useGameSocket() {
   const [error, setError] = useState<AppError | null>(null);
   /** The running clock, with its deadline in this browser's time. */
   const [match, setMatch] = useState<MatchScore | null>(null);
+  /** Seats in the room: 2, or 4 in Two-Headed Giant. */
+  const [size, setSize] = useState(2);
   const [clock, setClock] = useState<{ player: PlayerId; deadline: number; kind: 'turn' | 'reconnect' } | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -73,6 +75,7 @@ export function useGameSocket() {
           case 'lobby':
             setPlayers(msg.players);
             setMatch(msg.match ?? null);
+            setSize(msg.size ?? 2);
             break;
           case 'state':
             setGame(msg.state);
@@ -113,5 +116,5 @@ export function useGameSocket() {
     else setError({ code: 'notConnected' });
   }, []);
 
-  return { status, room, players, game, error, setError, clock, match, send };
+  return { status, room, players, game, error, setError, clock, match, size, send };
 }

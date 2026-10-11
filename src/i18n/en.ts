@@ -436,6 +436,9 @@ export const en = {
     inGame: (n: number, score: string) => `Game ${n} · ${score}`,
   },
   online: {
+    team: (n: number) => `Team ${n}`,
+    openSeat: 'free seat',
+    waitingPlayers: (n: number, size: number) => `${n}/${size} players: the game starts when every seat is taken. Players join in order: the first two play together.`,
     yourClock: (time: string) => `Your time to act: ${time}`,
     theirClock: (name: string, time: string) => `${name}'s time to act: ${time}`,
     reconnectClock: (name: string, time: string) => `${name} has ${time} to reconnect, or concedes`,

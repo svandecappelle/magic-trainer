@@ -4,6 +4,7 @@ import { DeckOptions } from '../components/DeckOptions';
 import { GameBoard } from '../components/GameBoard';
 import { loadDeck75 } from '../lib/loadDeck';
 import { matchWinner } from '../lib/match';
+import { teamOf, teamsOf } from '../lib/engine/engine';
 import type { Card } from '../types';
 import { MIN_DECK_SIZE } from '../lib/multiplayer/protocol';
 import { useGameSocket } from '../lib/multiplayer/useGameSocket';
@@ -26,8 +27,10 @@ const MATCH_DECK_KEY = 'magic-trainer-match-deck';
 export function Online() {
   const t = useT();
   const decks = useApp((s) => s.decks);
-  const { status, room, players, game, error, setError, send, clock, match } = useGameSocket();
+  const { status, room, players, game, error, setError, send, clock, match, size } = useGameSocket();
   const [bestOf, setBestOf] = useState<1 | 3>(1);
+  const [twoHeaded, setTwoHeaded] = useState(false);
+  const [commander, setCommander] = useState(false);
   // Your deck and sideboard for this match (changed by sideboarding), kept across reloads of the page.
   const [cards, setCardsState] = useState<{ main: Card[]; side: Card[] } | null>(() => {
     try {
@@ -72,11 +75,13 @@ export function Online() {
     }
     setBusy(true);
     try {
-      const { main: deck, side } = await loadDeck75(deckId, decks);
+      const { main: deck, side, commander: commanders } = await loadDeck75(deckId, decks);
       if (deck.length < MIN_DECK_SIZE) return setError({ code: 'deckTooSmall', params: { n: MIN_DECK_SIZE } });
       const sideboard = side.slice(0, 30);
       setCards({ main: deck, side: sideboard });
-      send(kind === 'create' ? { t: 'create', name, deck, sideboard, bestOf } : { t: 'join', code: code.trim().toUpperCase(), name, deck, sideboard });
+      send(kind === 'create'
+        ? { t: 'create', name, deck, sideboard, commanders, bestOf, size: twoHeaded ? 4 : 2, commander }
+        : { t: 'join', code: code.trim().toUpperCase(), name, deck, sideboard, commanders });
     } catch (e) {
       setError({ code: 'loadFailed', params: { message: e instanceof Error ? e.message : String(e) } });
     } finally {
@@ -111,6 +116,16 @@ export function Online() {
             <div>
               <h3>{t.online.host}</h3>
               <p className="small muted">{t.online.hostHint}</p>
+              <label className="small">
+                {t.play.gameType}{' '}
+                <select value={twoHeaded ? '2hg' : 'duel'} onChange={(e) => setTwoHeaded(e.target.value === '2hg')}>
+                  <option value="duel">{t.play.duel}</option>
+                  <option value="2hg">{t.play.twoHeaded}</option>
+                </select>
+              </label>
+              <label className="small check" title={t.play.commanderHint}>
+                <input type="checkbox" checked={commander} onChange={(e) => setCommander(e.target.checked)} /> {t.play.commander}
+              </label>
               <label className="small">
                 {t.match.format}{' '}
                 <select value={bestOf} onChange={(e) => setBestOf(Number(e.target.value) as 1 | 3)}>
@@ -164,7 +179,19 @@ export function Online() {
               {copied ? t.online.copied : t.online.copy}
             </button>
           </div>
-          <p className="muted">{t.online.waiting}</p>
+          {size === 4 ? (
+            <div className="teams-lobby">
+              {[0, 1].map((team) => (
+                <div key={team}>
+                  <strong>{t.online.team(team + 1)}</strong>
+                  <ul className="plain-list">
+                    {[team * 2, team * 2 + 1].map((seat) => <li key={seat}>{players[seat]?.name ?? <span className="muted">{t.online.openSeat}</span>}</li>)}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <p className="muted">{size === 4 ? t.online.waitingPlayers(players.length, size) : t.online.waiting}</p>
           {error && <div className="error small">{errorText(t, error)}</div>}
           <button className="danger" onClick={() => send({ t: 'leave' })}>{t.online.leaveRoom}</button>
         </div>
@@ -174,16 +201,22 @@ export function Online() {
 
   // 3. Playing.
   const me = room.seat;
-  const opp = players[(me === 0 ? 1 : 0)];
+  const others = players.filter((_, i) => i !== me);
+  const away = others.find((p) => !p.connected);
+  const allHere = others.every((p) => p.connected);
+  const waitingOn = others.find((p) => !p.wantsRematch);
   const iWantRematch = players[me]?.wantsRematch;
   const bo3 = match?.bestOf === 3;
   const going = !!match && matchWinner(match) === null;
-  const names: [string, string] = [players[0]?.name ?? '', players[1]?.name ?? ''];
-  const score = match ? t.match.score(names[me], match.wins[me], match.wins[(me === 0 ? 1 : 0)], names[(me === 0 ? 1 : 0)]) : '';
+  // Scores are per team: in Two-Headed Giant, teams are seats 0+1 and 2+3.
+  const myTeam = teamOf(game, me);
+  const teamNames = teamsOf(game).map((team) => team.map((q) => players[q]?.name ?? '').join(' & '));
+  const names: [string, string] = [teamNames[0] ?? '', teamNames[1] ?? ''];
+  const score = match ? t.match.score(names[myTeam], match.wins[myTeam], match.wins[1 - myTeam], names[1 - myTeam]) : '';
   const notice = (
     <>
       {status !== 'open' && <div className="error">{t.online.reconnecting}</div>}
-      {opp && !opp.connected && <div className="error">{t.online.oppDisconnected(opp.name)}</div>}
+      {away && <div className="error">{t.online.oppDisconnected(away.name)}</div>}
       {clock && (() => {
         const left = Math.max(0, Math.ceil((clock.deadline - now) / 1000));
         const time = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
@@ -192,7 +225,7 @@ export function Online() {
           : mine ? t.online.yourClock(time) : t.online.theirClock(players[clock.player]?.name ?? '', time);
         return <div className={`clock ${mine && left <= 20 ? 'error' : ''}`}>⏱ {text}</div>;
       })()}
-      {opp?.wantsRematch && !iWantRematch && <div>{t.online.wantsRematch(opp.name)}</div>}
+      {others.some((p) => p.wantsRematch) && !iWantRematch && <div>{t.online.wantsRematch(others.find((p) => p.wantsRematch)!.name)}</div>}
       {error && <div className="error">{errorText(t, error)}</div>}
       {bo3 && match && <div className="muted">{t.match.inGame(match.games + (game.winner === null ? 1 : 0), score)}</div>}
       <div className="muted">{t.online.room(room.code)}</div>
@@ -206,7 +239,7 @@ export function Online() {
         <BetweenGames
           score={match}
           names={names}
-          me={me}
+          me={myTeam}
           main={cards.main}
           side={cards.side}
           onChange={(main, side) => setCards({ main, side })}
@@ -229,10 +262,10 @@ export function Online() {
         endControls={
           <>
             {bo3 && going ? (
-              <button disabled={!opp?.connected} onClick={() => setBetween(true)}>{t.match.nextGame}</button>
+              <button disabled={!allHere} onClick={() => setBetween(true)}>{t.match.nextGame}</button>
             ) : (
-              <button disabled={iWantRematch || !opp?.connected} onClick={() => send({ t: 'rematch' })}>
-                {iWantRematch ? t.online.waitingFor(opp?.name ?? t.online.opponent) : bo3 ? t.match.newMatch : t.play.rematch}
+              <button disabled={iWantRematch || !allHere} onClick={() => send({ t: 'rematch' })}>
+                {iWantRematch ? t.online.waitingFor(waitingOn?.name ?? t.online.opponent) : bo3 ? t.match.newMatch : t.play.rematch}
               </button>
             )}
             <button className="secondary" onClick={() => send({ t: 'leave' })}>{t.online.leave}</button>

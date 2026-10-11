@@ -11,6 +11,13 @@ npm run build   # type-check + production build into dist/
 npm start       # production: serves dist/ and the game server on one port (PORT, default 8787)
 ```
 
+### Game modes
+
+Play vs Bot and online rooms offer a duel or **Two-Headed Giant** (two teams of two sharing 30 life and their turns:
+you and a bot ally against two bots, or four players online), each with or without **Commander** rules (40 life,
+60 per team in Two-Headed Giant, commanders cast from the command zone with tax, 21 commander damage). Single
+games or best of 3 with sideboarding.
+
 ### Playing online
 
 Run both `npm run dev` and `npm run server`, open **Play Online**, create a room and send the 5-letter code to your opponent.

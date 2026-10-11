@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from 'node:crypto';
 import { fallbackAction } from '../src/lib/engine/bot';
-import { actor, apply, IllegalAction, newGame, type ErrorParams, type GameState, type PlayerId } from '../src/lib/engine/engine';
+import { actor, apply, IllegalAction, newGame, teamOf, teamsOf, type ErrorParams, type GameMode, type GameState, type PlayerId } from '../src/lib/engine/engine';
 import {
   MAX_DECK_SIZE, MIN_DECK_SIZE, redact, type ClientMessage, type ServerErrorCode, type ServerMessage,
 } from '../src/lib/multiplayer/protocol';
@@ -18,6 +18,8 @@ interface Seat {
   deck: Card[];
   side: Card[];
   next: Card[];
+  /** Commander games: the deck's commanders (none: it plays without one). */
+  commanders: Card[];
   token: string;
   conn: Conn | null;
   wantsRematch: boolean;
@@ -33,6 +35,9 @@ interface Room {
   /** Consecutive decisions each player let time out. */
   timeouts?: [number, number];
   match: MatchScore;
+  /** 2 seats, or 4 in Two-Headed Giant (seats 0+1 against 2+3). */
+  size: 2 | 4;
+  mode: GameMode;
   /** Who played first in the current game, and whether its result is in the score. */
   first?: PlayerId;
   scored?: boolean;
@@ -102,15 +107,16 @@ export class RoomManager {
   }
 
   /** Checks the deck and sideboard (when a checker is set), then continues with the trusted cards. Returns a promise for tests. */
-  private withDeck(conn: Conn, rawDeck: unknown, rawSide: unknown, then: (deck: Card[], side: Card[]) => void): Promise<void> {
+  private withDeck(conn: Conn, rawDeck: unknown, rawSide: unknown, rawCommanders: unknown, then: (deck: Card[], side: Card[], commanders: Card[]) => void): Promise<void> {
     const deck = cleanDeck(rawDeck);
     const side = rawSide === undefined ? [] : cleanCards(rawSide, 0, 30);
+    const commanders = rawCommanders === undefined ? [] : cleanCards(rawCommanders, 0, 2);
     if (!this.verifyDeck) {
-      then(deck, side);
+      then(deck, side, commanders);
       return Promise.resolve();
     }
-    return this.verifyDeck([...deck, ...side]).then(
-      (trusted) => this.run(conn, () => then(trusted.slice(0, deck.length), trusted.slice(deck.length))),
+    return this.verifyDeck([...deck, ...side, ...commanders]).then(
+      (trusted) => this.run(conn, () => then(trusted.slice(0, deck.length), trusted.slice(deck.length, deck.length + side.length), trusted.slice(deck.length + side.length))),
       (e) => {
         if (e instanceof DeckCheckError && e.card) conn.send({ t: 'error', code: 'invalidCard', params: { card: e.card } });
         else conn.send({ t: 'error', code: 'cardCheckFailed' });
@@ -126,11 +132,13 @@ export class RoomManager {
         case 'create': {
           const name = cleanName(msg.name);
           const bestOf = msg.bestOf === 3 ? 3 : 1;
-          return this.withDeck(conn, msg.deck, msg.sideboard, (deck, side) => this.create(conn, name, deck, side, bestOf));
+          const size = msg.size === 4 ? 4 : 2;
+          const mode: GameMode = { ...(size === 4 ? { twoHeaded: true } : {}), ...(msg.commander === true ? { commander: true } : {}) };
+          return this.withDeck(conn, msg.deck, msg.sideboard, msg.commanders, (deck, side, commanders) => this.create(conn, name, deck, side, commanders, bestOf, size, mode));
         }
         case 'join': {
           const name = cleanName(msg.name);
-          return this.withDeck(conn, msg.deck, msg.sideboard, (deck, side) => this.join(conn, String(msg.code ?? '').toUpperCase().trim(), name, deck, side));
+          return this.withDeck(conn, msg.deck, msg.sideboard, msg.commanders, (deck, side, commanders) => this.join(conn, String(msg.code ?? '').toUpperCase().trim(), name, deck, side, commanders));
         }
         case 'rejoin': return this.rejoin(conn, String(msg.code ?? ''), String(msg.token ?? ''));
         case 'action': return this.act(conn, msg.action);
@@ -156,24 +164,26 @@ export class RoomManager {
 
   // ---------- Handlers ----------
 
-  private create(conn: Conn, name: string, deck: Card[], side: Card[], bestOf: 1 | 3) {
+  private create(conn: Conn, name: string, deck: Card[], side: Card[], commanders: Card[], bestOf: 1 | 3, size: 2 | 4, mode: GameMode) {
     this.leave(conn, true);
     let code: string;
     do code = Array.from({ length: 5 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
     while (this.rooms.has(code));
-    const room: Room = { code, seats: [], game: null, match: newMatch(bestOf) };
+    const room: Room = { code, seats: [], game: null, match: newMatch(bestOf), size, mode };
     this.rooms.set(code, room);
-    this.seat(conn, room, name, deck, side);
+    this.seat(conn, room, name, deck, side, commanders);
   }
 
-  private join(conn: Conn, code: string, name: string, deck: Card[], side: Card[]) {
+  private join(conn: Conn, code: string, name: string, deck: Card[], side: Card[], commanders: Card[]) {
     const room = this.rooms.get(code);
     if (!room) throw new ClientError('noRoom', { code });
-    if (room.seats.length >= 2) throw new ClientError('roomFull');
+    if (room.seats.length >= room.size) throw new ClientError('roomFull');
     this.leave(conn, true);
-    if (room.seats[0]?.name === name) name = `${name} (2)`;
-    this.seat(conn, room, name, deck, side);
-    this.startGame(room);
+    const taken = new Set(room.seats.map((x) => x.name));
+    for (let i = 2; taken.has(name); i++) name = `${name.replace(/ \(\d+\)$/, '')} (${i})`;
+    this.seat(conn, room, name, deck, side, commanders);
+    // Everyone is seated: the game starts.
+    if (room.seats.length === room.size) this.startGame(room);
   }
 
   private rejoin(conn: Conn, code: string, token: string) {
@@ -218,7 +228,7 @@ export class RoomManager {
   private rematch(conn: Conn, rawDeck?: unknown) {
     const { room, seat } = this.locate(conn);
     if (!room.game || room.game.winner === null) throw new ClientError('gameNotOver');
-    if (room.seats.length < 2) throw new ClientError('opponentLeft');
+    if (room.seats.length < room.size) throw new ClientError('opponentLeft');
     const s = room.seats[seat];
     const going = matchWinner(room.match) === null;
     if (going && rawDeck !== undefined) {
@@ -232,7 +242,10 @@ export class RoomManager {
     s.wantsRematch = true;
     if (!room.seats.every((x) => x.wantsRematch)) return this.sendLobby(room);
     if (going) {
-      this.startGame(room, nextFirst(room.game.winner, room.first ?? 0));
+      // Scores and turns are per team: the losing team's first player starts.
+      const game = room.game;
+      const winner = game.winner === 'draw' ? 'draw' : teamOf(game, game.winner!);
+      this.startGame(room, teamsOf(game)[nextFirst(winner, teamOf(game, room.first ?? 0))][0]);
     } else {
       room.match = newMatch(room.match.bestOf);
       for (const x of room.seats) x.next = x.deck;
@@ -259,9 +272,9 @@ export class RoomManager {
 
   // ---------- Helpers ----------
 
-  private seat(conn: Conn, room: Room, name: string, deck: Card[], side: Card[]) {
+  private seat(conn: Conn, room: Room, name: string, deck: Card[], side: Card[], commanders: Card[]) {
     const token = randomUUID();
-    room.seats.push({ name, deck, side, next: deck, token, conn, wantsRematch: false });
+    room.seats.push({ name, deck, side, next: deck, commanders, token, conn, wantsRematch: false });
     const seat = (room.seats.length - 1) as PlayerId;
     this.where.set(conn, { room, seat });
     conn.send({ t: 'joined', code: room.code, seat, token });
@@ -269,12 +282,14 @@ export class RoomManager {
   }
 
   private startGame(room: Room, first?: PlayerId) {
-    const [a, b] = room.seats;
-    room.first = first ?? (this.rng() < 0.5 ? 0 : 1);
+    // A random team starts (its first player: seat 0 or 2 in Two-Headed Giant).
+    room.first = first ?? (this.rng() < 0.5 ? 0 : room.size === 4 ? 2 : 1);
     room.scored = false;
     room.game = newGame({
-      decks: [a.next, b.next],
-      names: [a.name, b.name],
+      decks: room.seats.map((x) => x.next),
+      names: room.seats.map((x) => x.name),
+      mode: room.mode,
+      ...(room.mode.commander ? { commanders: room.seats.map((x) => x.commanders) } : {}),
       first: room.first,
       rng: this.rng,
       // A rematch keeps each seat's full control setting.
@@ -295,7 +310,8 @@ export class RoomManager {
     // A finished game counts once in the match score.
     if (room.game && room.game.winner !== null && !room.scored) {
       room.scored = true;
-      room.match = recordGame(room.match, room.game.winner, room.first ?? 0);
+      const g = room.game;
+      room.match = recordGame(room.match, g.winner === 'draw' ? 'draw' : teamOf(g, g.winner!), teamOf(g, room.first ?? 0));
       this.sendLobby(room);
     }
     room.seats.forEach((s, i) => s.conn?.send({ t: 'state', state: redact(room.game!, i as PlayerId) }));
@@ -310,7 +326,7 @@ export class RoomManager {
     if (room.clock) clearTimeout(room.clock.timer);
     room.clock = undefined;
     const game = room.game;
-    if (game && game.winner === null && room.seats.length === 2) {
+    if (game && game.winner === null && room.seats.length === room.size) {
       const away = room.seats.findIndex((s) => !s.conn);
       const who = away >= 0 ? (away as PlayerId) : actor(game);
       const kind = away >= 0 ? 'reconnect' : 'turn';
@@ -345,7 +361,7 @@ export class RoomManager {
 
   private sendLobby(room: Room) {
     const players = room.seats.map((s) => ({ name: s.name, connected: !!s.conn, wantsRematch: s.wantsRematch }));
-    for (const s of room.seats) s.conn?.send({ t: 'lobby', code: room.code, players, match: room.match });
+    for (const s of room.seats) s.conn?.send({ t: 'lobby', code: room.code, players, match: room.match, size: room.size, mode: room.mode });
   }
 
   private expireIfEmpty(room: Room) {

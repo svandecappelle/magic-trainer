@@ -443,6 +443,9 @@ export const fr: Messages = {
     inGame: (n, score) => `Partie ${n} · ${score}`,
   },
   online: {
+    team: (n) => `Équipe ${n}`,
+    openSeat: 'place libre',
+    waitingPlayers: (n, size) => `${n}/${size} joueurs : la partie commence quand toutes les places sont prises. Les joueurs rejoignent dans l'ordre : les deux premiers jouent ensemble.`,
     yourClock: (time) => `Votre temps pour agir : ${time}`,
     theirClock: (name, time) => `Temps de ${name} pour agir : ${time}`,
     reconnectClock: (name, time) => `${name} a ${time} pour se reconnecter, sinon il abandonne`,

@@ -1,12 +1,16 @@
 import type { Card } from '../../types';
 import type { MatchScore } from '../match';
-import type { Action, CardInst, ErrorParams, GameErrorCode, GameState, PlayerId, PlayerState } from '../engine/engine';
+import { teamOf, type Action, type CardInst, type ErrorParams, type GameErrorCode, type GameMode, type GameState, type PlayerId, type PlayerState } from '../engine/engine';
 
 /** Messages the browser sends to the server. */
 export type ClientMessage =
-  /** `bestOf`: a single game or a best of 3 (chosen by the room's creator). `sideboard`: for sideboarding between games. */
-  | { t: 'create'; name: string; deck: Card[]; sideboard?: Card[]; bestOf?: 1 | 3 }
-  | { t: 'join'; code: string; name: string; deck: Card[]; sideboard?: Card[] }
+  /**
+   * `bestOf`: a single game or a best of 3; `size`: 2 players, or 4 for Two-Headed Giant (seats 0+1 against 2+3);
+   * `commander`: Commander rules (all chosen by the room's creator). `sideboard`: for sideboarding between games;
+   * `commanders`: the deck's commanders.
+   */
+  | { t: 'create'; name: string; deck: Card[]; sideboard?: Card[]; commanders?: Card[]; bestOf?: 1 | 3; size?: 2 | 4; commander?: boolean }
+  | { t: 'join'; code: string; name: string; deck: Card[]; sideboard?: Card[]; commanders?: Card[] }
   | { t: 'rejoin'; code: string; token: string }
   | { t: 'action'; action: Action }
   /** Ready for the next game; `deck`: the main deck after sideboarding (cards from your main deck and sideboard). */
@@ -29,7 +33,8 @@ export type ErrorCode = GameErrorCode | ServerErrorCode;
 /** Messages the server sends to the browser. */
 export type ServerMessage =
   | { t: 'joined'; code: string; seat: PlayerId; token: string }
-  | { t: 'lobby'; code: string; players: LobbyPlayer[]; match?: MatchScore }
+  /** `size`: seats in the room (2, or 4 in Two-Headed Giant); `mode`: its rules. */
+  | { t: 'lobby'; code: string; players: LobbyPlayer[]; match?: MatchScore; size?: number; mode?: GameMode }
   | { t: 'state'; state: GameState }
   | { t: 'left' }
   /**
@@ -51,11 +56,12 @@ export const HIDDEN_CARD: Card = {
 /** What `viewer` is allowed to see: no libraries, no opponent hand, no random seed (it predicts shuffles). */
 export function redact(state: GameState, viewer: PlayerId): GameState {
   const hide = (cards: CardInst[]): CardInst[] => cards.map((_, i) => ({ iid: `hidden-${i}`, card: HIDDEN_CARD }));
+  // Your hand, and your teammate's in Two-Headed Giant (teammates may show each other their hands).
   const players = state.players.map((p, i): PlayerState => ({
     ...p,
     library: hide(p.library),
-    hand: i === viewer ? p.hand : hide(p.hand),
-  })) as [PlayerState, PlayerState];
+    hand: teamOf(state, i) === teamOf(state, viewer) ? p.hand : hide(p.hand),
+  }));
   // A choice among hidden cards (your hand, your library) is only shown to the player making it.
   let pending = state.pending;
   if (pending && pending.choice.player !== viewer) {
