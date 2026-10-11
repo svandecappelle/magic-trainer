@@ -265,7 +265,8 @@ export type CounterKind = '+1/+1' | '-1/-1' | 'loyalty';
 export type Affected = { slot: number } | 'you' | 'each-opponent' | 'each-player' | 'self';
 
 /** A number in rules text; "X" is the value chosen when casting. */
-export type Amount = number | 'X';
+/** A number, X (paid when cast), or the life its controller gained this turn (Germinate Recruits). */
+export type Amount = number | 'X' | 'lifeGained';
 
 /** Which permanents an "all …" / "each …" effect touches, e.g. "creatures you don't control". */
 export interface Selector {
@@ -557,6 +558,16 @@ function selfWords(name: string): string[] {
  * "Goblin Guide gets +1/+1" or "put a +1/+1 counter on this creature" can refer to it.
  */
 export function parseAbilityText(text: string, self?: string): AbilitySpec {
+  // Germinate Recruits: "Create X … tokens, where X is the amount of life you gained this turn."
+  const lifeX = /, where X is the amount of life you gained this turn(?=\.)/;
+  if (lifeX.test(text)) {
+    const spec = parseAbilityText(text.replace(lifeX, ''), self);
+    const fix = (a: Amount): Amount => (a === 'X' ? 'lifeGained' : a);
+    return {
+      ...spec,
+      effects: spec.effects.map((e): Effect => (e.kind === 'damage' || e.kind === 'damageAll' ? { ...e, amount: fix(e.amount) } : 'n' in e ? ({ ...e, n: fix(e.n as Amount) } as Effect) : e)),
+    };
+  }
   // Threaten: "Untap target creature and gain control of it until end of turn. That creature gains haste until end of turn."
   // Act of Treason: "Gain control of target creature until end of turn. Untap that creature. It gains haste until end of turn."
   const threaten = /Untap target (creature[a-z ]*?) and gain control of it until end of turn\. (?:That creature|It) gains haste until end of turn\./i;
@@ -777,13 +788,13 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     return to && which && { kind: 'sacrifice', n: toAmount(m[2]), to, which };
   });
   // Tokens: "create two 1/1 white Soldier creature tokens with flying", "create a Treasure token".
-  scan(new RegExp(`\\b[Cc]reates? (${AMOUNT}) (\\d+)\\/(\\d+) ((?:(?:white|blue|black|red|green|colorless)(?:,? and |, | ))+)([A-Z][A-Za-z' -]*?) ((?:artifact |enchantment )?)creature tokens?(?: with ${KEYWORD_LIST})?(?=\\.|,| and |$)`, 'g'), (m) => {
+  scan(new RegExp(`\\b[Cc]reates? (${AMOUNT}) (\\d+)\\/(\\d+) ((?:(?:white|blue|black|red|green|colorless)(?:,? and |, | ))+)([A-Z][A-Za-z' -]*?) ((?:artifact |enchantment )?)creature tokens?(?: named ([A-Z][A-Za-z' -]*?))?(?: with ${KEYWORD_LIST})?(?=\\.|,| and |$)`, 'g'), (m) => {
     const colors = m[4].toLowerCase().split(/,? and |, | /).filter((w) => COLOR_WORDS[w]).map((w) => COLOR_WORDS[w]);
-    const kws = keywordList(m[7]);
+    const kws = keywordList(m[8]);
     const types = `Token ${m[6] ? m[6].trim().replace(/^./, (c) => c.toUpperCase()) + ' ' : ''}Creature — ${m[5]}`;
     return {
       kind: 'token', n: toAmount(m[1]),
-      token: { name: m[5], typeLine: types, colors, power: Number(m[2]), toughness: Number(m[3]), keywords: kws, oracleText: kws.map((k) => k.replace(/^./, (c) => c.toUpperCase())).join(', ') },
+      token: { name: m[7] ?? m[5], typeLine: types, colors, power: Number(m[2]), toughness: Number(m[3]), keywords: kws, oracleText: kws.map((k) => k.replace(/^./, (c) => c.toUpperCase())).join(', ') },
     };
   });
   scan(new RegExp(`\\bcreates? (${AMOUNT}) (Treasure|Clue|Food) tokens?`, 'gi'), (m) => ({

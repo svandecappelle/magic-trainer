@@ -358,7 +358,7 @@ type Intent = 'harm' | 'help' | 'neutral';
 
 /** The spell's rules with X replaced by a number, so amounts can be compared. */
 function withX(spec: AbilitySpec, x: number): AbilitySpec {
-  const n = (a: Amount) => (a === 'X' ? x : a);
+  const n = (a: Amount) => (a === 'X' ? x : a === 'lifeGained' ? 0 : a);
   const effects = spec.effects.map((e): Effect => {
     if (e.kind === 'damage' || e.kind === 'damageAll') return { ...e, amount: n(e.amount) };
     if ('n' in e) return { ...e, n: n(e.n) } as Effect;
@@ -366,7 +366,7 @@ function withX(spec: AbilitySpec, x: number): AbilitySpec {
   });
   return { ...spec, effects };
 }
-const num = (a: Amount) => (a === 'X' ? 0 : a);
+const num = (a: Amount) => (typeof a === 'number' ? a : 0);
 
 /** Is the effect bad for what it hits (removal, burn, discard…) or good (pump, card draw…)? */
 function intentOf(e: Effect): Intent {

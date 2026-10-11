@@ -329,3 +329,26 @@ describe('W lifegain, second pass', () => {
     expect(s.players[0].hand).toHaveLength(1); // one draw, not two
   });
 });
+
+describe('Germinate Recruits', () => {
+  const recruits = spell('Germinate Recruits', '{1}', 'Create X 2/2 colorless Wizard Soldier creature tokens named Cadet, where X is the amount of life you gained this turn.');
+
+  it('reads a named token and X as the life gained this turn', () => {
+    expect(spellSpec(recruits).effects).toMatchObject([
+      { kind: 'token', n: 'lifeGained', token: { name: 'Cadet', typeLine: 'Token Creature — Wizard Soldier', power: 2, toughness: 2, colors: [] } },
+    ]);
+  });
+
+  it('creates one Cadet per life gained this turn', () => {
+    const resolve = (s: GameState) => {
+      for (let i = 0; i < 6 && s.stack.length; i++) s = settle(apply(s, { type: 'pass' }));
+      return s;
+    };
+    let s = resolve(settle(apply(board({ mana: 1, hand: [recruits] }), { type: 'cast', iid: 'h0' })));
+    expect(s.battlefield.filter((p) => p.card.name === 'Cadet')).toHaveLength(0);
+    let t = board({ mana: 2, hand: [spell('Salve', '{1}', 'You gain 3 life.'), recruits] });
+    t = resolve(settle(apply(t, { type: 'cast', iid: 'h0' })));
+    t = resolve(settle(apply(t, { type: 'cast', iid: 'h1' })));
+    expect(t.battlefield.filter((p) => p.card.name === 'Cadet')).toHaveLength(3);
+  });
+});

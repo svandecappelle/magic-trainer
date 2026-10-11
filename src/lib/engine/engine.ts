@@ -1298,7 +1298,7 @@ function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, op
   }
   const counters = entersCounters(inst.card);
   if (counters) {
-    const n = counters.n === 'X' ? (opts.x ?? 0) : counters.n;
+    const n = typeof counters.n === 'number' ? counters.n : (opts.x ?? 0);
     if (n > 0) perm.counters = { [counters.counter]: n };
   }
   if (isPlaneswalker(inst.card)) perm.counters = { ...perm.counters, loyalty: startingLoyalty(inst.card) };
@@ -1694,7 +1694,8 @@ function affected(d: GameState, r: Resolving, to: Affected): Affectable[] {
   });
 }
 
-const amount = (r: Resolving, a: Amount) => (a === 'X' ? (r.item.x ?? 0) : a);
+const amount = (d: GameState, r: Resolving, a: Amount) =>
+  a === 'X' ? (r.item.x ?? 0) : a === 'lifeGained' ? (d.players[r.item.controller].gainedThisTurn ?? 0) : a;
 
 function moveToGraveyard(d: GameState, p: PlayerId, inst: CardInst, from: 'hand' | 'library') {
   const ps = d.players[p];
@@ -1718,7 +1719,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
 
   switch (e.kind) {
     case 'damage':
-      for (const t of [...players, ...perms]) dealDamage(d, item, caster, t, amount(r, e.amount));
+      for (const t of [...players, ...perms]) dealDamage(d, item, caster, t, amount(d, r, e.amount));
       break;
     case 'counter':
       for (const target of spells) {
@@ -1778,7 +1779,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       }
       break;
     case 'addCountersAll': {
-      const n = amount(r, e.n);
+      const n = amount(d, r, e.n);
       for (const perm of matching(d, caster, e.which)) {
         if (e.other && perm.iid === item.source) continue;
         perm.counters = { ...perm.counters, [e.counter]: (perm.counters[e.counter] ?? 0) + n };
@@ -1810,36 +1811,36 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       }
       break;
     case 'damageAll': {
-      const n = amount(r, e.amount);
+      const n = amount(d, r, e.amount);
       for (const perm of matching(d, caster, e.which)) if (isCreature(perm.card)) dealDamage(d, item, caster, perm, n);
       if (e.players) for (const p of affected(d, r, e.players) as PlayerId[]) dealDamage(d, item, caster, p, n);
       break;
     }
     case 'addCounters':
       for (const perm of perms) {
-        const n = amount(r, e.n);
+        const n = amount(d, r, e.n);
         perm.counters = { ...perm.counters, [e.counter]: (perm.counters[e.counter] ?? 0) + n };
         log(d, { k: 'counters', card: perm.card.name, counter: e.counter, n });
       }
       break;
     case 'draw':
-      for (const p of players) draw(d, p, amount(r, e.n));
+      for (const p of players) draw(d, p, amount(d, r, e.n));
       break;
     case 'gainLife':
       for (const p of players) {
-        changeLife(d, p, amount(r, e.n));
-        log(d, { k: 'gainLife', p, n: amount(r, e.n) });
+        changeLife(d, p, amount(d, r, e.n));
+        log(d, { k: 'gainLife', p, n: amount(d, r, e.n) });
       }
       break;
     case 'loseLife':
       for (const p of players) {
-        changeLife(d, p, -amount(r, e.n));
-        log(d, { k: 'loseLife', p, n: amount(r, e.n) });
+        changeLife(d, p, -amount(d, r, e.n));
+        log(d, { k: 'loseLife', p, n: amount(d, r, e.n) });
       }
       break;
     case 'mill':
       for (const p of players) {
-        const milled = d.players[p].library.slice(0, amount(r, e.n));
+        const milled = d.players[p].library.slice(0, amount(d, r, e.n));
         for (const inst of milled) moveToGraveyard(d, p, inst, 'library');
         log(d, { k: 'mill', p, n: milled.length });
       }
@@ -1850,7 +1851,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         const p = players[i];
         const hand = d.players[p].hand;
         if (e.mode === 'random') {
-          for (let k = 0; k < amount(r, e.n) && hand.length; k++) {
+          for (let k = 0; k < amount(d, r, e.n) && hand.length; k++) {
             const inst = d.players[p].hand[Math.floor(random(d) * d.players[p].hand.length)];
             moveToGraveyard(d, p, inst, 'hand');
             log(d, { k: 'discard', p, card: inst.card.name });
@@ -1858,7 +1859,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
           continue;
         }
         const options = e.mode === 'casterChooses' && e.filter ? hand.filter((c) => cardMatches(c.card, e.filter!)) : hand;
-        const n = Math.min(amount(r, e.n), options.length);
+        const n = Math.min(amount(d, r, e.n), options.length);
         if (!n) continue;
         if (!answer || answer.kind !== 'cards') {
           r.sub = i;
@@ -1877,7 +1878,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       break;
     case 'scry':
     case 'surveil': {
-      const top = d.players[caster].library.slice(0, amount(r, e.n));
+      const top = d.players[caster].library.slice(0, amount(d, r, e.n));
       if (!top.length) break;
       if (!answer || answer.kind !== 'arrange') {
         const zones: ArrangeZone[] = e.kind === 'scry' ? ['top', 'bottom'] : ['top', 'graveyard'];
@@ -1930,7 +1931,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       for (let i = r.sub ?? 0; i < players.length; i++) {
         const p = players[i];
         const options = matching(d, p, e.which).filter((x) => x.controller === p);
-        const n = Math.min(amount(r, e.n), options.length);
+        const n = Math.min(amount(d, r, e.n), options.length);
         if (!n) continue;
         if (n === options.length) {
           for (const perm of options) sacrifice(d, perm);
@@ -1955,7 +1956,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       break;
     }
     case 'poison':
-      for (const p of players) addPoison(d, p, amount(r, e.n));
+      for (const p of players) addPoison(d, p, amount(d, r, e.n));
       break;
     case 'exileGraveyards':
       for (const q of players) {
@@ -2014,7 +2015,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       d.preventCombat = true;
       break;
     case 'preventDamage': {
-      const n = amount(r, e.n);
+      const n = amount(d, r, e.n);
       for (const t of [...players.map((p) => `player:${p}`), ...perms.map((x) => x.iid)]) (d.shields ??= []).push({ target: t, n });
       break;
     }
@@ -2038,7 +2039,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       break;
     }
     case 'token': {
-      const n = amount(r, e.n);
+      const n = amount(d, r, e.n);
       for (let i = 0; i < n; i++) {
         d.abilities = (d.abilities ?? 0) + 1;
         enterBattlefield(d, { iid: `token-${d.abilities}`, card: tokenCard(e.token) }, caster);

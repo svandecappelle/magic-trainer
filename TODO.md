@@ -210,7 +210,8 @@ graveyard"), Abandoned Air Temple (enters tapped unless you control a basic land
 - [ ] Enlightened Confidant ("put that card into your hand" after surveil), Case of the Uneaten Feast (solving)
 - [ ] "Another target …" for activated abilities, and discard as an activation cost (Liliana the Faultless)
 - [ ] "Whenever one or more …" batches without the once-each-turn limit
-- [ ] Named tokens with abilities (Ajani's Pridemate, Germinate Recruits' Cadets), Mobilize, Warp, Sneak, Cases
+- [x] Named tokens and "where X is the amount of life you gained this turn" (Germinate Recruits)
+- [ ] Tokens with their own abilities (Ajani's Pridemate), Mobilize, Warp, Sneak, Cases
 - [ ] Leylines starting the game on the battlefield (CR 103.6)
 
 ## Comprehensive Rules audit (CR 2026-09-25)

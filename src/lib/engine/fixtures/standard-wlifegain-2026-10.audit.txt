@@ -3,9 +3,6 @@ NONE     Enlightened Confidant {1}{W} — Creature — Kor Cleric
       keyword
   ✗ At the beginning of your end step, if you gained life this turn, surv…
       trigger (endStep), effect not simulated
-NONE     Germinate Recruits {2}{W} — Instant
-  ✗ Create X 2/2 colorless Wizard Soldier creature tokens named Cadet, wh…
-      spell not simulated
 NONE     Practiced Offense {2}{W} — Sorcery
   ✓ Flashback {1}{W}
       keyword
@@ -78,6 +75,9 @@ OK       Curious Farm Animals {W} — Creature — Boar Elk Bird Ox
 OK       Erode {W} — Instant
   ✓ Destroy target creature or planeswalker. Its controller may search th…
       spell → destroy (1 target)
+OK       Germinate Recruits {2}{W} — Instant
+  ✓ Create X 2/2 colorless Wizard Soldier creature tokens named Cadet, wh…
+      spell → token
 OK       Get Lost {1}{W} — Instant
   ✓ Destroy target creature, enchantment, or planeswalker. Its controller…
       spell → destroy (1 target)
@@ -90,5 +90,5 @@ OK       Seam Rip {W} — Enchantment
   ✓ When this enchantment enters, exile target nonland permanent an oppon…
       trigger (enters) → destroy (1 target)
 
-17 cards: 7 ok, 7 partial, 3 not simulated, 0 can't be cast
+17 cards: 8 ok, 7 partial, 2 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)
