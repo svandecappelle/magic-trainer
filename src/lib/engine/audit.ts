@@ -38,7 +38,8 @@ const stripReminder = (text: string) => text.replace(/\s*\([^)]*\)/g, '').trim()
 function effectsText(spec: AbilitySpec): string | null {
   if (!spec.effects.length) return null;
   const targets = spec.targets.length ? ` (${spec.targets.length} target${spec.targets.length > 1 ? 's' : ''})` : '';
-  return spec.effects.map((e) => e.kind).join('+') + targets + (spec.optional ? ', optional' : '');
+  const cond = spec.condition ? `, if ${spec.condition.lost ? 'life gained and lost' : `${spec.condition.gained}+ life gained`} this turn` : '';
+  return spec.effects.map((e) => e.kind).join('+') + targets + (spec.optional ? ', optional' : '') + cond;
 }
 
 /** Keywords on a line ("Flying, lifelink", "Ward {2}", "Kicker {1}{U}"), or null if it isn't a keyword line. */
@@ -87,7 +88,7 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
     const read = triggers.map((t) => effectsText(t.ability));
     const event = [...new Set(triggers.map((t) => t.event.on))].join('/');
     return read.every((r) => r)
-      ? { text: line, status: 'ok', how: `trigger (${event}) → ${read.join(' | ')}` }
+      ? { text: line, status: 'ok', how: `trigger (${event}${triggers.some((t) => t.oncePerTurn) ? ', once each turn' : ''}) → ${read.join(' | ')}` }
       : { text: line, status: 'notSimulated', how: `trigger (${event}), effect not simulated` };
   }
   const activated = activatedOf(one);

@@ -236,3 +236,96 @@ describe('W lifegain (mtgtop8 deck 895437)', () => {
     expect(perm(t, 'Abandoned Air Temple')!.tapped).toBe(false);
   });
 });
+
+describe('W lifegain, second pass', () => {
+  /** Passes (both players) until the turn ends, resolving end step triggers on the way. */
+  const endTurn = (s: GameState) => {
+    const turn = s.turn;
+    for (let i = 0; i < 40 && s.turn === turn && s.winner === null; i++) {
+      s = s.pending ? apply(s, { type: 'choose', answer: s.pending.choice.kind === 'yesNo' ? { kind: 'yesNo', yes: true } : { kind: 'cards', iids: [] } })
+        : !s.priority && s.step === 'attack' ? apply(s, { type: 'declareAttackers', attackers: [] })
+        : apply(s, { type: 'pass' });
+    }
+    return s;
+  };
+  const gainSpell = (n: number) => spell(`Salve ${n}`, '{1}', `You gain ${n} life.`);
+  const cast = (s: GameState, iid: string) => {
+    s = settle(apply(s, { type: 'cast', iid }));
+    for (let i = 0; i < 6 && (s.stack.length || s.triggered?.length); i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+
+  it('Haliya draws at the end step only after gaining 3 or more life this turn', () => {
+    const haliya = card({
+      name: 'Haliya, Guided by Light', typeLine: 'Legendary Creature — Human Soldier', power: '3', toughness: '3', manaCost: '{2}{W}', cmc: 3,
+      oracleText: 'Whenever Haliya or another creature or artifact you control enters, you gain 1 life.\nAt the beginning of your end step, draw a card if you\'ve gained 3 or more life this turn.\nWarp {W}',
+    });
+    let s = board({ mana: 1, mine: [haliya], hand: [gainSpell(2)] });
+    s = cast(s, 'h0');
+    s = endTurn(s);
+    expect(s.players[0].hand).toHaveLength(0);
+    let t = board({ mana: 1, mine: [haliya], hand: [gainSpell(3)] });
+    t = cast(t, 'h0');
+    t = endTurn(t);
+    expect(t.players[0].hand).toHaveLength(1);
+  });
+
+  it('Lunar Convocation drains only if you gained life this turn', () => {
+    const convocation = card({
+      name: 'Lunar Convocation', typeLine: 'Enchantment', manaCost: '{W}{B}', cmc: 2,
+      oracleText: 'At the beginning of your end step, if you gained life this turn, each opponent loses 1 life.\nAt the beginning of your end step, if you gained and lost life this turn, create a 1/1 black Bat creature token with flying.\n{1}{B}, Pay 2 life: Draw a card.',
+    });
+    let s = endTurn(board({ mine: [convocation] }));
+    expect(s.players[1].life).toBe(20);
+    s = board({ mana: 1, mine: [convocation], hand: [gainSpell(1)] });
+    s = endTurn(cast(s, 'h0'));
+    expect(s.players[1].life).toBe(19);
+    expect(perm(s, 'Bat')).toBeUndefined(); // gained, but didn't lose life
+  });
+
+  it('Ajani Resolute gets a loyalty counter whenever you gain life', () => {
+    const ajani = card({
+      name: 'Ajani Resolute', typeLine: 'Legendary Planeswalker — Ajani', manaCost: '{1}{W}', cmc: 2, loyalty: '3',
+      oracleText: 'Whenever you gain life, put a loyalty counter on Ajani.\n0: You gain 1 life.\n−4: Create a 2/2 white Cat Soldier creature token named Ajani\'s Pridemate with "Whenever you gain life, put a +1/+1 counter on this token."\n−10: You get an emblem with "Creatures you control get +2/+2."',
+    });
+    let s = board({ mana: 1, mine: [ajani], hand: [gainSpell(2)] });
+    perm(s, 'Ajani Resolute')!.counters = { loyalty: 3 };
+    s = cast(s, 'h0');
+    expect(perm(s, 'Ajani Resolute')!.counters.loyalty).toBe(4);
+  });
+
+  it('Seam Rip exiles until it leaves the battlefield', () => {
+    const seamRip = card({
+      name: 'Seam Rip', typeLine: 'Enchantment', manaCost: '{1}', cmc: 1,
+      oracleText: 'When this enchantment enters, exile target nonland permanent an opponent controls with mana value 2 or less until this enchantment leaves the battlefield.',
+    });
+    const bear = creature('Bear', 2, 2, { manaCost: '{1}{G}', cmc: 2 });
+    const disenchant = spell('Disenchant', '{1}', 'Destroy target artifact or enchantment.');
+    let s = board({ mana: 2, hand: [seamRip, disenchant], theirs: [bear] });
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    for (let i = 0; i < 6 && !s.pending && (s.stack.length || s.triggered?.length); i++) s = settle(apply(s, { type: 'pass' }));
+    expect(s.pending?.choice.kind).toBe('targets');
+    s = settle(apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] } }));
+    for (let i = 0; i < 6 && s.stack.length; i++) s = settle(apply(s, { type: 'pass' }));
+    expect(perm(s, 'Bear')).toBeUndefined();
+    expect(s.players[1].exile.map((c) => c.card.name)).toEqual(['Bear']);
+    // Destroying Seam Rip brings the Bear back.
+    s = settle(apply(s, { type: 'cast', iid: 'h1', target: { kind: 'permanent', iid: iidOf(s, 'Seam Rip') } }));
+    for (let i = 0; i < 6 && s.stack.length; i++) s = settle(apply(s, { type: 'pass' }));
+    expect(perm(s, 'Seam Rip')).toBeUndefined();
+    expect(perm(s, 'Bear')?.controller).toBe(1);
+    expect(s.players[1].exile).toEqual([]);
+  });
+
+  it('Enduring Innocence draws once each turn when small creatures enter', () => {
+    const innocence = card({
+      name: 'Enduring Innocence', typeLine: 'Enchantment Creature — Sheep Glimmer', power: '2', toughness: '1', manaCost: '{1}{W}{W}', cmc: 3, keywords: ['Lifelink'],
+      oracleText: 'Lifelink\nWhenever one or more other creatures you control with power 2 or less enter, draw a card. This ability triggers only once each turn.\nWhen Enduring Innocence dies, if it was a creature, return it to the battlefield under its owner\'s control. It\'s an enchantment. (It\'s not a creature.)',
+    });
+    const cub = creature('Cub', 1, 1);
+    let s = board({ mana: 2, mine: [innocence], hand: [cub, { ...cub, id: 'cub2' }] });
+    s = cast(s, 'h0');
+    s = cast(s, 'h1');
+    expect(s.players[0].hand).toHaveLength(1); // one draw, not two
+  });
+});

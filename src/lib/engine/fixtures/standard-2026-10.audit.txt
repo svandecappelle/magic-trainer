@@ -79,13 +79,6 @@ NONE     Emptiness {4}{W/B}{W/B} — Creature — Elemental Incarnation
       trigger (enters), effect not simulated
   ✗ Evoke {W/B}{W/B}
       keyword not simulated: evoke
-NONE     Enduring Innocence {1}{W}{W} — Enchantment Creature — Sheep Glimmer
-  ✓ Lifelink
-      keyword
-  ? Whenever one or more other creatures you control with power 2 or less…
-      not read by the engine
-  ✗ When Enduring Innocence dies, if it was a creature, return it to the …
-      trigger (dies), effect not simulated
 NONE     Enlightened Confidant {1}{W} — Creature — Kor Cleric
   ✓ Lifelink
       keyword
@@ -234,9 +227,6 @@ NONE     Sanar, Unfinished Genius // Wild Idea {U}{R} // {3}{U}{R} — Legendary
       not read by the engine
   ? {T}: Create a Treasure token. Activate only if you've cast an instant…
       activated ability with a cost or restriction not understood
-NONE     Seam Rip {W} — Enchantment
-  ✗ When this enchantment enters, exile target nonland permanent an oppon…
-      trigger (enters), effect not simulated
 NONE     Seasoned Cryomancer {1}{U}{U} — Creature — Human Wizard
   ✗ When this creature enters, draw two cards, then discard two cards. Wh…
       trigger (enters), effect not simulated
@@ -366,8 +356,8 @@ PARTIAL  Abhorrent Oculus {2}{U} — Creature — Eye
   ✗ At the beginning of each opponent's upkeep, manifest dread.
       trigger (upkeep), effect not simulated
 PARTIAL  Ajani Resolute {1}{W} — Legendary Planeswalker — Ajani
-  ✗ Whenever you gain life, put a loyalty counter on Ajani.
-      trigger (gainLife), effect not simulated
+  ✓ Whenever you gain life, put a loyalty counter on Ajani.
+      trigger (gainLife) → addCounters
   ✓ 0: You gain 1 life.
       loyalty ability → gainLife
   ✗ −4: Create a 2/2 white Cat Soldier creature token named Ajani's Pride…
@@ -476,6 +466,13 @@ PARTIAL  Elspeth, Storm Slayer {3}{W}{W} — Legendary Planeswalker — Elspeth
       activated ability, effect not simulated
   ✓ −3: Destroy target creature an opponent controls with mana value 3 or…
       loyalty ability → destroy (1 target)
+PARTIAL  Enduring Innocence {1}{W}{W} — Enchantment Creature — Sheep Glimmer
+  ✓ Lifelink
+      keyword
+  ✓ Whenever one or more other creatures you control with power 2 or less…
+      trigger (enters, once each turn) → draw
+  ✗ When Enduring Innocence dies, if it was a creature, return it to the …
+      trigger (dies), effect not simulated
 PARTIAL  Essence Channeler {1}{W} — Creature — Bat Cleric
   ? As long as you've lost life this turn, this creature has flying and v…
       not read by the engine
@@ -519,8 +516,8 @@ PARTIAL  Guiding Hydra {X}{W} — Creature — Hydra Horror
 PARTIAL  Haliya, Guided by Light {2}{W} — Legendary Creature — Human Soldier
   ✓ Whenever Haliya or another creature or artifact you control enters, y…
       trigger (enters) → gainLife
-  ✗ At the beginning of your end step, draw a card if you've gained 3 or …
-      trigger (endStep), effect not simulated
+  ✓ At the beginning of your end step, draw a card if you've gained 3 or …
+      trigger (endStep) → draw, if 3+ life gained this turn
   ✗ Warp {W}
       keyword not simulated: warp
 PARTIAL  Heroes' Hangout {R} — Sorcery
@@ -552,13 +549,6 @@ PARTIAL  Liliana the Faultless {W} — Legendary Creature — Human Cleric
       trigger (enters) → gainLife
   ? {1}, {T}, Discard a card: Another target creature or planeswalker you…
       activated ability with a cost or restriction not understood
-PARTIAL  Lunar Convocation {W}{B} — Enchantment
-  ✗ At the beginning of your end step, if you gained life this turn, each…
-      trigger (endStep), effect not simulated
-  ✗ At the beginning of your end step, if you gained and lost life this t…
-      trigger (endStep), effect not simulated
-  ✓ {1}{B}, Pay 2 life: Draw a card.
-      activated → draw
 PARTIAL  Mistrise Village  — Land
   ✓ This land enters tapped unless you control a Mountain or a Forest.
       enters tapped (unlessSubtypes)
@@ -622,8 +612,8 @@ PARTIAL  Ral Zarek, Guest Lecturer {1}{B}{B} — Legendary Planeswalker — Ral
   ✗ −7: Flip five coins. Target opponent skips their next X turns, where …
       activated ability, effect not simulated
 PARTIAL  Ral, Crackling Wit {2}{U}{R} — Legendary Planeswalker — Ral
-  ✗ Whenever you cast a noncreature spell, put a loyalty counter on Ral.
-      trigger (cast), effect not simulated
+  ✓ Whenever you cast a noncreature spell, put a loyalty counter on Ral.
+      trigger (cast) → addCounters
   ✓ +1: Create a 1/1 blue and red Otter creature token with prowess.
       loyalty ability → token
   ✓ −3: Draw three cards, then discard two cards.
@@ -845,6 +835,13 @@ OK       Inevitable Defeat {1}{R}{W}{B} — Instant
       spell → destroy+gainLife (1 target)
   ✓ Exile target nonland permanent. Its controller loses 3 life and you g…
       spell → destroy+gainLife (1 target)
+OK       Lunar Convocation {W}{B} — Enchantment
+  ✓ At the beginning of your end step, if you gained life this turn, each…
+      trigger (endStep) → loseLife, if 1+ life gained this turn
+  ✓ At the beginning of your end step, if you gained and lost life this t…
+      trigger (endStep) → token, if life gained and lost this turn
+  ✓ {1}{B}, Pay 2 life: Draw a card.
+      activated → draw
 OK       Meticulous Archive  — Land — Plains Island
   ✓ This land enters tapped.
       enters tapped (always)
@@ -888,6 +885,9 @@ OK       Sacred Foundry  — Land — Mountain Plains
 OK       Scorching Shot {R}{R} — Sorcery
   ✓ Scorching Shot deals 5 damage to target creature.
       spell → damage (1 target)
+OK       Seam Rip {W} — Enchantment
+  ✓ When this enchantment enters, exile target nonland permanent an oppon…
+      trigger (enters) → destroy (1 target)
 OK       Sear {1}{R} — Instant
   ✓ Sear deals 4 damage to target creature or planeswalker.
       spell → damage (1 target)
@@ -961,5 +961,5 @@ OK       Watery Grave  — Land — Island Swamp
   ✓ As this land enters, you may pay 2 life. If you don't, it enters tapp…
       enters tapped (payLife)
 
-178 cards: 61 ok, 47 partial, 70 not simulated, 0 can't be cast
+178 cards: 63 ok, 47 partial, 68 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

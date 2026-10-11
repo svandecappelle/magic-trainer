@@ -1,10 +1,3 @@
-NONE     Enduring Innocence {1}{W}{W} — Enchantment Creature — Sheep Glimmer
-  ✓ Lifelink
-      keyword
-  ? Whenever one or more other creatures you control with power 2 or less…
-      not read by the engine
-  ✗ When Enduring Innocence dies, if it was a creature, return it to the …
-      trigger (dies), effect not simulated
 NONE     Enlightened Confidant {1}{W} — Creature — Kor Cleric
   ✓ Lifelink
       keyword
@@ -18,12 +11,9 @@ NONE     Practiced Offense {2}{W} — Sorcery
       keyword
   ✗ Put a +1/+1 counter on each creature target player controls. Target c…
       spell not simulated
-NONE     Seam Rip {W} — Enchantment
-  ✗ When this enchantment enters, exile target nonland permanent an oppon…
-      trigger (enters), effect not simulated
 PARTIAL  Ajani Resolute {1}{W} — Legendary Planeswalker — Ajani
-  ✗ Whenever you gain life, put a loyalty counter on Ajani.
-      trigger (gainLife), effect not simulated
+  ✓ Whenever you gain life, put a loyalty counter on Ajani.
+      trigger (gainLife) → addCounters
   ✓ 0: You gain 1 life.
       loyalty ability → gainLife
   ✗ −4: Create a 2/2 white Cat Soldier creature token named Ajani's Pride…
@@ -37,11 +27,18 @@ PARTIAL  Case of the Uneaten Feast {W} — Enchantment — Case
       Case: solving not simulated
   ✗ Solved — Sacrifice this Case: Creature cards in your graveyard gain "…
       keyword not simulated: solved
+PARTIAL  Enduring Innocence {1}{W}{W} — Enchantment Creature — Sheep Glimmer
+  ✓ Lifelink
+      keyword
+  ✓ Whenever one or more other creatures you control with power 2 or less…
+      trigger (enters, once each turn) → draw
+  ✗ When Enduring Innocence dies, if it was a creature, return it to the …
+      trigger (dies), effect not simulated
 PARTIAL  Haliya, Guided by Light {2}{W} — Legendary Creature — Human Soldier
   ✓ Whenever Haliya or another creature or artifact you control enters, y…
       trigger (enters) → gainLife
-  ✗ At the beginning of your end step, draw a card if you've gained 3 or …
-      trigger (endStep), effect not simulated
+  ✓ At the beginning of your end step, draw a card if you've gained 3 or …
+      trigger (endStep) → draw, if 3+ life gained this turn
   ✗ Warp {W}
       keyword not simulated: warp
 PARTIAL  Leonardo, Cutting Edge {1}{W} — Legendary Creature — Mutant Ninja Turtle
@@ -89,6 +86,9 @@ OK       Rest in Peace {1}{W} — Enchantment
       trigger (enters) → exileGraveyards
   ✓ If a card or token would be put into a graveyard from anywhere, exile…
       rule for the game: graveyardsExiled
+OK       Seam Rip {W} — Enchantment
+  ✓ When this enchantment enters, exile target nonland permanent an oppon…
+      trigger (enters) → destroy (1 target)
 
-17 cards: 6 ok, 6 partial, 5 not simulated, 0 can't be cast
+17 cards: 7 ok, 7 partial, 3 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

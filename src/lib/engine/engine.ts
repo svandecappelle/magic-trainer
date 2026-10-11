@@ -38,6 +38,8 @@ export interface Permanent extends CardInst {
   boosts: Boost[];
   /** Indexes of "once each turn" abilities already activated this turn. */
   used?: number[];
+  /** Triggered abilities (by index) that "trigger only once each turn" and already did this turn. */
+  triggeredOnce?: number[];
   /** The full card when the permanent is one face of it (modal double-faced back face), or a clone's own card. */
   printed?: Card;
   /** Its owner, when someone else controls it (gain control). */
@@ -102,6 +104,9 @@ export interface PlayerState {
   graveyard: CardInst[];
   exile: CardInst[];
   landPlayed: boolean;
+  /** Life gained and lost this turn ("if you gained life this turn"). */
+  gainedThisTurn?: number;
+  lostThisTurn?: number;
   /** Mana made but not spent yet; it empties when the step or phase ends. */
   pool?: PoolMana[];
   /** Poison counters: ten or more and the player loses. */
@@ -350,6 +355,8 @@ export interface GameState {
   lifeChoices?: { iid: string; n: number }[];
   /** Triggered abilities not on the stack yet. Optional so older saved states still load. */
   triggered?: Triggered[];
+  /** Cards exiled "until this leaves the battlefield" (Seam Rip): the source permanent, the card, its owner. */
+  exiledUntil?: { source: string; iid: string; owner: PlayerId }[];
   /** Counter for ability ids on the stack. */
   abilities?: number;
   /** Random generator state, so shuffles during the game are reproducible. Secret: redacted for clients. */
@@ -1086,6 +1093,10 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
   d.turn++;
   d.step = 'main1';
   for (const q of teamPlayers(d, p)) d.players[q].landPlayed = false;
+  for (const ps of d.players) {
+    delete ps.gainedThisTurn;
+    delete ps.lostThisTurn;
+  }
   emptyPools(d);
   for (const perm of d.battlefield) {
     if (isActivePlayer(d, perm.controller)) {
@@ -1093,6 +1104,7 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
       perm.sick = false;
     }
     delete perm.used;
+    delete perm.triggeredOnce;
   }
   log(d, { k: 'turn', n: d.turn, p });
   fireStep(d, 'upkeep');
@@ -1175,6 +1187,21 @@ const newPermanent = (inst: CardInst, controller: PlayerId): Permanent => ({
  * A card goes to one of its owner's zones; a commander goes to the command zone instead (the owner may
  * choose that, and the simulation always does).
  */
+/** Seam Rip left the battlefield: what it exiled "until this leaves the battlefield" comes back under its owner's control. */
+function returnExiledUntil(d: GameState, source: Permanent) {
+  const linked = (d.exiledUntil ?? []).filter((x) => x.source === source.iid);
+  if (!linked.length) return;
+  d.exiledUntil = d.exiledUntil!.filter((x) => x.source !== source.iid);
+  for (const l of linked) {
+    const ps = d.players[l.owner];
+    const inst = ps.exile.find((c) => c.iid === l.iid);
+    if (!inst) continue; // a token, or the card moved on
+    ps.exile = ps.exile.filter((c) => c !== inst);
+    log(d, { k: 'returned', card: inst.card.name, dest: 'battlefield' });
+    enterBattlefield(d, inst, l.owner);
+  }
+}
+
 function putInZone(d: GameState, owner: PlayerId, inst: CardInst, zone: 'graveyard' | 'exile' | 'hand') {
   const ps = d.players[owner];
   if (zone === 'graveyard' && graveyardExiled(d, owner)) zone = 'exile';
@@ -1190,6 +1217,7 @@ function removePermanent(d: GameState, perm: Permanent, zone: 'graveyard' | 'exi
   // Rest in Peace: exiled instead, so it doesn't die (a token too). Checked while the permanent is still there.
   if (zone === 'graveyard' && graveyardExiled(d, perm.owner ?? perm.controller)) zone = 'exile';
   d.battlefield = d.battlefield.filter((x) => x.iid !== perm.iid);
+  returnExiledUntil(d, perm);
   // A token that leaves the battlefield ceases to exist (it still "dies").
   if (!isToken(perm.printed ?? perm.card)) putInZone(d, perm.owner ?? perm.controller, { iid: perm.iid, card: perm.printed ?? perm.card, ...(perm.commander ? { commander: true } : {}) }, zone);
   if (zone === 'graveyard' && isCreature(perm.card)) fireObject(d, 'dies', perm);
@@ -1281,11 +1309,19 @@ function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, op
 
 // ---------- Triggers ----------
 
+/** "if you gained life this turn": checked when the ability triggers and again when it resolves. */
+function conditionMet(d: GameState, p: PlayerId, cond: AbilitySpec['condition']): boolean {
+  if (!cond) return true;
+  const ps = d.players[p];
+  return (ps.gainedThisTurn ?? 0) >= (cond.gained ?? 0) && (!cond.lost || (ps.lostThisTurn ?? 0) > 0);
+}
+
 function queueTrigger(d: GameState, source: CardInst, controller: PlayerId, ability: AbilitySpec) {
   if (!ability.effects.length) {
     log(d, { k: 'notSimulated', card: source.card.name });
     return;
   }
+  if (!conditionMet(d, controller, ability.condition)) return;
   (d.triggered ??= []).push({ source: { iid: source.iid, card: source.card }, controller, ability });
 }
 
@@ -1302,12 +1338,18 @@ function fits(d: GameState, viewer: PlayerId, which: Selector, perm: Permanent):
 function fireObject(d: GameState, on: ObjectEvent, perm: Permanent) {
   const watchers = d.battlefield.some((x) => x.iid === perm.iid) ? d.battlefield : [...d.battlefield, perm];
   for (const x of watchers) {
-    for (const t of triggersOf(x.card)) {
+    triggersOf(x.card).forEach((t, i) => {
       const e: TriggerEvent = t.event;
-      if (e.on !== on) continue;
+      if (e.on !== on) return;
       const hit = e.self ? x.iid === perm.iid : !(e.another && x.iid === perm.iid) && fits(d, x.controller, e.which, perm);
-      if (hit) queueTrigger(d, x, x.controller, t.ability);
-    }
+      if (!hit) return;
+      // "This ability triggers only once each turn."
+      if (t.oncePerTurn) {
+        if (x.triggeredOnce?.includes(i)) return;
+        x.triggeredOnce = [...(x.triggeredOnce ?? []), i];
+      }
+      queueTrigger(d, x, x.controller, t.ability);
+    });
   }
 }
 
@@ -1518,6 +1560,9 @@ function addPoison(d: GameState, p: PlayerId, n: number) {
 /** Life changes; teammates share their life total. */
 function changeLife(d: GameState, p: PlayerId, delta: number) {
   for (const q of teamPlayers(d, p)) d.players[q].life += delta;
+  const ps = d.players[p];
+  if (delta > 0) ps.gainedThisTurn = (ps.gainedThisTurn ?? 0) + delta;
+  if (delta < 0) ps.lostThisTurn = (ps.lostThisTurn ?? 0) - delta;
   // "Whenever you gain life" (each life gain is one event).
   if (delta > 0) {
     for (const x of d.battlefield) {
@@ -1710,10 +1755,13 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       }
       break;
     case 'destroy':
+      // "until this enchantment leaves the battlefield": nothing is exiled if it already left.
+      if (e.untilLeaves && !(item.source && findPermanent(d, item.source))) break;
       for (const perm of perms) {
         if (!e.exile && hasKw(perm, 'indestructible')) continue;
         removePermanent(d, perm, e.exile ? 'exile' : 'graveyard');
         log(d, { k: e.exile ? 'exiled' : 'destroyed', card: perm.card.name });
+        if (e.untilLeaves) (d.exiledUntil ??= []).push({ source: item.source!, iid: perm.iid, owner: perm.owner ?? perm.controller });
       }
       for (const g of graveCards) {
         unbury(g);
@@ -1860,6 +1908,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
     case 'bounceAll':
       for (const perm of e.kind === 'bounceAll' ? matching(d, caster, e.which) : perms) {
         d.battlefield = d.battlefield.filter((x) => x.iid !== perm.iid);
+        returnExiledUntil(d, perm);
         if (!isToken(perm.printed ?? perm.card)) putInZone(d, perm.owner ?? perm.controller, { iid: perm.iid, card: perm.printed ?? perm.card, ...(perm.commander ? { commander: true } : {}) }, 'hand');
         log(d, { k: 'bounced', card: perm.card.name });
       }
@@ -2045,6 +2094,10 @@ function startResolving(d: GameState, reason: WindowReason) {
     return;
   }
   if (!spec.effects.length) log(d, { k: 'notSimulated', card: castCard(item).name });
+  if (!conditionMet(d, item.controller, spec.condition)) {
+    afterResolving(d, reason);
+    return;
+  }
   d.resolving = { item, legal, next: 0, reason };
   continueResolving(d);
 }

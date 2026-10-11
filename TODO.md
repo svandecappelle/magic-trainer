@@ -203,11 +203,13 @@ W lifegain (mtgtop8 deck 895437, card-audit skill). Fixed: Voice of Victory (opp
 your turn), Clarion Conqueror (no activated abilities of artifacts, creatures, planeswalkers, mana included), Rest in
 Peace and Leyline of the Void (cards go to exile instead; "exile all graveyards", "exile each opponent's
 graveyard"), Abandoned Air Temple (enters tapped unless you control a basic land). Still missing:
-- [ ] "If you gained life this turn" conditions (Enlightened Confidant, Haliya, Case of the Uneaten Feast, Lunar
-  Convocation) and loyalty counters from triggers (Ajani Resolute)
+- [x] "If you gained life this turn" / "if you've gained 3 or more life" / "if you gained and lost life" on triggers
+  (Haliya, Lunar Convocation), loyalty counters from triggers (Ajani Resolute, Ral; legends named by first name)
+- [x] "Exile … until this enchantment leaves the battlefield" (Seam Rip)
+- [x] "Whenever one or more … enter … This ability triggers only once each turn" (Enduring Innocence)
+- [ ] Enlightened Confidant ("put that card into your hand" after surveil), Case of the Uneaten Feast (solving)
 - [ ] "Another target …" for activated abilities, and discard as an activation cost (Liliana the Faultless)
-- [ ] Batch and once-per-turn triggers: "Whenever one or more … enter … This ability triggers only once each turn"
-  (Enduring Innocence)
+- [ ] "Whenever one or more …" batches without the once-each-turn limit
 - [ ] Named tokens with abilities (Ajani's Pridemate, Germinate Recruits' Cadets), Mobilize, Warp, Sneak, Cases
 - [ ] Leylines starting the game on the battlefield (CR 103.6)
 

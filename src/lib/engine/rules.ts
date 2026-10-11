@@ -282,7 +282,8 @@ export type Effect =
   | { kind: 'counter'; to: Affected; unlessPays?: number }
   /** "gets +N/+N (and gains …) until end of turn". Negative values shrink. */
   | { kind: 'pump'; power: number; toughness: number; keywords: Keyword[]; to: Affected }
-  | { kind: 'destroy'; exile: boolean; to: Affected }
+  /** `untilLeaves`: exiled until the ability's source leaves the battlefield (Seam Rip). */
+  | { kind: 'destroy'; exile: boolean; to: Affected; untilLeaves?: boolean }
   | { kind: 'draw'; n: Amount; to: Affected }
   | { kind: 'gainLife'; n: Amount; to: Affected }
   | { kind: 'loseLife'; n: Amount; to: Affected }
@@ -372,6 +373,8 @@ export interface AbilitySpec {
   effects: Effect[];
   /** "you may …": the controller decides on resolution whether it happens. */
   optional?: boolean;
+  /** "if you gained life this turn" (gained: 1), "if you've gained 3 or more life", "if you gained and lost life". */
+  condition?: { gained?: number; lost?: boolean };
 }
 
 const WORD_NUMBERS: Record<string, number> = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7 };
@@ -545,7 +548,7 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** Ways rules text names its own card: "Goblin Guide", "Ragavan" (legends), "this creature". */
 function selfWords(name: string): string[] {
   const front = name.split(' // ')[0];
-  return [front, front.split(',')[0], 'this creature', 'this permanent', 'this artifact', 'this enchantment', 'this land', 'this token', 'this aura', 'this equipment'];
+  return [front, ...front.split(',').map((w) => w.trim()), 'this creature', 'this permanent', 'this artifact', 'this enchantment', 'this land', 'this token', 'this aura', 'this equipment'];
 }
 
 /**
@@ -632,6 +635,11 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
   scan(new RegExp(`\\b(destroy|exile) (${TARGET})${END}`, 'gi'), (m) => {
     const to = slotFor(m[2], (spec) => spec.kind === 'creature' || spec.kind === 'permanent' || (spec.kind === 'card' && m[1].toLowerCase() === 'exile'));
     return to && { kind: 'destroy', exile: m[1].toLowerCase() === 'exile', to };
+  });
+  // Seam Rip: "exile target nonland permanent … until this enchantment leaves the battlefield".
+  scan(new RegExp(`\\bexile (${TARGET}) until (?:this [a-z]+|${self ? selfWords(self).map(escapeRe).join('|') : 'this permanent'}) leaves the battlefield(?=\\.)`, 'gi'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'creature' || spec.kind === 'permanent');
+    return to && { kind: 'destroy', exile: true, to, untilLeaves: true };
   });
   scan(new RegExp(`\\b(destroy|exile) (?:all|each) ([a-z0-9 ,'-]+?)${END}`, 'gi'), (m) => {
     const which = selector(m[2]);
@@ -807,7 +815,7 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     scan(new RegExp(`(?:^|[.,] *|then |and )${SELF} gains ${KEYWORD_LIST} until end of turn`, 'gi'), (m) => ({
       kind: 'pump', power: 0, toughness: 0, keywords: keywordList(m[1]), to: 'self',
     }));
-    scan(new RegExp(`\\bput (${AMOUNT}) ([+-]1\\/[+-]1) counters? on ${SELF}(?=\\.|\\n|$|,)`, 'gi'), (m) => ({
+    scan(new RegExp(`\\bput (${AMOUNT}) ([+-]1\\/[+-]1|loyalty) counters? on ${SELF}(?=\\.|\\n|$|,)`, 'gi'), (m) => ({
       kind: 'addCounters', counter: m[2] as CounterKind, n: toAmount(m[1]), to: 'self',
     }));
     scan(new RegExp(`(?:^|[.,] *|then )sacrifice ${SELF}(?=\\.|$)`, 'gi'), () => ({ kind: 'sacrificeSelf' }));
@@ -1126,6 +1134,8 @@ export type TriggerEvent =
 
 export interface TriggerSpec {
   event: TriggerEvent;
+  /** "This ability triggers only once each turn." */
+  oncePerTurn?: boolean;
   /** What it does. No effects means the ability is recognized as a trigger but not simulated. */
   ability: AbilitySpec;
 }
@@ -1154,6 +1164,22 @@ function triggerSubject(subject: string, underYourControl: boolean): { which: Se
 
 /** The effect text of a trigger: "you may" makes it optional; unsupported wordings give no effects. */
 function triggerAbility(text: string, name: string, self: boolean): AbilitySpec {
+  // Life this turn: "if you gained life this turn, …", "… if you've gained 3 or more life this turn."
+  let condition: AbilitySpec['condition'];
+  const lead = text.match(/^if you gained (and lost )?life this turn, (.+)$/i);
+  const tail = text.match(/^(.+?) if you've gained (\w+) or more life this turn\.$/i);
+  if (lead) {
+    condition = { gained: 1, ...(lead[1] ? { lost: true } : {}) };
+    text = lead[2];
+  } else if (tail) {
+    condition = { gained: toNumber(tail[2]) };
+    text = `${tail[1]}.`;
+  }
+  const spec = triggerBody(text, name, self);
+  return condition && spec.effects.length ? { ...spec, condition } : spec;
+}
+
+function triggerBody(text: string, name: string, self: boolean): AbilitySpec {
   const optional = /^you may /i.test(text);
   // "you may gain 1 life" → "you gain 1 life"
   const body = optional ? `you ${text.slice('you may '.length)}` : text;
@@ -1161,6 +1187,15 @@ function triggerAbility(text: string, name: string, self: boolean): AbilitySpec 
   if (UNSUPPORTED.test(body) || (!self && /\bits?\b/i.test(body))) return NO_EFFECT;
   const spec = parseAbilityText(body, self ? name : undefined);
   return optional && spec.effects.length ? { ...spec, optional } : spec;
+}
+
+/**
+ * The name an ability uses for its own card. Legends are often called by their first name ("put a loyalty counter
+ * on Ajani" on Ajani Resolute): "Ajani Resolute, Ajani" makes both forms self-references (see selfWords).
+ */
+function selfName(card: Card): string {
+  const front = card.name.split(' // ')[0];
+  return /\bLegendary\b/.test(card.typeLine) && !front.includes(',') && front.includes(' ') ? `${front}, ${front.split(' ')[0]}` : front;
 }
 
 const triggerCache = new Map<string, TriggerSpec[]>();
@@ -1171,7 +1206,7 @@ export function triggersOf(card: Card): TriggerSpec[] {
   const cached = triggerCache.get(key);
   if (cached) return cached;
   const out: TriggerSpec[] = [];
-  const name = card.name.split(' // ')[0];
+  const name = selfName(card);
   // A trigger's subject may also be a legend's first name ("When Loran enters").
   const selves = [...selfWords(name), name.split(' ')[0]].map((w) => w.toLowerCase());
 
@@ -1185,6 +1220,16 @@ export function triggersOf(card: Card): TriggerSpec[] {
   for (const raw of frontText(card).split('\n')) {
     // Drop reminder text and ability words ("Landfall — Whenever…").
     const line = raw.replace(/\s*\([^)]*\)/g, '').replace(/^[A-Z][A-Za-z' ]+ — /, '').trim();
+
+    // "Whenever one or more other creatures you control with power 2 or less enter, draw a card. This ability triggers
+    // only once each turn." (Without the once-each-turn limit, several entering together would trigger once: not simulated.)
+    const batch = line.match(/^Whenever one or more (other )?(.+?) enter, (.+?) This ability triggers only once each turn\.$/i);
+    if (batch) {
+      const singular = batch[2].replace(/^(\w+?)s\b/, '$1');
+      const watched = triggerSubject(`${batch[1] ? 'another' : 'a'} ${singular}`, false);
+      if (watched) out.push({ event: { on: 'enters', self: false, ...watched }, ability: triggerAbility(batch[3], name, false), oncePerTurn: true });
+      continue;
+    }
 
     const ev = line.match(/^(?:When|Whenever) (.+?) (enters(?: the battlefield)?( under your control)?|attacks|dies|deals combat damage to a player)(?: or (enters|attacks|dies)(?: the battlefield)?)?, (.+)$/i);
     if (ev) {
@@ -1267,7 +1312,7 @@ export function activatedOf(card: Card): ActivatedSpec[] {
   const cached = activatedCache.get(key);
   if (cached) return cached;
   const out: ActivatedSpec[] = [];
-  const name = card.name.split(' // ')[0];
+  const name = selfName(card);
   const selves = selfWords(name).map((w) => w.toLowerCase());
 
   for (const raw of frontText(card).split('\n')) {
