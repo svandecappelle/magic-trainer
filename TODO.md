@@ -146,8 +146,8 @@ get each face's cost and image (their text is rebuilt from the joined faces mean
     life 30, poison 15, "each opponent" per opponent, the starting team skips its first draw
   - [x] C. Commander: commander in the deck (editor + color identity), command zone, tax, back to the command zone,
     21 commander damage, life 40 (2HG: 60)
-  - [ ] D. Board for 4 players, game setup (mode, Commander, decks per seat)
-  - [ ] E. Bot: several opponents, bot teammate
+  - [x] D. Board for 4 players, game setup (mode, Commander, decks per seat)
+  - [x] E. Bot: several opponents, bot teammate
   - [ ] F. Online: 4-seat rooms in two teams, teammates see each other's hands
   - [ ] G. Tests and browser games
 - [x] Turn timer, reconnect timeout — online: TURN_SECONDS per decision (default action on timeout, conceding after

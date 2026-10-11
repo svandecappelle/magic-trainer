@@ -22,10 +22,10 @@ export async function loadDeckCards(id: string, decks: Deck[]): Promise<Card[]> 
   return cards;
 }
 
-/** Main deck and sideboard (one entry per copy), for a match with sideboarding. */
-export async function loadDeck75(id: string, decks: Deck[]): Promise<{ main: Card[]; side: Card[] }> {
+/** Main deck, sideboard and commanders (one entry per copy), for a match with sideboarding or a Commander game. */
+export async function loadDeck75(id: string, decks: Deck[]): Promise<{ main: Card[]; side: Card[]; commander: Card[] }> {
   const main = await loadDeckCards(id, decks);
   const deck = decks.find((d) => d.id === id);
-  const side = deck ? deck.entries.filter((e) => e.board === 'side').flatMap((e) => Array(e.qty).fill(e.card)) : (sideCache.get(id) ?? []);
-  return { main, side };
+  const board = (b: 'side' | 'commander') => (deck ? deck.entries.filter((e) => e.board === b).flatMap((e) => Array(e.qty).fill(e.card)) : []);
+  return { main, side: deck ? board('side') : (sideCache.get(id) ?? []), commander: board('commander') };
 }

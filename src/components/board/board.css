@@ -33,6 +33,19 @@
 
 /* ---------- Battlefields ---------- */
 
+/* One battlefield per player on each side (two side by side in Two-Headed Giant). */
+.fields { display: flex; gap: 8px; min-height: 0; }
+.fields > .battlefield { flex: 1 1 0; min-width: 0; }
+.fields.multi > .battlefield + .battlefield { border-left: 1px dashed var(--border); }
+.field-name { align-self: center; text-transform: uppercase; letter-spacing: 0.04em; }
+.fields.theirs .field-name { order: 99; }
+/* Four players: smaller cards so both battlefields of a side fit. */
+.game:has(.fields.multi) { --perm-w: clamp(40px, min(8.5vh, 5.6vw), 82px); --hand-w: clamp(52px, min(12vh, 13vw), 100px); }
+.player-bar.theirs .seat { display: flex; align-items: flex-start; gap: 6px; }
+.player-bar.theirs .seat + .seat { margin-left: 18px; }
+.hud.ally { width: auto; min-width: 110px; padding: 4px 8px; opacity: 0.9; }
+.hud.ally .life { font-size: 1.2rem; }
+
 .battlefield { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow: auto; padding: 6px 8px; }
 .battlefield.theirs { justify-content: flex-end; }
 .battlefield.mine { justify-content: flex-start; }

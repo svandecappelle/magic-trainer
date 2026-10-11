@@ -1,5 +1,5 @@
 import {
-  abilityMaxX, activatable, actor, firstOpponent, canAttack, castCost, castOptions, castSources, findInGraveyard, landFaces, manaSources, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
+  abilityMaxX, activatable, actor, firstOpponent, isActivePlayer, opponentsOf, teamOf, canAttack, castCost, castOptions, castSources, findInGraveyard, landFaces, manaSources, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
   legalTargets, matching, maxX, powerOf, toughnessOf, xCount,
   type Action, type Answer, type CastOption, type CardInst, type Choice, type GameState, type Permanent, type PlayerId, type StackItem, type Target,
 } from './engine';
@@ -8,6 +8,11 @@ import {
   parseCost, spellSpec, type AbilitySpec, type Amount, type Effect,
 } from './rules';
 import type { Card } from '../../types';
+
+/** Is p on my team (me included)? In a duel: p is me. */
+const friend = (s: GameState, me: PlayerId, p: PlayerId) => teamOf(s, p) === teamOf(s, me);
+/** All creatures of the other team. */
+const foeCreatures = (s: GameState, me: PlayerId) => opponentsOf(s, me).flatMap((o) => creaturesOf(s, o));
 
 /**
  * A heuristic opponent. It never looks at hidden information (your hand or library)
@@ -99,7 +104,7 @@ function chooseAttackTargets(s: GameState, me: PlayerId, attackerIds: string[]):
   const total = attackers.reduce((n, a) => n + powerOf(a) * strikes(a), 0);
   if (total >= s.players[opp].life) return {};
   const walkers = s.battlefield
-    .filter((x) => x.controller === opp && isPlaneswalker(x.card) && !isCreature(x.card))
+    .filter((x) => !friend(s, me, x.controller) && isPlaneswalker(x.card) && !isCreature(x.card))
     .sort((a, b) => (a.counters.loyalty ?? 0) - (b.counters.loyalty ?? 0));
   const out: Record<string, string> = {};
   let free = [...attackers];
@@ -120,7 +125,7 @@ function chooseAttackTargets(s: GameState, me: PlayerId, attackerIds: string[]):
 function chooseAttackers(s: GameState, me: PlayerId): string[] {
   const opp = firstOpponent(s, me);
   const attackers = creaturesOf(s, me).filter(canAttack);
-  const blockers = creaturesOf(s, opp).filter((b) => !b.tapped);
+  const blockers = foeCreatures(s, me).filter((b) => !b.tapped);
 
   // Alpha strike if damage still gets through when each blocker stops our biggest attackers.
   const damages = attackers.map((a) => powerOf(a) * strikes(a)).sort((x, y) => y - x);
@@ -407,14 +412,14 @@ function massValue(s: GameState, me: PlayerId, effects: Effect[]): number {
     if (e.kind !== 'destroyAll' && e.kind !== 'damageAll' && e.kind !== 'pumpAll' && e.kind !== 'bounceAll') continue;
     for (const perm of matching(s, me, e.which)) {
       if (!isCreature(perm.card)) {
-        if (e.kind === 'destroyAll') score += perm.controller === me ? -1 : 1;
+        if (e.kind === 'destroyAll') score += friend(s, me, perm.controller) ? -1 : 1;
         continue;
       }
       // Bounced creatures count for half: they come back.
       const dead = e.kind === 'destroyAll' || e.kind === 'bounceAll' || kills(perm, [e]);
       const value = (dead ? creatureValue(perm.card) : e.kind === 'pumpAll' ? (e.power + e.toughness) / 2 : 0) / (e.kind === 'bounceAll' ? 2 : 1);
       // A pump is good for our creatures; a kill is good on theirs.
-      const good = e.kind === 'pumpAll' && !dead ? perm.controller === me : perm.controller !== me;
+      const good = e.kind === 'pumpAll' && !dead ? friend(s, me, perm.controller) : !friend(s, me, perm.controller);
       score += good ? value : -value;
     }
   }
@@ -433,10 +438,10 @@ function chooseAuraHost(s: GameState, me: PlayerId, card: Card): Permanent | nul
   const statics = staticsOf(card).filter((st) => st.who === 'enchanted');
   if (!statics.length) return null;
   const score = statics.reduce((n, st) => n + st.power + st.toughness + st.keywords.length * 1.5 - (st.cantAttack ? 4 : 0) - (st.cantBlock ? 2 : 0), 0);
-  const want = score >= 0 ? me : firstOpponent(s, me);
+  const helpful = score >= 0;
   const hosts = legalTargets(s, me, auraTarget(card)!, undefined, card)
     .flatMap((t) => (t.kind === 'permanent' ? [findPermanent(s, t.iid)!] : []))
-    .filter((x) => x.controller === want && isCreature(x.card))
+    .filter((x) => friend(s, me, x.controller) === helpful && isCreature(x.card))
     .sort((a, b) => creatureValue(b.card) - creatureValue(a.card));
   return hosts[0] ?? null;
 }
@@ -475,10 +480,9 @@ function playWithGoodTarget(s: GameState, me: PlayerId, play: Play, among?: Perm
   if (effects.every((e) => e.kind === 'addMana')) return null; // rituals: the bot doesn't plan mana ahead
   if (effects.some((e) => e.kind === 'copySpell' || e.kind === 'preventCombat')) return null; // used in response only (fogs)
   // Threaten: only worth it before our attack.
-  if (effects.some((e) => e.kind === 'gainControl' && e.untilEndOfTurn) && !(s.active === me && s.step === 'main1' && !s.priority)) return null;
+  if (effects.some((e) => e.kind === 'gainControl' && e.untilEndOfTurn) && !(isActivePlayer(s, me) && s.step === 'main1' && !s.priority)) return null;
   // An edict needs something to hit.
-  const opp = firstOpponent(s, me);
-  if (effects.some((e) => e.kind === 'sacrifice' && !matching(s, opp, e.which).some((x) => x.controller === opp))) return null;
+  if (effects.some((e) => e.kind === 'sacrifice' && !opponentsOf(s, me).some((o) => matching(s, o, e.which).some((x) => x.controller === o)))) return null;
   if (effects.some((e) => e.kind === 'counter' || (e.kind === 'pump' && intentOf(e) === 'help'))) return null; // used in response only
   if (effects.some((e) => e.kind === 'tap' && e.untap)) return null;
 
@@ -487,7 +491,7 @@ function playWithGoodTarget(s: GameState, me: PlayerId, play: Play, among?: Perm
     if (among) return null;
     // Positive pumps only before attacking; wipes when they clearly favour us.
     const pumpOnly = effects.every((e) => e.kind !== 'destroyAll' && e.kind !== 'damageAll' && e.kind !== 'bounceAll' && !(e.kind === 'pumpAll' && e.toughness < 0));
-    if (pumpOnly && !(s.step === 'main1' && s.active === me && creaturesOf(s, me).some(canAttack))) return null;
+    if (pumpOnly && !(s.step === 'main1' && isActivePlayer(s, me) && creaturesOf(s, me).some(canAttack))) return null;
     if (massValue(s, me, effects) < (pumpOnly ? 3 : 2)) return null;
   }
 
@@ -513,7 +517,7 @@ function chooseFight(s: GameState, me: PlayerId, spec: AbilitySpec, e: Extract<E
   const slotB = spec.targets[e.b.slot];
   const legal = (slot: typeof slotA) => legalTargets(s, me, slot).flatMap((t) => (t.kind === 'permanent' ? [findPermanent(s, t.iid)!] : []));
   const mine = legal(slotA).filter((x) => x.controller === me).sort((a, b) => powerOf(b) - powerOf(a));
-  const theirs = legal(slotB).filter((x) => x.controller !== me).sort((a, b) => creatureValue(b.card) - creatureValue(a.card));
+  const theirs = legal(slotB).filter((x) => !friend(s, me, x.controller)).sort((a, b) => creatureValue(b.card) - creatureValue(a.card));
   for (const t of theirs) {
     const m = mine.find((x) => powerOf(x) >= toughnessOf(t) - t.damage && (e.oneSided || powerOf(t) < toughnessOf(x) - x.damage));
     if (m) {
@@ -550,7 +554,7 @@ function chooseTarget(s: GameState, me: PlayerId, spec: AbilitySpec, among?: Per
     return p;
   }
   if (harm) {
-    const theirs = perms.filter((x) => x.controller === opp);
+    const theirs = perms.filter((x) => !friend(s, me, x.controller));
     const dmg = onSlot.find((e) => e.kind === 'damage');
     const canGoFace = canPick(opp);
     if (dmg?.kind === 'damage' && canGoFace && num(dmg.amount) >= s.players[opp].life) return opp;
@@ -559,7 +563,7 @@ function chooseTarget(s: GameState, me: PlayerId, spec: AbilitySpec, among?: Per
     if (onSlot.some((e) => e.kind === 'destroy' || e.kind === 'bounce')) return theirs[0] ?? null;
     // Tapping: their best untapped creature, before we attack.
     if (onSlot.some((e) => e.kind === 'tap')) {
-      return s.active === me && s.step === 'main1' ? (theirs.find((x) => !x.tapped && isCreature(x.card)) ?? null) : null;
+      return isActivePlayer(s, me) && s.step === 'main1' ? (theirs.find((x) => !x.tapped && isCreature(x.card)) ?? null) : null;
     }
     return canGoFace && dmg ? opp : null;
   }
@@ -575,7 +579,7 @@ function chooseGraveCard(s: GameState, me: PlayerId, spec: AbilitySpec): Target 
   const help = spec.effects.some((e) => 'to' in e && typeof e.to === 'object' && e.to.slot === 0 && intentOf(e) === 'help');
   const cards = legalTargets(s, me, spec.targets[0])
     .map((t) => ({ t, found: t.kind === 'card' ? findInGraveyard(s, t.iid) : undefined }))
-    .filter((x) => x.found && (x.found.owner === me) === help)
+    .filter((x) => x.found && friend(s, me, x.found.owner) === help)
     .sort((a, b) => cardWorth(b.found!.inst.card) - cardWorth(a.found!.inst.card));
   return cards[0]?.t ?? null;
 }
@@ -612,7 +616,10 @@ function abilityPlays(s: GameState, me: PlayerId): (Play & { perm: Permanent; ta
 
 /** Does the action hit one of the opponent's permanents (removal, as opposed to burn to the face or card draw)? */
 const hitsTheirPermanent = (s: GameState, me: PlayerId, action: Action) =>
-  action.type === 'activate' && (action.targets ?? []).flat().some((t) => t.kind === 'permanent' && findPermanent(s, t.iid)?.controller !== me);
+  action.type === 'activate' && (action.targets ?? []).flat().some((t) => {
+    const perm = t.kind === 'permanent' ? findPermanent(s, t.iid) : undefined;
+    return !!perm && !friend(s, me, perm.controller);
+  });
 
 /**
  * Use an ability. Tapping a creature or sacrificing a permanent has a price, so:
@@ -621,8 +628,8 @@ const hitsTheirPermanent = (s: GameState, me: PlayerId, action: Action) =>
  */
 function useAbility(s: GameState, me: PlayerId, among?: Permanent[]): Action | null {
   const top = s.stack.at(-1);
-  const doomed = (perm: Permanent) => !!top && top.controller !== me && top.targets.flat().some((t) => t.kind === 'permanent' && t.iid === perm.iid);
-  const freeTime = (s.active === me && s.step === 'main2' && !s.priority) || (s.priority?.reason === 'end' && s.active !== me);
+  const doomed = (perm: Permanent) => !!top && !friend(s, me, top.controller) && top.targets.flat().some((t) => t.kind === 'permanent' && t.iid === perm.iid);
+  const freeTime = (isActivePlayer(s, me) && s.step === 'main2' && !s.priority) || (s.priority?.reason === 'end' && !isActivePlayer(s, me));
   for (const play of abilityPlays(s, me)) {
     const action = playWithGoodTarget(s, me, play, among);
     if (!action) continue;
@@ -637,7 +644,6 @@ function useAbility(s: GameState, me: PlayerId, among?: Permanent[]): Action | n
 // ---------- Responding with instants ----------
 
 function respond(s: GameState, me: PlayerId): Action | null {
-  const opp = firstOpponent(s, me);
   const top = s.stack.at(-1);
   const spells = castable(s, me).filter((c) => hasInstantSpeed(c.card) && hasUsefulTarget(s, me, c.card));
   const withEffect = (kind: Effect['kind'], intent?: Intent) =>
@@ -648,7 +654,7 @@ function respond(s: GameState, me: PlayerId): Action | null {
       })
       .filter((c) => c.spec.targets.length <= 1 && c.effects.some((e) => e.kind === kind && (!intent || intentOf(e) === intent)));
 
-  if (top && top.controller === opp) {
+  if (top && !friend(s, me, top.controller)) {
     // Counter anything that matters: non-creature spells and creatures of mana value 3+.
     if (!isCreature(top.card) || top.card.cmc >= 3) {
       const target: Target = { kind: 'spell', iid: top.iid };
@@ -665,7 +671,7 @@ function respond(s: GameState, me: PlayerId): Action | null {
   if (top) return null; // our own spell is on top: let it resolve
 
   const reason = s.priority!.reason;
-  if (reason === 'attack' && s.active === opp) {
+  if (reason === 'attack' && !isActivePlayer(s, me)) {
     // Before blocks: shoot down the best attacker we can kill.
     const attackers = s.attackers.map((iid) => findPermanent(s, iid)).filter((x) => x !== undefined);
     for (const c of [...withEffect('destroy'), ...withEffect('damage'), ...withEffect('pump', 'harm')]) {
@@ -679,7 +685,7 @@ function respond(s: GameState, me: PlayerId): Action | null {
     const trick = combatTrick(s, me, withEffect('pump', 'help'));
     if (trick) return trick;
     // Fog when the attack would kill us.
-    if (s.active === opp) {
+    if (!isActivePlayer(s, me)) {
       const incoming = s.attackers
         .filter((aid) => !(s.blocks[aid]?.length))
         .reduce((n, aid) => { const a = findPermanent(s, aid); return n + (a ? powerOf(a) * strikes(a) : 0); }, 0);
@@ -687,7 +693,7 @@ function respond(s: GameState, me: PlayerId): Action | null {
       if (fog && incoming >= s.players[me].life) return { type: 'cast', iid: fog.iid };
     }
   }
-  if (reason === 'end' && s.active === opp) {
+  if (reason === 'end' && !isActivePlayer(s, me)) {
     // End of the opponent's turn: use mana that would otherwise go to waste.
     for (const c of spells) {
       const action = castWithGoodTarget(s, me, c);
@@ -713,7 +719,7 @@ function saveFromBurn(s: GameState, me: PlayerId, top: StackItem, pumps: PumpSpe
   if (t?.kind !== 'permanent') return null;
   const victim = findPermanent(s, t.iid);
   const dmg = withX(spellSpec(top.card), top.x ?? 0).effects.find((e) => e.kind === 'damage');
-  if (!victim || victim.controller !== me || !dmg || dmg.kind !== 'damage') return null;
+  if (!victim || !friend(s, me, victim.controller) || !dmg || dmg.kind !== 'damage') return null;
   const amount = num(dmg.amount);
   const left = toughnessOf(victim) - victim.damage;
   if (amount < left) return null;
@@ -728,7 +734,7 @@ function combatTrick(s: GameState, me: PlayerId, pumps: PumpSpell[]): Action | n
     const attacker = findPermanent(s, aid);
     const blocker = bids.length === 1 ? findPermanent(s, bids[0]) : undefined;
     if (!attacker || !blocker) continue;
-    const [mine, theirs] = attacker.controller === me ? [attacker, blocker] : [blocker, attacker];
+    const [mine, theirs] = friend(s, me, attacker.controller) ? [attacker, blocker] : [blocker, attacker];
     for (const p of pumps) {
       if (!canPump(s, me, p, mine)) continue;
       const boosted = pumped(mine, pumpOf(p));
@@ -830,9 +836,9 @@ function triggerTargets(s: GameState, me: PlayerId, spec: AbilitySpec, safe: boo
     const onSlot = spec.effects.filter((e) => 'to' in e && typeof e.to === 'object' && e.to.slot === i);
     const harm = onSlot.some((e) => intentOf(e) === 'harm');
     const ours = (t: Target) => {
-      if (t.kind === 'player') return t.player === me;
-      if (t.kind === 'card') return findInGraveyard(s, t.iid)?.owner === me;
-      return (t.kind === 'permanent' ? findPermanent(s, t.iid)?.controller : s.stack.find((x) => x.iid === t.iid)?.controller) === me;
+      if (t.kind === 'player') return friend(s, me, t.player);
+      if (t.kind === 'card') return friend(s, me, findInGraveyard(s, t.iid)?.owner ?? -1);
+      return friend(s, me, (t.kind === 'permanent' ? findPermanent(s, t.iid)?.controller : s.stack.find((x) => x.iid === t.iid)?.controller) ?? -1);
     };
     const value = (t: Target) => {
       if (t.kind === 'card') return cardWorth(findInGraveyard(s, t.iid)!.inst.card);

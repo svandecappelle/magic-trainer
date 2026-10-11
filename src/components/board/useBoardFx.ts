@@ -82,7 +82,7 @@ export function useBoardFx(g: GameState, me: PlayerId): BoardFx {
 
     // Floating numbers.
     const fl: Float[] = [];
-    ([0, 1] as PlayerId[]).forEach((pl) => {
+    g.players.forEach((_, pl) => {
       const diff = g.players[pl].life - p.players[pl].life;
       if (diff) fl.push({ id: nextId++, anchor: `player:${pl}`, text: signed(diff), kind: diff < 0 ? 'damage' : 'heal' });
     });

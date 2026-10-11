@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import {
   activatable, activationProblem, abilityMaxX, actor, apply, canAttack, canTapForMana, canUntapForMana, castCost, castOptions, castSources,
-  landFaces, findInGraveyard, legalTargets, canBlock, findPermanent, hasKw, IllegalAction, isLegalTarget, isMainStep, firstOpponent,
+  landFaces, findInGraveyard, legalTargets, canBlock, findPermanent, hasKw, IllegalAction, isActivePlayer, isLegalTarget, isMainStep, firstOpponent, opponentsOf, teammatesOf, teamPlayers, wonBy,
   powerOf, toughnessOf, xCount,
   type Action, type CardInst, type CastOption, type GameState, type Permanent, type PlayerId, type Target,
 } from '../lib/engine/engine';
@@ -48,11 +48,18 @@ const targetKey = (t: Target) => (t.kind === 'player' ? `player:${t.player}` : t
 export function GameBoard({ game: g, me, onAction, endControls, notice }: Props) {
   const t = useT();
   const show = useCardDisplay();
-  const opp = firstOpponent(g, me);
+  const opponents = opponentsOf(g, me);
+  const mates = teammatesOf(g, me);
+  /** Several players per side (Two-Headed Giant). */
+  const multi = g.players.length > 2;
+  /** "A & B" for a team. */
+  const teamName = (p: PlayerId) => teamPlayers(g, p).map((q) => names[q]).join(' & ');
+  const myTurn = isActivePlayer(g, me);
   const names = g.players.map((p) => p.name || t.game.you) as [string, string];
   const [error, setError] = useState<AppError | null>(null);
   const [preview, setPreview] = useState<Card | null>(null);
-  const [zoneView, setZoneView] = useState<{ p: PlayerId; zone: 'graveyard' | 'exile' } | null>(null);
+  const [zoneView, setZoneView] = useState<{ p: PlayerId; zone: 'graveyard' | 'exile' | 'command' } | null>(null);
+  const zoneCards = (p: PlayerId, z: 'graveyard' | 'exile' | 'command') => (z === 'command' ? g.players[p].command ?? [] : g.players[p][z]);
   /** A card shown large after a long press (touch screens have no hover preview) or a right click. */
   const [zoom, setZoom] = useState<Card | null>(null);
   const press = useRef<{ timer: number; x: number; y: number; fired: boolean } | null>(null);
@@ -187,7 +194,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     playCard(iid, card);
   }
 
-  const canPlayLand = iAct && !g.priority && !g.pending && !g.mulligan && isMainStep(g) && g.active === me && !g.players[me].landPlayed;
+  const canPlayLand = iAct && !g.priority && !g.pending && !g.mulligan && isMainStep(g) && myTurn && !g.players[me].landPlayed;
 
   /** Every way to play a card right now (land faces, casts, cycling); one runs at once, several open a menu. */
   function playCard(iid: string, card: Card) {
@@ -208,7 +215,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
       items.push({ key: `cast${opt.face}${opt.kicked}`, label, run: () => beginCast(iid, card, opt) });
     }
     const cycling = inHand ? castInfo(card).cycling : undefined;
-    const cycleTiming = !!g.priority || (isMainStep(g) && g.active === me);
+    const cycleTiming = !!g.priority || (isMainStep(g) && myTurn);
     if (cycling && cycleTiming && !g.pending && findPayment(castSources(g, me, card, iid), parseCost(cycling.cost))) {
       items.push({ key: 'cycle', label: t.game.cycleFor(cycling.cost), run: () => act({ type: 'cycle', iid }) });
     }
@@ -359,7 +366,8 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
 
   // ---------- Prompt and actions ----------
 
-  const oppName = names[opp];
+  /** Who the others are waiting for. */
+  const oppName = acting !== null ? names[acting] : '';
   const top = g.stack.at(-1);
   let prompt = '';
   let controls: ReactNode = null;
@@ -368,7 +376,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   const waiting = !iAct && g.winner === null;
 
   if (g.winner !== null) {
-    prompt = g.winner === 'draw' ? t.game.drawGame : g.winner === me ? t.game.youWin : t.game.theyWin(oppName);
+    prompt = g.winner === 'draw' ? t.game.drawGame : wonBy(g, me) ? t.game.youWin : t.game.theyWin(teamName(g.winner));
     controls = endControls;
   } else if (g.mulligan) {
     const need = Math.min(g.mulligan.count[me], g.players[me].hand.length);
@@ -490,11 +498,11 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   } else if (g.priority) {
     prompt = top
       ? t.game.onStack(show.name(top.card), top.controller === me ? null : names[top.controller])
-      : t.game.windows[g.priority.reason](g.active === me);
+      : t.game.windows[g.priority.reason](myTurn);
     primary = () => act({ type: 'pass' });
     controls = <button className="primary" onClick={primary}>{top ? t.game.passResolve : t.game.pass}</button>;
   } else if (g.step === 'attack') {
-    const walkers = g.battlefield.some((x) => x.controller === opp && isPlaneswalker(x.card));
+    const walkers = g.battlefield.some((x) => opponents.includes(x.controller) && isPlaneswalker(x.card));
     prompt = walkers ? t.game.declareAttackersPw : t.game.declareAttackers;
     const all = g.battlefield.filter((x) => x.controller === me && canAttack(x)).map((x) => x.iid);
     const targets = Object.fromEntries(Object.entries(attackAt).filter(([a]) => attackSel.includes(a)));
@@ -655,9 +663,11 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     return <div className={`perm-row ${lands ? 'lands' : 'creatures'}`}>{items}</div>;
   };
 
+  const ours = (p: PlayerId) => p === me || mates.includes(p);
   const field = (p: PlayerId) => (
-    <div className={`battlefield ${p === me ? 'mine' : 'theirs'}`}>
-      {p === me ? <>{row(p, false)}{row(p, true)}</> : <>{row(p, true)}{row(p, false)}</>}
+    <div key={p} className={`battlefield ${ours(p) ? 'mine' : 'theirs'}`}>
+      {multi && <span className="field-name small muted">{names[p]}</span>}
+      {ours(p) ? <>{row(p, false)}{row(p, true)}</> : <>{row(p, true)}{row(p, false)}</>}
     </div>
   );
 
@@ -665,19 +675,21 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     const ps = g.players[p];
     const asTarget: Target = { kind: 'player', player: p };
     const cls = [
-      'hud', p === me ? 'mine' : 'theirs', g.active === p && 'active', acting === p && 'acting',
+      'hud', ours(p) ? 'mine' : 'theirs', p !== me && ours(p) && 'ally', isActivePlayer(g, p) && 'active', acting === p && 'acting',
       canTarget(asTarget) && 'targetable', isPicked(asTarget) && 'picked',
     ].filter(Boolean).join(' ');
-    const zone = (z: 'graveyard' | 'exile', icon: string) => (
-      <button className={`zone-chip ${p === me && ps[z].some((c) => castOptions(g, me, c.iid).length > 0) ? 'castable' : ''}`} title={t.game.zoneNames[z]} onClick={(e) => { e.stopPropagation(); setZoneView(zoneView?.p === p && zoneView.zone === z ? null : { p, zone: z }); }}>
-        {icon} {ps[z].length}
+    const zone = (z: 'graveyard' | 'exile' | 'command', icon: string) => (
+      <button className={`zone-chip ${p === me && zoneCards(p, z).some((c) => castOptions(g, me, c.iid).length > 0) ? 'castable' : ''}`} title={t.game.zoneNames[z]} onClick={(e) => { e.stopPropagation(); setZoneView(zoneView?.p === p && zoneView.zone === z ? null : { p, zone: z }); }}>
+        {icon} {zoneCards(p, z).length}
       </button>
     );
+    // The most combat damage this player took from one commander (21 loses).
+    const commanderDamage = Math.max(0, ...Object.values(ps.commanderDamage ?? {}));
     return (
       <div ref={reg(`player:${p}`)} className={cls} onClick={() => onPlayerClick(p)}>
         <div className="hud-name">
           <strong>{p === me && ps.name ? t.game.nameYou(ps.name) : names[p]}</strong>
-          {g.active === p && <span className="turn-dot" title={t.game.turnOf(p === me, names[p])} />}
+          {isActivePlayer(g, p) && <span className="turn-dot" title={t.game.turnOf(ours(p), teamName(p))} />}
         </div>
         <div className="life" key={ps.life}>♥ {ps.life}{floatsFor(`player:${p}`)}</div>
         {ps.pool && ps.pool.length > 0 && (
@@ -693,6 +705,8 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
           {zone('graveyard', '🪦')}
           {!!ps.poison && <span className="poison" title={t.game.poisonTitle}>☠ {ps.poison}</span>}
           {zone('exile', '🌀')}
+          {ps.command && zone('command', '👑')}
+          {commanderDamage > 0 && <span className="poison" title={t.game.commanderDamageTitle}>⚔ {commanderDamage}</span>}
         </div>
       </div>
     );
@@ -704,30 +718,34 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   return (
     <div className="game">
       <div className="board" ref={boardRef} onClickCapture={swallowZoomClick}>
-        {/* Opponent */}
+        {/* Opponents */}
         <div className="player-bar theirs">
-          {hud(opp)}
-          <div className="opp-hand">
-            {g.players[opp].hand.map((c, i) => (
-              <div key={c.iid} className="card-back" style={{ '--i': i - (g.players[opp].hand.length - 1) / 2 } as CSSProperties} />
-            ))}
-          </div>
+          {opponents.map((o) => (
+            <div key={o} className="seat">
+              {hud(o)}
+              <div className="opp-hand">
+                {g.players[o].hand.map((c, i) => (
+                  <div key={c.iid} className="card-back" style={{ '--i': i - (g.players[o].hand.length - 1) / 2 } as CSSProperties} />
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
-        {field(opp)}
+        <div className={`fields theirs ${multi ? 'multi' : ''}`}>{opponents.map(field)}</div>
 
         {/* Center: phases, prompt, actions */}
         <div className={`center-bar ${iAct && g.winner === null ? 'your-move' : ''} ${waiting ? 'waiting' : ''}`}>
-          <ol className="phases" aria-label={t.game.turnOf(g.active === me, names[g.active])}>
+          <ol className="phases" aria-label={t.game.turnOf(myTurn, teamName(g.active))}>
             {g.mulligan ? (
               <li className="current">{t.game.steps.mulligan}</li>
             ) : (
               PHASES.map((ph) => (
-                <li key={ph} className={`${ph === phase ? 'current' : ''} ${g.active === me ? 'mine' : 'theirs'}`}>{t.game.phases[ph]}</li>
+                <li key={ph} className={`${ph === phase ? 'current' : ''} ${myTurn ? 'mine' : 'theirs'}`}>{t.game.phases[ph]}</li>
               ))
             )}
           </ol>
           <div className="prompt">
-            <span className="small muted">{g.mulligan ? '' : `${t.game.turnOf(g.active === me, names[g.active])} · ${t.game.turnLabel(g.turn, t.game.phases[phase])}`}</span>
+            <span className="small muted">{g.mulligan ? '' : `${t.game.turnOf(myTurn, teamName(g.active))} · ${t.game.turnLabel(g.turn, t.game.phases[phase])}`}</span>
             <strong>{prompt}</strong>
           </div>
           <div className="actions">
@@ -791,11 +809,12 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
           )}
         </div>
 
-        {field(me)}
+        <div className={`fields mine ${multi ? 'multi' : ''}`}>{[me, ...mates].map(field)}</div>
 
-        {/* You */}
+        {/* You (and your teammate) */}
         <div className="player-bar mine">
           {hud(me)}
+          {mates.map((m) => <Fragment key={m}>{hud(m)}</Fragment>)}
           <div className="my-hand">
             {myHand.map(({ iid, card }, i) => {
               const playable = (landFaces(card).length > 0 && canPlayLand) || castOptions(g, me, iid).length > 0;
@@ -818,8 +837,8 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
         </div>
 
         {fx.banner && (
-          <div key={fx.banner.id} className={`turn-banner ${fx.banner.player === me ? 'mine' : 'theirs'}`}>
-            {t.game.turnBanner(fx.banner.player === me, names[fx.banner.player])}
+          <div key={fx.banner.id} className={`turn-banner ${ours(fx.banner.player) ? 'mine' : 'theirs'}`}>
+            {t.game.turnBanner(ours(fx.banner.player), teamName(fx.banner.player))}
           </div>
         )}
 
@@ -832,8 +851,8 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
                 <button className="secondary small" onClick={() => setZoneView(null)}>{t.game.close}</button>
               </div>
               <div className="zone-cards">
-                {g.players[zoneView.p][zoneView.zone].length === 0 && <span className="muted">{t.game.emptyZone}</span>}
-                {[...g.players[zoneView.p][zoneView.zone]].reverse().map((c: CardInst) => {
+                {zoneCards(zoneView.p, zoneView.zone).length === 0 && <span className="muted">{t.game.emptyZone}</span>}
+                {[...zoneCards(zoneView.p, zoneView.zone)].reverse().map((c: CardInst) => {
                   // Flashback cards in your graveyard and adventurers in your exile can be cast from here.
                   const castable = zoneView.p === me && castOptions(g, me, c.iid).length > 0;
                   return (

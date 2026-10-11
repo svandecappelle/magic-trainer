@@ -198,3 +198,15 @@ describe('Commander', () => {
     expect(s.log.some((e) => e.k === 'commanderDamage')).toBe(true);
   });
 });
+
+describe('bots in a team', () => {
+  it('never aims removal at a teammate', () => {
+    const s = twoHeaded();
+    lands(s, 1, 1);
+    put(s, 0, creature('Friend', 1, 1), 'friend');
+    put(s, 3, creature('Foe', 1, 1), 'foe');
+    s.players[1].hand = [{ iid: 'shock', card: spell('Shock', 'Shock deals 2 damage to any target.', 'Instant') }];
+    s.turnHead = 1; // the teammate's main phase
+    expect(botAction(s)).toMatchObject({ type: 'cast', iid: 'shock', targets: [[{ kind: 'permanent', iid: 'foe' }]] });
+  });
+});

@@ -192,6 +192,7 @@ footer { padding: 16px 20px; border-top: 1px solid var(--border); }
 
 /* Play vs Bot */
 .setup-panel { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.setup-panel .check { display: flex; gap: 6px; align-items: center; cursor: pointer; }
 .import-panel { margin-bottom: 16px; }
 .import-panel code { background: var(--panel-2); padding: 0 4px; border-radius: 3px; }
 
