@@ -45,11 +45,6 @@ PARTIAL  Liliana the Faultless {W} — Legendary Creature — Human Cleric
       trigger (enters) → gainLife
   ? {1}, {T}, Discard a card: Another target creature or planeswalker you…
       activated ability with a cost or restriction not understood
-PARTIAL  Voice of Victory {1}{W} — Creature — Human Bard
-  ✗ Mobilize 2
-      keyword not simulated: mobilize
-  ✓ Your opponents can't cast spells during your turn.
-      rule for the game: opponentsCantCastOnYourTurn
 OK       Abandoned Air Temple  — Land
   ✓ This land enters tapped unless you control a basic land.
       enters tapped (unlessBasic)
@@ -89,6 +84,11 @@ OK       Rest in Peace {1}{W} — Enchantment
 OK       Seam Rip {W} — Enchantment
   ✓ When this enchantment enters, exile target nonland permanent an oppon…
       trigger (enters) → destroy (1 target)
+OK       Voice of Victory {1}{W} — Creature — Human Bard
+  ✓ Mobilize 2
+      keyword
+  ✓ Your opponents can't cast spells during your turn.
+      rule for the game: opponentsCantCastOnYourTurn
 
-17 cards: 9 ok, 7 partial, 1 not simulated, 0 can't be cast
+17 cards: 10 ok, 6 partial, 1 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

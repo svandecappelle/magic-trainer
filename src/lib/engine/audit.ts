@@ -63,6 +63,7 @@ function keywordLine(card: Card, line: string, one: Card): LineReport | null {
     if (k === 'convoke') return info.convoke;
     if (k === 'delve') return info.delve;
     if (k === 'affinity') return !!info.affinity;
+    if (k === 'mobilize') return triggersOf(one).length > 0;
     return false;
   };
   const missing = pieces.filter((p) => !supported(p)).map((p) => keywordOf(p)!);

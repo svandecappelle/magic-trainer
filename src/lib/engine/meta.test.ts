@@ -386,3 +386,28 @@ describe('Enlightened Confidant', () => {
     expect(t.players[0].graveyard.map((c) => c.iid)).toContain('top');
   });
 });
+
+describe('Mobilize (Voice of Victory)', () => {
+  const voice = creature('Voice of Victory', 1, 3, {
+    oracleText: 'Mobilize 2 (Whenever this creature attacks, create two tapped and attacking 1/1 red Warrior creature tokens. Sacrifice them at the beginning of the next end step.)\nYour opponents can\'t cast spells during your turn.',
+  });
+
+  it('attacks with two Warrior tokens, sacrificed at the end step', () => {
+    let s = board({ mine: [voice] });
+    s = apply(s, { type: 'pass' }); // to combat
+    for (let i = 0; i < 5 && (s.priority || s.step !== 'attack'); i++) s = apply(s, { type: 'pass' });
+    // The trigger resolves, then combat goes on (the opponent has nothing to block with).
+    s = settle(apply(s, { type: 'declareAttackers', attackers: [iidOf(s, 'Voice of Victory')] }));
+    for (let i = 0; i < 20 && s.step !== 'main2' && s.winner === null; i++) {
+      s = !s.priority && s.step === 'block' ? apply(s, { type: 'declareBlockers', blocks: {} }) : apply(s, { type: 'pass' });
+    }
+    const warriors = s.battlefield.filter((p) => p.card.name === 'Warrior');
+    expect(warriors).toHaveLength(2);
+    expect(warriors.every((w) => w.tapped)).toBe(true);
+    // They attacked: 1 + 1 + 1 damage.
+    expect(s.log.filter((e) => e.k === 'damagePlayer').map((e) => (e as { card: string }).card)).toEqual(['Voice of Victory', 'Warrior', 'Warrior']);
+    expect(s.players[1].life).toBe(17);
+    s = apply(s, { type: 'pass' }); // end of main 2: end step
+    expect(s.battlefield.filter((p) => p.card.name === 'Warrior')).toHaveLength(0);
+  });
+});

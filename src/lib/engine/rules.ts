@@ -313,7 +313,8 @@ export type Effect =
   /** "Sacrifice this creature" as an effect (Ball Lightning). */
   | { kind: 'sacrificeSelf' }
   /** Create N tokens under the controller's control. */
-  | { kind: 'token'; n: Amount; token: TokenSpec }
+  /** `attacking`: "tapped and attacking"; `sacrificeAtEnd`: "Sacrifice them at the beginning of the next end step". */
+  | { kind: 'token'; n: Amount; token: TokenSpec; attacking?: boolean; sacrificeAtEnd?: boolean }
   /** A card in a graveyard goes to its owner's hand, or onto the battlefield under the controller's control. */
   | { kind: 'returnCard'; to: Affected; dest: 'hand' | 'battlefield' }
   /** "Put a +1/+1 counter on each creature you control" (`other`: except the source). */
@@ -1241,6 +1242,18 @@ export function triggersOf(card: Card): TriggerSpec[] {
   for (const raw of frontText(card).split('\n')) {
     // Drop reminder text and ability words ("Landfall — Whenever…").
     const line = raw.replace(/\s*\([^)]*\)/g, '').replace(/^[A-Z][A-Za-z' ]+ — /, '').trim();
+
+    // Mobilize N: "Whenever this creature attacks, create N tapped and attacking 1/1 red Warrior creature tokens.
+    // Sacrifice them at the beginning of the next end step."
+    const mobilize = line.match(/^Mobilize (\d+)$/i);
+    if (mobilize) {
+      const warrior: TokenSpec = { name: 'Warrior', typeLine: 'Token Creature — Warrior', colors: ['R'], power: 1, toughness: 1, keywords: [], oracleText: '' };
+      out.push({
+        event: { on: 'attacks', self: true },
+        ability: { targets: [], effects: [{ kind: 'token', n: Number(mobilize[1]), token: warrior, attacking: true, sacrificeAtEnd: true }] },
+      });
+      continue;
+    }
 
     // "Whenever one or more other creatures you control with power 2 or less enter, draw a card. This ability triggers
     // only once each turn." (Without the once-each-turn limit, several entering together would trigger once: not simulated.)

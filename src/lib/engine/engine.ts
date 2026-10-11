@@ -357,6 +357,8 @@ export interface GameState {
   triggered?: Triggered[];
   /** Cards exiled "until this leaves the battlefield" (Seam Rip): the source permanent, the card, its owner. */
   exiledUntil?: { source: string; iid: string; owner: PlayerId }[];
+  /** Tokens to sacrifice at the beginning of the next end step (Mobilize). */
+  sacrificeAtEnd?: string[];
   /** Counter for ability ids on the stack. */
   abilities?: number;
   /** Random generator state, so shuffles during the game are reproducible. Secret: redacted for clients. */
@@ -1355,6 +1357,14 @@ function fireObject(d: GameState, on: ObjectEvent, perm: Permanent) {
 
 /** The beginning of the active player's upkeep or end step. */
 function fireStep(d: GameState, on: 'upkeep' | 'endStep') {
+  // Mobilize tokens: "Sacrifice them at the beginning of the next end step."
+  if (on === 'endStep' && d.sacrificeAtEnd?.length) {
+    for (const iid of d.sacrificeAtEnd) {
+      const token = findPermanent(d, iid);
+      if (token) sacrifice(d, token);
+    }
+    delete d.sacrificeAtEnd;
+  }
   for (const x of d.battlefield) {
     for (const t of triggersOf(x.card)) {
       if (t.event.on !== on) continue;
@@ -2053,7 +2063,10 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       const n = amount(d, r, e.n);
       for (let i = 0; i < n; i++) {
         d.abilities = (d.abilities ?? 0) + 1;
-        enterBattlefield(d, { iid: `token-${d.abilities}`, card: tokenCard(e.token) }, caster);
+        const token = enterBattlefield(d, { iid: `token-${d.abilities}`, card: tokenCard(e.token) }, caster, { tapped: e.attacking });
+        // "tapped and attacking": attacking (the defending player) without having been declared, so no attack trigger.
+        if (e.attacking && d.attackers.length) d.attackers = [...d.attackers, token.iid];
+        if (e.sacrificeAtEnd) (d.sacrificeAtEnd ??= []).push(token.iid);
       }
       if (n > 0) log(d, { k: 'token', p: caster, card: e.token.name, n });
       break;

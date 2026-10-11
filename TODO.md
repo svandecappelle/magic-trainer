@@ -212,7 +212,9 @@ graveyard"), Abandoned Air Temple (enters tapped unless you control a basic land
 - [ ] "Another target …" for activated abilities, and discard as an activation cost (Liliana the Faultless)
 - [ ] "Whenever one or more …" batches without the once-each-turn limit
 - [x] Named tokens and "where X is the amount of life you gained this turn" (Germinate Recruits)
-- [ ] Tokens with their own abilities (Ajani's Pridemate), Mobilize, Warp, Sneak, Cases
+- [x] Mobilize (Voice of Victory): tapped and attacking Warriors, sacrificed at the next end step (done at once, not as a
+  delayed trigger on the stack)
+- [ ] Tokens with their own abilities (Ajani's Pridemate), Warp, Sneak, Cases
 - [ ] Leylines starting the game on the battlefield (CR 103.6)
 
 ## Comprehensive Rules audit (CR 2026-09-25)
