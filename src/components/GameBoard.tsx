@@ -10,7 +10,7 @@ import { useCardDisplay } from '../lib/cardLocale';
 import {
   activatedOf, castInfo, castSpec, faceCard, faceName, modeSimulated, findPayment, isCreature, isLandCard, isPlaneswalker, parseCost, type AbilitySpec,
 } from '../lib/engine/rules';
-import { ChoicePanel, choicePrompt } from './ChoicePanel';
+import { ChoicePanel, choiceKey, choicePrompt } from './ChoicePanel';
 import { Lines, type Line } from './board/Lines';
 import { useBoardFx, type Float } from './board/useBoardFx';
 import type { Card } from '../types';
@@ -805,7 +805,8 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
           )}
           {g.pending && g.pending.choice.player === me && g.pending.choice.kind !== 'targets' && g.winner === null && (
             <div className="choice-dock">
-              <ChoicePanel choice={g.pending.choice} onAnswer={(answer) => act({ type: 'choose', answer })} onPreview={setPreview} />
+              {/* One panel per choice: a choice following another one right away must not keep its picks. */}
+              <ChoicePanel key={choiceKey(g.pending.choice)} choice={g.pending.choice} onAnswer={(answer) => act({ type: 'choose', answer })} onPreview={setPreview} />
             </div>
           )}
         </div>

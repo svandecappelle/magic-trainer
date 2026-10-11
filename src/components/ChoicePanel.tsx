@@ -47,6 +47,13 @@ function costLabel(t: Messages, label: string): string {
   return label;
 }
 
+/** Identifies a choice (kind, purpose, cards or modes), so the panel starts over for each new one. */
+export function choiceKey(choice: Choice): string {
+  const cards = choice.kind === 'cards' ? choice.options : choice.kind === 'arrange' ? choice.cards : [];
+  const extra = choice.kind === 'mode' ? choice.modes.join('|') : '';
+  return `${choice.player}:${choice.kind}:${choice.purpose}:${cards.map((c) => c.iid).join(',')}:${extra}`;
+}
+
 interface Props {
   choice: Choice;
   onAnswer: (answer: Answer) => void;
