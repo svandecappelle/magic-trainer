@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { BetweenGames } from '../components/BetweenGames';
 import { DeckOptions } from '../components/DeckOptions';
 import { GameBoard } from '../components/GameBoard';
-import { opponent } from '../lib/engine/engine';
 import { loadDeck75 } from '../lib/loadDeck';
 import { matchWinner } from '../lib/match';
 import type { Card } from '../types';
@@ -175,12 +174,12 @@ export function Online() {
 
   // 3. Playing.
   const me = room.seat;
-  const opp = players[opponent(me)];
+  const opp = players[(me === 0 ? 1 : 0)];
   const iWantRematch = players[me]?.wantsRematch;
   const bo3 = match?.bestOf === 3;
   const going = !!match && matchWinner(match) === null;
   const names: [string, string] = [players[0]?.name ?? '', players[1]?.name ?? ''];
-  const score = match ? t.match.score(names[me], match.wins[me], match.wins[opponent(me)], names[opponent(me)]) : '';
+  const score = match ? t.match.score(names[me], match.wins[me], match.wins[(me === 0 ? 1 : 0)], names[(me === 0 ? 1 : 0)]) : '';
   const notice = (
     <>
       {status !== 'open' && <div className="error">{t.online.reconnecting}</div>}

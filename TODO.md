@@ -140,7 +140,16 @@ get each face's cost and image (their text is rebuilt from the joined faces mean
 - [x] Server-side deck validation — the server replaces card data with Scryfall's (by id) and refuses unknown
   cards; CARD_CHECK=strict|lenient|off decides what happens when Scryfall is unreachable
 - [ ] Auto-pass leaks that you hold a castable instant (full control avoids it)
-- [ ] More than 2 players, Commander
+- [ ] Two-Headed Giant and Commander (in progress), in this order:
+  - [x] A. Engine: any number of players in teams; shared team life and poison; 1v1 unchanged
+  - [x] B. 2HG rules: shared turns, priority around all players, heads act and declare attackers/blockers in turn,
+    life 30, poison 15, "each opponent" per opponent, the starting team skips its first draw
+  - [ ] C. Commander: commander in the deck (editor + color identity), command zone, tax, back to the command zone,
+    21 commander damage, life 40 (2HG: 60)
+  - [ ] D. Board for 4 players, game setup (mode, Commander, decks per seat)
+  - [ ] E. Bot: several opponents, bot teammate
+  - [ ] F. Online: 4-seat rooms in two teams, teammates see each other's hands
+  - [ ] G. Tests and browser games
 - [x] Turn timer, reconnect timeout — online: TURN_SECONDS per decision (default action on timeout, conceding after
   3 in a row), RECONNECT_SECONDS to come back (concede otherwise); countdown shown to both players
 - [ ] Bot: mana planning (rituals, holding mana for instants). Done: multi-blocks (double blocks, menace), logic for

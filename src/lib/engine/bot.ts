@@ -1,6 +1,6 @@
 import {
-  abilityMaxX, activatable, actor, canAttack, castCost, castOptions, castSources, findInGraveyard, landFaces, manaSources, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
-  legalTargets, matching, maxX, opponent, powerOf, toughnessOf, xCount,
+  abilityMaxX, activatable, actor, firstOpponent, canAttack, castCost, castOptions, castSources, findInGraveyard, landFaces, manaSources, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
+  legalTargets, matching, maxX, powerOf, toughnessOf, xCount,
   type Action, type Answer, type CastOption, type CardInst, type Choice, type GameState, type Permanent, type PlayerId, type StackItem, type Target,
 } from './engine';
 import {
@@ -94,7 +94,7 @@ const pumped = (perm: Permanent, e: Extract<Effect, { kind: 'pump' }>): Permanen
  * attack is lethal for the player anyway. Smallest attackers first, one planeswalker at a time.
  */
 function chooseAttackTargets(s: GameState, me: PlayerId, attackerIds: string[]): Record<string, string> {
-  const opp = opponent(me);
+  const opp = firstOpponent(s, me);
   const attackers = attackerIds.map((iid) => findPermanent(s, iid)!).sort((a, b) => powerOf(a) - powerOf(b));
   const total = attackers.reduce((n, a) => n + powerOf(a) * strikes(a), 0);
   if (total >= s.players[opp].life) return {};
@@ -118,7 +118,7 @@ function chooseAttackTargets(s: GameState, me: PlayerId, attackerIds: string[]):
 }
 
 function chooseAttackers(s: GameState, me: PlayerId): string[] {
-  const opp = opponent(me);
+  const opp = firstOpponent(s, me);
   const attackers = creaturesOf(s, me).filter(canAttack);
   const blockers = creaturesOf(s, opp).filter((b) => !b.tapped);
 
@@ -433,7 +433,7 @@ function chooseAuraHost(s: GameState, me: PlayerId, card: Card): Permanent | nul
   const statics = staticsOf(card).filter((st) => st.who === 'enchanted');
   if (!statics.length) return null;
   const score = statics.reduce((n, st) => n + st.power + st.toughness + st.keywords.length * 1.5 - (st.cantAttack ? 4 : 0) - (st.cantBlock ? 2 : 0), 0);
-  const want = score >= 0 ? me : opponent(me);
+  const want = score >= 0 ? me : firstOpponent(s, me);
   const hosts = legalTargets(s, me, auraTarget(card)!, undefined, card)
     .flatMap((t) => (t.kind === 'permanent' ? [findPermanent(s, t.iid)!] : []))
     .filter((x) => x.controller === want && isCreature(x.card))
@@ -477,7 +477,7 @@ function playWithGoodTarget(s: GameState, me: PlayerId, play: Play, among?: Perm
   // Threaten: only worth it before our attack.
   if (effects.some((e) => e.kind === 'gainControl' && e.untilEndOfTurn) && !(s.active === me && s.step === 'main1' && !s.priority)) return null;
   // An edict needs something to hit.
-  const opp = opponent(me);
+  const opp = firstOpponent(s, me);
   if (effects.some((e) => e.kind === 'sacrifice' && !matching(s, opp, e.which).some((x) => x.controller === opp))) return null;
   if (effects.some((e) => e.kind === 'counter' || (e.kind === 'pump' && intentOf(e) === 'help'))) return null; // used in response only
   if (effects.some((e) => e.kind === 'tap' && e.untap)) return null;
@@ -528,7 +528,7 @@ function chooseFight(s: GameState, me: PlayerId, spec: AbilitySpec, e: Extract<E
 
 /** The best target for slot 0 of a spell, among legal ones (and `among`, if given). */
 function chooseTarget(s: GameState, me: PlayerId, spec: AbilitySpec, among?: Permanent[], source?: Card): Permanent | PlayerId | null {
-  const opp = opponent(me);
+  const opp = firstOpponent(s, me);
   const slot = spec.targets[0];
   const onSlot = spec.effects.filter((e) => 'to' in e && typeof e.to === 'object' && e.to.slot === 0);
   const harm = onSlot.some((e) => intentOf(e) === 'harm');
@@ -637,7 +637,7 @@ function useAbility(s: GameState, me: PlayerId, among?: Permanent[]): Action | n
 // ---------- Responding with instants ----------
 
 function respond(s: GameState, me: PlayerId): Action | null {
-  const opp = opponent(me);
+  const opp = firstOpponent(s, me);
   const top = s.stack.at(-1);
   const spells = castable(s, me).filter((c) => hasInstantSpeed(c.card) && hasUsefulTarget(s, me, c.card));
   const withEffect = (kind: Effect['kind'], intent?: Intent) =>

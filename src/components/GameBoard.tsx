@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import {
   activatable, activationProblem, abilityMaxX, actor, apply, canAttack, canTapForMana, canUntapForMana, castCost, castOptions, castSources,
-  landFaces, findInGraveyard, legalTargets, canBlock, findPermanent, hasKw, IllegalAction, isLegalTarget, isMainStep, opponent,
+  landFaces, findInGraveyard, legalTargets, canBlock, findPermanent, hasKw, IllegalAction, isLegalTarget, isMainStep, firstOpponent,
   powerOf, toughnessOf, xCount,
   type Action, type CardInst, type CastOption, type GameState, type Permanent, type PlayerId, type Target,
 } from '../lib/engine/engine';
@@ -48,7 +48,7 @@ const targetKey = (t: Target) => (t.kind === 'player' ? `player:${t.player}` : t
 export function GameBoard({ game: g, me, onAction, endControls, notice }: Props) {
   const t = useT();
   const show = useCardDisplay();
-  const opp = opponent(me);
+  const opp = firstOpponent(g, me);
   const names = g.players.map((p) => p.name || t.game.you) as [string, string];
   const [error, setError] = useState<AppError | null>(null);
   const [preview, setPreview] = useState<Card | null>(null);
@@ -559,7 +559,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     for (const bid of bids) lines.push({ from: `perm:${bid}`, to: `perm:${aid}`, kind: declaringBlocks ? 'pending' : 'block' });
   }
   const attackers = declaringAttack ? attackSel : g.attackers;
-  const defender = opponent(g.active);
+  const defender = firstOpponent(g, g.active);
   for (const aid of attackers) {
     const pw = declaringAttack ? attackAt[aid] : g.attackTargets?.[aid];
     if (!shownBlocks[aid]?.length) lines.push({ from: `perm:${aid}`, to: pw ? `perm:${pw}` : `player:${defender}`, kind: declaringAttack ? 'pending' : 'attack' });

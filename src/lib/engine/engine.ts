@@ -7,7 +7,8 @@ import {
   type ActivatedSpec, type CastChoice, type Cost, type ObjectEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
 
-export type PlayerId = 0 | 1;
+/** A player: an index in GameState.players (0–1 in a duel, 0–3 in Two-Headed Giant). */
+export type PlayerId = number;
 
 export interface CardInst {
   iid: string;
@@ -134,8 +135,8 @@ export interface Priority {
 export interface MulliganState {
   /** Who is deciding now. Players decide in turn order. */
   player: PlayerId;
-  count: [number, number];
-  kept: [boolean, boolean];
+  count: number[];
+  kept: boolean[];
 }
 
 // ---------- Choices ----------
@@ -283,7 +284,24 @@ export type LogEntry =
   | { k: 'draw' };
 
 export interface GameState {
-  players: [PlayerState, PlayerState];
+  players: PlayerState[];
+  /**
+   * Teams of players. Missing: each player alone (a duel). Two-Headed Giant: [[0, 1], [2, 3]]; teammates share
+   * life and poison (kept equal on each of them), turns and combat.
+   */
+  teams?: PlayerId[][];
+  /** Two-Headed Giant, and/or Commander. */
+  mode?: GameMode;
+  /** In a team's main phases and declare steps, the head acting now (its teammate goes next). */
+  turnHead?: PlayerId;
+  /** Heads of the active team done with the current main phase. */
+  headsDone?: PlayerId[];
+  /** Who declares attackers or blockers now, when a team declares head by head. */
+  declaring?: PlayerId;
+  /** Blocks declared so far by the defending team's heads. */
+  pendingBlocks?: Record<string, string[]>;
+  /** Heads that already declared attackers or blockers this step. */
+  declared?: PlayerId[];
   battlefield: Permanent[];
   stack: StackItem[];
   active: PlayerId;
@@ -307,13 +325,13 @@ export interface GameState {
    * Per player: stop at every priority window instead of auto-passing when nothing is castable.
    * Optional so states created before this option existed still load.
    */
-  fullControl?: [boolean, boolean];
+  fullControl?: boolean[];
   /** Fog: no combat damage this turn. */
   preventCombat?: boolean;
   /** "Prevent the next N damage" shields this turn: target ("player:0" or a permanent iid) and amount left. */
   shields?: { target: string; n: number }[];
-  /** Extra turns to take, per player. */
-  extraTurns?: [number, number];
+  /** Extra turns to take, per team (indexed by the team's first player). */
+  extraTurns?: number[];
   /** Lands that entered asking "pay N life or enter tapped", asked once nothing else is going on. */
   lifeChoices?: { iid: string; n: number }[];
   /** Triggered abilities not on the stack yet. Optional so older saved states still load. */
@@ -381,7 +399,47 @@ export class IllegalAction extends Error {
   }
 }
 
-export const opponent = (p: PlayerId): PlayerId => (p === 0 ? 1 : 0);
+/** Game options beyond a duel. */
+export interface GameMode {
+  /** Two-Headed Giant: two teams of two. */
+  twoHeaded?: boolean;
+  /** Commander rules (command zone, tax, commander damage, more life). */
+  commander?: boolean;
+}
+
+// ---------- Players and teams ----------
+
+export const playersOf = (s: GameState): PlayerId[] => s.players.map((_, i) => i);
+export const teamsOf = (s: GameState): PlayerId[][] => s.teams ?? s.players.map((_, i) => [i]);
+export const teamOf = (s: GameState, p: PlayerId): number => teamsOf(s).findIndex((t) => t.includes(p));
+/** The players on p's team, p included. */
+export const teamPlayers = (s: GameState, p: PlayerId): PlayerId[] => teamsOf(s)[teamOf(s, p)] ?? [p];
+export const teammatesOf = (s: GameState, p: PlayerId): PlayerId[] => teamPlayers(s, p).filter((q) => q !== p);
+export const opponentsOf = (s: GameState, p: PlayerId): PlayerId[] => playersOf(s).filter((q) => teamOf(s, q) !== teamOf(s, p));
+/** The first opponent: in a duel, the opponent. */
+export const firstOpponent = (s: GameState, p: PlayerId): PlayerId => opponentsOf(s, p)[0];
+/** Is p on the team whose turn it is? */
+export const isActivePlayer = (s: GameState, p: PlayerId) => teamOf(s, p) === teamOf(s, s.active);
+/** Did p's team win? */
+export const wonBy = (s: GameState, p: PlayerId) => s.winner !== null && s.winner !== 'draw' && teamOf(s, s.winner) === teamOf(s, p);
+/** Players in turn order starting with the active team (APNAP). */
+export function turnOrder(s: GameState): PlayerId[] {
+  const teams = teamsOf(s);
+  const a = teamOf(s, s.active);
+  return [...teams.slice(a), ...teams.slice(0, a)].flat();
+}
+/** The player after p in turn order (who gets priority next). */
+export function nextPlayer(s: GameState, p: PlayerId): PlayerId {
+  const order = turnOrder(s);
+  return order[(order.indexOf(p) + 1) % order.length];
+}
+/** The first player of the team after p's (whose turn comes next). */
+function nextTeamLead(s: GameState, p: PlayerId): PlayerId {
+  const teams = teamsOf(s);
+  return teams[(teamOf(s, p) + 1) % teams.length][0];
+}
+/** Poison counters that make a player (or a team) lose. */
+export const poisonLimit = (s: GameState) => (s.teams ? 15 : 10);
 
 /** Who has to act now. */
 export function actor(s: GameState): PlayerId | null {
@@ -389,7 +447,10 @@ export function actor(s: GameState): PlayerId | null {
   if (s.mulligan) return s.mulligan.player;
   if (s.pending) return s.pending.choice.player;
   if (s.priority) return s.priority.player;
-  return s.step === 'block' ? opponent(s.active) : s.active;
+  if (s.step === 'block') return s.declaring ?? firstOpponent(s, s.active);
+  if (s.step === 'attack') return s.declaring !== undefined && isActivePlayer(s, s.declaring) ? s.declaring : s.active;
+  // The head acting in this main phase (a stale one from another team's turn is ignored).
+  return s.turnHead !== undefined && isActivePlayer(s, s.turnHead) ? s.turnHead : s.active;
 }
 
 // ---------- Queries ----------
@@ -505,7 +566,7 @@ export const isMainStep = (s: GameState) => s.step === 'main1' || s.step === 'ma
 /** Can `p` legally cast `card` right now (timing and mana; targets aside)? */
 export function canCastNow(s: GameState, p: PlayerId, card: Card): boolean {
   if (isLandCard(card) || s.mulligan || s.pending || actor(s) !== p) return false;
-  const timing = s.priority ? hasInstantSpeed(card) : isMainStep(s) && s.active === p;
+  const timing = s.priority ? hasInstantSpeed(card) : isMainStep(s) && isActivePlayer(s, p);
   return timing && canPay(s, p, card);
 }
 
@@ -540,7 +601,7 @@ export function castOptions(s: GameState, p: PlayerId, iid: string): CastOption[
   for (const face of faces) {
     const c = faceCard(inst.card, face);
     if (isLand(c)) continue;
-    const timing = s.priority ? hasInstantSpeed(c) : isMainStep(s) && s.active === p;
+    const timing = s.priority ? hasInstantSpeed(c) : isMainStep(s) && isActivePlayer(s, p);
     if (!timing) continue;
     const info = castInfo(inst.card, face);
     for (const kicked of info.kicker ? [false, true] : [false]) {
@@ -575,8 +636,8 @@ export function activationProblem(s: GameState, p: PlayerId, perm: Permanent, in
   const spec = activatedOf(perm.card)[index];
   if (!spec || perm.controller !== p) return 'noSuchAbility';
   if (s.mulligan || s.pending || actor(s) !== p) return 'activateTiming';
-  const sorcerySpeed = !s.priority && isMainStep(s) && s.active === p && !s.stack.length;
-  if (spec.sorcery ? !sorcerySpeed : !s.priority && !(isMainStep(s) && s.active === p)) return 'activateTiming';
+  const sorcerySpeed = !s.priority && isMainStep(s) && isActivePlayer(s, p) && !s.stack.length;
+  if (spec.sorcery ? !sorcerySpeed : !s.priority && !(isMainStep(s) && isActivePlayer(s, p))) return 'activateTiming';
   if (spec.cost.tap && perm.tapped) return 'alreadyTapped';
   if (spec.cost.tap && isCreature(perm.card) && perm.sick && !hasKw(perm, 'haste')) return 'summoningSick';
   if (spec.once && perm.used?.includes(index)) return 'onceEachTurn';
@@ -618,9 +679,9 @@ function finishCast(d: GameState, item: StackItem, named: LogTarget[]) {
   fireWard(d, item);
   if (d.priority) {
     d.priority.passes = 0;
-    d.priority.player = opponent(p);
+    d.priority.player = nextPlayer(d, p);
   } else {
-    openWindow(d, 'main', opponent(p), 0);
+    openWindow(d, 'main', nextPlayer(d, p), 0);
   }
 }
 
@@ -632,9 +693,9 @@ function finishActivation(d: GameState, item: StackItem, named: LogTarget[]) {
   fireWard(d, item);
   if (d.priority) {
     d.priority.passes = 0;
-    d.priority.player = opponent(p);
+    d.priority.player = nextPlayer(d, p);
   } else {
-    openWindow(d, 'main', opponent(p), 0);
+    openWindow(d, 'main', nextPlayer(d, p), 0);
   }
 }
 
@@ -662,7 +723,7 @@ function fitsTypeLine(card: Card, f: TargetFilter): boolean {
 
 /** Where a card is in a graveyard, if it is. */
 export function findInGraveyard(s: GameState, iid: string): { inst: CardInst; owner: PlayerId } | undefined {
-  for (const owner of [0, 1] as PlayerId[]) {
+  for (const owner of playersOf(s)) {
     const inst = s.players[owner].graveyard.find((c) => c.iid === iid);
     if (inst) return { inst, owner };
   }
@@ -676,7 +737,9 @@ function matchesFilter(s: GameState, f: TargetFilter, caster: PlayerId, x: CardI
   const colors = x.card.colors;
   if (f.types && !f.types.some((t) => types.includes(t))) return false;
   if (f.nonTypes?.some((t) => types.includes(t))) return false;
-  if (f.controller && (controller === caster) !== (f.controller === 'you')) return false;
+  // "you control": the caster; "an opponent controls": the other team (a teammate is neither).
+  if (f.controller === 'you' && controller !== caster) return false;
+  if (f.controller === 'opponent' && teamOf(s, controller) === teamOf(s, caster)) return false;
   if (f.colors && !f.colors.some((c) => colors.includes(c))) return false;
   if (f.nonColors?.some((c) => colors.includes(c))) return false;
   if (f.keyword && !hasKw(x, f.keyword)) return false;
@@ -715,7 +778,9 @@ export function isLegalTarget(s: GameState, caster: PlayerId, spec: TargetSpec, 
 function fitsSpec(s: GameState, caster: PlayerId, spec: TargetSpec, t: Target, selfIid?: string): boolean {
   if (t.kind === 'player') {
     if (spec.kind !== 'player' && spec.kind !== 'any') return false;
-    return !spec.filter.controller || (t.player === caster) === (spec.filter.controller === 'you');
+    if (spec.filter.controller === 'you') return t.player === caster;
+    if (spec.filter.controller === 'opponent') return teamOf(s, t.player) !== teamOf(s, caster);
+    return t.player >= 0 && t.player < s.players.length;
   }
   if (t.kind === 'card') {
     const found = findInGraveyard(s, t.iid);
@@ -752,10 +817,10 @@ export const cardMatches = (card: Card, f: TargetFilter) => {
 /** Every legal choice for a target slot right now. */
 export function legalTargets(s: GameState, caster: PlayerId, spec: TargetSpec, selfIid?: string, source?: Card): Target[] {
   const all: Target[] = [
-    ...([0, 1] as PlayerId[]).map((player): Target => ({ kind: 'player', player })),
+    ...playersOf(s).map((player): Target => ({ kind: 'player', player })),
     ...s.battlefield.map((x): Target => ({ kind: 'permanent', iid: x.iid })),
     ...s.stack.map((x): Target => ({ kind: 'spell', iid: x.iid })),
-    ...(spec.kind === 'card' ? [0, 1].flatMap((p) => s.players[p].graveyard.map((c): Target => ({ kind: 'card', iid: c.iid }))) : []),
+    ...(spec.kind === 'card' ? playersOf(s).flatMap((p) => s.players[p].graveyard.map((c): Target => ({ kind: 'card', iid: c.iid }))) : []),
   ];
   return all.filter((t) => isLegalTarget(s, caster, spec, t, selfIid, source));
 }
@@ -826,20 +891,27 @@ export function validateAnswer(choice: Choice, answer: Answer): void {
 // ---------- Setup ----------
 
 export interface NewGameOptions {
-  decks: [Card[], Card[]];
-  names: [string, string];
+  /** One deck and name per player: 2 for a duel, 4 for Two-Headed Giant (players 0+1 against 2+3). */
+  decks: Card[][];
+  names: string[];
+  /** The player (in 2HG: the team's first player) who starts. */
   first: PlayerId;
+  mode?: GameMode;
   rng?: Rng;
   /** Start with London mulligan decisions (default true). */
   mulligans?: boolean;
   /** Players who stop at every priority window (see GameState.fullControl). */
-  fullControl?: [boolean, boolean];
+  fullControl?: boolean[];
 }
 
-export function newGame({ decks, names, first, rng = Math.random, mulligans = true, fullControl }: NewGameOptions): GameState {
+/** Starting life: 20, Commander 40; a Two-Headed Giant team shares 30 (Commander 60). */
+export const startingLife = (mode?: GameMode) => (mode?.twoHeaded ? 30 : 20) * (mode?.commander ? 2 : 1);
+
+export function newGame({ decks, names, first, mode, rng = Math.random, mulligans = true, fullControl }: NewGameOptions): GameState {
+  const twoHeaded = !!mode?.twoHeaded && decks.length === 4;
   const player = (p: PlayerId): PlayerState => ({
     name: names[p],
-    life: 20,
+    life: startingLife(mode),
     library: shuffle(decks[p].map((card, i) => ({ iid: `${p}-${i}`, card })), rng),
     hand: [],
     graveyard: [],
@@ -847,7 +919,9 @@ export function newGame({ decks, names, first, rng = Math.random, mulligans = tr
     landPlayed: false,
   });
   const d: GameState = {
-    players: [player(0), player(1)],
+    players: decks.map((_, p) => player(p)),
+    ...(twoHeaded ? { teams: [[0, 1], [2, 3]] } : {}),
+    ...(mode && (mode.twoHeaded || mode.commander) ? { mode } : {}),
     battlefield: [],
     stack: [],
     active: first,
@@ -862,11 +936,10 @@ export function newGame({ decks, names, first, rng = Math.random, mulligans = tr
     winner: null,
     log: [{ k: 'goesFirst', p: first }],
     seed: Math.floor(rng() * 2 ** 32),
-    ...(fullControl ? { fullControl: [...fullControl] as [boolean, boolean] } : {}),
+    ...(fullControl ? { fullControl: [...fullControl] } : {}),
   };
-  draw(d, 0, 7);
-  draw(d, 1, 7);
-  if (mulligans) d.mulligan = { player: first, count: [0, 0], kept: [false, false] };
+  for (const p of playersOf(d)) draw(d, p, 7);
+  if (mulligans) d.mulligan = { player: first, count: d.players.map(() => 0), kept: d.players.map(() => false) };
   else beginTurn(d, first, true);
   return d;
 }
@@ -892,21 +965,24 @@ function draw(d: GameState, p: PlayerId, n: number) {
     const card = d.players[p].library.shift();
     if (!card) {
       log(d, { k: 'emptyLibrary', p });
-      d.winner = d.winner === null ? opponent(p) : 'draw';
+      teamLoses(d, p);
       return;
     }
     d.players[p].hand.push(card);
   }
 }
 
+/** A turn begins for p's team (both heads in Two-Headed Giant): untap, upkeep, draw. */
 function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
   d.active = p;
+  d.turnHead = p;
+  delete d.headsDone;
   d.turn++;
   d.step = 'main1';
-  d.players[p].landPlayed = false;
+  for (const q of teamPlayers(d, p)) d.players[q].landPlayed = false;
   emptyPools(d);
   for (const perm of d.battlefield) {
-    if (perm.controller === p) {
+    if (isActivePlayer(d, perm.controller)) {
       perm.tapped = false;
       perm.sick = false;
     }
@@ -923,36 +999,43 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
   drawStep(d, skipDraw);
 }
 
-/** Draw for the turn, then the opponent may act before the first main phase (the active player has passed). */
+/** Draw for the turn (each head of the team), then the opponents may act before the first main phase. */
 function drawStep(d: GameState, skipDraw: boolean) {
   d.step = 'main1';
-  if (!skipDraw) draw(d, d.active, 1);
-  if (d.winner === null) openWindow(d, 'begin', opponent(d.active), 1);
+  if (!skipDraw) for (const q of teamPlayers(d, d.active)) draw(d, q, 1);
+  if (d.winner === null) openForOpponents(d, 'begin');
 }
 
-/** Cleanup step: the active player discards down to seven (their choice), then the turn passes. */
+/** The active team has passed: priority goes to the opponents (who must all pass too). */
+function openForOpponents(d: GameState, reason: WindowReason) {
+  openWindow(d, reason, firstOpponent(d, d.active), teamPlayers(d, d.active).length);
+}
+
+/** Cleanup step: each player of the active team discards down to seven (their choice), then the turn passes. */
 function endTurn(d: GameState) {
-  const hand = d.players[d.active].hand;
-  const excess = hand.length - 7;
-  if (excess > 0) {
-    d.pending = {
-      choice: { kind: 'cards', player: d.active, purpose: 'cleanupDiscard', min: excess, max: excess, options: [...hand], params: { n: excess } },
-      resume: 'cleanup',
-    };
-    return;
+  for (const q of teamPlayers(d, d.active)) {
+    const hand = d.players[q].hand;
+    const excess = hand.length - 7;
+    if (excess > 0) {
+      d.pending = {
+        choice: { kind: 'cards', player: q, purpose: 'cleanupDiscard', min: excess, max: excess, options: [...hand], params: { n: excess } },
+        resume: 'cleanup',
+      };
+      return;
+    }
   }
   finishTurn(d);
 }
 
-function finishCleanup(d: GameState, iids: string[]) {
-  const me = d.players[d.active];
+function finishCleanup(d: GameState, p: PlayerId, iids: string[]) {
+  const me = d.players[p];
   for (const iid of iids) {
     const inst = me.hand.find((c) => c.iid === iid)!;
     me.hand = me.hand.filter((c) => c !== inst);
     me.graveyard.push(inst);
-    log(d, { k: 'discard', p: d.active, card: inst.card.name, cleanup: true });
+    log(d, { k: 'discard', p, card: inst.card.name, cleanup: true });
   }
-  finishTurn(d);
+  endTurn(d); // the next head, if any, then the next turn
 }
 
 function finishTurn(d: GameState) {
@@ -968,13 +1051,13 @@ function finishTurn(d: GameState) {
   }
   delete d.preventCombat;
   delete d.shields;
-  // An extra turn: the same player goes again.
+  // An extra turn: the same team goes again.
   const extra = d.extraTurns?.[d.active] ?? 0;
   if (extra > 0) {
     d.extraTurns![d.active] = extra - 1;
     return beginTurn(d, d.active, false);
   }
-  beginTurn(d, opponent(d.active), false);
+  beginTurn(d, nextTeamLead(d, d.active), false);
 }
 
 const newPermanent = (inst: CardInst, controller: PlayerId): Permanent => ({
@@ -1108,7 +1191,7 @@ function fireStep(d: GameState, on: 'upkeep' | 'endStep') {
   for (const x of d.battlefield) {
     for (const t of triggersOf(x.card)) {
       if (t.event.on !== on) continue;
-      const mine = x.controller === d.active;
+      const mine = isActivePlayer(d, x.controller);
       if (t.event.whose === 'each' || (t.event.whose === 'you') === mine) queueTrigger(d, x, x.controller, t.ability);
     }
   }
@@ -1226,9 +1309,10 @@ function checkStateBased(d: GameState) {
   }
   refreshStatics(d);
   if (d.winner !== null) return;
-  const dead = ([0, 1] as PlayerId[]).filter((p) => d.players[p].life <= 0 || (d.players[p].poison ?? 0) >= 10);
-  if (dead.length === 2) d.winner = 'draw';
-  else if (dead.length === 1) d.winner = opponent(dead[0]);
+  // A team loses at 0 life or too much poison (one player of the team is enough: their totals are shared).
+  const lost = teamsOf(d).filter((team) => team.some((p) => d.players[p].life <= 0 || (d.players[p].poison ?? 0) >= poisonLimit(d)));
+  if (lost.length >= 2) d.winner = 'draw';
+  else if (lost.length === 1) d.winner = firstOpponent(d, lost[0][0]);
   if (d.winner !== null) log(d, d.winner === 'draw' ? { k: 'draw' } : { k: 'wins', p: d.winner });
 }
 
@@ -1272,7 +1356,7 @@ function dealDamage(d: GameState, source: CardInst, controller: PlayerId, target
     addPoison(d, target, amount);
     log(d, { k: 'damagePlayer', card: source.card.name, n: amount, p: target });
   } else if (typeof target === 'number') {
-    d.players[target].life -= amount;
+    changeLife(d, target, -amount);
     log(d, { k: 'damagePlayer', card: source.card.name, n: amount, p: target });
   } else if (infect && isCreature(target.card)) {
     target.counters = { ...target.counters, '-1/-1': (target.counters['-1/-1'] ?? 0) + amount };
@@ -1286,18 +1370,34 @@ function dealDamage(d: GameState, source: CardInst, controller: PlayerId, target
     if (hasKw(source, 'deathtouch')) target.deathtouched = true;
     log(d, { k: 'damage', card: source.card.name, n: amount, target: target.card.name });
   }
-  if (hasKw(source, 'lifelink')) d.players[controller].life += amount;
+  if (hasKw(source, 'lifelink')) changeLife(d, controller, amount);
 }
 
 function addPoison(d: GameState, p: PlayerId, n: number) {
-  d.players[p].poison = (d.players[p].poison ?? 0) + n;
+  // Teammates share poison counters.
+  for (const q of teamPlayers(d, p)) d.players[q].poison = (d.players[q].poison ?? 0) + n;
   log(d, { k: 'poison', p, n });
+}
+
+/** Life changes; teammates share their life total. */
+function changeLife(d: GameState, p: PlayerId, delta: number) {
+  for (const q of teamPlayers(d, p)) d.players[q].life += delta;
+}
+
+/** p's team loses (for drawing from an empty library, conceding…): the other team wins. */
+function teamLoses(d: GameState, p: PlayerId) {
+  if (d.winner !== null) {
+    if (d.winner !== 'draw' && teamOf(d, d.winner) === teamOf(d, p)) d.winner = 'draw';
+    return;
+  }
+  d.winner = firstOpponent(d, p);
 }
 
 function resolveCombat(d: GameState) {
   refreshStatics(d);
   if (d.preventCombat) return; // Fog
-  const def = opponent(d.active);
+  // Combat damage to "the player" goes to the defending team (one shared life total).
+  const def = firstOpponent(d, d.active);
   const get = (iid: string) => findPermanent(d, iid);
   const involved = [...d.attackers, ...blockerIds(d)].map(get).filter((x) => x !== undefined);
   const strikeSteps = involved.some(firstStrikes) ? [true, false] : [false];
@@ -1392,9 +1492,9 @@ function affected(d: GameState, r: Resolving, to: Affected): Affectable[] {
     const src = r.item.source ? findPermanent(d, r.item.source) : undefined;
     return src ? [src] : [];
   }
-  if (to === 'each-opponent') return [opponent(r.item.controller)];
+  if (to === 'each-opponent') return opponentsOf(d, r.item.controller);
   // Each player, starting with the active player.
-  if (to === 'each-player') return [d.active, opponent(d.active)];
+  if (to === 'each-player') return turnOrder(d);
   return (r.legal[to.slot] ?? []).flatMap((t): Affectable[] => {
     if (t.kind === 'player') return [t.player];
     if (t.kind === 'card') {
@@ -1535,13 +1635,13 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       break;
     case 'gainLife':
       for (const p of players) {
-        d.players[p].life += amount(r, e.n);
+        changeLife(d, p, amount(r, e.n));
         log(d, { k: 'gainLife', p, n: amount(r, e.n) });
       }
       break;
     case 'loseLife':
       for (const p of players) {
-        d.players[p].life -= amount(r, e.n);
+        changeLife(d, p, -amount(r, e.n));
         log(d, { k: 'loseLife', p, n: amount(r, e.n) });
       }
       break;
@@ -1671,8 +1771,11 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         const kinds = (Object.keys(perm.counters) as CounterKind[]).filter((k) => perm.counters[k] && (mine ? k !== '-1/-1' : k === '-1/-1'));
         if (kinds.length) perm.counters = { ...perm.counters, ...Object.fromEntries(kinds.map((k) => [k, (perm.counters[k] ?? 0) + 1])) };
       }
-      const opp = opponent(caster);
-      if (d.players[opp].poison) addPoison(d, opp, 1);
+      // Each opposing team's poison (shared by its players) once.
+      for (const team of teamsOf(d)) {
+        if (team.includes(caster) || !d.players[team[0]].poison) continue;
+        addPoison(d, team[0], 1);
+      }
       log(d, { k: 'proliferate', p: caster });
       break;
     }
@@ -1716,8 +1819,10 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
     }
     case 'extraTurn':
       for (const p of players) {
-        d.extraTurns = [...(d.extraTurns ?? [0, 0])] as [number, number];
-        d.extraTurns[p]++;
+        // An extra turn is taken by the player's whole team.
+        const lead = teamPlayers(d, p)[0];
+        d.extraTurns = [...(d.extraTurns ?? d.players.map(() => 0))];
+        d.extraTurns[lead] = (d.extraTurns[lead] ?? 0) + 1;
         log(d, { k: 'extraTurn', p });
       }
       break;
@@ -1837,7 +1942,7 @@ function wantsPriority(d: GameState, p: PlayerId): boolean {
   if (!d.stack.length) {
     // Like Arena, these stops are only made in full control.
     if (reason === 'begin' || reason === 'combat' || reason === 'upkeep') return false;
-    if (reason === 'attack' && p === d.active) return false; // the attacker just acted
+    if (reason === 'attack' && isActivePlayer(d, p)) return false; // the attacker just acted
   }
   if (d.stack.at(-1)?.controller === p) return false; // don't respond to your own spell
   const ps = d.players[p];
@@ -1896,8 +2001,8 @@ function askLifeChoice(d: GameState): boolean {
 function passOnce(d: GameState) {
   const pr = d.priority!;
   pr.passes++;
-  if (pr.passes < 2) {
-    pr.player = opponent(pr.player);
+  if (pr.passes < d.players.length) {
+    pr.player = nextPlayer(d, pr.player);
     return;
   }
   d.priority = null;
@@ -1912,8 +2017,14 @@ function closeWindow(d: GameState, reason: WindowReason) {
   if (reason === 'upkeep') {
     drawStep(d, d.turn === 1);
   } else if (reason === 'combat') {
-    // Attackers may have been removed during the window.
-    d.step = creaturesOf(d, d.active).some(canAttack) ? 'attack' : 'main2';
+    // Attackers may have been removed during the window. Each head with creatures able to attack declares in turn.
+    d.attackers = [];
+    delete d.attackTargets;
+    const heads = teamPlayers(d, d.active).filter((q) => creaturesOf(d, q).some(canAttack));
+    if (heads.length) {
+      d.step = 'attack';
+      d.declaring = heads[0];
+    } else d.step = 'main2';
   } else if (reason === 'attack') {
     d.attackers = d.attackers.filter((iid) => findPermanent(d, iid));
     if (!d.attackers.length) {
@@ -1921,10 +2032,11 @@ function closeWindow(d: GameState, reason: WindowReason) {
       return;
     }
     d.step = 'block';
-    // Skip the blockers prompt when the defender has nothing that could block.
-    const attackers = d.attackers.map((iid) => findPermanent(d, iid)!);
-    const canAnyBlock = creaturesOf(d, opponent(d.active)).some((b) => attackers.some((a) => canBlock(b, a)));
-    if (!canAnyBlock) setBlocks(d, {});
+    d.pendingBlocks = {};
+    // Each defending head that could block declares in turn; none: no blockers prompt.
+    const next = nextBlocker(d, []);
+    if (next === undefined) setBlocks(d, {});
+    else d.declaring = next;
   } else if (reason === 'block') {
     resolveCombat(d);
     d.attackers = [];
@@ -1936,9 +2048,75 @@ function closeWindow(d: GameState, reason: WindowReason) {
   }
 }
 
+/** Will `q` still declare blockers after `p` (teammates declaring in turn)? */
+function nextBlockerIs(d: GameState, q: PlayerId, p: PlayerId): boolean {
+  const order = opponentsOf(d, d.active);
+  return order.indexOf(q) > order.indexOf(p) && !(d.declared ?? []).includes(q);
+}
+
+/** The teammate of `p` who acts next in this main phase, if any. */
+function nextHead(d: GameState, p: PlayerId): PlayerId | undefined {
+  const done = [...(d.headsDone ?? []), p];
+  return teamPlayers(d, d.active).find((q) => !done.includes(q));
+}
+
+/**
+ * One head of the attacking team declares its attackers (none: an empty list). The next head with
+ * creatures able to attack declares next; after the last, the attack window opens.
+ */
+function declareAttacks(d: GameState, p: PlayerId, ids: string[], pw: Record<string, string>) {
+  const attackers = [...new Set(ids)].map((iid) => {
+    const perm = findPermanent(d, iid);
+    if (!perm || perm.controller !== p || !canAttack(perm)) throw new IllegalAction('cannotAttack');
+    return perm;
+  });
+  const targets: Record<string, string> = { ...(d.attackTargets ?? {}) };
+  for (const [aid, pwIid] of Object.entries(pw)) {
+    const walker = findPermanent(d, pwIid);
+    if (!attackers.some((a) => a.iid === aid) || !walker || teamOf(d, walker.controller) === teamOf(d, p) || !isPlaneswalker(walker.card)) {
+      throw new IllegalAction('cannotAttackThat');
+    }
+    targets[aid] = pwIid;
+  }
+  for (const a of attackers) if (!hasKw(a, 'vigilance')) a.tapped = true;
+  d.attackers = [...d.attackers, ...attackers.map((a) => a.iid)];
+  if (Object.keys(targets).length) d.attackTargets = targets;
+  d.blocks = {};
+  if (attackers.length) log(d, { k: 'attack', p, cards: attackers.map((a) => a.card.name) });
+  for (const [aid, pwIid] of Object.entries(pw)) {
+    log(d, { k: 'attackPlaneswalker', card: findPermanent(d, aid)!.card.name, pw: findPermanent(d, pwIid)!.card.name });
+  }
+  for (const a of attackers) fireObject(d, 'attacks', a);
+  // The next head of the team with creatures able to attack.
+  const declared = [...(d.declared ?? []), p];
+  const next = teamPlayers(d, d.active).find((q) => !declared.includes(q) && creaturesOf(d, q).some(canAttack));
+  if (next !== undefined) {
+    d.declared = declared;
+    d.declaring = next;
+    return;
+  }
+  delete d.declared;
+  delete d.declaring;
+  if (!d.attackers.length) {
+    d.step = 'main2';
+    return;
+  }
+  // The attacking team gets priority first.
+  openWindow(d, 'attack', d.active, 0);
+}
+
 function setBlocks(d: GameState, blocks: Record<string, string[]>) {
+  delete d.declaring;
+  delete d.pendingBlocks;
   d.blocks = blocks;
   askDamageOrder(d);
+}
+
+/** The next defending head (not in `done`) with a creature that could block an attacker. */
+function nextBlocker(d: GameState, done: PlayerId[]): PlayerId | undefined {
+  const attackers = d.attackers.map((iid) => findPermanent(d, iid)!).filter(Boolean);
+  const used = new Set(Object.values(d.pendingBlocks ?? {}).flat());
+  return opponentsOf(d, d.active).find((q) => !done.includes(q) && creaturesOf(d, q).some((b) => !used.has(b.iid) && attackers.some((a) => canBlock(b, a))));
 }
 
 /**
@@ -1988,12 +2166,13 @@ export function apply(state: GameState, action: Action): GameState {
   const d = structuredClone(state);
 
   if (action.type === 'concede') {
-    d.winner = opponent(action.player);
+    // A player conceding makes their whole team lose.
+    teamLoses(d, action.player);
     log(d, { k: 'concede', p: action.player });
     return d;
   }
   if (action.type === 'setFullControl') {
-    d.fullControl = [...(d.fullControl ?? [false, false])] as [boolean, boolean];
+    d.fullControl = [...(d.fullControl ?? d.players.map(() => false))];
     d.fullControl[action.player] = action.on;
     return d;
   }
@@ -2033,8 +2212,10 @@ export function apply(state: GameState, action: Action): GameState {
       }
       m.kept[p] = true;
       log(d, { k: 'keep', p, n: me.hand.length });
-      if (!m.kept[opponent(p)]) {
-        m.player = opponent(p);
+      // Players decide one after the other, in turn order.
+      const next = turnOrder(d).find((q) => !m.kept[q]);
+      if (next !== undefined) {
+        m.player = next;
       } else {
         d.mulligan = null;
         beginTurn(d, d.active, true);
@@ -2047,7 +2228,7 @@ export function apply(state: GameState, action: Action): GameState {
       if (!pending) throw new IllegalAction('nothingToChoose');
       validateAnswer(pending.choice, action.answer);
       d.pending = null;
-      if (pending.resume === 'cleanup' && action.answer.kind === 'cards') finishCleanup(d, action.answer.iids);
+      if (pending.resume === 'cleanup' && action.answer.kind === 'cards') finishCleanup(d, pending.choice.player, action.answer.iids);
       else if (pending.resume === 'trigger' && action.answer.kind === 'targets') {
         const t = pending.trigger!;
         pushAbility(d, t, checkTargets(d, t.controller, t.source.card, t.ability, action.answer.targets));
@@ -2065,7 +2246,7 @@ export function apply(state: GameState, action: Action): GameState {
         const n = Number(pending.choice.params?.n ?? 0);
         if (perm && action.answer.yes) {
           perm.tapped = false;
-          d.players[perm.controller].life -= n;
+          changeLife(d, perm.controller, -n);
         }
         if (perm) log(d, { k: 'shock', card: perm.card.name, paid: action.answer.yes ? n : 0 });
       } else if (pending.resume === 'damageOrder' && action.answer.kind === 'arrange') {
@@ -2098,7 +2279,7 @@ export function apply(state: GameState, action: Action): GameState {
     }
 
     case 'playLand': {
-      if (d.priority || !isMainStep(d) || p !== d.active) throw new IllegalAction('landTiming');
+      if (d.priority || !isMainStep(d) || !isActivePlayer(d, p)) throw new IllegalAction('landTiming');
       if (me.landPlayed) throw new IllegalAction('landAlreadyPlayed');
       const inst = me.hand.find((c) => c.iid === action.iid);
       const face = action.face ?? 0;
@@ -2123,7 +2304,7 @@ export function apply(state: GameState, action: Action): GameState {
       if (isLandCard(card)) throw new IllegalAction('notASpell');
       if (d.priority) {
         if (!hasInstantSpeed(card)) throw new IllegalAction('sorcerySpeed', { card: card.name });
-      } else if (!isMainStep(d) || p !== d.active) {
+      } else if (!isMainStep(d) || !isActivePlayer(d, p)) {
         throw new IllegalAction('castTiming');
       }
       const info = castInfo(inst.card, face);
@@ -2155,7 +2336,7 @@ export function apply(state: GameState, action: Action): GameState {
         iid: inst.iid, card: inst.card, controller: p, targets, ...(xCount(card) ? { x } : {}),
         ...(face ? { face } : {}), ...(modes ? { modes } : {}), ...(kicked ? { kicked } : {}), ...(from !== 'hand' ? { from } : {}),
       };
-      if (extra?.kind === 'life') me.life -= extra.n;
+      if (extra?.kind === 'life') changeLife(d, p, -extra.n);
       if (extra?.kind === 'sacrifice' || extra?.kind === 'discard') {
         const options = extra.kind === 'sacrifice' ? matching(d, p, extra.which).filter((x) => x.controller === p) : [...me.hand];
         d.pending = {
@@ -2176,7 +2357,7 @@ export function apply(state: GameState, action: Action): GameState {
       const inst = me.hand.find((c) => c.iid === action.iid);
       const cycling = inst && castInfo(inst.card).cycling;
       if (!inst || !cycling) throw new IllegalAction('cannotCycle');
-      if (!d.priority && !(isMainStep(d) && p === d.active)) throw new IllegalAction('activateTiming');
+      if (!d.priority && !(isMainStep(d) && isActivePlayer(d, p))) throw new IllegalAction('activateTiming');
       if (!pay(d, p, manaSources(d, p), parseCost(cycling.cost))) throw new IllegalAction('notEnoughMana', { card: inst.card.name });
       me.hand = me.hand.filter((c) => c !== inst);
       me.graveyard.push(inst);
@@ -2188,9 +2369,9 @@ export function apply(state: GameState, action: Action): GameState {
       d.stack.push({ iid: `${inst.iid}-cycle-${d.abilities}`, card: inst.card, controller: p, targets: [], ability });
       if (d.priority) {
         d.priority.passes = 0;
-        d.priority.player = opponent(p);
+        d.priority.player = nextPlayer(d, p);
       } else {
-        openWindow(d, 'main', opponent(p), 0);
+        openWindow(d, 'main', nextPlayer(d, p), 0);
       }
       break;
     }
@@ -2207,7 +2388,7 @@ export function apply(state: GameState, action: Action): GameState {
 
       pay(d, p, sourcesFor(d, perm, spec), abilityCost(spec, x));
       if (spec.cost.tap) perm.tapped = true;
-      if (spec.cost.life) d.players[p].life -= spec.cost.life;
+      if (spec.cost.life) changeLife(d, p, -spec.cost.life);
       if (spec.once || spec.cost.loyalty !== undefined) perm.used = [...(perm.used ?? []), action.index];
       if (spec.cost.loyalty !== undefined) {
         perm.counters = { ...perm.counters, loyalty: (perm.counters.loyalty ?? 0) + spec.cost.loyalty };
@@ -2257,18 +2438,26 @@ export function apply(state: GameState, action: Action): GameState {
     case 'pass': {
       if (d.priority) {
         passOnce(d);
+      } else if ((d.step === 'main1' || d.step === 'main2') && nextHead(d, p) !== undefined) {
+        // Two-Headed Giant: the teammate now acts in this main phase.
+        d.headsDone = [...(d.headsDone ?? []), p];
+        d.turnHead = nextHead(d, p);
       } else if (d.step === 'main1') {
+        d.turnHead = d.active;
+        delete d.headsDone;
         emptyPools(d);
         // Skip combat entirely when nothing can attack.
-        if (creaturesOf(d, p).some(canAttack)) openWindow(d, 'combat', opponent(p), 1);
+        if (teamPlayers(d, d.active).some((q) => creaturesOf(d, q).some(canAttack))) openForOpponents(d, 'combat');
         else d.step = 'main2';
       } else if (d.step === 'attack') {
-        d.step = 'main2';
+        declareAttacks(d, p, [], {});
       } else if (d.step === 'main2') {
+        d.turnHead = d.active;
+        delete d.headsDone;
         emptyPools(d);
-        // The active player is done; the opponent gets an end-of-turn window.
+        // The active team is done; the opponents get an end-of-turn window.
         fireStep(d, 'endStep');
-        openWindow(d, 'end', opponent(p), 1);
+        openForOpponents(d, 'end');
       } else {
         throw new IllegalAction('declareBlockersFirst');
       }
@@ -2277,49 +2466,18 @@ export function apply(state: GameState, action: Action): GameState {
 
     case 'declareAttackers': {
       if (d.step !== 'attack' || d.priority) throw new IllegalAction('notAttackStep');
-      const attackers = [...new Set(action.attackers)].map((iid) => {
-        const perm = findPermanent(d, iid);
-        if (!perm || perm.controller !== p || !canAttack(perm)) throw new IllegalAction('cannotAttack');
-        return perm;
-      });
-      if (!attackers.length) {
-        d.step = 'main2';
-        break;
-      }
-      const targets: Record<string, string> = {};
-      for (const [aid, pwIid] of Object.entries(action.targets ?? {})) {
-        const pw = findPermanent(d, pwIid);
-        if (!attackers.some((a) => a.iid === aid) || !pw || pw.controller === p || !isPlaneswalker(pw.card)) {
-          throw new IllegalAction('cannotAttackThat');
-        }
-        targets[aid] = pwIid;
-      }
-      for (const a of attackers) if (!hasKw(a, 'vigilance')) a.tapped = true;
-      d.attackers = attackers.map((a) => a.iid);
-      if (Object.keys(targets).length) d.attackTargets = targets;
-      else delete d.attackTargets;
-      d.blocks = {};
-      log(d, { k: 'attack', p, cards: attackers.map((a) => a.card.name) });
-      for (const [aid, pwIid] of Object.entries(targets)) {
-        log(d, { k: 'attackPlaneswalker', card: findPermanent(d, aid)!.card.name, pw: findPermanent(d, pwIid)!.card.name });
-      }
-      for (const a of attackers) fireObject(d, 'attacks', a);
-      // The attacking player gets priority first.
-      openWindow(d, 'attack', p, 0);
+      declareAttacks(d, p, action.attackers, action.targets ?? {});
       break;
     }
 
     case 'declareBlockers': {
       if (d.step !== 'block' || d.priority) throw new IllegalAction('notBlockStep');
-      const used = new Set<string>();
-      const blocks: Record<string, string[]> = {};
+      const used = new Set(Object.values(d.pendingBlocks ?? {}).flat());
+      const blocks: Record<string, string[]> = { ...(d.pendingBlocks ?? {}) };
       for (const [aid, bids] of Object.entries(action.blocks)) {
         const a = findPermanent(d, aid);
         if (!a || !d.attackers.includes(aid)) throw new IllegalAction('notAttacking');
         if (!bids.length) continue;
-        if (hasKw(a, 'menace') && bids.length < 2) {
-          throw new IllegalAction('menace', { card: a.card.name });
-        }
         for (const bid of bids) {
           const b = findPermanent(d, bid);
           if (!b || b.controller !== p || used.has(bid) || !canBlock(b, a)) {
@@ -2327,8 +2485,25 @@ export function apply(state: GameState, action: Action): GameState {
           }
           used.add(bid);
         }
-        blocks[aid] = bids;
-        log(d, { k: 'blocked', card: a.card.name, by: bids.map((b) => findPermanent(d, b)!.card.name) });
+        blocks[aid] = [...(blocks[aid] ?? []), ...bids];
+        // A single defender must block a menace creature with two; teammates may share it.
+        if (hasKw(a, 'menace') && blocks[aid].length < 2 && !teammatesOf(d, p).some((q) => nextBlockerIs(d, q, p))) {
+          throw new IllegalAction('menace', { card: a.card.name });
+        }
+      }
+      d.pendingBlocks = blocks;
+      const next = nextBlocker(d, [...(d.declared ?? []), p]);
+      if (next !== undefined) {
+        d.declared = [...(d.declared ?? []), p];
+        d.declaring = next;
+        break;
+      }
+      delete d.declared;
+      // All defenders declared: a menace creature left with one blocker isn't blocked by it.
+      for (const [aid, bids] of Object.entries(blocks)) {
+        const a = findPermanent(d, aid)!;
+        if (hasKw(a, 'menace') && bids.length < 2) delete blocks[aid];
+        else log(d, { k: 'blocked', card: a.card.name, by: bids.map((b) => findPermanent(d, b)!.card.name) });
       }
       setBlocks(d, blocks);
       break;
