@@ -32,6 +32,8 @@ export type ErrorCode = GameErrorCode | ServerErrorCode;
 
 /** Messages the server sends to the browser. */
 export type ServerMessage =
+  /** First message on each connection: the build of the app the server ships ("dev" in development). */
+  | { t: 'hello'; build: string }
   | { t: 'joined'; code: string; seat: PlayerId; token: string }
   /** `size`: seats in the room (2, or 4 in Two-Headed Giant); `mode`: its rules. */
   | { t: 'lobby'; code: string; players: LobbyPlayer[]; match?: MatchScore; size?: number; mode?: GameMode }

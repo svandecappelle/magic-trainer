@@ -479,6 +479,8 @@ export const fr: Messages = {
     waitingFor: (name) => `En attente de ${name}…`,
     opponent: "l'adversaire",
     leave: 'Quitter',
+    outdated: 'Le serveur de jeu a été mis à jour depuis l\'ouverture de cette page. Rechargez la page pour jouer en ligne.',
+    reload: 'Recharger',
   },
 
   game: {

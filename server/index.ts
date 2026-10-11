@@ -1,4 +1,4 @@
-import { createReadStream, existsSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, normalize, resolve } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
@@ -7,6 +7,16 @@ import { RoomManager, type Conn } from './rooms';
 
 const PORT = Number(process.env.PORT ?? 8787);
 const DIST = resolve(import.meta.dirname, '../dist');
+
+/** The build of the app in dist/ (see vite.config.ts), sent to browsers so an outdated one reloads. */
+function readBuild(): string {
+  try {
+    return String(JSON.parse(readFileSync(join(DIST, 'version.json'), 'utf8')).build);
+  } catch {
+    return 'dev';
+  }
+}
+const BUILD = readBuild();
 
 const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -31,7 +41,12 @@ const server = createServer((req, res) => {
     res.writeHead(404, { 'Content-Type': 'text/plain' }).end('No build found. Run "npm run build", or use "npm run dev" for development.');
     return;
   }
-  res.writeHead(200, { 'Content-Type': TYPES[extname(file)] ?? 'application/octet-stream' });
+  // Hashed assets never change; the page and version.json must be fetched again after an update.
+  const immutable = file.startsWith(join(DIST, 'assets') + '/');
+  res.writeHead(200, {
+    'Content-Type': TYPES[extname(file)] ?? 'application/octet-stream',
+    'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache',
+  });
   createReadStream(file).pipe(res);
 });
 
@@ -54,6 +69,7 @@ wss.on('connection', (ws) => {
       if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
     },
   };
+  conn.send({ t: 'hello', build: BUILD });
   ws.on('pong', () => alive.add(ws));
   ws.on('message', (data) => {
     let msg: unknown;

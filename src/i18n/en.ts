@@ -472,6 +472,8 @@ export const en = {
     waitingFor: (name: string) => `Waiting for ${name}…`,
     opponent: 'opponent',
     leave: 'Leave',
+    outdated: 'The game server was updated since this page was opened. Reload the page to play online.',
+    reload: 'Reload',
   },
 
   game: {

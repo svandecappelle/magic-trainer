@@ -27,7 +27,7 @@ const MATCH_DECK_KEY = 'magic-trainer-match-deck';
 export function Online() {
   const t = useT();
   const decks = useApp((s) => s.decks);
-  const { status, room, players, game, error, setError, send, clock, match, size } = useGameSocket();
+  const { status, room, players, game, error, setError, send, clock, match, size, outdated } = useGameSocket();
   const [bestOf, setBestOf] = useState<1 | 3>(1);
   const [twoHeaded, setTwoHeaded] = useState(false);
   const [commander, setCommander] = useState(false);
@@ -37,17 +37,21 @@ export function Online() {
   }, [chosen?.format]);
   const missingCommander = !!chosen && !chosen.entries.some((e) => e.board === 'commander') && (commander || chosen.format === 'commander');
   // Your deck and sideboard for this match (changed by sideboarding), kept across reloads of the page.
+  // Saved by this build of the app only: an older one may have stored cards in another shape.
   const [cards, setCardsState] = useState<{ main: Card[]; side: Card[] } | null>(() => {
     try {
-      return JSON.parse(sessionStorage.getItem(MATCH_DECK_KEY) ?? 'null');
+      const v = JSON.parse(sessionStorage.getItem(MATCH_DECK_KEY) ?? 'null');
+      if (v && v.build === __BUILD__ && Array.isArray(v.main) && Array.isArray(v.side)) return { main: v.main, side: v.side };
+      sessionStorage.removeItem(MATCH_DECK_KEY);
     } catch {
-      return null;
+      // unreadable or unavailable: start without it
     }
+    return null;
   });
   const setCards = (c: { main: Card[]; side: Card[] }) => {
     setCardsState(c);
     try {
-      sessionStorage.setItem(MATCH_DECK_KEY, JSON.stringify(c));
+      sessionStorage.setItem(MATCH_DECK_KEY, JSON.stringify({ ...c, build: __BUILD__ }));
     } catch {
       // not essential
     }
@@ -103,6 +107,19 @@ export function Online() {
         </span>
       </div>
     );
+
+  // The server was updated since this page was loaded: reload to get the same version.
+  if (outdated) {
+    return (
+      <div className="page">
+        <h1>{t.online.title}</h1>
+        <div className="banner">
+          {t.online.outdated}
+          <button onClick={() => location.reload()}>{t.online.reload}</button>
+        </div>
+      </div>
+    );
+  }
 
   // 1. Not in a room: pick a name and deck, create or join.
   if (!room) {

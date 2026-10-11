@@ -45,6 +45,7 @@ export function logText(
   t: Messages, entry: LogEntry, names: [string, string], me: PlayerId, card: (englishName: string) => string = (n) => n,
 ): string {
   const ctx: LogContext = { name: (p) => names[p], isMe: (p) => p === me, list: t.list, card };
-  const render = t.log[entry.k] as (e: LogEntry, c: LogContext) => string;
-  return render(entry, ctx);
+  const render = t.log[entry.k] as ((e: LogEntry, c: LogContext) => string) | undefined;
+  // An entry this version doesn't know (a newer server): show its kind rather than break the page.
+  return render ? render(entry, ctx) : entry.k;
 }

@@ -7,17 +7,24 @@ import type { ClientMessage, LobbyPlayer, ServerMessage } from './protocol';
 // sessionStorage is per tab: a reload rejoins the same seat, and two tabs can be two players.
 const SESSION_KEY = 'magic-trainer-online';
 
+/** Builds that can play together: the same one, or a development build on either side. */
+export const sameBuild = (a: string, b: string) => a === b || a === 'dev' || b === 'dev';
+
+/** The seat saved by this tab, if it was saved by this build of the app and has the expected shape. */
 function readSession(): { code: string; token: string } | null {
   try {
-    return JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? 'null');
+    const v = JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? 'null');
+    if (v && typeof v.code === 'string' && typeof v.token === 'string' && v.build === __BUILD__) return { code: v.code, token: v.token };
   } catch {
-    return null;
+    // unreadable: forgotten below
   }
+  writeSession(null);
+  return null;
 }
 
 function writeSession(value: { code: string; token: string } | null) {
   try {
-    if (value) sessionStorage.setItem(SESSION_KEY, JSON.stringify(value));
+    if (value) sessionStorage.setItem(SESSION_KEY, JSON.stringify({ ...value, build: __BUILD__ }));
     else sessionStorage.removeItem(SESSION_KEY);
   } catch {
     // Storage unavailable (private mode): reconnecting after a reload won't work, playing still does.
@@ -38,6 +45,8 @@ export function useGameSocket() {
   /** Seats in the room: 2, or 4 in Two-Headed Giant. */
   const [size, setSize] = useState(2);
   const [clock, setClock] = useState<{ player: PlayerId; deadline: number; kind: 'turn' | 'reconnect' } | null>(null);
+  /** The server runs a newer (or older) build of the app: this page must be reloaded. */
+  const [outdated, setOutdated] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -59,14 +68,26 @@ export function useGameSocket() {
 
       ws.onopen = () => {
         retries = 0;
-        setStatus('open');
-        const saved = readSession();
-        if (saved) ws.send(JSON.stringify({ t: 'rejoin', ...saved } satisfies ClientMessage));
       };
 
       ws.onmessage = (event) => {
         const msg: ServerMessage = JSON.parse(event.data);
         switch (msg.t) {
+          case 'hello': {
+            // A different build of the app on the server: its game states may not fit this page. Forget the saved
+            // seat and ask for a reload rather than breaking mid-game.
+            if (!sameBuild(msg.build, __BUILD__)) {
+              writeSession(null);
+              setOutdated(true);
+              disposed = true;
+              ws.close();
+              return;
+            }
+            setStatus('open');
+            const saved = readSession();
+            if (saved) ws.send(JSON.stringify({ t: 'rejoin', ...saved } satisfies ClientMessage));
+            break;
+          }
           case 'joined':
             setRoom({ code: msg.code, seat: msg.seat });
             writeSession({ code: msg.code, token: msg.token });
@@ -116,5 +137,5 @@ export function useGameSocket() {
     else setError({ code: 'notConnected' });
   }, []);
 
-  return { status, room, players, game, error, setError, clock, match, size, send };
+  return { status, room, players, game, error, setError, clock, match, size, send, outdated };
 }
