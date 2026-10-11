@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
+import { BetweenGames } from '../components/BetweenGames';
 import { DeckOptions } from '../components/DeckOptions';
 import { GameBoard } from '../components/GameBoard';
 import { opponent } from '../lib/engine/engine';
-import { loadDeckCards } from '../lib/loadDeck';
+import { loadDeck75 } from '../lib/loadDeck';
+import { matchWinner } from '../lib/match';
+import type { Card } from '../types';
 import { MIN_DECK_SIZE } from '../lib/multiplayer/protocol';
 import { useGameSocket } from '../lib/multiplayer/useGameSocket';
 import { errorText, useT } from '../i18n';
@@ -19,10 +22,34 @@ function savedName(): string {
   }
 }
 
+const MATCH_DECK_KEY = 'magic-trainer-match-deck';
+
 export function Online() {
   const t = useT();
   const decks = useApp((s) => s.decks);
-  const { status, room, players, game, error, setError, send, clock } = useGameSocket();
+  const { status, room, players, game, error, setError, send, clock, match } = useGameSocket();
+  const [bestOf, setBestOf] = useState<1 | 3>(1);
+  // Your deck and sideboard for this match (changed by sideboarding), kept across reloads of the page.
+  const [cards, setCardsState] = useState<{ main: Card[]; side: Card[] } | null>(() => {
+    try {
+      return JSON.parse(sessionStorage.getItem(MATCH_DECK_KEY) ?? 'null');
+    } catch {
+      return null;
+    }
+  });
+  const setCards = (c: { main: Card[]; side: Card[] }) => {
+    setCardsState(c);
+    try {
+      sessionStorage.setItem(MATCH_DECK_KEY, JSON.stringify(c));
+    } catch {
+      // not essential
+    }
+  };
+  const [between, setBetween] = useState(false);
+  // A new game started: back to the board.
+  useEffect(() => {
+    if (game && game.winner === null) setBetween(false);
+  }, [game]);
   // Ticks while a clock runs, to show the countdown.
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -46,9 +73,11 @@ export function Online() {
     }
     setBusy(true);
     try {
-      const deck = await loadDeckCards(deckId, decks);
+      const { main: deck, side } = await loadDeck75(deckId, decks);
       if (deck.length < MIN_DECK_SIZE) return setError({ code: 'deckTooSmall', params: { n: MIN_DECK_SIZE } });
-      send(kind === 'create' ? { t: 'create', name, deck } : { t: 'join', code: code.trim().toUpperCase(), name, deck });
+      const sideboard = side.slice(0, 30);
+      setCards({ main: deck, side: sideboard });
+      send(kind === 'create' ? { t: 'create', name, deck, sideboard, bestOf } : { t: 'join', code: code.trim().toUpperCase(), name, deck, sideboard });
     } catch (e) {
       setError({ code: 'loadFailed', params: { message: e instanceof Error ? e.message : String(e) } });
     } finally {
@@ -83,6 +112,13 @@ export function Online() {
             <div>
               <h3>{t.online.host}</h3>
               <p className="small muted">{t.online.hostHint}</p>
+              <label className="small">
+                {t.match.format}{' '}
+                <select value={bestOf} onChange={(e) => setBestOf(Number(e.target.value) as 1 | 3)}>
+                  <option value={1}>{t.match.single}</option>
+                  <option value={3}>{t.match.bo3}</option>
+                </select>
+              </label>
               <button disabled={busy || status !== 'open'} onClick={() => enter('create')}>{t.online.createRoom}</button>
             </div>
             <div>
@@ -141,6 +177,10 @@ export function Online() {
   const me = room.seat;
   const opp = players[opponent(me)];
   const iWantRematch = players[me]?.wantsRematch;
+  const bo3 = match?.bestOf === 3;
+  const going = !!match && matchWinner(match) === null;
+  const names: [string, string] = [players[0]?.name ?? '', players[1]?.name ?? ''];
+  const score = match ? t.match.score(names[me], match.wins[me], match.wins[opponent(me)], names[opponent(me)]) : '';
   const notice = (
     <>
       {status !== 'open' && <div className="error">{t.online.reconnecting}</div>}
@@ -155,9 +195,30 @@ export function Online() {
       })()}
       {opp?.wantsRematch && !iWantRematch && <div>{t.online.wantsRematch(opp.name)}</div>}
       {error && <div className="error">{errorText(t, error)}</div>}
+      {bo3 && match && <div className="muted">{t.match.inGame(match.games + (game.winner === null ? 1 : 0), score)}</div>}
       <div className="muted">{t.online.room(room.code)}</div>
     </>
   );
+
+  // Between two games of a best of 3: sideboard, then tell the server you're ready with that deck.
+  if (between && bo3 && match && cards && going) {
+    return (
+      <div className="page">
+        <BetweenGames
+          score={match}
+          names={names}
+          me={me}
+          main={cards.main}
+          side={cards.side}
+          onChange={(main, side) => setCards({ main, side })}
+          onReady={() => send({ t: 'rematch', deck: cards.main })}
+          waiting={iWantRematch}
+        >
+          <button className="secondary" onClick={() => send({ t: 'leave' })}>{t.online.leave}</button>
+        </BetweenGames>
+      </div>
+    );
+  }
 
   return (
     <div className="page play">
@@ -168,9 +229,13 @@ export function Online() {
         notice={notice}
         endControls={
           <>
-            <button disabled={iWantRematch || !opp?.connected} onClick={() => send({ t: 'rematch' })}>
-              {iWantRematch ? t.online.waitingFor(opp?.name ?? t.online.opponent) : t.play.rematch}
-            </button>
+            {bo3 && going ? (
+              <button disabled={!opp?.connected} onClick={() => setBetween(true)}>{t.match.nextGame}</button>
+            ) : (
+              <button disabled={iWantRematch || !opp?.connected} onClick={() => send({ t: 'rematch' })}>
+                {iWantRematch ? t.online.waitingFor(opp?.name ?? t.online.opponent) : bo3 ? t.match.newMatch : t.play.rematch}
+              </button>
+            )}
             <button className="secondary" onClick={() => send({ t: 'leave' })}>{t.online.leave}</button>
           </>
         }

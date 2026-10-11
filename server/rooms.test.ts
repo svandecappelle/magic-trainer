@@ -212,3 +212,39 @@ describe('clocks', () => {
     }
   });
 });
+
+describe('best of 3', () => {
+  const island: Card = { ...mountain, id: 'i', name: 'Island', typeLine: 'Basic Land — Island' };
+
+  it('keeps the score, lets players sideboard, and the loser plays first', () => {
+    const rooms = new RoomManager({ rng: () => 0.1 });
+    const alice = new FakeConn();
+    const bob = new FakeConn();
+    rooms.handle(alice, { t: 'create', name: 'Alice', deck, bestOf: 3 });
+    const code = alice.last('joined')!.code;
+    rooms.handle(bob, { t: 'join', code, name: 'Bob', deck, sideboard: [island, island] });
+    rooms.handle(bob, { t: 'action', action: { type: 'concede', player: 1 } });
+    expect(alice.last('lobby')!.match).toMatchObject({ bestOf: 3, wins: [1, 0], games: 1 });
+
+    // Bob swaps two Mountains for his two Islands; a card from outside his 75 is refused.
+    const forged = { ...island, id: 'x', name: 'Forged' };
+    rooms.handle(bob, { t: 'rematch', deck: [...deck.slice(1), forged] });
+    expect(bob.last('error')).toMatchObject({ code: 'invalidCard' });
+    rooms.handle(bob, { t: 'rematch', deck: [...deck.slice(2), island, island] });
+    rooms.handle(alice, { t: 'rematch' });
+    const game2 = bob.state;
+    expect(game2.winner).toBeNull();
+    expect(game2.active).toBe(1); // Bob lost: he plays first
+    const bobCards = [...game2.players[1].hand, ...rooms.rooms.get(code)!.game!.players[1].library].map((c) => c.card.name);
+    expect(bobCards.filter((n) => n === 'Island')).toHaveLength(2);
+
+    rooms.handle(bob, { t: 'action', action: { type: 'concede', player: 1 } });
+    expect(alice.last('lobby')!.match).toMatchObject({ wins: [2, 0], games: 2 });
+    // The match is over: a rematch starts a new match with the original decks.
+    rooms.handle(alice, { t: 'rematch' });
+    rooms.handle(bob, { t: 'rematch' });
+    expect(alice.last('lobby')!.match).toMatchObject({ wins: [0, 0], games: 0 });
+    const fresh = rooms.rooms.get(code)!.game!.players[1];
+    expect([...fresh.hand, ...fresh.library].some((c) => c.card.name === 'Island')).toBe(false);
+  });
+});

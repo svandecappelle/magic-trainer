@@ -195,6 +195,18 @@ footer { padding: 16px 20px; border-top: 1px solid var(--border); }
 .import-panel { margin-bottom: 16px; }
 .import-panel code { background: var(--panel-2); padding: 0 4px; border-radius: 3px; }
 
+/* Matches: sideboarding between games */
+.between-games { max-width: 900px; }
+.sb-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 640px) { .sb-columns { grid-template-columns: 1fr; } }
+.sb-list { list-style: none; padding: 0; margin: 4px 0; max-height: 50vh; overflow: auto; }
+.sb-card { display: flex; width: 100%; gap: 6px; align-items: center; padding: 3px 6px; text-align: left; background: transparent; color: var(--text); border: 1px solid transparent; font-weight: 500; }
+.sb-card:hover:not(:disabled) { border-color: var(--accent); }
+.sb-card .qty { width: 22px; text-align: right; color: var(--muted); }
+.sb-card .card-name { flex: 1; }
+.sb-card .arrow { color: var(--accent); }
+.between-games .ok { color: var(--ok); font-weight: 700; }
+
 /* Online */
 .online-setup { display: flex; flex-direction: column; gap: 12px; max-width: 720px; }
 .online-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }

@@ -1,3 +1,4 @@
+import type { MatchScore } from '../match';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AppError } from '../../i18n/types';
 import type { GameState, PlayerId } from '../engine/engine';
@@ -33,6 +34,7 @@ export function useGameSocket() {
   const [game, setGame] = useState<GameState | null>(null);
   const [error, setError] = useState<AppError | null>(null);
   /** The running clock, with its deadline in this browser's time. */
+  const [match, setMatch] = useState<MatchScore | null>(null);
   const [clock, setClock] = useState<{ player: PlayerId; deadline: number; kind: 'turn' | 'reconnect' } | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -70,6 +72,7 @@ export function useGameSocket() {
             break;
           case 'lobby':
             setPlayers(msg.players);
+            setMatch(msg.match ?? null);
             break;
           case 'state':
             setGame(msg.state);
@@ -110,5 +113,5 @@ export function useGameSocket() {
     else setError({ code: 'notConnected' });
   }, []);
 
-  return { status, room, players, game, error, setError, clock, send };
+  return { status, room, players, game, error, setError, clock, match, send };
 }

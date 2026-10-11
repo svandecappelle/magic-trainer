@@ -1,13 +1,16 @@
 import type { Card } from '../../types';
+import type { MatchScore } from '../match';
 import type { Action, CardInst, ErrorParams, GameErrorCode, GameState, PlayerId, PlayerState } from '../engine/engine';
 
 /** Messages the browser sends to the server. */
 export type ClientMessage =
-  | { t: 'create'; name: string; deck: Card[] }
-  | { t: 'join'; code: string; name: string; deck: Card[] }
+  /** `bestOf`: a single game or a best of 3 (chosen by the room's creator). `sideboard`: for sideboarding between games. */
+  | { t: 'create'; name: string; deck: Card[]; sideboard?: Card[]; bestOf?: 1 | 3 }
+  | { t: 'join'; code: string; name: string; deck: Card[]; sideboard?: Card[] }
   | { t: 'rejoin'; code: string; token: string }
   | { t: 'action'; action: Action }
-  | { t: 'rematch' }
+  /** Ready for the next game; `deck`: the main deck after sideboarding (cards from your main deck and sideboard). */
+  | { t: 'rematch'; deck?: Card[] }
   | { t: 'leave' };
 
 export interface LobbyPlayer {
@@ -26,7 +29,7 @@ export type ErrorCode = GameErrorCode | ServerErrorCode;
 /** Messages the server sends to the browser. */
 export type ServerMessage =
   | { t: 'joined'; code: string; seat: PlayerId; token: string }
-  | { t: 'lobby'; code: string; players: LobbyPlayer[] }
+  | { t: 'lobby'; code: string; players: LobbyPlayer[]; match?: MatchScore }
   | { t: 'state'; state: GameState }
   | { t: 'left' }
   /**

@@ -133,7 +133,8 @@ get each face's cost and image (their text is rebuilt from the joined faces mean
 
 - [x] Choose the cleanup discard
 - [x] Damage assignment order with several blockers — the attacking player orders them; lethal damage in order
-- [ ] Best-of-3 with sideboarding
+- [x] Best-of-3 with sideboarding — vs the bot and online (the room creator chooses); between games each player
+  moves cards between deck and sideboard (checked by the server online); the loser plays first
 - [x] Format legality checks (deck size, 4 copies, banned list) — in the deck editor, from Scryfall legalities;
   "Refresh card data" re-fetches older saved cards
 - [x] Server-side deck validation — the server replaces card data with Scryfall's (by id) and refuses unknown
