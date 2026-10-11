@@ -800,6 +800,12 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
       if (safe || choice.zones.length < 2) return { kind: 'arrange', zones: { [keep]: choice.cards.map((c) => c.iid) } };
       // Scry/surveil: keep lands while short on them, and spells we can cast soon.
       const away = choice.zones.find((z) => z !== 'top')!;
+      // Enlightened Confidant: a card cheap enough comes back to hand from the graveyard; put it there.
+      const toHandMax = choice.params?.toHandMax;
+      if (typeof toHandMax === 'number') {
+        const cheap = (c: CardInst) => c.card.cmc <= toHandMax;
+        return { kind: 'arrange', zones: { top: choice.cards.filter((c) => !cheap(c)).map((c) => c.iid), [away]: choice.cards.filter(cheap).map((c) => c.iid) } };
+      }
       const lands = s.battlefield.filter((x) => x.controller === choice.player && isLandCard(x.card)).length +
         s.players[choice.player].hand.filter((c) => isLandCard(c.card)).length;
       const wanted = (c: CardInst) => (isLandCard(c.card) ? lands < 5 : c.card.cmc <= lands + 1);

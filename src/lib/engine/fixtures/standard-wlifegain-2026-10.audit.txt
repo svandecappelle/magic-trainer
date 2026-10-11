@@ -1,8 +1,3 @@
-NONE     Enlightened Confidant {1}{W} — Creature — Kor Cleric
-  ✓ Lifelink
-      keyword
-  ✗ At the beginning of your end step, if you gained life this turn, surv…
-      trigger (endStep), effect not simulated
 NONE     Practiced Offense {2}{W} — Sorcery
   ✓ Flashback {1}{W}
       keyword
@@ -72,6 +67,11 @@ OK       Curious Farm Animals {W} — Creature — Boar Elk Bird Ox
       trigger (dies) → gainLife
   ✓ {2}, Sacrifice this creature: Destroy up to one target artifact or en…
       activated → destroy (1 target)
+OK       Enlightened Confidant {1}{W} — Creature — Kor Cleric
+  ✓ Lifelink
+      keyword
+  ✓ At the beginning of your end step, if you gained life this turn, surv…
+      trigger (endStep) → surveil, if 1+ life gained this turn
 OK       Erode {W} — Instant
   ✓ Destroy target creature or planeswalker. Its controller may search th…
       spell → destroy (1 target)
@@ -90,5 +90,5 @@ OK       Seam Rip {W} — Enchantment
   ✓ When this enchantment enters, exile target nonland permanent an oppon…
       trigger (enters) → destroy (1 target)
 
-17 cards: 8 ok, 7 partial, 2 not simulated, 0 can't be cast
+17 cards: 9 ok, 7 partial, 1 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

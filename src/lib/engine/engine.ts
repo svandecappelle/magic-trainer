@@ -1882,7 +1882,9 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       if (!top.length) break;
       if (!answer || answer.kind !== 'arrange') {
         const zones: ArrangeZone[] = e.kind === 'scry' ? ['top', 'bottom'] : ['top', 'graveyard'];
-        return { kind: 'arrange', player: caster, purpose: e.kind, cards: top, zones, params: { n: top.length } };
+        const params: ErrorParams = { n: top.length };
+        if (e.kind === 'surveil' && e.toHand) params.toHandMax = d.players[caster].gainedThisTurn ?? 0;
+        return { kind: 'arrange', player: caster, purpose: e.kind, cards: top, zones, params };
       }
       const ps = d.players[caster];
       const byIid = (iid: string) => top.find((c) => c.iid === iid)!;
@@ -1896,6 +1898,15 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         ps.library = [...onTop, ...rest];
         for (const c of away) putInZone(d, caster, c, 'graveyard');
         log(d, { k: 'surveil', p: caster, n: top.length, graveyard: away.length });
+        // Enlightened Confidant: a card put into the graveyard this way with mana value ≤ life gained goes to the hand.
+        if (e.toHand) {
+          for (const c of away) {
+            if (c.card.cmc > (ps.gainedThisTurn ?? 0) || !ps.graveyard.includes(c)) continue;
+            ps.graveyard = ps.graveyard.filter((x) => x !== c);
+            ps.hand.push(c);
+            log(d, { k: 'returned', card: c.card.name, dest: 'hand' });
+          }
+        }
       }
       break;
     }

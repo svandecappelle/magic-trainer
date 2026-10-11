@@ -79,11 +79,6 @@ NONE     Emptiness {4}{W/B}{W/B} — Creature — Elemental Incarnation
       trigger (enters), effect not simulated
   ✗ Evoke {W/B}{W/B}
       keyword not simulated: evoke
-NONE     Enlightened Confidant {1}{W} — Creature — Kor Cleric
-  ✓ Lifelink
-      keyword
-  ✗ At the beginning of your end step, if you gained life this turn, surv…
-      trigger (endStep), effect not simulated
 NONE     Fiery Annihilation {2}{R} — Instant
   ✗ Fiery Annihilation deals 5 damage to target creature. Exile up to one…
       spell not simulated
@@ -786,6 +781,11 @@ OK       Elusive Otter // Grove's Bounty {U} // {X}{G} — Creature — Otter //
       keyword
   ✓ Creatures with power less than this creature's power can't block it.
       trigger (cast) → pump
+OK       Enlightened Confidant {1}{W} — Creature — Kor Cleric
+  ✓ Lifelink
+      keyword
+  ✓ At the beginning of your end step, if you gained life this turn, surv…
+      trigger (endStep) → surveil, if 1+ life gained this turn
 OK       Erode {W} — Instant
   ✓ Destroy target creature or planeswalker. Its controller may search th…
       spell → destroy (1 target)
@@ -961,5 +961,5 @@ OK       Watery Grave  — Land — Island Swamp
   ✓ As this land enters, you may pay 2 life. If you don't, it enters tapp…
       enters tapped (payLife)
 
-178 cards: 63 ok, 47 partial, 68 not simulated, 0 can't be cast
+178 cards: 64 ok, 47 partial, 67 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

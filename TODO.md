@@ -207,7 +207,8 @@ graveyard"), Abandoned Air Temple (enters tapped unless you control a basic land
   (Haliya, Lunar Convocation), loyalty counters from triggers (Ajani Resolute, Ral; legends named by first name)
 - [x] "Exile … until this enchantment leaves the battlefield" (Seam Rip)
 - [x] "Whenever one or more … enter … This ability triggers only once each turn" (Enduring Innocence)
-- [ ] Enlightened Confidant ("put that card into your hand" after surveil), Case of the Uneaten Feast (solving)
+- [x] Enlightened Confidant: surveil, then "put that card into your hand" if its mana value ≤ life gained this turn
+- [ ] Case of the Uneaten Feast (solving)
 - [ ] "Another target …" for activated abilities, and discard as an activation cost (Liliana the Faultless)
 - [ ] "Whenever one or more …" batches without the once-each-turn limit
 - [x] Named tokens and "where X is the amount of life you gained this turn" (Germinate Recruits)

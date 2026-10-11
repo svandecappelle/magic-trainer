@@ -352,3 +352,37 @@ describe('Germinate Recruits', () => {
     expect(t.battlefield.filter((p) => p.card.name === 'Cadet')).toHaveLength(3);
   });
 });
+
+describe('Enlightened Confidant', () => {
+  const confidant = creature('Enlightened Confidant', 2, 1, {
+    keywords: ['Lifelink'],
+    oracleText: 'Lifelink\nAt the beginning of your end step, if you gained life this turn, surveil 1. If you put a card with mana value less than or equal to the amount of life you gained this turn into your graveyard this way, put that card into your hand. (To surveil 1, look at the top card of your library. You may put that card into your graveyard.)',
+  });
+  /** Gains `life`, goes to the end step, puts the surveilled card into the graveyard. */
+  const play = (life: number, top: Card) => {
+    let s = board({ mana: 1, mine: [confidant], hand: [spell('Salve', '{1}', `You gain ${life} life.`)] });
+    s.players[0].library[0] = { iid: 'top', card: top };
+    s = settle(apply(s, { type: 'cast', iid: 'h0' }));
+    for (let i = 0; i < 6 && s.stack.length; i++) s = settle(apply(s, { type: 'pass' }));
+    for (let i = 0; i < 30 && !s.pending && s.turn === 1; i++) {
+      s = !s.priority && s.step === 'attack' ? apply(s, { type: 'declareAttackers', attackers: [] }) : apply(s, { type: 'pass' });
+    }
+    expect(s.pending?.choice).toMatchObject({ kind: 'arrange', purpose: 'surveil', params: { toHandMax: life } });
+    // The card is in the hand or the graveyard as soon as the choice is made.
+    return apply(s, { type: 'choose', answer: { kind: 'arrange', zones: { graveyard: ['top'] } } });
+  };
+
+  it('reads the whole trigger', () => {
+    expect(triggersOf(confidant)[0].ability).toMatchObject({ condition: { gained: 1 }, effects: [{ kind: 'surveil', n: 1, toHand: 'mvAtMostLifeGained' }] });
+  });
+
+  it('puts the surveilled card into the hand when its mana value is at most the life gained', () => {
+    const cheap = { ...spell('Cheap', '{1}{W}', 'Draw a card.'), cmc: 2 };
+    const s = play(2, cheap);
+    expect(s.players[0].hand.map((c) => c.iid)).toContain('top');
+    expect(s.players[0].graveyard.map((c) => c.iid)).not.toContain('top');
+    const costly = { ...spell('Costly', '{2}{W}', 'Draw a card.'), cmc: 3 };
+    const t = play(2, costly);
+    expect(t.players[0].graveyard.map((c) => c.iid)).toContain('top');
+  });
+});

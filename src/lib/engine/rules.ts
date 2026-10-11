@@ -293,7 +293,11 @@ export type Effect =
   | { kind: 'discard'; n: Amount; to: Affected; mode: DiscardMode; filter?: TargetFilter }
   | { kind: 'mill'; n: Amount; to: Affected }
   | { kind: 'scry'; n: Amount }
-  | { kind: 'surveil'; n: Amount }
+  /**
+   * `toHand`: Enlightened Confidant, "If you put a card with mana value less than or equal to the amount of life you
+   * gained this turn into your graveyard this way, put that card into your hand."
+   */
+  | { kind: 'surveil'; n: Amount; toHand?: 'mvAtMostLifeGained' }
   | { kind: 'tap'; untap: boolean; to: Affected }
   /** Return to its owner's hand. */
   | { kind: 'bounce'; to: Affected }
@@ -748,7 +752,8 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
   });
   scan(new RegExp(`(?:^|[.,] *|then )mill (${AMOUNT}) cards?`, 'gi'), (m) => ({ kind: 'mill', n: toAmount(m[1]), to: 'you' }));
   scan(/\bscry (\d+|X)\b/gi, (m) => ({ kind: 'scry', n: toAmount(m[1]) }));
-  scan(/\bsurveil (\d+|X)\b/gi, (m) => ({ kind: 'surveil', n: toAmount(m[1]) }));
+  scan(new RegExp(`\\bsurveil (\\d+|X)\\b(?!\\. ${SURVEIL_TO_HAND.source})`, 'gi'), (m) => ({ kind: 'surveil', n: toAmount(m[1]) }));
+  scan(new RegExp(`\\bsurveil (\\d+|X)\\. ${SURVEIL_TO_HAND.source}`, 'gi'), (m) => ({ kind: 'surveil', n: toAmount(m[1]), toHand: 'mvAtMostLifeGained' }));
   // Tap / untap.
   scan(new RegExp(`(?:^|[.,] *|then |and )(tap|untap) (${TARGET})${END}`, 'gi'), (m) => {
     const to = slotFor(m[2], (spec) => spec.kind === 'creature' || spec.kind === 'permanent');
@@ -857,6 +862,9 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
   if (/[a-z0-9{]/i.test(rest.replace(/\([^)]*\)/g, '').replace(/\b(?:then|and|or)\b/gi, ''))) return { targets: [], effects: [] };
   return { targets, effects };
 }
+
+/** Enlightened Confidant's second sentence, after "surveil 1." */
+const SURVEIL_TO_HAND = /If you put a card with mana value less than or equal to the amount of life you gained this turn into your graveyard this way, put that card into your hand\./;
 
 /**
  * Sentences an ability can contain without being "partly understood": they change nothing the engine
@@ -1195,7 +1203,9 @@ function triggerBody(text: string, name: string, self: boolean): AbilitySpec {
   // "you may gain 1 life" → "you gain 1 life"
   const body = optional ? `you ${text.slice('you may '.length)}` : text;
   // "it" in "Whenever a creature you control attacks, it gets +1/+0" is the attacker, not this card.
-  if (UNSUPPORTED.test(body) || (!self && /\bits?\b/i.test(body))) return NO_EFFECT;
+  // Clauses the parser handles although they contain words it otherwise refuses ("if", "this way", "that card").
+  const checked = body.replace(SURVEIL_TO_HAND, '');
+  if (UNSUPPORTED.test(checked) || (!self && /\bits?\b/i.test(checked))) return NO_EFFECT;
   const spec = parseAbilityText(body, self ? name : undefined);
   return optional && spec.effects.length ? { ...spec, optional } : spec;
 }
