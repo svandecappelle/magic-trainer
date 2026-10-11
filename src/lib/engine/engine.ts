@@ -2,8 +2,8 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, findPayment, hasInstantSpeed, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, entersTappedRule, entersWithCounters, protectionsOf, staticsOf, wardCost, isPlaneswalker, isToken, manaColors, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
-  type AbilitySpec, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
+  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, isPlaneswalker, isToken, manaColors, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type CastChoice, type Cost, type ObjectEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
 
@@ -164,7 +164,9 @@ export type ChoicePurpose =
   | 'damageOrder' // an attacker blocked by several creatures: in which order its damage goes
   | 'sacrifice' // an edict: choose what to sacrifice
   | 'sacrificeCost' // "Sacrifice a creature:" when activating, or as a spell's additional cost
-  | 'discardCost'; // a spell's additional cost: discard a card
+  | 'discardCost' // a spell's additional cost: discard a card
+  | 'exileCost' // a spell's additional cost: exile cards from your graveyard
+  | 'costChoice'; // a spell's additional cost "A or B": yes pays the first
 
 /** Where "arrange" choices may put cards (scry: top/bottom, surveil: top/graveyard). */
 export type ArrangeZone = 'top' | 'bottom' | 'graveyard';
@@ -395,7 +397,7 @@ export type GameErrorCode =
   | 'needsTarget' | 'tooManyTargets' | 'targetMustBe' | 'illegalTarget' | 'notEnoughMana' | 'declareBlockersFirst'
   | 'notAttackStep' | 'cannotAttack' | 'notBlockStep' | 'notAttacking' | 'menace' | 'cannotBlock'
   | 'makeChoiceFirst' | 'nothingToChoose' | 'badChoice' | 'badX'
-  | 'notEnoughLoyalty' | 'cannotAttackThat' | 'manaSpent' | 'badModes' | 'nothingToDiscard' | 'cannotCycle'
+  | 'notEnoughLoyalty' | 'cannotAttackThat' | 'manaSpent' | 'badModes' | 'nothingToDiscard' | 'notEnoughInGraveyard' | 'costNotSimulated' | 'cannotCycle'
   | 'noSuchAbility' | 'activateTiming' | 'alreadyTapped' | 'summoningSick' | 'onceEachTurn' | 'notEnoughLife' | 'nothingToSacrifice';
 
 export type ErrorParams = Record<string, string | number>;
@@ -532,12 +534,63 @@ export const canPay = (s: GameState, p: PlayerId, card: Card, x = 0) =>
   findPayment(manaSources(s, p), costWithX(card, x)) !== null;
 
 /** The mana cost of casting `card` a given way: its face's cost (or flashback), kicker, X, minus affinity. */
+/** Why `p` can't pay an additional cost of casting the card `iid` (null: they can). */
+function extraCostProblem(s: GameState, p: PlayerId, extra: AdditionalCost, iid: string, card: string): IllegalAction | null {
+  const me = s.players[p];
+  if (extra.kind === 'life' && me.life < extra.n) return new IllegalAction('notEnoughLife');
+  if (extra.kind === 'sacrifice' && !matching(s, p, extra.which).some((x) => x.controller === p)) return new IllegalAction('nothingToSacrifice', { card });
+  if (extra.kind === 'discard' && me.hand.filter((c) => c.iid !== iid).length < extra.n) return new IllegalAction('nothingToDiscard', { card });
+  if (extra.kind === 'exileGraveyard' && me.graveyard.filter((c) => c.iid !== iid).length < extra.n) return new IllegalAction('notEnoughInGraveyard', { card, n: extra.n });
+  return null;
+}
+
+/** How a cost is shown in a "costChoice" prompt: "life:3", "discard:1"… */
+const costLabel = (c: AdditionalCost) =>
+  c.kind === 'life' || c.kind === 'discard' || c.kind === 'exileGraveyard' ? `${c.kind}:${c.n}` : c.kind === 'mana' ? `mana:${c.cost}` : c.kind;
+
+/**
+ * Pays an additional cost once the spell is on its way (mana is paid with the mana cost). Returns true when the
+ * caster first has to choose (cards to discard, exile or sacrifice, or which cost of "A or B").
+ */
+function payExtraCost(d: GameState, p: PlayerId, extra: AdditionalCost, item: StackItem, named: LogTarget[]): boolean {
+  const me = d.players[p];
+  const card = castCard(item).name;
+  const ask = (choice: Choice) => {
+    d.pending = { choice, resume: 'castCost', activation: { item, named } };
+    return true;
+  };
+  switch (extra.kind) {
+    case 'life':
+      changeLife(d, p, -extra.n);
+      return false;
+    case 'mana':
+      return false;
+    case 'either':
+      return ask({ kind: 'yesNo', player: p, purpose: 'costChoice', params: { card, yes: costLabel(extra.options[0]), no: costLabel(extra.options[1]) } });
+    case 'sacrifice':
+      return ask({
+        kind: 'cards', player: p, purpose: 'sacrificeCost', min: 1, max: 1,
+        options: matching(d, p, extra.which).filter((x) => x.controller === p), params: { card, n: 1 },
+      });
+    case 'discard':
+      return ask({ kind: 'cards', player: p, purpose: 'discardCost', min: extra.n, max: extra.n, options: [...me.hand], params: { card, n: extra.n } });
+    case 'exileGraveyard':
+      return ask({ kind: 'cards', player: p, purpose: 'exileCost', min: extra.n, max: extra.n, options: [...me.graveyard], params: { card, n: extra.n } });
+  }
+  return false;
+}
+
 export function castCost(s: GameState, p: PlayerId, card: Card, opt: { face?: number; kicked?: boolean; from?: CastZone; iid?: string }, x = 0): Cost {
   const face = opt.face ?? 0;
   const info = castInfo(card, face);
   const c = faceCard(card, face);
   const base = opt.from === 'graveyard' && info.flashback ? parseCost(info.flashback) : costWithX(c, x);
   const kicker = opt.kicked && info.kicker ? parseCost(info.kicker) : { generic: 0, colored: [] };
+  if (info.additional?.kind === 'mana') {
+    const more = parseCost(info.additional.cost);
+    kicker.generic += more.generic;
+    kicker.colored = [...kicker.colored, ...more.colored];
+  }
   const discount = info.affinity ? s.battlefield.filter((x) => x.controller === p && cardMatches(x.card, info.affinity!)).length : 0;
   // Commander tax: {2} more for each previous cast from the command zone.
   const tax = opt.from === 'command' && opt.iid ? 2 * (s.players[p].commanderCasts?.[opt.iid] ?? 0) : 0;
@@ -628,6 +681,10 @@ export function castOptions(s: GameState, p: PlayerId, iid: string): CastOption[
     const timing = s.priority ? hasInstantSpeed(c) : isMainStep(s) && isActivePlayer(s, p);
     if (!timing) continue;
     const info = castInfo(inst.card, face);
+    // Additional costs: understood (for a permanent) and payable.
+    if (info.unknownCost && !isInstantOrSorcery(c)) continue;
+    const extra = info.additional;
+    if (extra && (extra.kind === 'either' ? extra.options : [extra]).every((o) => extraCostProblem(s, p, o, iid, c.name))) continue;
     for (const kicked of info.kicker ? [false, true] : [false]) {
       const cost = castCost(s, p, inst.card, { face, kicked, from, iid });
       if (!findPayment(castSources(s, p, inst.card, iid, face), cost)) continue;
@@ -1185,10 +1242,10 @@ function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, op
     perm.tapped = true;
     (d.lifeChoices ??= []).push({ iid: perm.iid, n: rule.n });
   }
-  const counters = entersWithCounters(inst.card);
-  if (counters !== null) {
-    const n = counters === 'X' ? (opts.x ?? 0) : counters;
-    if (n > 0) perm.counters = { '+1/+1': n };
+  const counters = entersCounters(inst.card);
+  if (counters) {
+    const n = counters.n === 'X' ? (opts.x ?? 0) : counters.n;
+    if (n > 0) perm.counters = { [counters.counter]: n };
   }
   if (isPlaneswalker(inst.card)) perm.counters = { ...perm.counters, loyalty: startingLoyalty(inst.card) };
   d.battlefield.push(perm);
@@ -1435,6 +1492,13 @@ function addPoison(d: GameState, p: PlayerId, n: number) {
 /** Life changes; teammates share their life total. */
 function changeLife(d: GameState, p: PlayerId, delta: number) {
   for (const q of teamPlayers(d, p)) d.players[q].life += delta;
+  // "Whenever you gain life" (each life gain is one event).
+  if (delta > 0) {
+    for (const x of d.battlefield) {
+      if (x.controller !== p) continue;
+      for (const t of triggersOf(x.card)) if (t.event.on === 'gainLife') queueTrigger(d, x, p, t.ability);
+    }
+  }
 }
 
 /** p's team loses (for drawing from an empty library, conceding…): the other team wins. */
@@ -1587,6 +1651,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       break;
     case 'counter':
       for (const target of spells) {
+        if (!target.ability && /\bThis spell can't be countered\./.test(castCard(target).oracleText)) continue;
         if (e.unlessPays) {
           const payer = target.controller;
           const cost = { generic: e.unlessPays, colored: [] };
@@ -2315,8 +2380,21 @@ export function apply(state: GameState, action: Action): GameState {
         const perm = enterBattlefield(d, { iid: item.iid, card: copy, ...(item.commander ? { commander: true } : {}) }, item.controller, { x: item.x });
         if (model) perm.printed = item.card;
         afterResolving(d, pending.reason ?? 'main');
+      } else if (pending.resume === 'castCost' && action.answer.kind === 'yesNo') {
+        // "A or B": the caster chose which one to pay.
+        const { item, named } = pending.activation!;
+        const extra = castInfo(item.card, item.face ?? 0).additional;
+        const chosen = extra?.kind === 'either' ? extra.options[action.answer.yes ? 0 : 1] : undefined;
+        if (!chosen || !payExtraCost(d, p, chosen, item, named)) finishCast(d, item, named);
       } else if (pending.resume === 'castCost' && action.answer.kind === 'cards') {
-        if (pending.choice.purpose === 'discardCost') {
+        if (pending.choice.purpose === 'exileCost') {
+          for (const iid of action.answer.iids) {
+            const inst = d.players[p].graveyard.find((c) => c.iid === iid)!;
+            d.players[p].graveyard = d.players[p].graveyard.filter((c) => c !== inst);
+            d.players[p].exile.push(inst);
+            log(d, { k: 'exiledCard', card: inst.card.name });
+          }
+        } else if (pending.choice.purpose === 'discardCost') {
           for (const iid of action.answer.iids) {
             const inst = d.players[p].hand.find((c) => c.iid === iid)!;
             moveToGraveyard(d, p, inst, 'hand');
@@ -2372,11 +2450,18 @@ export function apply(state: GameState, action: Action): GameState {
       const targets = checkTargets(d, p, card, spec, chosen);
       const x = xCount(card) ? (action.x ?? 0) : 0;
       if (!Number.isInteger(x) || x < 0) throw new IllegalAction('badX');
-      // Additional costs that need something to pay with.
-      const extra = info.additional;
-      if (extra?.kind === 'life' && me.life < extra.n) throw new IllegalAction('notEnoughLife');
-      if (extra?.kind === 'sacrifice' && !matching(d, p, extra.which).some((x) => x.controller === p)) throw new IllegalAction('nothingToSacrifice', { card: card.name });
-      if (extra?.kind === 'discard' && me.hand.filter((c) => c.iid !== inst.iid).length < extra.n) throw new IllegalAction('nothingToDiscard', { card: card.name });
+      // A permanent can't skip a cost the engine doesn't understand (an instant or sorcery is cast "not simulated").
+      if (info.unknownCost && !isInstantOrSorcery(card)) throw new IllegalAction('costNotSimulated', { card: card.name });
+      // Additional costs that need something to pay with. "A or B": the ones that can be paid.
+      let extra = info.additional;
+      if (extra?.kind === 'either') {
+        const payable = extra.options.filter((o) => !extraCostProblem(d, p, o, inst.iid, card.name));
+        if (!payable.length) throw extraCostProblem(d, p, extra.options[0], inst.iid, card.name)!;
+        if (payable.length === 1) extra = payable[0];
+      } else if (extra) {
+        const problem = extraCostProblem(d, p, extra, inst.iid, card.name);
+        if (problem) throw problem;
+      }
 
       if (!pay(d, p, castSources(d, p, inst.card, inst.iid, face), castCost(d, p, inst.card, { face, kicked, from, iid: inst.iid }, x))) {
         throw new IllegalAction('notEnoughMana', { card: card.name });
@@ -2393,19 +2478,7 @@ export function apply(state: GameState, action: Action): GameState {
         ...(face ? { face } : {}), ...(modes ? { modes } : {}), ...(kicked ? { kicked } : {}), ...(from !== 'hand' ? { from } : {}),
         ...(inst.commander ? { commander: true } : {}),
       };
-      if (extra?.kind === 'life') changeLife(d, p, -extra.n);
-      if (extra?.kind === 'sacrifice' || extra?.kind === 'discard') {
-        const options = extra.kind === 'sacrifice' ? matching(d, p, extra.which).filter((x) => x.controller === p) : [...me.hand];
-        d.pending = {
-          choice: {
-            kind: 'cards', player: p, purpose: extra.kind === 'sacrifice' ? 'sacrificeCost' : 'discardCost',
-            min: extra.kind === 'discard' ? extra.n : 1, max: extra.kind === 'discard' ? extra.n : 1, options, params: { card: card.name, n: extra.kind === 'discard' ? extra.n : 1 },
-          },
-          resume: 'castCost',
-          activation: { item, named },
-        };
-        break;
-      }
+      if (extra && payExtraCost(d, p, extra, item, named)) break;
       finishCast(d, item, named);
       break;
     }

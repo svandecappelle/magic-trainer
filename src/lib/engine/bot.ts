@@ -775,6 +775,9 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
           : cardWorth(c.card);
         options.sort((a, b) => score(b) - score(a));
         return { kind: 'cards', iids: options.slice(0, choice.max).map((c) => c.iid) };
+      } else if (!safe && choice.purpose === 'exileCost') {
+        // Exile what we won't get back: lands and spells before creature cards.
+        options.sort((a, b) => Number(isCreature(a.card)) - Number(isCreature(b.card)));
       } else if (!safe && choice.purpose === 'discardChosen') {
         // Take their best card: the most expensive spell.
         options.sort((a, b) => b.card.cmc - a.card.cmc);
@@ -811,6 +814,11 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
       // Paying to keep our spell is worth it; our own "you may" abilities are used.
       // Shock lands: pay while life is comfortable.
       if (choice.purpose === 'payLife') return { kind: 'yesNo', yes: !safe && s.players[choice.player].life > 10 };
+      // "Discard a card or pay 3 life": life while it is comfortable, otherwise the first cost.
+      if (choice.purpose === 'costChoice') {
+        const life = String(choice.params?.no).startsWith('life:');
+        return { kind: 'yesNo', yes: safe || !life || s.players[choice.player].life <= 10 };
+      }
       return { kind: 'yesNo', yes: !safe && (choice.purpose === 'payOrCounter' || choice.purpose === 'optional') };
     case 'targets':
       return { kind: 'targets', targets: triggerTargets(s, choice.player, { targets: choice.slots, effects: triggerEffects(s, choice) }, safe) };

@@ -20,6 +20,8 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
     case 'sacrifice': return t.game.choice.sacrifice({ n });
     case 'search': return t.game.choice.search({ n });
     case 'discardCost': return t.game.choice.discardCost({ card: card(String(p.card)), n: n || 1 });
+    case 'exileCost': return t.game.choice.exileCost({ card: card(String(p.card)), n });
+    case 'costChoice': return t.game.choice.costChoice({ card: card(String(p.card)) });
     case 'damageOrder': return t.game.choice.damageOrder({ card: card(String(p.card)) });
     case 'clone': return t.game.choice.clone({ card: card(String(p.card)) });
     case 'legendRule': return t.game.choice.legendRule({ card: card(String(p.card)) });
@@ -33,6 +35,16 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
   if (choice.kind === 'cards') return t.game.choice.cards(choice.min, choice.max);
   if (choice.kind === 'mode') return t.game.choice.mode(choice.min, choice.max);
   return t.game.choice.arrange;
+}
+
+/** A cost of "A or B" as sent by the engine ("life:3", "discard:1", "exileGraveyard:6", "mana:{1}"). */
+function costLabel(t: Messages, label: string): string {
+  const [kind, value] = label.split(':');
+  if (kind === 'life') return t.game.payLifeN(Number(value));
+  if (kind === 'discard') return t.game.discardN(Number(value));
+  if (kind === 'exileGraveyard') return t.game.exileN(Number(value));
+  if (kind === 'mana') return t.game.payMana(value);
+  return label;
 }
 
 interface Props {
@@ -67,6 +79,7 @@ export function ChoicePanel({ choice, onAnswer, onPreview }: Props) {
     const [yes, no] =
       choice.purpose === 'payOrCounter' ? [t.game.payN(n), t.game.dontPay]
       : choice.purpose === 'payLife' ? [t.game.payLifeN(n), t.game.enterTapped]
+      : choice.purpose === 'costChoice' ? [costLabel(t, String(choice.params?.yes)), costLabel(t, String(choice.params?.no))]
       : [t.game.yes, t.game.no];
     return (
       <div className="choice-panel">

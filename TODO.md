@@ -158,6 +158,47 @@ get each face's cost and image (their text is rebuilt from the joined faces mean
 - [ ] Bot: mana planning (rituals, holding mana for instants). Done: multi-blocks (double blocks, menace), logic for
   each mechanic added in steps 1–6
 
+## Standard decks audit (mtgtop8, Oct 2026)
+
+The 12 top decks of two recent Standard events plus a Dimir Aggro list (180 cards) were run through the parser and
+the engine. Fixed:
+- [x] Partly understood texts were half-simulated (Terminal Criticism only gained 1 life, Daydream exiled your
+  creature for good, Three Steps Ahead did all its Spree modes for {U}, Chandra's emblem dealt 5 damage at once,
+  Moseo's token ability gained life). Now any sentence not understood makes the ability "not simulated"; quoted
+  abilities ("a token with \"…\"") are never read as effects
+- [x] Additional costs: a permanent can't skip one (Abhorrent Oculus was a 3-mana 5/5); "exile six cards from your
+  graveyard"; "discard a card or pay 3 life" (the caster chooses); "behold a Jace or pay {1}" (pays {1}); optional
+  costs ("you may blight 1", "you may collect evidence") are never paid, and their bonus is left out
+- [x] Moonshadow enters with six -1/-1 counters (it was a 7/7 for {B})
+- [x] "Whenever you gain life" triggers; "This spell can't be countered"; "with mana value 2" (Spell Snare);
+  "that's blue or red"; "It gains …" / "Untap it." after a target; Harmonize, Paradigm, Web-slinging, Gift and
+  Bargain lines (the option is never used)
+
+Approximations kept on purpose (small upsides ignored): Swords to Plowshares' life, Path to Exile / Erode's basic
+land, Get Lost's Map tokens, Empower Jace, No More Lies exiling instead of the graveyard, "exile it instead if it
+would die this turn".
+
+Still missing, most played first:
+- [ ] "Look at the top N cards, put one (two) into your hand, the rest on the bottom" (Consult the Star Charts,
+  Stock Up, Sleight of Hand, Flow State)
+- [ ] Modal triggers "When … enters, choose one —" (Yuriko) and reflexive triggers "When you do / … this way"
+  (Seasoned Cryomancer, Zoraline)
+- [ ] Mill, then "you may return a … card from your graveyard to your hand" (Overlord of the Balemurk); impending
+- [ ] Spree and Tiered (Three Steps Ahead, Requisition Raid, Return the Favor, Fire Magic): modes with extra costs
+- [ ] Blink: "exile …, then return it to the battlefield" (Daydream); "exile … until this leaves the battlefield"
+  (Seam Rip, Deep-Cavern Bat, Pinnacle Starcage)
+- [ ] Emblems (Chandra, Ral, Ajani ultimates); loyalty counters from triggers (Ajani Resolute)
+- [ ] "Any number of target players each …" (Ral Zarek's −1, Riverchurn Monument)
+- [ ] Mana abilities with a life cost (Starting Town, Great Hall of the Biblioplex), lands that choose a basic land
+  type (Multiversal Passage); Starting Town and Theorist's Sanctum entering tapped
+- [ ] Manlands: "becomes a 4/4 … creature until end of turn" (Restless Reef, Restless Anchorage)
+- [ ] Static power from conditions (Dark Matter Manipulator, Ghitu Lavarunner), "can't block" (Starscape Cleric),
+  Moonshadow losing its counters
+- [ ] Manifest dread (Abhorrent Oculus), "becomes a copy of a card in your graveyard" (Likeness Looter)
+- [ ] Day of Black Sun, Strategic Betrayal, Shoot the Sheriff (non-outlaw), Multiply by Zero (base P/T, layers)
+- [ ] Cost reductions (Eddymurk Crab, Hearth Elemental, Sunderflock), Warp, Plot, Offspring, Opus
+- [ ] Mana spent conditions ("if {U}{U} was spent", Evoke Incarnations: Deceit, Emptiness)
+
 ## Comprehensive Rules audit (CR 2026-09-25)
 
 Rules from the Comprehensive Rules (https://magic.wizards.com/en/rules, effective 2026-09-25) that the engine does not

@@ -426,6 +426,13 @@ export function parseTargetPhrase(phrase: string): TargetSpec | null {
     [/ (?:an opponent controls|you don't control|your opponents control)$/, () => !!(filter.controller = 'opponent')],
     [/ with mana value (\d+) or less$/, (m) => ((filter.maxManaValue = Number(m[1])), true)],
     [/ with mana value (\d+) or greater$/, (m) => ((filter.minManaValue = Number(m[1])), true)],
+    // Spell Snare: "with mana value 2".
+    [/ with mana value (\d+)$/, (m) => ((filter.minManaValue = filter.maxManaValue = Number(m[1])), true)],
+    // Terminal Criticism: "creature or planeswalker that's blue or red".
+    [/ that's ((?:white|blue|black|red|green)(?:,? or (?:white|blue|black|red|green))*)$/, (m) => {
+      filter.colors = m[1].split(/,? or /).map((w) => COLOR_WORDS[w]);
+      return true;
+    }],
     [/ with power (\d+) or greater$/, (m) => ((filter.minPower = Number(m[1])), true)],
     [/ with power (\d+) or less$/, (m) => ((filter.maxPower = Number(m[1])), true)],
     [/ without ([a-z ]+)$/, (m) => isKeyword(m[1]) && !!(filter.withoutKeyword = m[1])],
@@ -564,9 +571,14 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     return { slot: targets.length - 1 };
   };
   // Effects are matched one pattern at a time but kept in text order, so slot numbers follow the text.
-  const matches: { at: number; run: () => Effect | Effect[] | null }[] = [];
+  const matches: { at: number; end: number; run: () => Effect | Effect[] | null }[] = [];
+  // Quoted text is an ability granted to something else ("a token with \"Whenever …\""): never an effect here.
+  const quoted = [...text.matchAll(/"[^"]*"/g)].map((q) => [q.index!, q.index! + q[0].length]);
+  const inQuote = (at: number) => quoted.some(([a, b]) => at > a && at < b);
   const scan = (re: RegExp, make: (m: RegExpMatchArray) => Effect | Effect[] | null) => {
-    for (const m of text.matchAll(re)) matches.push({ at: m.index!, run: () => make(m) });
+    for (const m of text.matchAll(re)) {
+      if (!inQuote(m.index!)) matches.push({ at: m.index!, end: m.index! + m[0].length, run: () => make(m) });
+    }
   };
 
   /** "each player" / "target opponent" / "you" as the subject or object of an effect. */
@@ -766,6 +778,21 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     kind: 'token', n: toAmount(m[1]), token: PREDEFINED_TOKENS[m[2].toLowerCase()],
   }));
 
+  // "Put two +1/+1 counters on target creature. It gains lifelink until end of turn." "… Untap it.": the last target.
+  const lastSlot = (): Affected | null => (targets.length ? { slot: targets.length - 1 } : null);
+  scan(new RegExp(`(?:^|[.] *)(?:It|That creature) gets ([+-]\\d+)\\/([+-]\\d+)(?: and gains ${KEYWORD_LIST})? until end of turn`, 'g'), (m) => {
+    const to = lastSlot();
+    return to && { kind: 'pump', power: Number(m[1]), toughness: Number(m[2]), keywords: keywordList(m[3]), to };
+  });
+  scan(new RegExp(`(?:^|[.] *)(?:It|That creature) gains ${KEYWORD_LIST} until end of turn`, 'g'), (m) => {
+    const to = lastSlot();
+    return to && { kind: 'pump', power: 0, toughness: 0, keywords: keywordList(m[1]), to };
+  });
+  scan(/(?:^|[.] *)Untap (?:it|that creature)\./g, () => {
+    const to = lastSlot();
+    return to && { kind: 'tap', untap: true, to };
+  });
+
   if (self) {
     // "it" only means the source when nothing else was targeted ("Target creature gets +1/+0. It gains…").
     const words = [...selfWords(self), ...(/\btargets?\b/i.test(text) ? [] : ['it'])].map(escapeRe).join('|');
@@ -782,13 +809,51 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     scan(new RegExp(`(?:^|[.,] *|then )sacrifice ${SELF}(?=\\.|$)`, 'gi'), () => ({ kind: 'sacrificeSelf' }));
   }
 
-  for (const { run } of matches.sort((a, b) => a.at - b.at)) {
+  // Text that is understood: the effects matched, and sentences that change nothing the engine simulates.
+  const covered = new Uint8Array(text.length);
+  const cover = (from: number, to: number) => covered.fill(1, from, to);
+  for (const m of text.matchAll(IGNORED)) cover(m.index!, m.index! + m[0].length);
+  for (const { at, end, run } of matches.sort((a, b) => a.at - b.at)) {
     const effect = run();
     if (Array.isArray(effect)) effects.push(...effect);
     else if (effect) effects.push(effect);
+    if (effect) cover(at, end);
   }
+  // The subject before a matched effect ("Lightning Bolt deals…", "Target creature you control gets…") is part of it,
+  // unless it is a condition.
+  for (const { at } of matches) {
+    if (!covered[at]) continue;
+    let from = at;
+    while (from > 0 && !/[.\n]/.test(text[from - 1])) from--;
+    const subject = text.slice(from, at);
+    if (subject.trim().split(/\s+/).length <= 8 && !/\b(?:if|unless|until|when|whenever|as long as|instead|for each)\b/i.test(subject)) cover(from, at);
+  }
+  // Anything else left in the text ("then return it…", "Its controller loses 3 life") means the ability is only partly
+  // understood: it is not simulated rather than simulated wrongly.
+  const rest = [...text].filter((_, i) => !covered[i]).join('');
+  if (/[a-z0-9{]/i.test(rest.replace(/\([^)]*\)/g, '').replace(/\b(?:then|and|or)\b/gi, ''))) return { targets: [], effects: [] };
   return { targets, effects };
 }
+
+/**
+ * Sentences an ability can contain without being "partly understood": they change nothing the engine
+ * simulates (no regeneration, no prevention of these effects…).
+ */
+const IGNORED = new RegExp([
+  /(?:It|They|That creature) can't be regenerated\./,
+  /You may choose new targets for the copy\./,
+  /If that spell is countered this way, exile it instead of putting it into its owner's graveyard\./,
+  // Small upsides for the opponent of a removal spell, not simulated (listed in TODO.md): Swords to Plowshares' life,
+  // Path to Exile's and Erode's basic land, Get Lost's Map tokens.
+  /Its controller gains life equal to its power\./,
+  /(?:Its|That (?:land|permanent)'s) controller may search (?:their|his or her) library for a basic land card, put it onto the battlefield(?: tapped)?, then shuffle\./,
+  /Its controller creates two Map tokens\./,
+  // Loyalty for a Jace you control (Countersculpt, Fatehold Charm): not simulated, listed in TODO.md.
+  /Empower Jace \d+\./,
+  /This spell can't be countered\./,
+  /Damage can't be prevented this turn\./,
+  /If (?:that creature|a permanent dealt damage by [^.]+|it) would die this turn, exile it instead\./,
+].map((r) => r.source).join('|'), 'gi');
 
 /** The rules of an instant or sorcery cast the usual way (front face, no modes, not kicked). */
 export const spellSpec = (card: Card): AbilitySpec => castSpec(card, {});
@@ -854,7 +919,27 @@ export function playableFaces(card: Card): number[] {
 export type AdditionalCost =
   | { kind: 'sacrifice'; which: Selector }
   | { kind: 'discard'; n: number }
-  | { kind: 'life'; n: number };
+  | { kind: 'life'; n: number }
+  /** Abhorrent Oculus: "exile six cards from your graveyard". */
+  | { kind: 'exileGraveyard'; n: number }
+  /** Mana added to the cost ("behold a Jace or pay {1}": paying is always possible). */
+  | { kind: 'mana'; cost: string }
+  /** Bitter Triumph: "discard a card or pay 3 life", the caster's choice. */
+  | { kind: 'either'; options: [AdditionalCost, AdditionalCost] };
+
+/** One additional cost ("discard a card", "pay 3 life", "sacrifice a creature"…), or null if not understood. */
+function parseAdditionalCost(what: string): AdditionalCost | null {
+  let m;
+  if ((m = what.match(/^discard (a|two|three) cards?$/))) return { kind: 'discard', n: toNumber(m[1]) };
+  if ((m = what.match(/^pay (\d+) life$/))) return { kind: 'life', n: Number(m[1]) };
+  if ((m = what.match(/^pay ((?:\{\d+\})+)$/))) return { kind: 'mana', cost: m[1] };
+  if ((m = what.match(new RegExp(`^exile (${NUMBER}) cards? from your graveyard$`)))) return { kind: 'exileGraveyard', n: toNumber(m[1]) };
+  if ((m = what.match(/^sacrifice (?:a|an) ([a-z ]+)$/))) {
+    const spec = parseTargetPhrase(`target ${m[1]}`);
+    if (spec && (spec.kind === 'creature' || spec.kind === 'permanent')) return { kind: 'sacrifice', which: { kind: spec.kind, filter: spec.filter } };
+  }
+  return null;
+}
 
 /** What a card's text says about the ways to cast it. */
 export interface CastInfo {
@@ -909,16 +994,17 @@ export function castInfo(card: Card, face = 0): CastInfo {
     info.modal = { min, max: Math.min(max, modes.length), modes };
   }
   const extra = text.match(/As an additional cost to cast this spell, ([^.]+)\./);
-  if (extra) {
+  // "you may blight 1", "you may collect evidence 6": an optional cost, never paid here (its bonus is left out too).
+  if (extra && !/^you may /i.test(extra[1])) {
     const what = extra[1].toLowerCase();
-    let m;
-    if ((m = what.match(/^discard (a|two|three) cards?$/))) info.additional = { kind: 'discard', n: toNumber(m[1]) };
-    else if ((m = what.match(/^pay (\d+) life$/))) info.additional = { kind: 'life', n: Number(m[1]) };
-    else if ((m = what.match(/^sacrifice (?:a|an) ([a-z ]+)$/))) {
-      const spec = parseTargetPhrase(`target ${m[1]}`);
-      if (spec && (spec.kind === 'creature' || spec.kind === 'permanent')) info.additional = { kind: 'sacrifice', which: { kind: spec.kind, filter: spec.filter } };
-      else info.unknownCost = true;
-    } else info.unknownCost = true;
+    const whole = parseAdditionalCost(what);
+    // "A or B": both understood → the caster chooses; one understood → paying that one is always allowed.
+    const split = what.match(/^(.+?) or (.+)$/);
+    const a = split && parseAdditionalCost(split[1]);
+    const b = split && parseAdditionalCost(split[2]);
+    const cost = whole ?? (a && b ? { kind: 'either' as const, options: [a, b] as [AdditionalCost, AdditionalCost] } : (a ?? b));
+    if (cost) info.additional = cost;
+    else info.unknownCost = true;
   }
   return info;
 }
@@ -979,9 +1065,12 @@ export function castSpec(card: Card, choice: CastChoice): AbilitySpec {
   if (info.unknownCost) return { targets: [], effects: [] };
   let text = stripReminder(frontText(c))
     .split('\n')
-    .filter((l) => !/^(Kicker|Flashback|Cycling|Convoke|Delve|Affinity for|(Basic land|Plains|Island|Swamp|Mountain|Forest)cycling)\b/.test(l.trim()))
+    // Other ways to cast it that are never used here (Harmonize, Web-slinging, Paradigm), and options never taken
+    // (a gift never promised, a spell never bargained).
+    .filter((l) => !/^(Kicker|Flashback|Cycling|Convoke|Delve|Affinity for|(Basic land|Plains|Island|Swamp|Mountain|Forest)cycling|Harmonize|Web-slinging|Paradigm|Bargain$|Gift an? )\b/.test(l.trim()))
     .join('\n')
-    .replace(/As an additional cost to cast this spell, [^.]+\.\s*/, '');
+    .replace(/As an additional cost to cast this spell, [^.]+\.\s*/, '')
+    .replace(/If (?:the gift was promised|this spell was bargained|this spell's additional cost was paid|evidence was collected), [^.]+\.\s*/g, '');
   const kickedTexts: string[] = [];
   text = text.replace(/If this spell was kicked, ([^.]+\.)\s*/g, (_, rest: string) => {
     kickedTexts.push(rest);
@@ -1027,7 +1116,9 @@ export type TriggerEvent =
   /** At the beginning of an upkeep or end step: yours, each one, or each opponent's. */
   | { on: 'upkeep' | 'endStep'; whose: 'you' | 'each' | 'opponent' }
   /** Whenever you cast a spell matching the card words ("noncreature", "instant or sorcery"). */
-  | { on: 'cast'; filter: TargetFilter };
+  | { on: 'cast'; filter: TargetFilter }
+  /** Whenever you gain life. */
+  | { on: 'gainLife' };
 
 export interface TriggerSpec {
   event: TriggerEvent;
@@ -1116,6 +1207,11 @@ export function triggersOf(card: Card): TriggerSpec[] {
       continue;
     }
 
+    const gain = line.match(/^Whenever you gain life, (.+)$/i);
+    if (gain) {
+      out.push({ event: { on: 'gainLife' }, ability: triggerAbility(gain[1], name, true) });
+      continue;
+    }
     // Magecraft: "Whenever you cast or copy …" (copies aren't simulated, casting is).
     const cast = line.match(/^Whenever you cast (?:or copy )?an? (?:([a-z, -]+?) )?spell, (.+)$/i);
     if (cast) {
@@ -1226,11 +1322,17 @@ export function activatedOf(card: Card): ActivatedSpec[] {
 
 // ---------- Entering the battlefield ----------
 
+/** "This creature enters with N +1/+1 counters on it" (X: the value paid when cast); Moonshadow: "six -1/-1 counters". */
+export function entersCounters(card: Card): { counter: '+1/+1' | '-1/-1'; n: Amount } | null {
+  const selves = selfWords(card.name).map(escapeRe).join('|');
+  const m = frontText(card).match(new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)? with (${AMOUNT}) ([+-]1\\/[+-]1) counters? on (?:it|him|her|them)\\.`, 'i'));
+  return m && (m[2] === '+1/+1' || m[2] === '-1/-1') ? { counter: m[2], n: toAmount(m[1]) } : null;
+}
+
 /** "This creature enters with N +1/+1 counters on it" (X: the value paid when cast). */
 export function entersWithCounters(card: Card): Amount | null {
-  const selves = selfWords(card.name).map(escapeRe).join('|');
-  const m = frontText(card).match(new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)? with (${AMOUNT}) \\+1\\/\\+1 counters? on it\\.`, 'i'));
-  return m ? toAmount(m[1]) : null;
+  const c = entersCounters(card);
+  return c?.counter === '+1/+1' ? c.n : null;
 }
 
 /** "This land enters tapped." (unconditional only: "unless …" and "if …" are not checked yet). */
