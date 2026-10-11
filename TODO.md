@@ -157,3 +157,122 @@ get each face's cost and image (their text is rebuilt from the joined faces mean
   3 in a row), RECONNECT_SECONDS to come back (concede otherwise); countdown shown to both players
 - [ ] Bot: mana planning (rituals, holding mana for instants). Done: multi-blocks (double blocks, menace), logic for
   each mechanic added in steps 1–6
+
+## Comprehensive Rules audit (CR 2026-09-25)
+
+Rules from the Comprehensive Rules (https://magic.wizards.com/en/rules, effective 2026-09-25) that the engine does not
+simulate or simplifies, by CR number. Highest priority first in each group: rules that change many Modern games
+come before rare ones.
+
+### Turn structure and priority (500–514, 117)
+
+- [ ] 502–504 Untap, upkeep, draw: priority in the upkeep and draw steps (today only an opponents' window before
+  the first main phase); "at the beginning of your draw step" triggers
+- [ ] 507 Beginning of combat step as its own step for both players (today a window in full control only), with
+  "at the beginning of combat" triggers
+- [ ] 508.1d/509.1c Attack and block requirements ("attacks each combat if able", "must be blocked"); attack costs
+  (Ghostly Prison, 508.1g)
+- [ ] 511 End of combat step and "at end of combat" triggers (Ball Lightning–style "sacrifice at end of combat")
+- [ ] 513 End step: priority for the active player too, and "at the beginning of the next end step" delayed triggers
+- [ ] 514.3a Cleanup: when something happens in cleanup (a trigger, damage removal), players get priority and a
+  new cleanup step follows
+- [ ] 500.8 Additional combat phases and main phases (Relentless Assault); 500.11 skipped steps or turns
+- [ ] 117.3c/117.5 Holding priority after casting (today the caster passes automatically except in full control)
+
+### Spells, abilities and effects (601–616)
+
+- [ ] 613 Layer system: copy, control, text, type, color, ability, P/T sublayers 7a–7d with timestamps and
+  dependencies (today boosts, counters and statics simply add up; "becomes a 0/1", "base power is" are wrong)
+- [ ] 614 Replacement effects in general: "instead", "enters with counters", "if it would die, exile it instead"
+  (Rest in Peace, Leyline of the Void), "as it enters, choose…", 614.5 a replacement applies only once
+- [ ] 615 Prevention: protection prevents damage (done), Fog (done); "prevent all damage that would be dealt by
+  [source]", damage redirection
+- [ ] 603.7 Delayed triggers in general ("at the beginning of the next end step, return it")
+- [ ] 603.8 State triggers ("when you control no …")
+- [ ] 603.4 Intervening "if" clauses checked on resolution
+- [ ] 603.6c/603.10 Leaves-the-battlefield triggers "look back in time" (board wipes with dies triggers)
+- [ ] 605.3 Mana abilities with a target or trigger (Overgrowth, Mana Reflection)
+- [ ] 606 Loyalty abilities: done; 606.3 one per turn per planeswalker — check "activate an additional time" effects
+- [ ] 608.2b A spell with only illegal targets fizzles (done); partial fizzle of a multi-target spell keeps its
+  other parts (check every effect type)
+- [ ] 609.4 "Can't" beats "can" ("can't gain life", "can't be countered", "can't cast spells")
+- [ ] 611.2c Continuous effects from resolved spells lock their affected set (Glorious Anthem vs "creatures you
+  control get +1/+1 until end of turn" for creatures entering later)
+- [ ] 616 Ordering several replacement effects (affected player or controller chooses)
+- [ ] 702.21 Split second, 117.1 "cast only as a sorcery" exceptions ("as though it had flash")
+
+### State-based actions (704)
+
+Done: 704.5a–j, m, n, q and 704.6a–d.
+- [ ] 704.5s Sagas: lore counters, chapter abilities, sacrifice after the last chapter (Saga cards are not simulated)
+- [ ] 704.5p Equipment or Fortification attached illegally, a creature or battle attached to something: unattach
+- [ ] 704.5r +1/+1 and -1/-1 counter maximums ("can't have more than N counters")
+- [ ] 704.5v–y Battles: protector, defense counters, Siege
+- [ ] 704.5z Roles: one Role per controller on a permanent
+- [ ] 704.5k World rule; 704.5t dungeons (venture, initiative); 704.5u Space Sculptor; 704.5aa speed
+
+### Card types and special objects (300–315)
+
+- [ ] 301.7 Vehicles and crew (702.122); 301.5 Fortifications
+- [ ] 310 Battles (attack a battle, defense counters, defeated → cast the back face)
+- [ ] 714 Sagas and 716 Classes (level up)
+- [ ] 712 Double-faced cards that transform (701.27): daybound/nightbound (702.145, day/night 730), "transform
+  it", meld (701.42); only modal double-faced cards are supported
+- [ ] 114 Emblems (planeswalker ultimates)
+- [ ] 111.10 Predefined tokens: Blood, Map, Powerstone, Incubator, Gold, Shard; Clue, Food, Treasure done
+- [ ] 724–725 The monarch and the initiative (Undercity dungeon)
+- [ ] 702.26 Phasing
+- [ ] 708 Face-down spells and permanents: morph, megamorph, disguise, manifest, manifest dread, cloak
+- [ ] 713 Substitute cards; 715 adventurer cards done; 718 prototype; 719 case; 720 omen; 721 station
+
+### Keyword abilities (702) not simulated
+
+Evasion and combat (most common first):
+- [ ] Intimidate, fear, shadow, skulk, horsemanship, landwalk (islandwalk…)
+- [ ] Wither, afflict, flanking, rampage, bushido, exalted, annihilator, battle cry, myriad, melee, training,
+  mentor, dethrone, provoke, frenzy
+- [ ] Undying, persist (needs "return with a counter" replacements)
+- [ ] Protection from creatures / artifacts / a card type / "everything" (colors done); hexproof from [quality]
+Casting and costs:
+- [ ] Cascade, storm, discover (701.57), replicate, ripple
+- [ ] Suspend (time counters), foretell, plot, madness, miracle, evoke, dash, blitz, escape, unearth, embalm,
+  eternalize, encore, disturb, retrace, jump-start, aftermath, rebound, buyback
+- [ ] Overload, entwine, spree, escalate, splice, bargain, casualty, emerge, offering, spectacle, surge, prowl,
+  improvise, assist, emerge, squad, offspring, gift
+- [ ] Ninjutsu, bestow, mutate, reconfigure, living weapon, for mirrodin!, crew
+- [ ] Cumulative upkeep, echo, fading, vanishing, level up, outlast, scavenge, reinforce, transfigure
+- [ ] Partner, partner with, companion (702.139: sideboard companion, 3 mana to put it in hand), backgrounds
+Others:
+- [ ] Changeling, devoid, extort, fabricate, evolve, graft, modular, sunburst, amplify, bloodthirst, tribute,
+  riot, afterlife, exploit, champion, soulbond, hideaway, decayed, ravenous, saddle, ward with a non-mana cost
+
+### Keyword actions (701) not simulated
+
+- [ ] Regenerate (701.19), goad (701.38), investigate (701.36, Clue tokens exist), explore (701.44), amass (701.47),
+  adapt (701.46), monstrosity (701.37), bolster (701.39), support, populate (701.30), connive (701.50),
+  incubate (701.53), venture into the dungeon (701.49), the Ring tempts you (701.54), double (701.10),
+  exchange (701.12), vote (701.38), clash, planeswalk, manifest dread, collect evidence (701.59), suspect (701.60),
+  forage, endure, harness, airbend…
+- [ ] Reveal and "look at" (701.16) as player choices (today revealed cards are only logged)
+- [ ] Shuffle effects that let a player search a hidden zone and "fail to find" (701.23b: done for searches)
+
+### Starting and ending the game (103–104)
+
+- [ ] 103.5 Mulligan options in multiplayer: one free mulligan done for Commander and 2HG; "Vancouver" not needed
+- [ ] 103.6 Opening-hand actions: Leylines (begin the game on the battlefield), Gemstone Caverns, Chancellor reveals
+- [ ] 104.2b/104.3e Alternate win and loss conditions on cards ("you win the game", Laboratory Maniac, Thassa's
+  Oracle, Platinum Angel "can't lose")
+- [ ] 104.4b Draw by repeated loop (no mandatory-loop detection; the bot could loop forever)
+- [ ] 104.3c Drawing from an empty library loses (done); 104.3a conceding (done)
+
+### Multiplayer (800–810, 903)
+
+- [ ] 805.10 Two-Headed Giant: the team declares attackers and blockers together (today each head in turn)
+- [ ] 810.9c–h Shared-life corner cases: set a player's life total, exchange life with a teammate, "can't gain life"
+  for the whole team
+- [ ] 903.9a Commander: the owner chooses to move the commander to the command zone (today always)
+- [ ] 903.10a Commander damage is tracked per commander and per player hit (today the defending team's first player)
+- [ ] 903.3c Partner / Background / Friends forever (two commanders)
+- [ ] 903.5c–d Color identity checks done in the editor; 903.5b singleton checked by the legality check
+- [ ] 806–809 Free-for-all, range of influence, attack multiple players, Emperor: not supported
+- [ ] 901–902 Planechase, Vanguard, Archenemy (904), Conspiracy drafting (905): out of scope
