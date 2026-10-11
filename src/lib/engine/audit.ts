@@ -1,6 +1,6 @@
 import type { Card } from '../../types';
 import {
-  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, entersCounters, entersTappedRule, frontText, isInstantOrSorcery,
+  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, entersCounters, entersTappedRule, frontText, gameRulesOf, isInstantOrSorcery,
   KEYWORDS, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, type AbilitySpec,
 } from './rules';
 
@@ -104,6 +104,10 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
       : { text: line, status: 'unread', how: 'mana ability not understood' };
   }
   if (staticsOf(one).length) return { text: line, status: 'ok', how: 'static ability' };
+  const rules = gameRulesOf(one);
+  if (rules.length) return { text: line, status: 'ok', how: `rule for the game: ${rules.join(', ')}` };
+  // Cases: "To solve — …" goes with "Solved — …", which is not simulated.
+  if (/^To solve — /.test(line)) return { text: line, status: 'notSimulated', how: 'Case: solving not simulated' };
   const counters = entersCounters(one);
   if (counters) return { text: line, status: 'ok', how: `enters with ${counters.n} ${counters.counter} counters` };
   const tapped = entersTappedRule(one);

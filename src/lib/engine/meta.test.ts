@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
-import { actor, apply, IllegalAction, newGame, powerOf, toughnessOf, type GameState, type Permanent, type PlayerId } from './engine';
+import { actor, apply, castOptions, IllegalAction, newGame, powerOf, toughnessOf, type GameState, type Permanent, type PlayerId } from './engine';
 import { castInfo, castSpec, parseAbilityText, spellSpec, triggersOf } from './rules';
 
 // Cards from Standard decks on mtgtop8 (Oct 2026), with their Oracle text.
@@ -177,5 +177,62 @@ describe('cards of Standard decks', () => {
     s = apply(s, { type: 'cast', iid: 'o0', target: { kind: 'spell', iid: 'h0' } });
     for (let i = 0; i < 6 && s.stack.length; i++) s = apply(s, { type: 'pass' });
     expect(s.players[0].life).toBe(23);
+  });
+});
+
+describe('W lifegain (mtgtop8 deck 895437)', () => {
+  const voice = creature('Voice of Victory', 1, 3, { oracleText: 'Mobilize 2\nYour opponents can\'t cast spells during your turn.' });
+  const conqueror = creature('Clarion Conqueror', 3, 3, { keywords: ['Flying'], oracleText: 'Flying\nActivated abilities of artifacts, creatures, and planeswalkers can\'t be activated.' });
+  const rip = card({ name: 'Rest in Peace', typeLine: 'Enchantment', manaCost: '{2}', cmc: 2, oracleText: 'When this enchantment enters, exile all graveyards.\nIf a card or token would be put into a graveyard from anywhere, exile it instead.' });
+  const shock = spell('Shock', '{1}', 'Shock deals 2 damage to any target.');
+
+  it('Voice of Victory: opponents can\'t cast spells during your turn', () => {
+    const opt = spell('Opt', '{1}', 'Draw a card.');
+    let s = board({ mana: 1, hand: [opt], mine: [voice], oppHand: [opt], oppMana: 1 });
+    s.fullControl = [false, true]; // the opponent gets priority even with nothing to cast
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    expect(s.priority?.player).toBe(1);
+    expect(errorOf(() => apply(s, { type: 'cast', iid: 'o0' }))).toBe('castingForbidden');
+    expect(castOptions(s, 1, 'o0')).toEqual([]);
+    // On the opponent's own turn, they can.
+    const t = board({ oppHand: [opt], oppMana: 1, mine: [voice] });
+    t.active = 1;
+    expect(castOptions(t, 1, 'o0')).not.toEqual([]);
+  });
+
+  it('Clarion Conqueror: no activated abilities of artifacts, creatures or planeswalkers, mana included', () => {
+    const elf = creature('Elf', 1, 1, { oracleText: '{T}: Add {G}.' });
+    const pinger = creature('Pinger', 1, 1, { oracleText: '{T}: Pinger deals 1 damage to any target.' });
+    const s = board({ mana: 1, mine: [conqueror, elf, pinger] });
+    expect(errorOf(() => apply(s, { type: 'activate', iid: iidOf(s, 'Pinger'), index: 0, targets: [[{ kind: 'player', player: 1 }]] }))).toBe('activationForbidden');
+    expect(errorOf(() => apply(s, { type: 'tapForMana', iid: iidOf(s, 'Elf') }))).not.toBeNull();
+    // Lands still tap for mana.
+    expect(errorOf(() => apply(s, { type: 'tapForMana', iid: s.battlefield[0].iid }))).toBeNull();
+  });
+
+  it('Rest in Peace exiles graveyards, then everything that would go there', () => {
+    const bear = creature('Bear', 2, 2, { oracleText: 'When this creature dies, you gain 3 life.' });
+    let s = board({ mana: 3, hand: [rip, shock], grave: [swamp, swamp], theirs: [bear] });
+    s = settle(apply(s, { type: 'cast', iid: 'h0' }));
+    for (let i = 0; i < 4 && s.stack.length; i++) s = settle(apply(s, { type: 'pass' }));
+    expect(s.players[0].graveyard).toEqual([]);
+    expect(s.players[0].exile).toHaveLength(2);
+    s = settle(apply(s, { type: 'cast', iid: 'h1', target: { kind: 'permanent', iid: iidOf(s, 'Bear') } }));
+    for (let i = 0; i < 4 && s.stack.length; i++) s = settle(apply(s, { type: 'pass' }));
+    expect(perm(s, 'Bear')).toBeUndefined();
+    // Exiled, so it didn't die; Shock was exiled too.
+    expect(s.players[1].exile.map((c) => c.card.name)).toEqual(['Bear']);
+    expect(s.players[1].life).toBe(20);
+    expect(s.players[0].exile.map((c) => c.card.name)).toContain('Shock');
+  });
+
+  it('Abandoned Air Temple enters tapped unless you control a basic land', () => {
+    const temple = card({ name: 'Abandoned Air Temple', typeLine: 'Land', oracleText: 'This land enters tapped unless you control a basic land.\n{T}: Add {W}.' });
+    let s = board({ hand: [temple] });
+    s = apply(s, { type: 'playLand', iid: 'h0' });
+    expect(perm(s, 'Abandoned Air Temple')!.tapped).toBe(true);
+    let t = board({ mana: 1, hand: [temple] });
+    t = apply(t, { type: 'playLand', iid: 'h0' });
+    expect(perm(t, 'Abandoned Air Temple')!.tapped).toBe(false);
   });
 });

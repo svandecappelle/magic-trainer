@@ -1,0 +1,360 @@
+[
+ {
+  "id": "9c0433f9-8f1e-4a19-a83f-a41925f1b1a9",
+  "name": "Abandoned Air Temple",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "This land enters tapped unless you control a basic land.\n{T}: Add {W}.\n{3}{W}, {T}: Put a +1/+1 counter on each creature you control.",
+  "colors": [],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "tla",
+  "setName": "Avatar: The Last Airbender",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "a5e1a7dd-8c49-4435-935c-bcc78704082b",
+  "name": "Ajani Resolute",
+  "manaCost": "{1}{W}",
+  "cmc": 2,
+  "typeLine": "Legendary Planeswalker — Ajani",
+  "oracleText": "Whenever you gain life, put a loyalty counter on Ajani.\n0: You gain 1 life.\n−4: Create a 2/2 white Cat Soldier creature token named Ajani's Pridemate with \"Whenever you gain life, put a +1/+1 counter on this token.\"\n−10: You get an emblem with \"Creatures you control get +2/+2.\"",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "mythic",
+  "loyalty": "2",
+  "keywords": []
+ },
+ {
+  "id": "ac63941b-3f78-4bd3-8b05-ca12aaaa006c",
+  "name": "Case of the Uneaten Feast",
+  "manaCost": "{W}",
+  "cmc": 1,
+  "typeLine": "Enchantment — Case",
+  "oracleText": "Whenever a creature you control enters, you gain 1 life.\nTo solve — You've gained 5 or more life this turn. (If unsolved, solve at the beginning of your end step.)\nSolved — Sacrifice this Case: Creature cards in your graveyard gain \"You may cast this card from your graveyard\" until end of turn.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "mkm",
+  "setName": "Murders at Karlov Manor",
+  "rarity": "rare",
+  "layout": "case",
+  "keywords": [
+   "Solved"
+  ]
+ },
+ {
+  "id": "f892d156-371c-4391-8ae6-25513c5032b0",
+  "name": "Clarion Conqueror",
+  "manaCost": "{2}{W}",
+  "cmc": 3,
+  "typeLine": "Creature — Dragon",
+  "oracleText": "Flying\nActivated abilities of artifacts, creatures, and planeswalkers can't be activated.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "tdm",
+  "setName": "Tarkir: Dragonstorm",
+  "rarity": "rare",
+  "power": "3",
+  "toughness": "3",
+  "keywords": [
+   "Flying"
+  ]
+ },
+ {
+  "id": "2402d759-84b6-41d2-ad78-9333974e9222",
+  "name": "Curious Farm Animals",
+  "manaCost": "{W}",
+  "cmc": 1,
+  "typeLine": "Creature — Boar Elk Bird Ox",
+  "oracleText": "When this creature dies, you gain 3 life.\n{2}, Sacrifice this creature: Destroy up to one target artifact or enchantment.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "tla",
+  "setName": "Avatar: The Last Airbender",
+  "rarity": "common",
+  "power": "1",
+  "toughness": "1",
+  "keywords": []
+ },
+ {
+  "id": "08f79439-b8f8-418f-9772-26d81844749e",
+  "name": "Enduring Innocence",
+  "manaCost": "{1}{W}{W}",
+  "cmc": 3,
+  "typeLine": "Enchantment Creature — Sheep Glimmer",
+  "oracleText": "Lifelink\nWhenever one or more other creatures you control with power 2 or less enter, draw a card. This ability triggers only once each turn.\nWhen Enduring Innocence dies, if it was a creature, return it to the battlefield under its owner's control. It's an enchantment. (It's not a creature.)",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "dsk",
+  "setName": "Duskmourn: House of Horror",
+  "rarity": "rare",
+  "power": "2",
+  "toughness": "1",
+  "keywords": [
+   "Lifelink"
+  ]
+ },
+ {
+  "id": "483fcc58-cc6e-4452-a696-7b38e117c837",
+  "name": "Enlightened Confidant",
+  "manaCost": "{1}{W}",
+  "cmc": 2,
+  "typeLine": "Creature — Kor Cleric",
+  "oracleText": "Lifelink\nAt the beginning of your end step, if you gained life this turn, surveil 1. If you put a card with mana value less than or equal to the amount of life you gained this turn into your graveyard this way, put that card into your hand.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "mythic",
+  "power": "2",
+  "toughness": "1",
+  "keywords": [
+   "Surveil",
+   "Lifelink"
+  ]
+ },
+ {
+  "id": "32e670da-7563-4f6a-a7db-4c126a440eb8",
+  "name": "Erode",
+  "manaCost": "{W}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Destroy target creature or planeswalker. Its controller may search their library for a basic land card, put it onto the battlefield tapped, then shuffle.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "sos",
+  "setName": "Secrets of Strixhaven",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "1b5d7d19-b32a-4786-ae9a-00da5e6658ad",
+  "name": "Germinate Recruits",
+  "manaCost": "{2}{W}",
+  "cmc": 3,
+  "typeLine": "Instant",
+  "oracleText": "Create X 2/2 colorless Wizard Soldier creature tokens named Cadet, where X is the amount of life you gained this turn.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "522aa72b-2b8c-484c-872b-f082101cee35",
+  "name": "Get Lost",
+  "manaCost": "{1}{W}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Destroy target creature, enchantment, or planeswalker. Its controller creates two Map tokens. (They're artifacts with \"{1}, {T}, Sacrifice this token: Target creature you control explores. Activate only as a sorcery.\")",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "lci",
+  "setName": "The Lost Caverns of Ixalan",
+  "rarity": "rare",
+  "keywords": [
+   "Explore"
+  ]
+ },
+ {
+  "id": "6f7c63ae-5df3-410f-8643-b8c69133ca9d",
+  "name": "Haliya, Guided by Light",
+  "manaCost": "{2}{W}",
+  "cmc": 3,
+  "typeLine": "Legendary Creature — Human Soldier",
+  "oracleText": "Whenever Haliya or another creature or artifact you control enters, you gain 1 life.\nAt the beginning of your end step, draw a card if you've gained 3 or more life this turn.\nWarp {W} (You may cast this card from your hand for its warp cost. Exile this creature at the beginning of the next end step, then you may cast it from exile on a later turn.)",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "eoe",
+  "setName": "Edge of Eternities",
+  "rarity": "rare",
+  "power": "3",
+  "toughness": "3",
+  "keywords": [
+   "Warp"
+  ]
+ },
+ {
+  "id": "74c11ee3-19d1-4ad5-a727-1d74c565d6a5",
+  "name": "Leonardo, Cutting Edge",
+  "manaCost": "{1}{W}",
+  "cmc": 2,
+  "typeLine": "Legendary Creature — Mutant Ninja Turtle",
+  "oracleText": "Sneak {W} (You may cast this spell for {W} if you also return an unblocked attacker you control to hand during the declare blockers step. He enters tapped and attacking.)\nLifelink\nWhenever you gain life, put a +1/+1 counter on Leonardo.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "tmt",
+  "setName": "Teenage Mutant Ninja Turtles",
+  "rarity": "rare",
+  "power": "1",
+  "toughness": "1",
+  "keywords": [
+   "Lifelink",
+   "Sneak"
+  ]
+ },
+ {
+  "id": "70d8c400-87dc-4f15-808f-e54a95d779fc",
+  "name": "Liliana the Faultless",
+  "manaCost": "{W}",
+  "cmc": 1,
+  "typeLine": "Legendary Creature — Human Cleric",
+  "oracleText": "Whenever another creature or planeswalker you control enters, you gain 1 life.\n{1}, {T}, Discard a card: Another target creature or planeswalker you control gains hexproof until end of turn.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "rare",
+  "power": "1",
+  "toughness": "1",
+  "keywords": []
+ },
+ {
+  "id": "09ac862f-0a51-44dd-b86f-9412b8218b13",
+  "name": "Plains",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Basic Land — Plains",
+  "oracleText": "({T}: Add {W}.)",
+  "colors": [],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "mdd",
+  "setName": "Marvel: Darkhold Destiny",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "79c7cf94-c0a1-432d-90d7-7f0599c2e7a8",
+  "name": "Practiced Offense",
+  "manaCost": "{2}{W}",
+  "cmc": 3,
+  "typeLine": "Sorcery",
+  "oracleText": "Put a +1/+1 counter on each creature target player controls. Target creature gains your choice of double strike or lifelink until end of turn.\nFlashback {1}{W} (You may cast this card from your graveyard for its flashback cost. Then exile it.)",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "sos",
+  "setName": "Secrets of Strixhaven",
+  "rarity": "rare",
+  "keywords": [
+   "Flashback"
+  ]
+ },
+ {
+  "id": "d108c2b1-236e-4b8d-8445-d9749ccc4fea",
+  "name": "Rest in Peace",
+  "manaCost": "{1}{W}",
+  "cmc": 2,
+  "typeLine": "Enchantment",
+  "oracleText": "When this enchantment enters, exile all graveyards.\nIf a card or token would be put into a graveyard from anywhere, exile it instead.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "big",
+  "setName": "The Big Score",
+  "rarity": "mythic",
+  "keywords": []
+ },
+ {
+  "id": "9d298847-2d02-4593-b4d3-c5b722edac1e",
+  "name": "Seam Rip",
+  "manaCost": "{W}",
+  "cmc": 1,
+  "typeLine": "Enchantment",
+  "oracleText": "When this enchantment enters, exile target nonland permanent an opponent controls with mana value 2 or less until this enchantment leaves the battlefield.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "eoe",
+  "setName": "Edge of Eternities",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "ec3de5f4-bb55-4ab9-995f-f3e0dc22c1bb",
+  "name": "Voice of Victory",
+  "manaCost": "{1}{W}",
+  "cmc": 2,
+  "typeLine": "Creature — Human Bard",
+  "oracleText": "Mobilize 2 (Whenever this creature attacks, create two tapped and attacking 1/1 red Warrior creature tokens. Sacrifice them at the beginning of the next end step.)\nYour opponents can't cast spells during your turn.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "tdm",
+  "setName": "Tarkir: Dragonstorm",
+  "rarity": "rare",
+  "power": "1",
+  "toughness": "3",
+  "keywords": [
+   "Mobilize"
+  ]
+ }
+]

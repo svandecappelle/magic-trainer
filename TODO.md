@@ -199,6 +199,18 @@ Still missing, most played first:
 - [ ] Cost reductions (Eddymurk Crab, Hearth Elemental, Sunderflock), Warp, Plot, Offspring, Opus
 - [ ] Mana spent conditions ("if {U}{U} was spent", Evoke Incarnations: Deceit, Emptiness)
 
+W lifegain (mtgtop8 deck 895437, card-audit skill). Fixed: Voice of Victory (opponents can't cast spells during
+your turn), Clarion Conqueror (no activated abilities of artifacts, creatures, planeswalkers, mana included), Rest in
+Peace and Leyline of the Void (cards go to exile instead; "exile all graveyards", "exile each opponent's
+graveyard"), Abandoned Air Temple (enters tapped unless you control a basic land). Still missing:
+- [ ] "If you gained life this turn" conditions (Enlightened Confidant, Haliya, Case of the Uneaten Feast, Lunar
+  Convocation) and loyalty counters from triggers (Ajani Resolute)
+- [ ] "Another target …" for activated abilities, and discard as an activation cost (Liliana the Faultless)
+- [ ] Batch and once-per-turn triggers: "Whenever one or more … enter … This ability triggers only once each turn"
+  (Enduring Innocence)
+- [ ] Named tokens with abilities (Ajani's Pridemate, Germinate Recruits' Cadets), Mobilize, Warp, Sneak, Cases
+- [ ] Leylines starting the game on the battlefield (CR 103.6)
+
 ## Comprehensive Rules audit (CR 2026-09-25)
 
 Rules from the Comprehensive Rules (https://magic.wizards.com/en/rules, effective 2026-09-25) that the engine does not

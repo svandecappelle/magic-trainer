@@ -82,6 +82,7 @@ const log: LogMessages = {
   loyalty: (e, c) => `${c.card(e.card)} : ${e.n > 0 ? '+' : ''}${e.n} loyauté`,
   returned: (e, c) => `${c.card(e.card)} revient du cimetière ${e.dest === 'hand' ? 'dans la main de son propriétaire' : 'sur le champ de bataille'}`,
   exiledCard: (e, c) => `${c.card(e.card)} est exilé du cimetière`,
+  exiledGraveyards: (e, c) => `${c.card(e.card)} exile les cimetières`,
   search: (e, c) => `${c.isMe(e.p) ? 'Vous cherchez dans votre' : `${c.name(e.p)} cherche dans sa`} bibliothèque${e.n ? ` : ${e.n} carte${e.n > 1 ? 's' : ''} ${e.dest === 'hand' ? 'en main' : 'sur le champ de bataille'}` : ' sans rien trouver'}`,
   token: (e, c) => `${c.isMe(e.p) ? 'Vous créez' : `${c.name(e.p)} crée`} ${e.n === 1 ? `un jeton ${e.card}` : `${e.n} jetons ${e.card}`}`,
   activate: (e, c) => {
@@ -140,6 +141,8 @@ const errors: ErrorMessages = {
   summoningSick: (p) => `${p.card} vient d'arriver : il ne peut pas utiliser de capacité {T} ce tour-ci`,
   onceEachTurn: (p) => `La capacité de ${p.card} ne peut être activée qu'une fois par tour`,
   notEnoughLife: () => 'Pas assez de points de vie pour payer ce coût',
+  activationForbidden: () => 'Les capacités activées des artefacts, créatures et planeswalkers ne peuvent pas être activées',
+  castingForbidden: () => 'Vous ne pouvez pas lancer de sorts pendant ce tour',
   notEnoughInGraveyard: (p) => `${p.card} demande ${p.n} autres cartes dans votre cimetière`,
   costNotSimulated: (p) => `Le coût supplémentaire de ${p.card} n'est pas simulé : impossible de le lancer`,
   badModes: (p) => `Choisissez le bon nombre de modes pour ${p.card}`,

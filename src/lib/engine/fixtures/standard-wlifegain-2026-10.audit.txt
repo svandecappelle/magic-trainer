@@ -1,0 +1,94 @@
+NONE     Enduring Innocence {1}{W}{W} — Enchantment Creature — Sheep Glimmer
+  ✓ Lifelink
+      keyword
+  ? Whenever one or more other creatures you control with power 2 or less…
+      not read by the engine
+  ✗ When Enduring Innocence dies, if it was a creature, return it to the …
+      trigger (dies), effect not simulated
+NONE     Enlightened Confidant {1}{W} — Creature — Kor Cleric
+  ✓ Lifelink
+      keyword
+  ✗ At the beginning of your end step, if you gained life this turn, surv…
+      trigger (endStep), effect not simulated
+NONE     Germinate Recruits {2}{W} — Instant
+  ✗ Create X 2/2 colorless Wizard Soldier creature tokens named Cadet, wh…
+      spell not simulated
+NONE     Practiced Offense {2}{W} — Sorcery
+  ✓ Flashback {1}{W}
+      keyword
+  ✗ Put a +1/+1 counter on each creature target player controls. Target c…
+      spell not simulated
+NONE     Seam Rip {W} — Enchantment
+  ✗ When this enchantment enters, exile target nonland permanent an oppon…
+      trigger (enters), effect not simulated
+PARTIAL  Ajani Resolute {1}{W} — Legendary Planeswalker — Ajani
+  ✗ Whenever you gain life, put a loyalty counter on Ajani.
+      trigger (gainLife), effect not simulated
+  ✓ 0: You gain 1 life.
+      loyalty ability → gainLife
+  ✗ −4: Create a 2/2 white Cat Soldier creature token named Ajani's Pride…
+      activated ability, effect not simulated
+  ✗ −10: You get an emblem with "Creatures you control get +2/+2."
+      activated ability, effect not simulated
+PARTIAL  Case of the Uneaten Feast {W} — Enchantment — Case
+  ✓ Whenever a creature you control enters, you gain 1 life.
+      trigger (enters) → gainLife
+  ✗ To solve — You've gained 5 or more life this turn.
+      Case: solving not simulated
+  ✗ Solved — Sacrifice this Case: Creature cards in your graveyard gain "…
+      keyword not simulated: solved
+PARTIAL  Haliya, Guided by Light {2}{W} — Legendary Creature — Human Soldier
+  ✓ Whenever Haliya or another creature or artifact you control enters, y…
+      trigger (enters) → gainLife
+  ✗ At the beginning of your end step, draw a card if you've gained 3 or …
+      trigger (endStep), effect not simulated
+  ✗ Warp {W}
+      keyword not simulated: warp
+PARTIAL  Leonardo, Cutting Edge {1}{W} — Legendary Creature — Mutant Ninja Turtle
+  ✗ Sneak {W}
+      keyword not simulated: sneak
+  ✓ Lifelink
+      keyword
+  ✓ Whenever you gain life, put a +1/+1 counter on Leonardo.
+      trigger (gainLife) → addCounters
+PARTIAL  Liliana the Faultless {W} — Legendary Creature — Human Cleric
+  ✓ Whenever another creature or planeswalker you control enters, you gai…
+      trigger (enters) → gainLife
+  ? {1}, {T}, Discard a card: Another target creature or planeswalker you…
+      activated ability with a cost or restriction not understood
+PARTIAL  Voice of Victory {1}{W} — Creature — Human Bard
+  ✗ Mobilize 2
+      keyword not simulated: mobilize
+  ✓ Your opponents can't cast spells during your turn.
+      rule for the game: opponentsCantCastOnYourTurn
+OK       Abandoned Air Temple  — Land
+  ✓ This land enters tapped unless you control a basic land.
+      enters tapped (unlessBasic)
+  ✓ {T}: Add {W}.
+      mana: W
+  ✓ {3}{W}, {T}: Put a +1/+1 counter on each creature you control.
+      activated → addCountersAll
+OK       Clarion Conqueror {2}{W} — Creature — Dragon
+  ✓ Flying
+      keyword
+  ✓ Activated abilities of artifacts, creatures, and planeswalkers can't …
+      rule for the game: noActivatedAbilities
+OK       Curious Farm Animals {W} — Creature — Boar Elk Bird Ox
+  ✓ When this creature dies, you gain 3 life.
+      trigger (dies) → gainLife
+  ✓ {2}, Sacrifice this creature: Destroy up to one target artifact or en…
+      activated → destroy (1 target)
+OK       Erode {W} — Instant
+  ✓ Destroy target creature or planeswalker. Its controller may search th…
+      spell → destroy (1 target)
+OK       Get Lost {1}{W} — Instant
+  ✓ Destroy target creature, enchantment, or planeswalker. Its controller…
+      spell → destroy (1 target)
+OK       Rest in Peace {1}{W} — Enchantment
+  ✓ When this enchantment enters, exile all graveyards.
+      trigger (enters) → exileGraveyards
+  ✓ If a card or token would be put into a graveyard from anywhere, exile…
+      rule for the game: graveyardsExiled
+
+17 cards: 6 ok, 6 partial, 5 not simulated, 0 can't be cast
+✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

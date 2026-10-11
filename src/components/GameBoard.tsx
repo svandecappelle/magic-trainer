@@ -353,7 +353,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     if (perm.controller === me && !declaringAttack) {
       if (canUntapForMana(g, me, perm)) return act({ type: 'untapForMana', iid: perm.iid });
       const abilities = activatedOf(perm.card).map((spec, index) => ({ spec, index })).filter((a) => a.spec.ability.effects.length);
-      const mana = canTapForMana(perm);
+      const mana = canTapForMana(g, perm);
       if (abilities.length + (mana ? 1 : 0) > 1) setAbilityMenu(perm);
       else if (abilities.length === 1) startActivation(perm, abilities[0].index);
       else if (mana) act({ type: 'tapForMana', iid: perm.iid });
@@ -455,7 +455,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     controls = (
       <>
         <button className="secondary" onClick={() => setAbilityMenu(null)}>{t.common.cancel}</button>
-        {canTapForMana(abilityMenu) && (
+        {canTapForMana(g, abilityMenu) && (
           <button className="ability-option" onClick={() => { setAbilityMenu(null); act({ type: 'tapForMana', iid: abilityMenu.iid }); }}>{t.game.addMana}</button>
         )}
         {activatedOf(abilityMenu.card).map((spec, index) => spec.ability.effects.length ? (

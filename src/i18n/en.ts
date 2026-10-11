@@ -71,6 +71,7 @@ const log: LogMessages = {
   loyalty: (e, c) => `${c.card(e.card)}: ${e.n > 0 ? '+' : ''}${e.n} loyalty`,
   returned: (e, c) => `${c.card(e.card)} returns from the graveyard ${e.dest === 'hand' ? "to its owner's hand" : 'to the battlefield'}`,
   exiledCard: (e, c) => `${c.card(e.card)} is exiled from the graveyard`,
+  exiledGraveyards: (e, c) => `${c.card(e.card)} exiles graveyards`,
   search: (e, c) => {
     const me = c.isMe(e.p);
     const who = me ? 'You search your library' : `${c.name(e.p)} searches their library`;
@@ -133,6 +134,8 @@ const errors: ErrorMessages = {
   summoningSick: (p) => `${p.card} just arrived: it can't use {T} abilities this turn`,
   onceEachTurn: (p) => `${p.card}'s ability can only be activated once each turn`,
   notEnoughLife: () => 'Not enough life to pay that cost',
+  activationForbidden: () => 'Activated abilities of artifacts, creatures and planeswalkers can\'t be activated',
+  castingForbidden: () => 'You can\'t cast spells during this turn',
   notEnoughInGraveyard: (p) => `${p.card} needs ${p.n} other cards in your graveyard`,
   costNotSimulated: (p) => `${p.card}'s additional cost is not simulated: it can't be cast`,
   badModes: (p) => `Choose the right number of modes for ${p.card}`,

@@ -30,11 +30,6 @@ NONE     Captain Marvel, Earth's Protector {3}{W}{W} — Legendary Creature — 
       keyword
   ✗ Power-up — {5}{W}{W}: Put a +1/+1 counter and an indestructible count…
       keyword not simulated: power-up
-NONE     Clarion Conqueror {2}{W} — Creature — Dragon
-  ✓ Flying
-      keyword
-  ? Activated abilities of artifacts, creatures, and planeswalkers can't …
-      not read by the engine
 NONE     Colorstorm Stallion {1}{U}{R} — Creature — Elemental Horse
   ✓ Ward {1}, haste
       keyword
@@ -138,11 +133,6 @@ NONE     Jace's Machinations {2}{U} — Instant
 NONE     Jeskai Revelation {4}{U}{R}{W} — Instant
   ✗ Return target spell or permanent to its owner's hand. Jeskai Revelati…
       spell not simulated
-NONE     Leyline of the Void {2}{B}{B} — Enchantment
-  ? If this card is in your opening hand, you may begin the game with it …
-      not read by the engine
-  ? If a card would be put into an opponent's graveyard from anywhere, ex…
-      not read by the engine
 NONE     M.O.D.O.K. {3}{B}{B} — Legendary Artifact Creature — Villain
   ✓ Flying, lifelink
       keyword
@@ -219,11 +209,6 @@ NONE     Requisition Raid {W} — Sorcery
       spell not simulated
   ✗ + {1} — Put a +1/+1 counter on each creature target player controls.
       spell not simulated
-NONE     Rest in Peace {1}{W} — Enchantment
-  ✗ When this enchantment enters, exile all graveyards.
-      trigger (enters), effect not simulated
-  ? If a card or token would be put into a graveyard from anywhere, exile…
-      not read by the engine
 NONE     Return the Favor {R}{R} — Instant
   ✗ Spree
       keyword not simulated: spree
@@ -373,13 +358,6 @@ NONE     Zoraline, Cosmos Caller {1}{W}{B} — Legendary Creature — Bat Cleric
       not read by the engine
   ✗ Whenever Zoraline enters or attacks, you may pay {W}{B} and 2 life. W…
       trigger (enters/attacks), effect not simulated
-PARTIAL  Abandoned Air Temple  — Land
-  ? This land enters tapped unless you control a basic land.
-      not read by the engine
-  ✓ {T}: Add {W}.
-      mana: W
-  ✓ {3}{W}, {T}: Put a +1/+1 counter on each creature you control.
-      activated → addCountersAll
 PARTIAL  Abhorrent Oculus {2}{U} — Creature — Eye
   ✓ As an additional cost to cast this spell, exile six cards from your g…
       additional cost: exileGraveyard
@@ -419,8 +397,8 @@ PARTIAL  Ashling's Command {3}{U}{R} — Kindred Instant — Elemental
 PARTIAL  Case of the Uneaten Feast {W} — Enchantment — Case
   ✓ Whenever a creature you control enters, you gain 1 life.
       trigger (enters) → gainLife
-  ? To solve — You've gained 5 or more life this turn.
-      not read by the engine
+  ✗ To solve — You've gained 5 or more life this turn.
+      Case: solving not simulated
   ✗ Solved — Sacrifice this Case: Creature cards in your graveyard gain "…
       keyword not simulated: solved
 PARTIAL  Cavern of Souls  — Land
@@ -557,6 +535,11 @@ PARTIAL  Into the Flood Maw {U} — Instant
       keyword not simulated: gift
   ✓ Return target creature an opponent controls to its owner's hand. If t…
       spell → bounce (1 target)
+PARTIAL  Leyline of the Void {2}{B}{B} — Enchantment
+  ? If this card is in your opening hand, you may begin the game with it …
+      not read by the engine
+  ✓ If a card would be put into an opponent's graveyard from anywhere, ex…
+      rule for the game: opponentGraveyardsExiled
 PARTIAL  Likeness Looter {U}{B} — Creature — Faerie Shapeshifter
   ✓ Flying
       keyword
@@ -672,13 +655,6 @@ PARTIAL  Slickshot Show-Off {1}{R} — Creature — Bird Wizard
       trigger (cast) → pump
   ✗ Plot {1}{R}
       keyword not simulated: plot
-PARTIAL  Soul-Guide Lantern {1} — Artifact
-  ✓ When this artifact enters, exile target card from a graveyard.
-      trigger (enters) → destroy (1 target)
-  ✗ {T}, Sacrifice this artifact: Exile each opponent's graveyard.
-      activated ability, effect not simulated
-  ✓ {1}, {T}, Sacrifice this artifact: Draw a card.
-      activated → draw
 PARTIAL  Starscape Cleric {1}{B} — Creature — Bat Cleric
   ✗ Offspring {2}{B}
       keyword not simulated: offspring
@@ -723,6 +699,13 @@ PARTIAL  Wild Ride {R} — Sorcery
       keyword not simulated: harmonize
   ✓ Target creature gets +3/+0 and gains haste until end of turn.
       spell → pump (1 target)
+OK       Abandoned Air Temple  — Land
+  ✓ This land enters tapped unless you control a basic land.
+      enters tapped (unlessBasic)
+  ✓ {T}: Add {W}.
+      mana: W
+  ✓ {3}{W}, {T}: Put a +1/+1 counter on each creature you control.
+      activated → addCountersAll
 OK       Abrade {1}{R} — Instant
   ✓ Choose one —
       modal: choose 1–1
@@ -774,6 +757,11 @@ OK       Cathar Commando {1}{W} — Creature — Human Soldier
       keyword
   ✓ {1}, Sacrifice this creature: Destroy target artifact or enchantment.
       activated → destroy (1 target)
+OK       Clarion Conqueror {2}{W} — Creature — Dragon
+  ✓ Flying
+      keyword
+  ✓ Activated abilities of artifacts, creatures, and planeswalkers can't …
+      rule for the game: noActivatedAbilities
 OK       Concealed Courtyard  — Land
   ✓ This land enters tapped unless you control two or fewer other lands.
       enters tapped (unlessOtherLands)
@@ -884,6 +872,11 @@ OK       Requiting Hex {B} — Instant
       optional cost, never paid
   ✓ Destroy target creature with mana value 2 or less. If this spell's ad…
       spell → destroy (1 target)
+OK       Rest in Peace {1}{W} — Enchantment
+  ✓ When this enchantment enters, exile all graveyards.
+      trigger (enters) → exileGraveyards
+  ✓ If a card or token would be put into a graveyard from anywhere, exile…
+      rule for the game: graveyardsExiled
 OK       Riverpyre Verge  — Land
   ✓ {T}: Add {R}.
       mana: R
@@ -915,6 +908,13 @@ OK       Slagstorm {1}{R}{R} — Sorcery
       mode
   ✓ • Slagstorm deals 3 damage to each player.
       mode
+OK       Soul-Guide Lantern {1} — Artifact
+  ✓ When this artifact enters, exile target card from a graveyard.
+      trigger (enters) → destroy (1 target)
+  ✓ {T}, Sacrifice this artifact: Exile each opponent's graveyard.
+      activated → exileGraveyards
+  ✓ {1}, {T}, Sacrifice this artifact: Draw a card.
+      activated → draw
 OK       Spell Pierce {U} — Instant
   ✓ Counter target noncreature spell unless its controller pays {2}.
       spell → counter (1 target)
@@ -961,5 +961,5 @@ OK       Watery Grave  — Land — Island Swamp
   ✓ As this land enters, you may pay 2 life. If you don't, it enters tapp…
       enters tapped (payLife)
 
-178 cards: 57 ok, 48 partial, 73 not simulated, 0 can't be cast
+178 cards: 61 ok, 47 partial, 70 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

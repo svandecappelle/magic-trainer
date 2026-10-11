@@ -3,7 +3,7 @@ import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, findPayment, hasInstantSpeed, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
   activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, isPlaneswalker, isToken, manaColors, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
-  type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
+  gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type CastChoice, type Cost, type ObjectEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
 
@@ -286,6 +286,8 @@ export type LogEntry =
   /** A card left a graveyard: back to hand, onto the battlefield, or exiled. */
   | { k: 'returned'; card: string; dest: 'hand' | 'battlefield' }
   | { k: 'exiledCard'; card: string }
+  /** Rest in Peace: `card` exiled these players' graveyards. */
+  | { k: 'exiledGraveyards'; card: string }
   /** `dest`: hand cards are not named (hidden); found cards put onto the battlefield are logged as entering. */
   | { k: 'search'; p: PlayerId; n: number; dest: 'hand' | 'battlefield' }
   | { k: 'emptyLibrary'; p: PlayerId }
@@ -397,7 +399,7 @@ export type GameErrorCode =
   | 'needsTarget' | 'tooManyTargets' | 'targetMustBe' | 'illegalTarget' | 'notEnoughMana' | 'declareBlockersFirst'
   | 'notAttackStep' | 'cannotAttack' | 'notBlockStep' | 'notAttacking' | 'menace' | 'cannotBlock'
   | 'makeChoiceFirst' | 'nothingToChoose' | 'badChoice' | 'badX'
-  | 'notEnoughLoyalty' | 'cannotAttackThat' | 'manaSpent' | 'badModes' | 'nothingToDiscard' | 'notEnoughInGraveyard' | 'costNotSimulated' | 'cannotCycle'
+  | 'notEnoughLoyalty' | 'cannotAttackThat' | 'manaSpent' | 'badModes' | 'nothingToDiscard' | 'activationForbidden' | 'castingForbidden' | 'notEnoughInGraveyard' | 'costNotSimulated' | 'cannotCycle'
   | 'noSuchAbility' | 'activateTiming' | 'alreadyTapped' | 'summoningSick' | 'onceEachTurn' | 'notEnoughLife' | 'nothingToSacrifice';
 
 export type ErrorParams = Record<string, string | number>;
@@ -500,14 +502,33 @@ export const toughnessOf = (perm: Permanent) => toughness(perm.card) + sum(perm,
 const protectedFrom = (perm: Permanent, source: Card) => protectionsOf(perm.card).some((c) => cardColors(source).includes(c));
 
 /** Can this permanent be tapped for mana now? */
-export const canTapForMana = (perm: Permanent) =>
-  !perm.tapped && !(isCreature(perm.card) && perm.sick && !hasKw(perm, 'haste')) && manaUnits(perm.card).length > 0;
+export const canTapForMana = (s: GameState, perm: Permanent) =>
+  !perm.tapped && !(isCreature(perm.card) && perm.sick && !hasKw(perm, 'haste')) && manaUnits(perm.card).length > 0 && !activationsForbidden(s, perm);
+
+/** Permanents on the battlefield with a rule-changing static ability. */
+const withRule = (s: GameState, rule: GameRule) => s.battlefield.filter((x) => gameRulesOf(x.card).includes(rule));
+
+/** Clarion Conqueror: no activated abilities (mana abilities included) for artifacts, creatures and planeswalkers. */
+function activationsForbidden(s: GameState, perm: Permanent): boolean {
+  if (!withRule(s, 'noActivatedAbilities').length) return false;
+  const types = cardTypes(perm.card);
+  return types.includes('artifact') || types.includes('creature') || types.includes('planeswalker');
+}
+
+/** Voice of Victory: `p` can't cast spells during the turn of an opponent who controls it. */
+const castingForbidden = (s: GameState, p: PlayerId) =>
+  withRule(s, 'opponentsCantCastOnYourTurn').some((x) => teamOf(s, x.controller) !== teamOf(s, p) && isActivePlayer(s, x.controller));
+
+/** Rest in Peace / Leyline of the Void: cards that would go to `owner`'s graveyard are exiled instead. */
+const graveyardExiled = (s: GameState, owner: PlayerId) =>
+  withRule(s, 'graveyardsExiled').length > 0 ||
+  withRule(s, 'opponentGraveyardsExiled').some((x) => teamOf(s, x.controller) !== teamOf(s, owner));
 
 /** What `p` can pay with: mana in their pool ("pool:N"), then untapped mana sources. */
 export function manaSources(s: GameState, p: PlayerId): ManaSource[] {
   const pool = (s.players[p].pool ?? []).map((m, i): ManaSource => ({ iid: `pool:${i}`, colors: m.colors }));
   const perms = s.battlefield
-    .filter((x) => x.controller === p && canTapForMana(x))
+    .filter((x) => x.controller === p && canTapForMana(s, x))
     .map((x): ManaSource => {
       const units = manaUnits(x.card);
       return { iid: x.iid, colors: manaColors(x.card), ...(units.length > 1 ? { units } : {}) };
@@ -640,7 +661,7 @@ export const isMainStep = (s: GameState) => s.step === 'main1' || s.step === 'ma
 
 /** Can `p` legally cast `card` right now (timing and mana; targets aside)? */
 export function canCastNow(s: GameState, p: PlayerId, card: Card): boolean {
-  if (isLandCard(card) || s.mulligan || s.pending || actor(s) !== p) return false;
+  if (isLandCard(card) || s.mulligan || s.pending || actor(s) !== p || castingForbidden(s, p)) return false;
   const timing = s.priority ? hasInstantSpeed(card) : isMainStep(s) && isActivePlayer(s, p);
   return timing && canPay(s, p, card);
 }
@@ -669,7 +690,7 @@ function usefulTargets(s: GameState, p: PlayerId, card: Card, choice: CastChoice
 
 /** The ways `p` can cast card `iid` right now (timing, mana, useful targets), cheapest first. */
 export function castOptions(s: GameState, p: PlayerId, iid: string): CastOption[] {
-  if (s.mulligan || s.pending || actor(s) !== p) return [];
+  if (s.mulligan || s.pending || actor(s) !== p || castingForbidden(s, p)) return [];
   const src = castSource(s, p, iid);
   if (!src) return [];
   const { inst, from } = src;
@@ -717,6 +738,7 @@ export function activationProblem(s: GameState, p: PlayerId, perm: Permanent, in
   const spec = activatedOf(perm.card)[index];
   if (!spec || perm.controller !== p) return 'noSuchAbility';
   if (s.mulligan || s.pending || actor(s) !== p) return 'activateTiming';
+  if (activationsForbidden(s, perm)) return 'activationForbidden';
   const sorcerySpeed = !s.priority && isMainStep(s) && isActivePlayer(s, p) && !s.stack.length;
   if (spec.sorcery ? !sorcerySpeed : !s.priority && !(isMainStep(s) && isActivePlayer(s, p))) return 'activateTiming';
   if (spec.cost.tap && perm.tapped) return 'alreadyTapped';
@@ -1116,7 +1138,7 @@ function finishCleanup(d: GameState, p: PlayerId, iids: string[]) {
   for (const iid of iids) {
     const inst = me.hand.find((c) => c.iid === iid)!;
     me.hand = me.hand.filter((c) => c !== inst);
-    me.graveyard.push(inst);
+    putInZone(d, p, inst, 'graveyard');
     log(d, { k: 'discard', p, card: inst.card.name, cleanup: true });
   }
   endTurn(d); // the next head, if any, then the next turn
@@ -1155,6 +1177,7 @@ const newPermanent = (inst: CardInst, controller: PlayerId): Permanent => ({
  */
 function putInZone(d: GameState, owner: PlayerId, inst: CardInst, zone: 'graveyard' | 'exile' | 'hand') {
   const ps = d.players[owner];
+  if (zone === 'graveyard' && graveyardExiled(d, owner)) zone = 'exile';
   if (inst.commander && ps.command) {
     ps.command.push({ iid: inst.iid, card: inst.card, commander: true });
     log(d, { k: 'toCommand', card: inst.card.name });
@@ -1164,6 +1187,8 @@ function putInZone(d: GameState, owner: PlayerId, inst: CardInst, zone: 'graveya
 }
 
 function removePermanent(d: GameState, perm: Permanent, zone: 'graveyard' | 'exile') {
+  // Rest in Peace: exiled instead, so it doesn't die (a token too). Checked while the permanent is still there.
+  if (zone === 'graveyard' && graveyardExiled(d, perm.owner ?? perm.controller)) zone = 'exile';
   d.battlefield = d.battlefield.filter((x) => x.iid !== perm.iid);
   // A token that leaves the battlefield ceases to exist (it still "dies").
   if (!isToken(perm.printed ?? perm.card)) putInZone(d, perm.owner ?? perm.controller, { iid: perm.iid, card: perm.printed ?? perm.card, ...(perm.commander ? { commander: true } : {}) }, zone);
@@ -1235,7 +1260,8 @@ function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, op
   else if (rule?.kind === 'unlessSubtypes') {
     const subtypesOf = (c: Card) => (c.typeLine.split('//')[0].toLowerCase().split('—')[1] ?? '').split(' ');
     perm.tapped = !otherLands.some((x) => rule.subtypes.some((t) => subtypesOf(x.card).includes(t)));
-  } else if (rule?.kind === 'unlessOtherLands') {
+  } else if (rule?.kind === 'unlessBasic') perm.tapped = !otherLands.some((x) => /\bBasic\b/.test(x.card.typeLine));
+  else if (rule?.kind === 'unlessOtherLands') {
     perm.tapped = (rule.max !== undefined && otherLands.length > rule.max) || (rule.min !== undefined && otherLands.length < rule.min);
   } else if (rule?.kind === 'payLife') {
     // Asked once nothing else is going on (see settle); tapped until then.
@@ -1628,7 +1654,7 @@ const amount = (r: Resolving, a: Amount) => (a === 'X' ? (r.item.x ?? 0) : a);
 function moveToGraveyard(d: GameState, p: PlayerId, inst: CardInst, from: 'hand' | 'library') {
   const ps = d.players[p];
   ps[from] = ps[from].filter((c) => c.iid !== inst.iid);
-  ps.graveyard.push(inst);
+  putInZone(d, p, inst, 'graveyard');
 }
 
 /** Runs one effect. Returns a choice to pause on; it is run again with the answer. */
@@ -1819,7 +1845,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         log(d, { k: 'scry', p: caster, n: top.length, bottom: away.length });
       } else {
         ps.library = [...onTop, ...rest];
-        ps.graveyard.push(...away);
+        for (const c of away) putInZone(d, caster, c, 'graveyard');
         log(d, { k: 'surveil', p: caster, n: top.length, graveyard: away.length });
       }
       break;
@@ -1881,6 +1907,14 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
     }
     case 'poison':
       for (const p of players) addPoison(d, p, amount(r, e.n));
+      break;
+    case 'exileGraveyards':
+      for (const q of players) {
+        const ps = d.players[q];
+        ps.exile.push(...ps.graveyard);
+        ps.graveyard = [];
+      }
+      log(d, { k: 'exiledGraveyards', card: item.card.name });
       break;
     case 'proliferate': {
       // Each permanent and player with counters gets one more of each kind: ours that help, theirs that hurt.
@@ -2433,6 +2467,7 @@ export function apply(state: GameState, action: Action): GameState {
       const { inst, from } = src;
       const card = faceCard(inst.card, face);
       if (isLandCard(card)) throw new IllegalAction('notASpell');
+      if (castingForbidden(d, p)) throw new IllegalAction('castingForbidden');
       if (d.priority) {
         if (!hasInstantSpeed(card)) throw new IllegalAction('sorcerySpeed', { card: card.name });
       } else if (!isMainStep(d) || !isActivePlayer(d, p)) {
@@ -2490,7 +2525,7 @@ export function apply(state: GameState, action: Action): GameState {
       if (!d.priority && !(isMainStep(d) && isActivePlayer(d, p))) throw new IllegalAction('activateTiming');
       if (!pay(d, p, manaSources(d, p), parseCost(cycling.cost))) throw new IllegalAction('notEnoughMana', { card: inst.card.name });
       me.hand = me.hand.filter((c) => c !== inst);
-      me.graveyard.push(inst);
+      putInZone(d, p, inst, 'graveyard');
       log(d, { k: 'cycle', p, card: inst.card.name });
       const ability: AbilitySpec = cycling.search
         ? { targets: [], effects: [{ kind: 'search', n: 1, filter: cycling.search, dest: 'hand', tapped: false }] }
@@ -2548,7 +2583,7 @@ export function apply(state: GameState, action: Action): GameState {
     case 'tapForMana': {
       const perm = findPermanent(d, action.iid);
       if (!perm || perm.controller !== p) throw new IllegalAction('noSuchAbility');
-      if (!canTapForMana(perm)) throw new IllegalAction(perm.tapped ? 'alreadyTapped' : 'summoningSick', { card: perm.card.name });
+      if (!canTapForMana(d, perm)) throw new IllegalAction(perm.tapped ? 'alreadyTapped' : 'summoningSick', { card: perm.card.name });
       const units = manaUnits(perm.card);
       d.players[p].pool = [...(d.players[p].pool ?? []), ...units.map((colors) => ({ colors, source: perm.iid }))];
       tapForManaOnly(d, perm);

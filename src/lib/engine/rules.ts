@@ -321,6 +321,8 @@ export type Effect =
   | { kind: 'poison'; n: Amount; to: Affected }
   /** Add one counter of each kind already there: chosen automatically (the controller's side gains, opponents lose). */
   | { kind: 'proliferate' }
+  /** Rest in Peace: "exile all graveyards"; Soul-Guide Lantern: "exile each opponent's graveyard". */
+  | { kind: 'exileGraveyards'; to: Affected }
   /** Threaten effects also untap the creature and give it haste. */
   | { kind: 'gainControl'; to: Affected; untilEndOfTurn: boolean; untapHaste?: boolean }
   /** Copy a spell on the stack (same targets). */
@@ -645,6 +647,8 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     return to && { kind: 'poison', n: toAmount(m[2]), to };
   });
   scan(/(?:^|[.\n] *)Proliferate\./g, () => ({ kind: 'proliferate' }));
+  scan(/\b[Ee]xile all graveyards(?=\.)/g, () => ({ kind: 'exileGraveyards', to: 'each-player' }));
+  scan(/\b[Ee]xile each opponent's graveyard(?=\.)/g, () => ({ kind: 'exileGraveyards', to: 'each-opponent' }));
   scan(new RegExp(`\\bgain control of (${TARGET})( until end of turn)?(?=\\.|,| and |$)`, 'gi'), (m) => {
     const to = slotFor(m[1], (spec) => spec.kind === 'creature' || spec.kind === 'permanent');
     return to && { kind: 'gainControl', to, untilEndOfTurn: !!m[2] };
@@ -1452,7 +1456,9 @@ export type EntersTappedRule =
   /** Fast lands "unless you control two or fewer other lands" (max), slow lands "two or more" (min). */
   | { kind: 'unlessOtherLands'; max?: number; min?: number }
   /** Shock lands: "As this land enters, you may pay 2 life. If you don't, it enters tapped." */
-  | { kind: 'payLife'; n: number };
+  | { kind: 'payLife'; n: number }
+  /** "unless you control a basic land" (Abandoned Air Temple). */
+  | { kind: 'unlessBasic' };
 
 /** When a permanent enters tapped. */
 export function entersTappedRule(card: Card): EntersTappedRule | null {
@@ -1464,6 +1470,7 @@ export function entersTappedRule(card: Card): EntersTappedRule | null {
     const what = unless[1].toLowerCase();
     const lands = what.match(/^(two|three) or (fewer|more) other lands$/);
     if (lands) return { kind: 'unlessOtherLands', [lands[2] === 'fewer' ? 'max' : 'min']: toNumber(lands[1]) };
+    if (what === 'a basic land') return { kind: 'unlessBasic' };
     const types = what.split(/,? or |, /).map((w) => w.replace(/^an? /, ''));
     if (types.every((t) => LAND_TYPES.includes(t))) return { kind: 'unlessSubtypes', subtypes: types };
     return null;
@@ -1471,6 +1478,26 @@ export function entersTappedRule(card: Card): EntersTappedRule | null {
   const shock = text.match(/As (?:this land|this permanent) enters(?: the battlefield)?, you may pay (\d+) life\. If you don't, it enters(?: the battlefield)? tapped\./i);
   return shock ? { kind: 'payLife', n: Number(shock[1]) } : null;
 }
+
+/** Static abilities that change the rules of the game for everyone. */
+export type GameRule =
+  /** Voice of Victory: "Your opponents can't cast spells during your turn." */
+  | 'opponentsCantCastOnYourTurn'
+  /** Clarion Conqueror: "Activated abilities of artifacts, creatures, and planeswalkers can't be activated." */
+  | 'noActivatedAbilities'
+  /** Rest in Peace: "If a card or token would be put into a graveyard from anywhere, exile it instead." */
+  | 'graveyardsExiled'
+  /** Leyline of the Void: "If a card would be put into an opponent's graveyard from anywhere, exile it instead." */
+  | 'opponentGraveyardsExiled';
+
+const GAME_RULES: [RegExp, GameRule][] = [
+  [/^Your opponents can't cast spells during your turn\.$/m, 'opponentsCantCastOnYourTurn'],
+  [/^Activated abilities of artifacts, creatures, and planeswalkers can't be activated\.$/m, 'noActivatedAbilities'],
+  [/^If a card or token would be put into a graveyard from anywhere, exile it instead\.$/m, 'graveyardsExiled'],
+  [/^If a card would be put into an opponent's graveyard from anywhere, exile it instead\.$/m, 'opponentGraveyardsExiled'],
+];
+
+export const gameRulesOf = (card: Card): GameRule[] => GAME_RULES.filter(([re]) => re.test(frontText(card))).map(([, rule]) => rule);
 
 /** "Toxic 2": combat damage to a player also gives that many poison counters. */
 export function toxicOf(card: Card): number {
