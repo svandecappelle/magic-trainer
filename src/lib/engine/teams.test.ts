@@ -146,3 +146,55 @@ describe('Two-Headed Giant', () => {
     expect(s.winner).not.toBeNull();
   });
 });
+
+describe('Commander', () => {
+  const boss = creature('Boss', 5, 5, { typeLine: 'Legendary Creature — Giant', manaCost: '{2}', cmc: 2 });
+  function commanderDuel(): GameState {
+    return newGame({
+      decks: [Array(40).fill(mountain), Array(40).fill(mountain)], names: ['A', 'B'], first: 0, rng: () => 0.5, mulligans: false,
+      mode: { commander: true }, commanders: [[boss], []],
+    });
+  }
+
+  it('starts at 40 life (60 for a Two-Headed Giant team) with commanders in the command zone', () => {
+    const s = commanderDuel();
+    expect(s.players.map((p) => p.life)).toEqual([40, 40]);
+    expect(s.players[0].command).toMatchObject([{ iid: '0-cmd-0', commander: true }]);
+    expect(s.players[1].command).toEqual([]);
+    const t = newGame({ decks: [0, 1, 2, 3].map(() => Array(40).fill(mountain)), names: ['A', 'B', 'C', 'D'], first: 0, mulligans: false, mode: { twoHeaded: true, commander: true } });
+    expect(t.players.map((p) => p.life)).toEqual([60, 60, 60, 60]);
+  });
+
+  it('casts the commander from the command zone, back there when it dies, then pays the tax', () => {
+    let s = commanderDuel();
+    lands(s, 0, 4);
+    s = apply(s, { type: 'cast', iid: '0-cmd-0' });
+    expect(s.battlefield.find((p) => p.iid === '0-cmd-0')).toMatchObject({ commander: true });
+    // It dies: back to the command zone, not the graveyard.
+    s.battlefield.find((p) => p.iid === '0-cmd-0')!.damage = 9;
+    s = apply(s, { type: 'pass' });
+    expect(s.players[0].command!.map((c) => c.iid)).toEqual(['0-cmd-0']);
+    expect(s.players[0].graveyard).toEqual([]);
+    expect(s.log.some((e) => e.k === 'toCommand')).toBe(true);
+    // Two lands left: {2} + {2} tax is too much.
+    const again = { ...s, step: 'main1' as const, priority: null, active: 0 as PlayerId };
+    expect(() => apply(again, { type: 'cast', iid: '0-cmd-0' })).toThrow();
+    again.battlefield.forEach((p) => (p.tapped = false));
+    expect(apply(again, { type: 'cast', iid: '0-cmd-0' }).battlefield.some((p) => p.iid === '0-cmd-0')).toBe(true);
+  });
+
+  it('makes a player lose at 21 combat damage from one commander', () => {
+    let s = commanderDuel();
+    const perm = put(s, 0, boss, '0-cmd-0');
+    perm.commander = true;
+    s.players[0].command = [];
+    s.players[1].commanderDamage = { '0-cmd-0': 16 };
+    s = apply(s, { type: 'pass' });
+    while (s.priority) s = apply(s, { type: 'pass' });
+    s = apply(s, { type: 'declareAttackers', attackers: ['0-cmd-0'] });
+    while (s.winner === null && s.step !== 'main2') s = apply(s, s.priority ? { type: 'pass' } : { type: 'declareBlockers', blocks: {} });
+    expect(s.players[1].life).toBe(35);
+    expect(s.winner).toBe(0);
+    expect(s.log.some((e) => e.k === 'commanderDamage')).toBe(true);
+  });
+});

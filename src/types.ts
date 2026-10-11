@@ -49,7 +49,8 @@ export interface Card {
   printedTypeLine?: string;
 }
 
-export type Board = 'main' | 'side';
+/** Where a card is in a deck: main deck, sideboard, or command zone (Commander). */
+export type Board = 'main' | 'side' | 'commander';
 
 export interface DeckEntry {
   card: Card;

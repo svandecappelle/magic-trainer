@@ -1,4 +1,4 @@
-import type { Deck } from '../types';
+import type { Card, Deck } from '../types';
 
 /** A problem with a deck for its format. */
 export type DeckIssue =
@@ -9,7 +9,12 @@ export type DeckIssue =
   | { kind: 'banned'; card: string }
   | { kind: 'notLegal'; card: string }
   /** Cards saved without legality data: refresh them to check. */
-  | { kind: 'unknown'; n: number };
+  | { kind: 'unknown'; n: number }
+  /** Commander: no commander (or more than two), or a card that can't be one. */
+  | { kind: 'noCommander' }
+  | { kind: 'notCommander'; card: string }
+  /** Commander: a card outside the commanders' color identity. */
+  | { kind: 'identity'; card: string };
 
 interface FormatRules {
   min: number;
@@ -33,13 +38,18 @@ const RULES: Record<string, FormatRules> = {
 const unlimited = (typeLine: string, oracleText: string) =>
   /\bBasic\b/.test(typeLine) || /A deck can have any number of cards named/i.test(oracleText);
 
+/** Can this card be a commander (a legendary creature, or a card saying it can be)? */
+export const canBeCommander = (card: Card) =>
+  (/\bLegendary\b/.test(card.typeLine) && /\bCreature\b/.test(card.typeLine.split('//')[0])) || /can be your commander/i.test(card.oracleText);
+
 /** Checks a deck against its format (casual decks have no rules). */
 export function checkDeck(deck: Deck): DeckIssue[] {
   const rules = RULES[deck.format];
   if (!rules) return [];
   const issues: DeckIssue[] = [];
-  const count = (board: 'main' | 'side') => deck.entries.filter((e) => e.board === board).reduce((n, e) => n + e.qty, 0);
-  const main = count('main');
+  const count = (board: 'main' | 'side' | 'commander') => deck.entries.filter((e) => e.board === board).reduce((n, e) => n + e.qty, 0);
+  // The commanders count in a Commander deck's 100 cards.
+  const main = count('main') + count('commander');
   const side = count('side');
   if (main < rules.min) issues.push({ kind: 'tooFew', n: main, min: rules.min });
   if (rules.max !== undefined && main > rules.max) issues.push({ kind: 'tooMany', n: main, max: rules.max });
@@ -60,6 +70,17 @@ export function checkDeck(deck: Deck): DeckIssue[] {
     if (c.n > max && !unlimited(c.typeLine, c.oracleText)) issues.push({ kind: 'copies', card, n: c.n, max });
     if (c.legal === 'banned') issues.push({ kind: 'banned', card });
     else if (c.legal === 'not_legal') issues.push({ kind: 'notLegal', card });
+  }
+  if (deck.format === 'commander') {
+    const commanders = deck.entries.filter((e) => e.board === 'commander');
+    if (!commanders.length || count('commander') > 2) issues.push({ kind: 'noCommander' });
+    for (const c of commanders) if (!canBeCommander(c.card)) issues.push({ kind: 'notCommander', card: c.card.name });
+    if (commanders.length) {
+      const identity = new Set(commanders.flatMap((c) => c.card.colorIdentity));
+      for (const e of deck.entries) {
+        if (e.board !== 'commander' && e.card.colorIdentity.some((col) => !identity.has(col))) issues.push({ kind: 'identity', card: e.card.name });
+      }
+    }
   }
   if (unknown) issues.push({ kind: 'unknown', n: unknown });
   return issues;

@@ -11,7 +11,8 @@ interface AppState {
   deleteDeck: (id: string) => void;
   /** Add (or remove, with a negative delta) copies of a card in a deck. */
   addToDeck: (deckId: string, card: Card, board: Board, delta: number) => void;
-  moveBoard: (deckId: string, cardId: string, from: Board) => void;
+  /** Moves one copy to another board (default: between main deck and sideboard). */
+  moveBoard: (deckId: string, cardId: string, from: Board, to?: Board) => void;
 
   addToCollection: (card: Card, delta: number, foil?: boolean) => void;
 }
@@ -50,13 +51,13 @@ export const useApp = create<AppState>()(
           ),
         })),
 
-      moveBoard: (deckId, cardId, from) =>
+      moveBoard: (deckId, cardId, from, toBoard) =>
         set((s) => ({
           decks: s.decks.map((d) => {
             if (d.id !== deckId) return d;
             const entry = d.entries.find((e) => e.card.id === cardId && e.board === from);
             if (!entry) return d;
-            const to: Board = from === 'main' ? 'side' : 'main';
+            const to: Board = toBoard ?? (from === 'main' ? 'side' : 'main');
             let entries = changeQty(d.entries, entry.card, from, -1);
             entries = changeQty(entries, entry.card, to, 1);
             return { ...d, entries, updatedAt: Date.now() };

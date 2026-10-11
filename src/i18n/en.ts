@@ -84,6 +84,8 @@ const log: LogMessages = {
     return `${who} ${c.card(e.card)}'s ability${names.length ? ` targeting ${c.list(names)}` : ''}`;
   },
   emptyLibrary: (e, c) => (c.isMe(e.p) ? "You can't draw from an empty library: you lose" : `${c.name(e.p)} can't draw from an empty library and loses`),
+  toCommand: (e, c) => `${c.card(e.card)} returns to the command zone`,
+  commanderDamage: (e, c) => `${c.isMe(e.p) ? 'You have' : `${c.name(e.p)} has`} taken 21 combat damage from ${c.card(e.card)}`,
   timedOut: (e, c) => (c.isMe(e.p) ? 'You ran out of time: default action played' : `${c.name(e.p)} ran out of time: default action played`),
   concede: (e, c) => (c.isMe(e.p) ? 'You concede' : `${c.name(e.p)} concedes`),
   wins: (e, c) => (c.isMe(e.p) ? 'You win!' : `${c.name(e.p)} wins!`),
@@ -258,6 +260,9 @@ export const en = {
   },
 
   editor: {
+    commander: 'Commander',
+    toCommander: 'Make it the commander',
+    noCommanderYet: 'No commander yet: use 👑 on a legendary creature of the deck.',
     legalIn: (format: string) => `Legal in ${format}`,
     refresh: 'Refresh card data',
     refreshHelp: 'Fetch the cards again from Scryfall (legality, double faces, loyalty…)',
@@ -265,6 +270,9 @@ export const en = {
     refreshed: (n: number) => `${n} cards updated`,
     refreshFailed: 'Scryfall could not be reached',
     issues: {
+      noCommander: 'A Commander deck needs one commander (or two partners)',
+      notCommander: (card: string) => `${card} can't be a commander`,
+      identity: (card: string) => `${card} is outside the commander's color identity`,
       tooFew: (n: number, min: number) => `Main deck: ${n} cards, at least ${min} needed`,
       tooMany: (n: number, max: number) => `Main deck: ${n} cards, at most ${max}`,
       sideboard: (n: number, max: number) => (max ? `Sideboard: ${n} cards, at most ${max}` : `No sideboard in this format (${n} cards)`),

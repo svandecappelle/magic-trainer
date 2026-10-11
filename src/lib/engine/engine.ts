@@ -15,6 +15,8 @@ export interface CardInst {
   card: Card;
   /** In exile "on an adventure": its creature can be cast from there. */
   adventure?: boolean;
+  /** A commander: it goes back to the command zone instead of other zones. */
+  commander?: boolean;
 }
 
 /** A lasting change to a permanent's power, toughness or abilities. */
@@ -68,7 +70,7 @@ export interface StackItem extends CardInst {
 }
 
 /** Where a spell is cast from: hand, graveyard (flashback) or exile (a creature back from its adventure). */
-export type CastZone = 'hand' | 'graveyard' | 'exile';
+export type CastZone = 'hand' | 'graveyard' | 'exile' | 'command';
 
 /** One way to cast a card right now. */
 export interface CastOption {
@@ -104,6 +106,10 @@ export interface PlayerState {
   pool?: PoolMana[];
   /** Poison counters: ten or more and the player loses. */
   poison?: number;
+  /** Commander: the command zone, how many times each commander was cast from it, combat damage taken per commander. */
+  command?: CardInst[];
+  commanderCasts?: Record<string, number>;
+  commanderDamage?: Record<string, number>;
 }
 
 /**
@@ -267,6 +273,10 @@ export type LogEntry =
   | { k: 'copied'; card: string; as: string }
   | { k: 'prevented'; card: string }
   | { k: 'extraTurn'; p: PlayerId }
+  /** A commander goes back to its owner's command zone. */
+  | { k: 'toCommand'; card: string }
+  /** A player took 21 combat damage from one commander. */
+  | { k: 'commanderDamage'; p: PlayerId; card: string }
   | { k: 'legendRule'; card: string }
   /** A shock land: `paid` life to enter untapped, or entered tapped. */
   | { k: 'shock'; card: string; paid: number }
@@ -512,14 +522,16 @@ export const canPay = (s: GameState, p: PlayerId, card: Card, x = 0) =>
   findPayment(manaSources(s, p), costWithX(card, x)) !== null;
 
 /** The mana cost of casting `card` a given way: its face's cost (or flashback), kicker, X, minus affinity. */
-export function castCost(s: GameState, p: PlayerId, card: Card, opt: { face?: number; kicked?: boolean; from?: CastZone }, x = 0): Cost {
+export function castCost(s: GameState, p: PlayerId, card: Card, opt: { face?: number; kicked?: boolean; from?: CastZone; iid?: string }, x = 0): Cost {
   const face = opt.face ?? 0;
   const info = castInfo(card, face);
   const c = faceCard(card, face);
   const base = opt.from === 'graveyard' && info.flashback ? parseCost(info.flashback) : costWithX(c, x);
   const kicker = opt.kicked && info.kicker ? parseCost(info.kicker) : { generic: 0, colored: [] };
   const discount = info.affinity ? s.battlefield.filter((x) => x.controller === p && cardMatches(x.card, info.affinity!)).length : 0;
-  return { generic: Math.max(0, base.generic + kicker.generic - discount), colored: [...base.colored, ...kicker.colored] };
+  // Commander tax: {2} more for each previous cast from the command zone.
+  const tax = opt.from === 'command' && opt.iid ? 2 * (s.players[p].commanderCasts?.[opt.iid] ?? 0) : 0;
+  return { generic: Math.max(0, base.generic + kicker.generic + tax - discount), colored: [...base.colored, ...kicker.colored] };
 }
 
 /** What can pay for casting `card`: mana, plus creatures to tap (convoke) and graveyard cards to exile (delve). */
@@ -579,6 +591,8 @@ export function castSource(s: GameState, p: PlayerId, iid: string): { inst: Card
   if (inGrave && castInfo(inGrave.card).flashback) return { inst: inGrave, from: 'graveyard' };
   const inExile = ps.exile.find((c) => c.iid === iid && c.adventure);
   if (inExile) return { inst: inExile, from: 'exile' };
+  const inCommand = ps.command?.find((c) => c.iid === iid);
+  if (inCommand) return { inst: inCommand, from: 'command' };
   return null;
 }
 
@@ -605,7 +619,7 @@ export function castOptions(s: GameState, p: PlayerId, iid: string): CastOption[
     if (!timing) continue;
     const info = castInfo(inst.card, face);
     for (const kicked of info.kicker ? [false, true] : [false]) {
-      const cost = castCost(s, p, inst.card, { face, kicked, from });
+      const cost = castCost(s, p, inst.card, { face, kicked, from, iid });
       if (!findPayment(castSources(s, p, inst.card, iid, face), cost)) continue;
       if (!usefulTargets(s, p, inst.card, { face, kicked })) continue;
       out.push({ face, kicked, from });
@@ -893,6 +907,8 @@ export function validateAnswer(choice: Choice, answer: Answer): void {
 export interface NewGameOptions {
   /** One deck and name per player: 2 for a duel, 4 for Two-Headed Giant (players 0+1 against 2+3). */
   decks: Card[][];
+  /** Commander games: each player's commanders (none is allowed: the deck then plays without one). */
+  commanders?: Card[][];
   names: string[];
   /** The player (in 2HG: the team's first player) who starts. */
   first: PlayerId;
@@ -907,7 +923,7 @@ export interface NewGameOptions {
 /** Starting life: 20, Commander 40; a Two-Headed Giant team shares 30 (Commander 60). */
 export const startingLife = (mode?: GameMode) => (mode?.twoHeaded ? 30 : 20) * (mode?.commander ? 2 : 1);
 
-export function newGame({ decks, names, first, mode, rng = Math.random, mulligans = true, fullControl }: NewGameOptions): GameState {
+export function newGame({ decks, names, first, mode, commanders, rng = Math.random, mulligans = true, fullControl }: NewGameOptions): GameState {
   const twoHeaded = !!mode?.twoHeaded && decks.length === 4;
   const player = (p: PlayerId): PlayerState => ({
     name: names[p],
@@ -917,6 +933,7 @@ export function newGame({ decks, names, first, mode, rng = Math.random, mulligan
     graveyard: [],
     exile: [],
     landPlayed: false,
+    ...(mode?.commander ? { command: (commanders?.[p] ?? []).map((card, i) => ({ iid: `${p}-cmd-${i}`, card, commander: true })) } : {}),
   });
   const d: GameState = {
     players: decks.map((_, p) => player(p)),
@@ -1062,12 +1079,27 @@ function finishTurn(d: GameState) {
 
 const newPermanent = (inst: CardInst, controller: PlayerId): Permanent => ({
   iid: inst.iid, card: inst.card, controller, tapped: false, sick: true, damage: 0, deathtouched: false, counters: {}, boosts: [],
+  ...(inst.commander ? { commander: true } : {}),
 });
+
+/**
+ * A card goes to one of its owner's zones; a commander goes to the command zone instead (the owner may
+ * choose that, and the simulation always does).
+ */
+function putInZone(d: GameState, owner: PlayerId, inst: CardInst, zone: 'graveyard' | 'exile' | 'hand') {
+  const ps = d.players[owner];
+  if (inst.commander && ps.command) {
+    ps.command.push({ iid: inst.iid, card: inst.card, commander: true });
+    log(d, { k: 'toCommand', card: inst.card.name });
+    return;
+  }
+  ps[zone].push(inst);
+}
 
 function removePermanent(d: GameState, perm: Permanent, zone: 'graveyard' | 'exile') {
   d.battlefield = d.battlefield.filter((x) => x.iid !== perm.iid);
   // A token that leaves the battlefield ceases to exist (it still "dies").
-  if (!isToken(perm.printed ?? perm.card)) d.players[perm.owner ?? perm.controller][zone].push({ iid: perm.iid, card: perm.printed ?? perm.card });
+  if (!isToken(perm.printed ?? perm.card)) putInZone(d, perm.owner ?? perm.controller, { iid: perm.iid, card: perm.printed ?? perm.card, ...(perm.commander ? { commander: true } : {}) }, zone);
   if (zone === 'graveyard' && isCreature(perm.card)) fireObject(d, 'dies', perm);
 }
 
@@ -1310,7 +1342,13 @@ function checkStateBased(d: GameState) {
   refreshStatics(d);
   if (d.winner !== null) return;
   // A team loses at 0 life or too much poison (one player of the team is enough: their totals are shared).
-  const lost = teamsOf(d).filter((team) => team.some((p) => d.players[p].life <= 0 || (d.players[p].poison ?? 0) >= poisonLimit(d)));
+  // 21 combat damage from one commander makes that player (and so the team) lose.
+  const commanderKill = (p: PlayerId) => Object.entries(d.players[p].commanderDamage ?? {}).find(([, n]) => n >= 21);
+  for (const p of playersOf(d)) {
+    const kill = commanderKill(p);
+    if (kill && d.winner === null) log(d, { k: 'commanderDamage', p, card: findPermanent(d, kill[0])?.card.name ?? d.players.flatMap((x) => [...x.command ?? [], ...x.graveyard]).find((c) => c.iid === kill[0])?.card.name ?? '?' });
+  }
+  const lost = teamsOf(d).filter((team) => team.some((p) => d.players[p].life <= 0 || (d.players[p].poison ?? 0) >= poisonLimit(d) || !!commanderKill(p)));
   if (lost.length >= 2) d.winner = 'draw';
   else if (lost.length === 1) d.winner = firstOpponent(d, lost[0][0]);
   if (d.winner !== null) log(d, d.winner === 'draw' ? { k: 'draw' } : { k: 'wins', p: d.winner });
@@ -1337,7 +1375,7 @@ function refreshStatics(d: GameState) {
   }
 }
 
-function dealDamage(d: GameState, source: CardInst, controller: PlayerId, target: Permanent | PlayerId, amount: number) {
+function dealDamage(d: GameState, source: CardInst, controller: PlayerId, target: Permanent | PlayerId, amount: number, combat = false) {
   if (amount <= 0) return;
   if (typeof target !== 'number' && protectedFrom(target, source.card)) return; // protection prevents it
   // "Prevent the next N damage" shields.
@@ -1358,6 +1396,11 @@ function dealDamage(d: GameState, source: CardInst, controller: PlayerId, target
   } else if (typeof target === 'number') {
     changeLife(d, target, -amount);
     log(d, { k: 'damagePlayer', card: source.card.name, n: amount, p: target });
+    // Commander damage: combat damage from a commander, counted per commander and per player.
+    if (combat && source.commander) {
+      const taken = (d.players[target].commanderDamage ??= {});
+      taken[source.iid] = (taken[source.iid] ?? 0) + amount;
+    }
   } else if (infect && isCreature(target.card)) {
     target.counters = { ...target.counters, '-1/-1': (target.counters['-1/-1'] ?? 0) + amount };
     log(d, { k: 'damage', card: source.card.name, n: amount, target: target.card.name });
@@ -1444,7 +1487,7 @@ function resolveCombat(d: GameState) {
     }
 
     for (const h of hits) {
-      dealDamage(d, h.source, h.source.controller, h.target, h.amount);
+      dealDamage(d, h.source, h.source.controller, h.target, h.amount, true);
       if (typeof h.target === 'number' && h.amount > 0) {
         // Toxic: combat damage to a player also gives poison counters.
         const toxic = toxicOf(h.source.card);
@@ -1472,10 +1515,10 @@ const castCard = (item: StackItem) => faceCard(item.card, item.face ?? 0);
 function putAwaySpell(d: GameState, item: StackItem, resolved: boolean) {
   if (item.copy) return; // a copy ceases to exist
   const ps = d.players[item.controller];
-  const inst: CardInst = { iid: item.iid, card: item.card };
-  if (item.from === 'graveyard') ps.exile.push(inst);
+  const inst: CardInst = { iid: item.iid, card: item.card, ...(item.commander ? { commander: true } : {}) };
+  if (item.from === 'graveyard') putInZone(d, item.controller, inst, 'exile');
   else if (resolved && item.face && isAdventure(item.card)) ps.exile.push({ ...inst, adventure: true });
-  else ps.graveyard.push(inst);
+  else putInZone(d, item.controller, inst, 'graveyard');
 }
 
 /** What an effect applies to, looked up again now: earlier effects may have changed the game. */
@@ -1716,7 +1759,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
     case 'bounceAll':
       for (const perm of e.kind === 'bounceAll' ? matching(d, caster, e.which) : perms) {
         d.battlefield = d.battlefield.filter((x) => x.iid !== perm.iid);
-        if (!isToken(perm.printed ?? perm.card)) d.players[perm.owner ?? perm.controller].hand.push({ iid: perm.iid, card: perm.printed ?? perm.card });
+        if (!isToken(perm.printed ?? perm.card)) putInZone(d, perm.owner ?? perm.controller, { iid: perm.iid, card: perm.printed ?? perm.card, ...(perm.commander ? { commander: true } : {}) }, 'hand');
         log(d, { k: 'bounced', card: perm.card.name });
       }
       break;
@@ -1873,7 +1916,7 @@ function startResolving(d: GameState, reason: WindowReason) {
       return;
     }
     log(d, { k: 'enters', card: faceName(item.card, item.face ?? 0) });
-    const perm = enterBattlefield(d, { iid: item.iid, card }, item.controller, { x: item.x });
+    const perm = enterBattlefield(d, { iid: item.iid, card, ...(item.commander ? { commander: true } : {}) }, item.controller, { x: item.x });
     if (card !== item.card) perm.printed = item.card;
     if (aura && host?.kind === 'permanent') {
       perm.attachedTo = host.iid;
@@ -2259,7 +2302,7 @@ export function apply(state: GameState, action: Action): GameState {
         const copy = model ? { ...(model.printed ?? model.card), id: model.card.id } : own;
         log(d, { k: 'enters', card: own.name });
         if (model) log(d, { k: 'copied', card: own.name, as: model.card.name });
-        const perm = enterBattlefield(d, { iid: item.iid, card: copy }, item.controller, { x: item.x });
+        const perm = enterBattlefield(d, { iid: item.iid, card: copy, ...(item.commander ? { commander: true } : {}) }, item.controller, { x: item.x });
         if (model) perm.printed = item.card;
         afterResolving(d, pending.reason ?? 'main');
       } else if (pending.resume === 'castCost' && action.answer.kind === 'cards') {
@@ -2325,16 +2368,20 @@ export function apply(state: GameState, action: Action): GameState {
       if (extra?.kind === 'sacrifice' && !matching(d, p, extra.which).some((x) => x.controller === p)) throw new IllegalAction('nothingToSacrifice', { card: card.name });
       if (extra?.kind === 'discard' && me.hand.filter((c) => c.iid !== inst.iid).length < extra.n) throw new IllegalAction('nothingToDiscard', { card: card.name });
 
-      if (!pay(d, p, castSources(d, p, inst.card, inst.iid, face), castCost(d, p, inst.card, { face, kicked, from }, x))) {
+      if (!pay(d, p, castSources(d, p, inst.card, inst.iid, face), castCost(d, p, inst.card, { face, kicked, from, iid: inst.iid }, x))) {
         throw new IllegalAction('notEnoughMana', { card: card.name });
       }
       if (from === 'hand') me.hand = me.hand.filter((c) => c.iid !== inst.iid);
       else if (from === 'graveyard') me.graveyard = me.graveyard.filter((c) => c.iid !== inst.iid);
-      else me.exile = me.exile.filter((c) => c.iid !== inst.iid);
+      else if (from === 'command') {
+        me.command = me.command!.filter((c) => c.iid !== inst.iid);
+        me.commanderCasts = { ...me.commanderCasts, [inst.iid]: (me.commanderCasts?.[inst.iid] ?? 0) + 1 };
+      } else me.exile = me.exile.filter((c) => c.iid !== inst.iid);
       const named = targets.flat().map((t) => targetName(d, t));
       const item: StackItem = {
         iid: inst.iid, card: inst.card, controller: p, targets, ...(xCount(card) ? { x } : {}),
         ...(face ? { face } : {}), ...(modes ? { modes } : {}), ...(kicked ? { kicked } : {}), ...(from !== 'hand' ? { from } : {}),
+        ...(inst.commander ? { commander: true } : {}),
       };
       if (extra?.kind === 'life') changeLife(d, p, -extra.n);
       if (extra?.kind === 'sacrifice' || extra?.kind === 'discard') {

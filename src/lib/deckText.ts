@@ -36,7 +36,8 @@ export function parseDecklist(text: string): ParsedDecklist {
     const header = line.toLowerCase().replace(/:$/, '');
     if (header === 'about') { inAbout = true; continue; }
     if (header === 'sideboard') { board = 'side'; inAbout = false; continue; }
-    if (header === 'deck' || header === 'mainboard' || header === 'commander' || header === 'companion') {
+    if (header === 'commander') { board = 'commander'; inAbout = false; continue; }
+    if (header === 'deck' || header === 'mainboard' || header === 'companion') {
       board = 'main';
       inAbout = false;
       continue;
@@ -76,5 +77,10 @@ export function formatDeckText(deck: Deck): string {
   const lines = (board: Board) =>
     deck.entries.filter((e) => e.board === board).map((e) => `${e.qty} ${e.card.name}`);
   const side = lines('side');
-  return [...lines('main'), ...(side.length ? ['', 'Sideboard', ...side] : [])].join('\n');
+  const commander = lines('commander');
+  return [
+    ...(commander.length ? ['Commander', ...commander, '', 'Deck'] : []),
+    ...lines('main'),
+    ...(side.length ? ['', 'Sideboard', ...side] : []),
+  ].join('\n');
 }

@@ -144,7 +144,7 @@ get each face's cost and image (their text is rebuilt from the joined faces mean
   - [x] A. Engine: any number of players in teams; shared team life and poison; 1v1 unchanged
   - [x] B. 2HG rules: shared turns, priority around all players, heads act and declare attackers/blockers in turn,
     life 30, poison 15, "each opponent" per opponent, the starting team skips its first draw
-  - [ ] C. Commander: commander in the deck (editor + color identity), command zone, tax, back to the command zone,
+  - [x] C. Commander: commander in the deck (editor + color identity), command zone, tax, back to the command zone,
     21 commander damage, life 40 (2HG: 60)
   - [ ] D. Board for 4 players, game setup (mode, Commander, decks per seat)
   - [ ] E. Bot: several opponents, bot teammate

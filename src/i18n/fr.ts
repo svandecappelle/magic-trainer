@@ -91,6 +91,8 @@ const log: LogMessages = {
   },
   emptyLibrary: (e, c) =>
     c.isMe(e.p) ? 'Vous ne pouvez pas piocher dans une bibliothèque vide : vous perdez' : `${c.name(e.p)} ne peut pas piocher dans une bibliothèque vide et perd`,
+  toCommand: (e, c) => `${c.card(e.card)} retourne dans la zone de commandement`,
+  commanderDamage: (e, c) => `${c.isMe(e.p) ? 'Vous avez' : `${c.name(e.p)} a`} reçu 21 blessures de combat de ${c.card(e.card)}`,
   timedOut: (e, c) => (c.isMe(e.p) ? "Temps écoulé : l'action par défaut a été jouée" : `${c.name(e.p)} a dépassé son temps : action par défaut jouée`),
   concede: (e, c) => (c.isMe(e.p) ? 'Vous abandonnez' : `${c.name(e.p)} abandonne`),
   wins: (e, c) => (c.isMe(e.p) ? 'Vous gagnez !' : `${c.name(e.p)} gagne !`),
@@ -265,6 +267,9 @@ export const fr: Messages = {
   },
 
   editor: {
+    commander: 'Commandant',
+    toCommander: 'En faire le commandant',
+    noCommanderYet: 'Pas encore de commandant : utilisez 👑 sur une créature légendaire du deck.',
     legalIn: (format) => `Légal en ${format}`,
     refresh: 'Mettre à jour les cartes',
     refreshHelp: 'Récupérer à nouveau les cartes sur Scryfall (légalité, doubles faces, loyauté…)',
@@ -272,6 +277,9 @@ export const fr: Messages = {
     refreshed: (n) => `${n} cartes mises à jour`,
     refreshFailed: 'Scryfall est injoignable',
     issues: {
+      noCommander: 'Un deck Commander a besoin d’un commandant (ou de deux partenaires)',
+      notCommander: (card) => `${card} ne peut pas être commandant`,
+      identity: (card) => `${card} est hors de l’identité couleur du commandant`,
       tooFew: (n, min) => `Deck principal : ${n} cartes, ${min} au minimum`,
       tooMany: (n, max) => `Deck principal : ${n} cartes, ${max} au maximum`,
       sideboard: (n, max) => (max ? `Réserve : ${n} cartes, ${max} au maximum` : `Pas de réserve dans ce format (${n} cartes)`),

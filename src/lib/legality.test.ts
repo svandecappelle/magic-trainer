@@ -6,7 +6,7 @@ const card = (name: string, extra: Partial<Card> = {}): Card => ({
   id: name, name, manaCost: '', cmc: 0, typeLine: 'Instant', oracleText: '', colors: [], colorIdentity: [], setCode: '', setName: '', rarity: '',
   legalities: { modern: 'legal', vintage: 'legal', commander: 'legal' }, ...extra,
 });
-const deck = (format: string, entries: [Card, number, ('main' | 'side')?][]): Deck => ({
+const deck = (format: string, entries: [Card, number, ('main' | 'side' | 'commander')?][]): Deck => ({
   id: 'd', name: 'D', format, createdAt: 0, updatedAt: 0, entries: entries.map(([c, qty, board]) => ({ card: c, qty, board: board ?? 'main' })),
 });
 const mountain = card('Mountain', { typeLine: 'Basic Land — Mountain' });
@@ -36,8 +36,13 @@ describe('deck legality', () => {
   it('limits restricted cards to one copy, and Commander decks to 100 singletons', () => {
     expect(checkDeck(deck('vintage', [[card('Lotus', { legalities: { vintage: 'restricted' } }), 2], [mountain, 58]])))
       .toEqual([{ kind: 'copies', card: 'Lotus', n: 2, max: 1 }]);
-    const issues = checkDeck(deck('commander', [[card('Sol Ring'), 2], [mountain, 99]]));
-    expect(issues).toEqual([{ kind: 'tooMany', n: 101, max: 100 }, { kind: 'copies', card: 'Sol Ring', n: 2, max: 1 }]);
-    expect(checkDeck(deck('commander', [[card('Rats', { oracleText: 'A deck can have any number of cards named Rats.' }), 30], [mountain, 70]]))).toEqual([]);
+    const boss = card('Boss', { typeLine: 'Legendary Creature — Goblin', colorIdentity: ['R'] });
+    const issues = checkDeck(deck('commander', [[card('Sol Ring'), 2], [mountain, 97], [boss, 1, 'commander']]));
+    expect(issues).toEqual([{ kind: 'copies', card: 'Sol Ring', n: 2, max: 1 }]);
+    expect(checkDeck(deck('commander', [[card('Rats', { oracleText: 'A deck can have any number of cards named Rats.' }), 30], [mountain, 69], [boss, 1, 'commander']]))).toEqual([]);
+    expect(checkDeck(deck('commander', [[card('Counterspell', { colorIdentity: ['U'] }), 1], [mountain, 98], [boss, 1, 'commander']])))
+      .toEqual([{ kind: 'identity', card: 'Counterspell' }]);
+    expect(checkDeck(deck('commander', [[mountain, 100]]))).toEqual([{ kind: 'noCommander' }]);
+    expect(checkDeck(deck('commander', [[mountain, 99], [card('Bolt'), 1, 'commander']]))).toEqual([{ kind: 'notCommander', card: 'Bolt' }]);
   });
 });

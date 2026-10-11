@@ -4,7 +4,7 @@ import { CardSearch } from '../components/CardSearch';
 import { DeckStats } from '../components/DeckStats';
 import { ManaCost } from '../components/ManaCost';
 import { formatDeckText, parseDeckText } from '../lib/deckText';
-import { checkDeck, type DeckIssue } from '../lib/legality';
+import { canBeCommander, checkDeck, type DeckIssue } from '../lib/legality';
 import { fetchCardsById } from '../lib/scryfall';
 import { resolveDecklist } from '../lib/importDeck';
 import { primaryType, TYPE_ORDER } from '../lib/stats';
@@ -56,6 +56,9 @@ export function DeckEditor() {
       case 'banned': return t.editor.issues.banned(show.nameOf(i.card));
       case 'notLegal': return t.editor.issues.notLegal(show.nameOf(i.card));
       case 'unknown': return t.editor.issues.unknown(i.n);
+      case 'noCommander': return t.editor.issues.noCommander;
+      case 'notCommander': return t.editor.issues.notCommander(show.nameOf(i.card));
+      case 'identity': return t.editor.issues.identity(show.nameOf(i.card));
     }
   };
 
@@ -98,9 +101,17 @@ export function DeckEditor() {
                   <span className="entry-actions">
                     <button className="icon" title={t.editor.addOne} onClick={() => addToDeck(deck.id, e.card, board, 1)}>+</button>
                     <button className="icon" title={t.editor.removeOne} onClick={() => addToDeck(deck.id, e.card, board, -1)}>−</button>
-                    <button className="icon" title={board === 'main' ? t.editor.toSide : t.editor.toMain} onClick={() => moveBoard(deck.id, e.card.id, board)}>
-                      {board === 'main' ? t.editor.toSideShort : t.editor.toMainShort}
-                    </button>
+                    {board !== 'commander' && (
+                      <button className="icon" title={board === 'main' ? t.editor.toSide : t.editor.toMain} onClick={() => moveBoard(deck.id, e.card.id, board)}>
+                        {board === 'main' ? t.editor.toSideShort : t.editor.toMainShort}
+                      </button>
+                    )}
+                    {board === 'main' && deck.format === 'commander' && canBeCommander(e.card) && (
+                      <button className="icon" title={t.editor.toCommander} onClick={() => moveBoard(deck.id, e.card.id, 'main', 'commander')}>👑</button>
+                    )}
+                    {board === 'commander' && (
+                      <button className="icon" title={t.editor.toMain} onClick={() => moveBoard(deck.id, e.card.id, 'commander', 'main')}>↓</button>
+                    )}
                   </span>
                 </li>
               );
@@ -174,6 +185,12 @@ export function DeckEditor() {
         </section>
 
         <section className="panel">
+          {(deck.format === 'commander' || deck.entries.some((e) => e.board === 'commander')) && (
+            <>
+              <h3>{t.editor.commander}</h3>
+              {deck.entries.some((e) => e.board === 'commander') ? renderBoard('commander') : <p className="small muted">{t.editor.noCommanderYet}</p>}
+            </>
+          )}
           <h3>{t.editor.mainDeck}</h3>
           {renderBoard('main')}
           <h3>{t.editor.sideboard}</h3>
