@@ -1,0 +1,3694 @@
+[
+ {
+  "id": "9c0433f9-8f1e-4a19-a83f-a41925f1b1a9",
+  "name": "Abandoned Air Temple",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "This land enters tapped unless you control a basic land.\n{T}: Add {W}.\n{3}{W}, {T}: Put a +1/+1 counter on each creature you control.",
+  "colors": [],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "tla",
+  "setName": "Avatar: The Last Airbender",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "d2705b43-a94a-44c0-8740-82e0b296820c",
+  "name": "Abhorrent Oculus",
+  "manaCost": "{2}{U}",
+  "cmc": 3,
+  "typeLine": "Creature — Eye",
+  "oracleText": "As an additional cost to cast this spell, exile six cards from your graveyard.\nFlying\nAt the beginning of each opponent's upkeep, manifest dread. (Look at the top two cards of your library. Put one onto the battlefield face down as a 2/2 creature and the other into your graveyard. Turn it face up any time for its mana cost if it's a creature card.)",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "dsk",
+  "setName": "Duskmourn: House of Horror",
+  "rarity": "mythic",
+  "power": "5",
+  "toughness": "5",
+  "keywords": [
+   "Flying",
+   "Manifest",
+   "Manifest dread"
+  ]
+ },
+ {
+  "id": "1add1757-c1f8-448a-b279-c6940fb7ad5f",
+  "name": "Abrade",
+  "manaCost": "{1}{R}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Choose one —\n• Abrade deals 3 damage to target creature.\n• Destroy target artifact.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "soc",
+  "setName": "Secrets of Strixhaven Commander",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "a5e1a7dd-8c49-4435-935c-bcc78704082b",
+  "name": "Ajani Resolute",
+  "manaCost": "{1}{W}",
+  "cmc": 2,
+  "typeLine": "Legendary Planeswalker — Ajani",
+  "oracleText": "Whenever you gain life, put a loyalty counter on Ajani.\n0: You gain 1 life.\n−4: Create a 2/2 white Cat Soldier creature token named Ajani's Pridemate with \"Whenever you gain life, put a +1/+1 counter on this token.\"\n−10: You get an emblem with \"Creatures you control get +2/+2.\"",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "mythic",
+  "loyalty": "2",
+  "keywords": []
+ },
+ {
+  "id": "d9039a58-2f17-4b8a-b714-3a2f0b46f057",
+  "name": "Ajani's Anguish",
+  "manaCost": "{X}{R}",
+  "cmc": 1,
+  "typeLine": "Enchantment",
+  "oracleText": "When this enchantment enters, it deals X damage to any target.\nCreatures you control have trample.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "9acf80a5-f2ca-45b4-aca8-fbc690e35401",
+  "name": "Amalia Benavides Aguirre",
+  "manaCost": "{W}{B}",
+  "cmc": 2,
+  "typeLine": "Legendary Creature — Vampire Scout",
+  "oracleText": "Ward—Pay 3 life.\nWhenever you gain life, Amalia Benavides Aguirre explores. Then destroy all other creatures if its power is exactly 20. (To have this creature explore, reveal the top card of your library. Put that card into your hand if it's a land. Otherwise, put a +1/+1 counter on this creature, then put the card back or put it into your graveyard.)",
+  "colors": [
+   "B",
+   "W"
+  ],
+  "colorIdentity": [
+   "B",
+   "W"
+  ],
+  "setCode": "lci",
+  "setName": "The Lost Caverns of Ixalan",
+  "rarity": "rare",
+  "power": "2",
+  "toughness": "2",
+  "keywords": [
+   "Explore",
+   "Ward"
+  ]
+ },
+ {
+  "id": "230301f2-f288-4b13-9f62-e649ad8357bb",
+  "name": "Ancient Vendetta",
+  "manaCost": "{3}{B}",
+  "cmc": 4,
+  "typeLine": "Sorcery",
+  "oracleText": "Choose a card name. Search target opponent's graveyard, hand, and library for up to four cards with that name and exile them. Then that player shuffles.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "dft",
+  "setName": "Aetherdrift",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "4feeebea-aa55-4599-ab5a-4e41a54d0dfd",
+  "name": "Annul",
+  "manaCost": "{U}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Counter target artifact or enchantment spell.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "eoe",
+  "setName": "Edge of Eternities",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "dcde5f27-e2f0-4d2a-afa3-f300896ec4b1",
+  "name": "Archenemy's Charm",
+  "manaCost": "{B}{B}{B}",
+  "cmc": 3,
+  "typeLine": "Instant",
+  "oracleText": "Choose one —\n• Exile target creature or planeswalker.\n• Return one or two target creature and/or planeswalker cards from your graveyard to your hand.\n• Put two +1/+1 counters on target creature you control. It gains lifelink until end of turn.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "eoe",
+  "setName": "Edge of Eternities",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "fe3a421d-07b6-4b94-b177-aec44c7fe689",
+  "name": "Ashling's Command",
+  "manaCost": "{3}{U}{R}",
+  "cmc": 5,
+  "typeLine": "Kindred Instant — Elemental",
+  "oracleText": "Choose two —\n• Create a token that's a copy of target Elemental you control.\n• Target player draws two cards.\n• Ashling's Command deals 2 damage to each creature target player controls.\n• Target player creates two Treasure tokens.",
+  "colors": [
+   "R",
+   "U"
+  ],
+  "colorIdentity": [
+   "R",
+   "U"
+  ],
+  "setCode": "ecl",
+  "setName": "Lorwyn Eclipsed",
+  "rarity": "rare",
+  "keywords": [
+   "Treasure"
+  ]
+ },
+ {
+  "id": "4811072d-fac0-40dd-a5cf-9694d51b12cf",
+  "name": "Avatar's Wrath",
+  "manaCost": "{2}{W}{W}",
+  "cmc": 4,
+  "typeLine": "Sorcery",
+  "oracleText": "Choose up to one target creature, then airbend all other creatures. (Exile them. While each one is exiled, its owner may cast it for {2} rather than its mana cost.)\nUntil your next turn, your opponents can't cast spells from anywhere other than their hands.\nExile Avatar's Wrath.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "tla",
+  "setName": "Avatar: The Last Airbender",
+  "rarity": "rare",
+  "keywords": [
+   "Airbend"
+  ]
+ },
+ {
+  "id": "72d3e750-870b-497d-80d7-e3df097db554",
+  "name": "Avengers Disassembled",
+  "manaCost": "{1}{R}{R}",
+  "cmc": 3,
+  "typeLine": "Sorcery",
+  "oracleText": "Choose one or both —\n• Avengers Disassembled deals 3 damage to each creature.\n• Destroy target land. Its controller may search their library for a basic land card, put it onto the battlefield tapped, then shuffle.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "msh",
+  "setName": "Marvel Super Heroes",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "fc310a26-b6a0-4e42-98ab-bdfd7b06cb63",
+  "name": "Beza, the Bounding Spring",
+  "manaCost": "{2}{W}{W}",
+  "cmc": 4,
+  "typeLine": "Legendary Creature — Elemental Elk",
+  "oracleText": "When Beza enters, create a Treasure token if an opponent controls more lands than you. You gain 4 life if an opponent has more life than you. Create two 1/1 blue Fish creature tokens if an opponent controls more creatures than you. Draw a card if an opponent has more cards in hand than you.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "blb",
+  "setName": "Bloomburrow",
+  "rarity": "mythic",
+  "power": "4",
+  "toughness": "5",
+  "keywords": [
+   "Treasure"
+  ]
+ },
+ {
+  "id": "c5333556-eea2-41ae-833e-007b9d540700",
+  "name": "Bitter Triumph",
+  "manaCost": "{1}{B}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "As an additional cost to cast this spell, discard a card or pay 3 life.\nDestroy target creature or planeswalker.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "tdc",
+  "setName": "Tarkir: Dragonstorm Commander",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "52dcdabd-a186-45fe-9fee-6c0f1afeaf16",
+  "name": "Bleachbone Verge",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}: Add {B}.\n{T}: Add {W}. Activate only if you control a Plains or a Swamp.",
+  "colors": [],
+  "colorIdentity": [
+   "B",
+   "W"
+  ],
+  "setCode": "dft",
+  "setName": "Aetherdrift",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "1b7eb998-3ec0-4cbc-a416-5a1e3e5a7316",
+  "name": "Blood Crypt",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land — Swamp Mountain",
+  "oracleText": "({T}: Add {B} or {R}.)\nAs this land enters, you may pay 2 life. If you don't, it enters tapped.",
+  "colors": [],
+  "colorIdentity": [
+   "B",
+   "R"
+  ],
+  "setCode": "trk",
+  "setName": "Star Trek",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "8d1ec351-5e70-4eb2-b590-6bff94ef8178",
+  "name": "Boltwave",
+  "manaCost": "{R}",
+  "cmc": 1,
+  "typeLine": "Sorcery",
+  "oracleText": "Boltwave deals 3 damage to each opponent.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "fdn",
+  "setName": "Foundations",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "d086e4e5-98fa-437e-85aa-d8849c94ce94",
+  "name": "Broadside Barrage",
+  "manaCost": "{1}{U}{R}",
+  "cmc": 3,
+  "typeLine": "Instant",
+  "oracleText": "Broadside Barrage deals 5 damage to target creature or planeswalker. Draw a card, then discard a card.",
+  "colors": [
+   "R",
+   "U"
+  ],
+  "colorIdentity": [
+   "R",
+   "U"
+  ],
+  "setCode": "dft",
+  "setName": "Aetherdrift",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "aec5d380-d354-4750-931a-6c91853e2edc",
+  "name": "Burst Lightning",
+  "manaCost": "{R}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Kicker {4} (You may pay an additional {4} as you cast this spell.)\nBurst Lightning deals 2 damage to any target. If this spell was kicked, it deals 4 damage instead.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "fdn",
+  "setName": "Foundations",
+  "rarity": "common",
+  "keywords": [
+   "Kicker"
+  ]
+ },
+ {
+  "id": "33631d6c-c584-42ff-afe5-2647b5fb321f",
+  "name": "Captain America, Super-Soldier",
+  "manaCost": "{1}{W}{W}",
+  "cmc": 3,
+  "typeLine": "Legendary Creature — Human Soldier Hero",
+  "oracleText": "First strike\nCaptain America enters with a shield counter on him. (If he would be dealt damage or destroyed, remove a shield counter from him instead.)\nAs long as Captain America has a shield counter on him, you and other Heroes you control have hexproof.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "msh",
+  "setName": "Marvel Super Heroes",
+  "rarity": "mythic",
+  "power": "3",
+  "toughness": "2",
+  "keywords": [
+   "First strike"
+  ]
+ },
+ {
+  "id": "eb098550-22e6-4079-8c59-ed9ec2f764e3",
+  "name": "Captain Marvel, Earth's Protector",
+  "manaCost": "{3}{W}{W}",
+  "cmc": 5,
+  "typeLine": "Legendary Creature — Human Kree Hero",
+  "oracleText": "Flash\nFlying, lifelink\nPower-up — {5}{W}{W}: Put a +1/+1 counter and an indestructible counter on Captain Marvel. (Activate each power-up ability only once. Reduce the cost by her mana cost if she entered this turn.)",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "msh",
+  "setName": "Marvel Super Heroes",
+  "rarity": "mythic",
+  "power": "5",
+  "toughness": "4",
+  "keywords": [
+   "Flying",
+   "Power-up",
+   "Lifelink",
+   "Flash"
+  ]
+ },
+ {
+  "id": "ac63941b-3f78-4bd3-8b05-ca12aaaa006c",
+  "name": "Case of the Uneaten Feast",
+  "manaCost": "{W}",
+  "cmc": 1,
+  "typeLine": "Enchantment — Case",
+  "oracleText": "Whenever a creature you control enters, you gain 1 life.\nTo solve — You've gained 5 or more life this turn. (If unsolved, solve at the beginning of your end step.)\nSolved — Sacrifice this Case: Creature cards in your graveyard gain \"You may cast this card from your graveyard\" until end of turn.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "mkm",
+  "setName": "Murders at Karlov Manor",
+  "rarity": "rare",
+  "layout": "case",
+  "keywords": [
+   "Solved"
+  ]
+ },
+ {
+  "id": "7cd21530-ca72-4986-a0f2-142b9f23c413",
+  "name": "Cathar Commando",
+  "manaCost": "{1}{W}",
+  "cmc": 2,
+  "typeLine": "Creature — Human Soldier",
+  "oracleText": "Flash\n{1}, Sacrifice this creature: Destroy target artifact or enchantment.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "inr",
+  "setName": "Innistrad Remastered",
+  "rarity": "common",
+  "power": "3",
+  "toughness": "1",
+  "keywords": [
+   "Flash"
+  ]
+ },
+ {
+  "id": "3aad15a2-8a1b-4460-9b06-e85863081878",
+  "name": "Cavern of Souls",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "As this land enters, choose a creature type.\n{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a creature spell of the chosen type, and that spell can't be countered.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "lci",
+  "setName": "The Lost Caverns of Ixalan",
+  "rarity": "mythic",
+  "keywords": []
+ },
+ {
+  "id": "40cb22c8-cb03-45c9-bb0e-b8cabdcc43cd",
+  "name": "Chandra, Torch of Defiance",
+  "manaCost": "{2}{R}{R}",
+  "cmc": 4,
+  "typeLine": "Legendary Planeswalker — Chandra",
+  "oracleText": "+1: Exile the top card of your library. You may cast that card. If you don't, Chandra deals 2 damage to each opponent.\n+1: Add {R}{R}.\n−3: Chandra deals 4 damage to target creature.\n−7: You get an emblem with \"Whenever you cast a spell, this emblem deals 5 damage to any target.\"",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "mythic",
+  "loyalty": "4",
+  "keywords": []
+ },
+ {
+  "id": "f892d156-371c-4391-8ae6-25513c5032b0",
+  "name": "Clarion Conqueror",
+  "manaCost": "{2}{W}",
+  "cmc": 3,
+  "typeLine": "Creature — Dragon",
+  "oracleText": "Flying\nActivated abilities of artifacts, creatures, and planeswalkers can't be activated.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "tdm",
+  "setName": "Tarkir: Dragonstorm",
+  "rarity": "rare",
+  "power": "3",
+  "toughness": "3",
+  "keywords": [
+   "Flying"
+  ]
+ },
+ {
+  "id": "f5b54d46-2caf-4d1b-8be1-dbd9e9dce058",
+  "name": "Colorstorm Stallion",
+  "manaCost": "{1}{U}{R}",
+  "cmc": 3,
+  "typeLine": "Creature — Elemental Horse",
+  "oracleText": "Ward {1}, haste\nOpus — Whenever you cast an instant or sorcery spell, this creature gets +1/+1 until end of turn. If five or more mana was spent to cast that spell, create a token that's a copy of this creature.",
+  "colors": [
+   "R",
+   "U"
+  ],
+  "colorIdentity": [
+   "R",
+   "U"
+  ],
+  "setCode": "sos",
+  "setName": "Secrets of Strixhaven",
+  "rarity": "rare",
+  "power": "3",
+  "toughness": "3",
+  "keywords": [
+   "Haste",
+   "Ward",
+   "Opus"
+  ]
+ },
+ {
+  "id": "b75df1f0-0513-40e4-a449-454f75de6434",
+  "name": "Concealed Courtyard",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "This land enters tapped unless you control two or fewer other lands.\n{T}: Add {W} or {B}.",
+  "colors": [],
+  "colorIdentity": [
+   "B",
+   "W"
+  ],
+  "setCode": "otj",
+  "setName": "Outlaws of Thunder Junction",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "a16a6555-2e3a-4587-aacd-0307d696b26c",
+  "name": "Consult the Star Charts",
+  "manaCost": "{1}{U}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Kicker {1}{U} (You may pay an additional {1}{U} as you cast this spell.)\nLook at the top X cards of your library, where X is the number of lands you control. Put one of those cards into your hand. If this spell was kicked, put two of those cards into your hand instead. Put the rest on the bottom of your library in a random order.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "eoe",
+  "setName": "Edge of Eternities",
+  "rarity": "rare",
+  "keywords": [
+   "Kicker"
+  ]
+ },
+ {
+  "id": "9312821a-2059-4f44-9b20-c9522b827e38",
+  "name": "Cori Mountain Monastery",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "This land enters tapped unless you control a Plains or an Island.\n{T}: Add {R}.\n{3}{R}, {T}: Exile the top card of your library. Until the end of your next turn, you may play that card.",
+  "colors": [],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "tdm",
+  "setName": "Tarkir: Dragonstorm",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "145b928d-a7ff-4fe5-ae4d-bbae7b1d955b",
+  "name": "Countersculpt",
+  "manaCost": "{U}{U}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "As an additional cost to cast this spell, behold a Jace or pay {1}. (To behold a Jace, choose a Jace you control or reveal a Jace card from your hand.)\nCounter target spell. Empower Jace 1. (Put a loyalty counter on a Jace token you control. If you don't control one, first create a blue Jace planeswalker token with \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "uncommon",
+  "keywords": [
+   "Surveil",
+   "Empower Jace",
+   "Behold"
+  ]
+ },
+ {
+  "id": "2402d759-84b6-41d2-ad78-9333974e9222",
+  "name": "Curious Farm Animals",
+  "manaCost": "{W}",
+  "cmc": 1,
+  "typeLine": "Creature — Boar Elk Bird Ox",
+  "oracleText": "When this creature dies, you gain 3 life.\n{2}, Sacrifice this creature: Destroy up to one target artifact or enchantment.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "tla",
+  "setName": "Avatar: The Last Airbender",
+  "rarity": "common",
+  "power": "1",
+  "toughness": "1",
+  "keywords": []
+ },
+ {
+  "id": "98ad5f0c-8775-4e89-8e92-84a6ade93e35",
+  "name": "Dalkovan Encampment",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "This land enters tapped unless you control a Swamp or a Mountain.\n{T}: Add {W}.\n{2}{W}, {T}: Whenever you attack this turn, create two 1/1 red Warrior creature tokens that are tapped and attacking. Sacrifice them at the beginning of the next end step.",
+  "colors": [],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "tdm",
+  "setName": "Tarkir: Dragonstorm",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "4ec912d5-cbe7-4d07-9ece-b03ac02d3055",
+  "name": "Dark Matter Manipulator",
+  "manaCost": "{B}",
+  "cmc": 1,
+  "typeLine": "Creature — Human Warlock",
+  "oracleText": "When this creature enters, mill three cards.\nThis creature gets +2/+0 for every seven cards in your graveyard.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "rare",
+  "power": "1",
+  "toughness": "2",
+  "keywords": [
+   "Mill"
+  ]
+ },
+ {
+  "id": "8f72bfa0-efef-48ce-aff8-d5818ed71ba6",
+  "name": "Dawn's Truce",
+  "manaCost": "{1}{W}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Gift a card (You may promise an opponent a gift as you cast this spell. If you do, they draw a card before its other effects.)\nYou and permanents you control gain hexproof until end of turn. If the gift was promised, permanents you control also gain indestructible until end of turn.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "blb",
+  "setName": "Bloomburrow",
+  "rarity": "rare",
+  "keywords": [
+   "Gift"
+  ]
+ },
+ {
+  "id": "d0e24797-3e45-4c2b-b4b0-1ef44d42eaee",
+  "name": "Day of Black Sun",
+  "manaCost": "{X}{B}{B}",
+  "cmc": 2,
+  "typeLine": "Sorcery",
+  "oracleText": "Each creature with mana value X or less loses all abilities until end of turn. Destroy those creatures.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "tla",
+  "setName": "Avatar: The Last Airbender",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "96e84bdc-8a9a-4c58-ba8b-9f052fd60069",
+  "name": "Day of Judgment",
+  "manaCost": "{2}{W}{W}",
+  "cmc": 4,
+  "typeLine": "Sorcery",
+  "oracleText": "Destroy all creatures.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "fdn",
+  "setName": "Foundations",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "e2b16cb2-b8b2-45df-9695-3c16e9d89e28",
+  "name": "Daydream",
+  "manaCost": "{W}",
+  "cmc": 1,
+  "typeLine": "Sorcery",
+  "oracleText": "Exile target creature you control, then return that card to the battlefield under its owner's control with a +1/+1 counter on it.\nFlashback {2}{W} (You may cast this card from your graveyard for its flashback cost. Then exile it.)",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "sos",
+  "setName": "Secrets of Strixhaven",
+  "rarity": "uncommon",
+  "keywords": [
+   "Flashback"
+  ]
+ },
+ {
+  "id": "3876aa0f-b199-43f5-8a91-c2d620b8ef84",
+  "name": "Deadly Cover-Up",
+  "manaCost": "{3}{B}{B}",
+  "cmc": 5,
+  "typeLine": "Sorcery",
+  "oracleText": "As an additional cost to cast this spell, you may collect evidence 6.\nDestroy all creatures. If evidence was collected, exile a card from an opponent's graveyard. Then search its owner's graveyard, hand, and library for any number of cards with that name and exile them. That player shuffles, then draws a card for each card exiled from their hand this way.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "mkm",
+  "setName": "Murders at Karlov Manor",
+  "rarity": "rare",
+  "keywords": [
+   "Collect evidence"
+  ]
+ },
+ {
+  "id": "bd82c9e4-9871-4e6d-b691-ee00b4b9a3c6",
+  "name": "Deceit",
+  "manaCost": "{4}{U/B}{U/B}",
+  "cmc": 6,
+  "typeLine": "Creature — Elemental Incarnation",
+  "oracleText": "When this creature enters, if {U}{U} was spent to cast it, return up to one other target nonland permanent to its owner's hand.\nWhen this creature enters, if {B}{B} was spent to cast it, target opponent reveals their hand. You choose a nonland card from it. That player discards that card.\nEvoke {U/B}{U/B}",
+  "colors": [
+   "B",
+   "U"
+  ],
+  "colorIdentity": [
+   "B",
+   "U"
+  ],
+  "setCode": "ecl",
+  "setName": "Lorwyn Eclipsed",
+  "rarity": "mythic",
+  "power": "5",
+  "toughness": "5",
+  "keywords": [
+   "Evoke"
+  ]
+ },
+ {
+  "id": "f4ab2d9b-c73d-478d-aac7-4d3bb24296d2",
+  "name": "Decorum Dissertation",
+  "manaCost": "{3}{B}{B}",
+  "cmc": 5,
+  "typeLine": "Sorcery — Lesson",
+  "oracleText": "Target player draws two cards and loses 2 life.\nParadigm (Then exile this spell. After you first resolve a spell with this name, you may cast a copy of it from exile without paying its mana cost at the beginning of each of your first main phases.)",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "sos",
+  "setName": "Secrets of Strixhaven",
+  "rarity": "mythic",
+  "keywords": [
+   "Paradigm"
+  ]
+ },
+ {
+  "id": "69c68c95-b788-43b1-9f22-1b22c5a00b25",
+  "name": "Deep-Cavern Bat",
+  "manaCost": "{1}{B}",
+  "cmc": 2,
+  "typeLine": "Creature — Bat",
+  "oracleText": "Flying, lifelink\nWhen this creature enters, look at target opponent's hand. You may exile a nonland card from it until this creature leaves the battlefield.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "lci",
+  "setName": "The Lost Caverns of Ixalan",
+  "rarity": "uncommon",
+  "power": "1",
+  "toughness": "1",
+  "keywords": [
+   "Flying",
+   "Lifelink"
+  ]
+ },
+ {
+  "id": "0c7e51b6-4898-4632-b39c-3ce438caa882",
+  "name": "Demolition Field",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}: Add {C}.\n{2}, {T}, Sacrifice this land: Destroy target nonbasic land an opponent controls. That land's controller may search their library for a basic land card, put it onto the battlefield, then shuffle. You may search your library for a basic land card, put it onto the battlefield, then shuffle.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "fdn",
+  "setName": "Foundations",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "56dae4c4-3e71-4a32-979b-4e26d9c9e96c",
+  "name": "Deserted Beach",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "This land enters tapped unless you control two or more other lands.\n{T}: Add {W} or {U}.",
+  "colors": [],
+  "colorIdentity": [
+   "U",
+   "W"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "588c6217-c460-417e-98bf-de5475780baf",
+  "name": "Disdainful Stroke",
+  "manaCost": "{1}{U}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Counter target spell with mana value 4 or greater.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "woe",
+  "setName": "Wilds of Eldraine",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "542c89b6-48c6-4fcb-8a4c-b5ed2fa1d384",
+  "name": "Doomsday Excruciator",
+  "manaCost": "{B}{B}{B}{B}{B}{B}",
+  "cmc": 6,
+  "typeLine": "Creature — Demon",
+  "oracleText": "Flying\nWhen this creature enters, if it was cast, each player exiles all but the bottom six cards of their library face down.\nAt the beginning of your upkeep, draw a card.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "dsk",
+  "setName": "Duskmourn: House of Horror",
+  "rarity": "rare",
+  "power": "6",
+  "toughness": "6",
+  "keywords": [
+   "Flying"
+  ]
+ },
+ {
+  "id": "34c3a894-ee75-4db9-a69f-711bb3cc150a",
+  "name": "Duress",
+  "manaCost": "{B}",
+  "cmc": 1,
+  "typeLine": "Sorcery",
+  "oracleText": "Target opponent reveals their hand. You choose a noncreature, nonland card from it. That player discards that card.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "fdn",
+  "setName": "Foundations",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "e6d45abe-4962-47d9-a54e-7e623ea8647c",
+  "name": "Eddymurk Crab",
+  "manaCost": "{5}{U}{U}",
+  "cmc": 7,
+  "typeLine": "Creature — Elemental Crab",
+  "oracleText": "Flash\nThis spell costs {1} less to cast for each instant and sorcery card in your graveyard.\nThis creature enters tapped if it's not your turn.\nWhen this creature enters, tap up to two target creatures.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "blb",
+  "setName": "Bloomburrow",
+  "rarity": "uncommon",
+  "power": "5",
+  "toughness": "5",
+  "keywords": [
+   "Flash"
+  ]
+ },
+ {
+  "id": "73a065e3-b530-4e62-ab3c-4f6f908184ec",
+  "name": "Elspeth, Storm Slayer",
+  "manaCost": "{3}{W}{W}",
+  "cmc": 5,
+  "typeLine": "Legendary Planeswalker — Elspeth",
+  "oracleText": "If one or more tokens would be created under your control, twice that many of those tokens are created instead.\n+1: Create a 1/1 white Soldier creature token.\n0: Put a +1/+1 counter on each creature you control. Those creatures gain flying until your next turn.\n−3: Destroy target creature an opponent controls with mana value 3 or greater.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "tdm",
+  "setName": "Tarkir: Dragonstorm",
+  "rarity": "mythic",
+  "loyalty": "5",
+  "keywords": []
+ },
+ {
+  "id": "bdb79d68-c3af-4091-b7db-005247191da8",
+  "name": "Elusive Otter // Grove's Bounty",
+  "manaCost": "{U} // {X}{G}",
+  "cmc": 1,
+  "typeLine": "Creature — Otter // Sorcery — Adventure",
+  "oracleText": "Prowess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)\nCreatures with power less than this creature's power can't block it.\n//\nDistribute X +1/+1 counters among any number of target creatures you control. (Then exile this card. You may cast the creature later from exile.)",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "G",
+   "U"
+  ],
+  "setCode": "soc",
+  "setName": "Secrets of Strixhaven Commander",
+  "rarity": "rare",
+  "power": "1",
+  "toughness": "1",
+  "layout": "adventure",
+  "faces": [
+   {
+    "name": "Elusive Otter",
+    "manaCost": "{U}",
+    "typeLine": "Creature — Otter",
+    "oracleText": "Prowess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)\nCreatures with power less than this creature's power can't block it.",
+    "power": "1",
+    "toughness": "1"
+   },
+   {
+    "name": "Grove's Bounty",
+    "manaCost": "{X}{G}",
+    "typeLine": "Sorcery — Adventure",
+    "oracleText": "Distribute X +1/+1 counters among any number of target creatures you control. (Then exile this card. You may cast the creature later from exile.)"
+   }
+  ],
+  "keywords": [
+   "Prowess"
+  ]
+ },
+ {
+  "id": "75961d36-acf6-425f-9698-0bf52af74f31",
+  "name": "Emeritus of Ideation // Ancestral Recall",
+  "manaCost": "{3}{U}{U} // {U}",
+  "cmc": 5,
+  "typeLine": "Creature — Human Wizard // Instant",
+  "oracleText": "Flying, ward {2}\nThis creature enters prepared.\nWhenever this creature attacks, you may exile eight cards from your graveyard. If you do, this creature becomes prepared.\n//\nTarget player draws three cards.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "sos",
+  "setName": "Secrets of Strixhaven",
+  "rarity": "mythic",
+  "power": "5",
+  "toughness": "5",
+  "layout": "prepare",
+  "faces": [
+   {
+    "name": "Emeritus of Ideation",
+    "manaCost": "{3}{U}{U}",
+    "typeLine": "Creature — Human Wizard",
+    "oracleText": "Flying, ward {2}\nThis creature enters prepared.\nWhenever this creature attacks, you may exile eight cards from your graveyard. If you do, this creature becomes prepared.",
+    "power": "5",
+    "toughness": "5"
+   },
+   {
+    "name": "Ancestral Recall",
+    "manaCost": "{U}",
+    "typeLine": "Instant",
+    "oracleText": "Target player draws three cards."
+   }
+  ],
+  "keywords": [
+   "Flying",
+   "Prepared",
+   "Ward"
+  ]
+ },
+ {
+  "id": "c6409eca-bef6-4f3a-8bbb-d69ec5dbfc13",
+  "name": "Emptiness",
+  "manaCost": "{4}{W/B}{W/B}",
+  "cmc": 6,
+  "typeLine": "Creature — Elemental Incarnation",
+  "oracleText": "When this creature enters, if {W}{W} was spent to cast it, return target creature card with mana value 3 or less from your graveyard to the battlefield.\nWhen this creature enters, if {B}{B} was spent to cast it, put three -1/-1 counters on up to one target creature.\nEvoke {W/B}{W/B}",
+  "colors": [
+   "B",
+   "W"
+  ],
+  "colorIdentity": [
+   "B",
+   "W"
+  ],
+  "setCode": "ecl",
+  "setName": "Lorwyn Eclipsed",
+  "rarity": "mythic",
+  "power": "3",
+  "toughness": "5",
+  "keywords": [
+   "Evoke"
+  ]
+ },
+ {
+  "id": "08f79439-b8f8-418f-9772-26d81844749e",
+  "name": "Enduring Innocence",
+  "manaCost": "{1}{W}{W}",
+  "cmc": 3,
+  "typeLine": "Enchantment Creature — Sheep Glimmer",
+  "oracleText": "Lifelink\nWhenever one or more other creatures you control with power 2 or less enter, draw a card. This ability triggers only once each turn.\nWhen Enduring Innocence dies, if it was a creature, return it to the battlefield under its owner's control. It's an enchantment. (It's not a creature.)",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "dsk",
+  "setName": "Duskmourn: House of Horror",
+  "rarity": "rare",
+  "power": "2",
+  "toughness": "1",
+  "keywords": [
+   "Lifelink"
+  ]
+ },
+ {
+  "id": "483fcc58-cc6e-4452-a696-7b38e117c837",
+  "name": "Enlightened Confidant",
+  "manaCost": "{1}{W}",
+  "cmc": 2,
+  "typeLine": "Creature — Kor Cleric",
+  "oracleText": "Lifelink\nAt the beginning of your end step, if you gained life this turn, surveil 1. If you put a card with mana value less than or equal to the amount of life you gained this turn into your graveyard this way, put that card into your hand.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "mythic",
+  "power": "2",
+  "toughness": "1",
+  "keywords": [
+   "Surveil",
+   "Lifelink"
+  ]
+ },
+ {
+  "id": "32e670da-7563-4f6a-a7db-4c126a440eb8",
+  "name": "Erode",
+  "manaCost": "{W}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Destroy target creature or planeswalker. Its controller may search their library for a basic land card, put it onto the battlefield tapped, then shuffle.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "sos",
+  "setName": "Secrets of Strixhaven",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "5aaf7e4c-4d5d-4acc-a834-e6c4a7629408",
+  "name": "Essence Channeler",
+  "manaCost": "{1}{W}",
+  "cmc": 2,
+  "typeLine": "Creature — Bat Cleric",
+  "oracleText": "As long as you've lost life this turn, this creature has flying and vigilance.\nWhenever you gain life, put a +1/+1 counter on this creature.\nWhen this creature dies, put its counters on target creature you control.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "blb",
+  "setName": "Bloomburrow",
+  "rarity": "rare",
+  "power": "2",
+  "toughness": "1",
+  "keywords": []
+ },
+ {
+  "id": "cfc54011-647e-4428-bcdb-59400e1da49d",
+  "name": "Fatehold Charm",
+  "manaCost": "{W}{U}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Choose one —\n• Draw a card. Empower Jace 2.\n• Return target spell or creature to its owner's hand.\n• Creatures you control get +1/+2 until end of turn.",
+  "colors": [
+   "U",
+   "W"
+  ],
+  "colorIdentity": [
+   "U",
+   "W"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "uncommon",
+  "keywords": [
+   "Empower Jace"
+  ]
+ },
+ {
+  "id": "54fe00aa-d284-48f9-b5a2-1bd4c5fa8e58",
+  "name": "Fiery Annihilation",
+  "manaCost": "{2}{R}",
+  "cmc": 3,
+  "typeLine": "Instant",
+  "oracleText": "Fiery Annihilation deals 5 damage to target creature. Exile up to one target Equipment attached to that creature. If that creature would die this turn, exile it instead.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "fdn",
+  "setName": "Foundations",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "415ff6a5-61ef-4b37-ae08-e44476300d4a",
+  "name": "Fire Magic",
+  "manaCost": "{R}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Tiered (Choose one additional cost.)\n• Fire — {0} — Fire Magic deals 1 damage to each creature.\n• Fira — {2} — Fire Magic deals 2 damage to each creature.\n• Firaga — {5} — Fire Magic deals 3 damage to each creature.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "fin",
+  "setName": "Final Fantasy",
+  "rarity": "uncommon",
+  "keywords": [
+   "Fire",
+   "Firaga",
+   "Fira",
+   "Tiered"
+  ]
+ },
+ {
+  "id": "fa940e68-010e-4b68-be8a-555d7068f7b4",
+  "name": "Firebending Lesson",
+  "manaCost": "{R}",
+  "cmc": 1,
+  "typeLine": "Instant — Lesson",
+  "oracleText": "Kicker {4} (You may pay an additional {4} as you cast this spell.)\nFirebending Lesson deals 2 damage to target creature. If this spell was kicked, it deals 5 damage to that creature instead.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "tla",
+  "setName": "Avatar: The Last Airbender",
+  "rarity": "common",
+  "keywords": [
+   "Kicker"
+  ]
+ },
+ {
+  "id": "1b832fda-d7c4-4566-884c-2a8b6da15488",
+  "name": "Flashback",
+  "manaCost": "{R}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost. (You may cast that card from your graveyard for its flashback cost. Then exile it.)",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "sos",
+  "setName": "Secrets of Strixhaven",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "91e37a7e-6093-4ef5-b6e4-4aa800ddfc1b",
+  "name": "Flashfreeze",
+  "manaCost": "{1}{U}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Counter target red or green spell.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "fdn",
+  "setName": "Foundations",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "d53ed0db-1199-44b3-8eda-8189dfcf53d1",
+  "name": "Floodfarm Verge",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}: Add {W}.\n{T}: Add {U}. Activate only if you control a Plains or an Island.",
+  "colors": [],
+  "colorIdentity": [
+   "U",
+   "W"
+  ],
+  "setCode": "dsk",
+  "setName": "Duskmourn: House of Horror",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "47d6093b-b1b6-4956-8bfd-02cce899f832",
+  "name": "Flow State",
+  "manaCost": "{1}{U}",
+  "cmc": 2,
+  "typeLine": "Sorcery",
+  "oracleText": "Look at the top three cards of your library. Put one of them into your hand and the rest on the bottom of your library in any order. If there is an instant card and a sorcery card in your graveyard, instead put two of them into your hand and the rest on the bottom of your library in any order.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "sos",
+  "setName": "Secrets of Strixhaven",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "9b0d29a1-7da9-4fb3-8536-8ff8d8acae0b",
+  "name": "Gandalf, Goblins' Bane // Flameshape",
+  "manaCost": "{2}{R} // {1}{R}",
+  "cmc": 3,
+  "typeLine": "Legendary Creature — Avatar Wizard // Sorcery — Adventure",
+  "oracleText": "Whenever you cast a noncreature spell, Gandalf gets +1/+1 until end of turn and deals 1 damage to each opponent.\n//\nLook at the top two cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a Wizard.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "hob",
+  "setName": "The Hobbit",
+  "rarity": "mythic",
+  "power": "2",
+  "toughness": "3",
+  "layout": "adventure",
+  "faces": [
+   {
+    "name": "Gandalf, Goblins' Bane",
+    "manaCost": "{2}{R}",
+    "typeLine": "Legendary Creature — Avatar Wizard",
+    "oracleText": "Whenever you cast a noncreature spell, Gandalf gets +1/+1 until end of turn and deals 1 damage to each opponent.",
+    "power": "2",
+    "toughness": "3"
+   },
+   {
+    "name": "Flameshape",
+    "manaCost": "{1}{R}",
+    "typeLine": "Sorcery — Adventure",
+    "oracleText": "Look at the top two cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a Wizard."
+   }
+  ],
+  "keywords": []
+ },
+ {
+  "id": "522aa72b-2b8c-484c-872b-f082101cee35",
+  "name": "Get Lost",
+  "manaCost": "{1}{W}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Destroy target creature, enchantment, or planeswalker. Its controller creates two Map tokens. (They're artifacts with \"{1}, {T}, Sacrifice this token: Target creature you control explores. Activate only as a sorcery.\")",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "lci",
+  "setName": "The Lost Caverns of Ixalan",
+  "rarity": "rare",
+  "keywords": [
+   "Explore"
+  ]
+ },
+ {
+  "id": "5d9471c8-2db9-4ce3-a1e5-42b85134cb8e",
+  "name": "Get Out",
+  "manaCost": "{U}{U}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Choose one —\n• Counter target creature or enchantment spell.\n• Return one or two target creatures and/or enchantments you own to your hand.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "dsk",
+  "setName": "Duskmourn: House of Horror",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "8940d76d-c09f-4d72-a037-439c70ee8d9d",
+  "name": "Ghitu Lavarunner",
+  "manaCost": "{R}",
+  "cmc": 1,
+  "typeLine": "Creature — Human Wizard",
+  "oracleText": "As long as there are two or more instant and/or sorcery cards in your graveyard, this creature gets +1/+0 and has haste. (It can attack and {T} as soon as it comes under your control.)",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "fdn",
+  "setName": "Foundations",
+  "rarity": "common",
+  "power": "1",
+  "toughness": "2",
+  "keywords": []
+ },
+ {
+  "id": "8ac39c01-127f-4471-bc74-11a90c48e306",
+  "name": "Ghost Vacuum",
+  "manaCost": "{1}",
+  "cmc": 1,
+  "typeLine": "Artifact",
+  "oracleText": "{T}: Exile target card from a graveyard.\n{6}, {T}, Sacrifice this artifact: Put each creature card exiled with this artifact onto the battlefield under your control with a flying counter on it. Each of them is a 1/1 Spirit in addition to its other types. Activate only as a sorcery.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "dsk",
+  "setName": "Duskmourn: House of Horror",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "c9131bf5-17e3-4aa6-97ed-ed6426b247d0",
+  "name": "Gleaming Bastion",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}: Add {C}.\n{T}: Add {W} or {U}. Activate only if this land entered this turn or if you control a basic land.",
+  "colors": [],
+  "colorIdentity": [
+   "U",
+   "W"
+  ],
+  "setCode": "msh",
+  "setName": "Marvel Super Heroes",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "83f510b7-4cbd-4883-9c26-c8824bc668ac",
+  "name": "Gloomlake Verge",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}: Add {U}.\n{T}: Add {B}. Activate only if you control an Island or a Swamp.",
+  "colors": [],
+  "colorIdentity": [
+   "B",
+   "U"
+  ],
+  "setCode": "dsk",
+  "setName": "Duskmourn: House of Horror",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "8fbd1ae0-3d4c-492a-a1ea-85a95fa3d7b6",
+  "name": "Godless Shrine",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land — Plains Swamp",
+  "oracleText": "({T}: Add {W} or {B}.)\nAs this land enters, you may pay 2 life. If you don't, it enters tapped.",
+  "colors": [],
+  "colorIdentity": [
+   "B",
+   "W"
+  ],
+  "setCode": "trk",
+  "setName": "Star Trek",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "42d92674-2664-411c-b9c5-b04da7c845f4",
+  "name": "Great Hall of the Biblioplex",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}: Add {C}.\n{T}, Pay 1 life: Add one mana of any color. Spend this mana only to cast an instant or sorcery spell.\n{5}: If this land isn't a creature, it becomes a 2/4 Wizard creature with \"Whenever you cast an instant or sorcery spell, this creature gets +1/+0 until end of turn.\" It's still a land.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "sos",
+  "setName": "Secrets of Strixhaven",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "a53eb840-039d-4c45-b701-d58cb26b1a6c",
+  "name": "Guiding Hydra",
+  "manaCost": "{X}{W}",
+  "cmc": 1,
+  "typeLine": "Creature — Hydra Horror",
+  "oracleText": "This creature enters with X +1/+1 counters on it.\nAt the beginning of combat on your turn, you may remove a +1/+1 counter from this creature. If you do, put a +1/+1 counter on each other creature you control.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "rare",
+  "power": "1",
+  "toughness": "0",
+  "keywords": []
+ },
+ {
+  "id": "6f7c63ae-5df3-410f-8643-b8c69133ca9d",
+  "name": "Haliya, Guided by Light",
+  "manaCost": "{2}{W}",
+  "cmc": 3,
+  "typeLine": "Legendary Creature — Human Soldier",
+  "oracleText": "Whenever Haliya or another creature or artifact you control enters, you gain 1 life.\nAt the beginning of your end step, draw a card if you've gained 3 or more life this turn.\nWarp {W} (You may cast this card from your hand for its warp cost. Exile this creature at the beginning of the next end step, then you may cast it from exile on a later turn.)",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "eoe",
+  "setName": "Edge of Eternities",
+  "rarity": "rare",
+  "power": "3",
+  "toughness": "3",
+  "keywords": [
+   "Warp"
+  ]
+ },
+ {
+  "id": "b7285986-7e08-4969-86ef-452dc5bfdd9f",
+  "name": "Hallowed Fountain",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land — Plains Island",
+  "oracleText": "({T}: Add {W} or {U}.)\nAs this land enters, you may pay 2 life. If you don't, it enters tapped.",
+  "colors": [],
+  "colorIdentity": [
+   "U",
+   "W"
+  ],
+  "setCode": "trk",
+  "setName": "Star Trek",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "a8f5f102-cc75-4cee-a117-4bdaaf86c2e9",
+  "name": "Hearth Elemental // Stoke Genius",
+  "manaCost": "{5}{R} // {1}{R}",
+  "cmc": 6,
+  "typeLine": "Creature — Elemental // Sorcery — Adventure",
+  "oracleText": "This spell costs {X} less to cast, where X is the number of cards in your graveyard that are instant cards, sorcery cards, and/or have an Adventure.\n//\nDiscard your hand, then draw two cards. (Then exile this card. You may cast the creature later from exile.)",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "woe",
+  "setName": "Wilds of Eldraine",
+  "rarity": "uncommon",
+  "power": "4",
+  "toughness": "5",
+  "layout": "adventure",
+  "faces": [
+   {
+    "name": "Hearth Elemental",
+    "manaCost": "{5}{R}",
+    "typeLine": "Creature — Elemental",
+    "oracleText": "This spell costs {X} less to cast, where X is the number of cards in your graveyard that are instant cards, sorcery cards, and/or have an Adventure.",
+    "power": "4",
+    "toughness": "5"
+   },
+   {
+    "name": "Stoke Genius",
+    "manaCost": "{1}{R}",
+    "typeLine": "Sorcery — Adventure",
+    "oracleText": "Discard your hand, then draw two cards. (Then exile this card. You may cast the creature later from exile.)"
+   }
+  ],
+  "keywords": []
+ },
+ {
+  "id": "c1525c1c-b5ed-4707-83be-73457d04d2cd",
+  "name": "Heroes' Hangout",
+  "manaCost": "{R}",
+  "cmc": 1,
+  "typeLine": "Sorcery",
+  "oracleText": "Choose one —\n• Date Night — Exile the top two cards of your library. Choose one of them. Until the end of your next turn, you may play that card.\n• Patrol Night — One or two target creatures each get +1/+0 and gain first strike until end of turn.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "msc",
+  "setName": "Marvel Super Heroes Commander",
+  "rarity": "uncommon",
+  "keywords": [
+   "Patrol Night",
+   "Date Night"
+  ]
+ },
+ {
+  "id": "632df69e-6377-43d0-bba5-65518a320aa5",
+  "name": "Hinterland Sanctifier",
+  "manaCost": "{W}",
+  "cmc": 1,
+  "typeLine": "Creature — Rabbit Cleric",
+  "oracleText": "Whenever another creature you control enters, you gain 1 life.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "fdn",
+  "setName": "Foundations",
+  "rarity": "common",
+  "power": "1",
+  "toughness": "2",
+  "keywords": []
+ },
+ {
+  "id": "1ae41080-0d67-4719-adb2-49bf2a268b6c",
+  "name": "Hired Claw",
+  "manaCost": "{R}",
+  "cmc": 1,
+  "typeLine": "Creature — Lizard Mercenary",
+  "oracleText": "Whenever you attack with one or more Lizards, this creature deals 1 damage to target opponent.\n{1}{R}: Put a +1/+1 counter on this creature. Activate only if an opponent lost life this turn and only once each turn.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "blb",
+  "setName": "Bloomburrow",
+  "rarity": "rare",
+  "power": "1",
+  "toughness": "2",
+  "keywords": []
+ },
+ {
+  "id": "39a816b4-39b8-421c-b828-68db901d34b7",
+  "name": "Impractical Joke",
+  "manaCost": "{R}",
+  "cmc": 1,
+  "typeLine": "Sorcery",
+  "oracleText": "Damage can't be prevented this turn. Impractical Joke deals 3 damage to up to one target creature or planeswalker.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "sos",
+  "setName": "Secrets of Strixhaven",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "d01fe6e9-49ee-4708-833e-75cd5a9f167c",
+  "name": "Improvisation Capstone",
+  "manaCost": "{5}{R}{R}",
+  "cmc": 7,
+  "typeLine": "Sorcery — Lesson",
+  "oracleText": "Exile cards from the top of your library until you exile cards with total mana value 4 or greater. You may cast any number of spells from among them without paying their mana costs.\nParadigm (Then exile this spell. After you first resolve a spell with this name, you may cast a copy of it from exile without paying its mana cost at the beginning of each of your first main phases.)",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "sos",
+  "setName": "Secrets of Strixhaven",
+  "rarity": "mythic",
+  "keywords": [
+   "Paradigm"
+  ]
+ },
+ {
+  "id": "9d677980-b608-407e-9f17-790a81263f15",
+  "name": "Inevitable Defeat",
+  "manaCost": "{1}{R}{W}{B}",
+  "cmc": 4,
+  "typeLine": "Instant",
+  "oracleText": "This spell can't be countered.\nExile target nonland permanent. Its controller loses 3 life and you gain 3 life.",
+  "colors": [
+   "B",
+   "R",
+   "W"
+  ],
+  "colorIdentity": [
+   "B",
+   "R",
+   "W"
+  ],
+  "setCode": "tdm",
+  "setName": "Tarkir: Dragonstorm",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "50b9575a-53d9-4df7-b86c-cda021107d3f",
+  "name": "Into the Flood Maw",
+  "manaCost": "{U}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Gift a tapped Fish (You may promise an opponent a gift as you cast this spell. If you do, they create a tapped 1/1 blue Fish creature token before its other effects.)\nReturn target creature an opponent controls to its owner's hand. If the gift was promised, instead return target nonland permanent an opponent controls to its owner's hand.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "blb",
+  "setName": "Bloomburrow",
+  "rarity": "uncommon",
+  "keywords": [
+   "Gift"
+  ]
+ },
+ {
+  "id": "1335d293-3dd2-4f13-bd2c-22181f4528ee",
+  "name": "Island",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Basic Land — Island",
+  "oracleText": "({T}: Add {U}.)",
+  "colors": [],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "mdd",
+  "setName": "Marvel: Darkhold Destiny",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "282588b9-3656-453b-aa25-2419e078ddc1",
+  "name": "Jace's Machinations",
+  "manaCost": "{2}{U}",
+  "cmc": 3,
+  "typeLine": "Instant",
+  "oracleText": "Until end of turn, you may activate loyalty abilities of Jace planeswalkers you control on any player's turn any time you could cast an instant.\nEmpower Jace 8. (Put eight loyalty counters on a Jace token you control. If you don't control one, first create a blue Jace planeswalker token with \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "rare",
+  "keywords": [
+   "Surveil",
+   "Empower Jace"
+  ]
+ },
+ {
+  "id": "3cac0ad3-5107-4ed6-a688-d44bbd65e407",
+  "name": "Jeskai Revelation",
+  "manaCost": "{4}{U}{R}{W}",
+  "cmc": 7,
+  "typeLine": "Instant",
+  "oracleText": "Return target spell or permanent to its owner's hand. Jeskai Revelation deals 4 damage to any target. Create two 1/1 white Monk creature tokens with prowess. Draw two cards. You gain 4 life.",
+  "colors": [
+   "R",
+   "U",
+   "W"
+  ],
+  "colorIdentity": [
+   "R",
+   "U",
+   "W"
+  ],
+  "setCode": "tdm",
+  "setName": "Tarkir: Dragonstorm",
+  "rarity": "mythic",
+  "keywords": []
+ },
+ {
+  "id": "aeaa3aff-608d-4723-bb7c-8daedebe9f36",
+  "name": "Leyline of the Void",
+  "manaCost": "{2}{B}{B}",
+  "cmc": 4,
+  "typeLine": "Enchantment",
+  "oracleText": "If this card is in your opening hand, you may begin the game with it on the battlefield.\nIf a card would be put into an opponent's graveyard from anywhere, exile it instead.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "dsk",
+  "setName": "Duskmourn: House of Horror",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "2957472a-825e-4904-b7e8-62bef1cb432d",
+  "name": "Likeness Looter",
+  "manaCost": "{U}{B}",
+  "cmc": 2,
+  "typeLine": "Creature — Faerie Shapeshifter",
+  "oracleText": "Flying\n{T}: Draw a card, then discard a card.\n{X}: This creature becomes a copy of target creature card in your graveyard with mana value X, except it has flying and this ability. Activate only as a sorcery.",
+  "colors": [
+   "B",
+   "U"
+  ],
+  "colorIdentity": [
+   "B",
+   "U"
+  ],
+  "setCode": "woe",
+  "setName": "Wilds of Eldraine",
+  "rarity": "rare",
+  "power": "1",
+  "toughness": "1",
+  "keywords": [
+   "Flying"
+  ]
+ },
+ {
+  "id": "70d8c400-87dc-4f15-808f-e54a95d779fc",
+  "name": "Liliana the Faultless",
+  "manaCost": "{W}",
+  "cmc": 1,
+  "typeLine": "Legendary Creature — Human Cleric",
+  "oracleText": "Whenever another creature or planeswalker you control enters, you gain 1 life.\n{1}, {T}, Discard a card: Another target creature or planeswalker you control gains hexproof until end of turn.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "rare",
+  "power": "1",
+  "toughness": "1",
+  "keywords": []
+ },
+ {
+  "id": "a9ee50d4-c878-457b-964d-29c039ce9852",
+  "name": "Lunar Convocation",
+  "manaCost": "{W}{B}",
+  "cmc": 2,
+  "typeLine": "Enchantment",
+  "oracleText": "At the beginning of your end step, if you gained life this turn, each opponent loses 1 life.\nAt the beginning of your end step, if you gained and lost life this turn, create a 1/1 black Bat creature token with flying.\n{1}{B}, Pay 2 life: Draw a card.",
+  "colors": [
+   "B",
+   "W"
+  ],
+  "colorIdentity": [
+   "B",
+   "W"
+  ],
+  "setCode": "blb",
+  "setName": "Bloomburrow",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "38e87542-50f7-4812-9338-84e4b9b7bb44",
+  "name": "M.O.D.O.K.",
+  "manaCost": "{3}{B}{B}",
+  "cmc": 5,
+  "typeLine": "Legendary Artifact Creature — Villain",
+  "oracleText": "Flying, lifelink\nMental Organism — Pay 3 life: M.O.D.O.K. connives. Activate only during your turn. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on this creature.)\nDesigned Only for Killing — Creatures your opponents control get -1/-1.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "msh",
+  "setName": "Marvel Super Heroes",
+  "rarity": "mythic",
+  "power": "2",
+  "toughness": "2",
+  "keywords": [
+   "Mental Organism",
+   "Flying",
+   "Lifelink",
+   "Designed Only for Killing",
+   "Connive"
+  ]
+ },
+ {
+  "id": "652236c2-84ef-45e4-b5fc-ed6170bc3d6c",
+  "name": "Meticulous Archive",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land — Plains Island",
+  "oracleText": "({T}: Add {W} or {U}.)\nThis land enters tapped.\nWhen this land enters, surveil 1. (Look at the top card of your library. You may put it into your graveyard.)",
+  "colors": [],
+  "colorIdentity": [
+   "U",
+   "W"
+  ],
+  "setCode": "mkm",
+  "setName": "Murders at Karlov Manor",
+  "rarity": "rare",
+  "keywords": [
+   "Surveil"
+  ]
+ },
+ {
+  "id": "d44bccbf-6fab-46e4-8ddb-6577e27ec6e8",
+  "name": "Mistrise Village",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "This land enters tapped unless you control a Mountain or a Forest.\n{T}: Add {U}.\n{U}, {T}: The next spell you cast this turn can't be countered.",
+  "colors": [],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "tdm",
+  "setName": "Tarkir: Dragonstorm",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "326dfe32-3674-4a11-acd8-5ba62371235a",
+  "name": "Molten-Core Maestro",
+  "manaCost": "{1}{R}",
+  "cmc": 2,
+  "typeLine": "Creature — Goblin Bard",
+  "oracleText": "Menace\nOpus — Whenever you cast an instant or sorcery spell, put a +1/+1 counter on this creature. If five or more mana was spent to cast that spell, add an amount of {R} equal to this creature's power.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "sos",
+  "setName": "Secrets of Strixhaven",
+  "rarity": "rare",
+  "power": "2",
+  "toughness": "2",
+  "keywords": [
+   "Menace",
+   "Opus"
+  ]
+ },
+ {
+  "id": "c472ef84-a632-4ad7-853c-60588a7a4b12",
+  "name": "Momo, Friendly Flier",
+  "manaCost": "{W}",
+  "cmc": 1,
+  "typeLine": "Legendary Creature — Lemur Bat Ally",
+  "oracleText": "Flying\nThe first non-Lemur creature spell with flying you cast during each of your turns costs {1} less to cast.\nWhenever another creature you control with flying enters, Momo gets +1/+1 until end of turn.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "tla",
+  "setName": "Avatar: The Last Airbender",
+  "rarity": "rare",
+  "power": "1",
+  "toughness": "1",
+  "keywords": [
+   "Flying"
+  ]
+ },
+ {
+  "id": "2573e694-eaa0-42ca-b470-2ab507cbcec1",
+  "name": "Moonshadow",
+  "manaCost": "{B}",
+  "cmc": 1,
+  "typeLine": "Creature — Elemental",
+  "oracleText": "Menace\nThis creature enters with six -1/-1 counters on it.\nWhenever one or more permanent cards are put into your graveyard from anywhere while this creature has a -1/-1 counter on it, remove a -1/-1 counter from this creature.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "ecl",
+  "setName": "Lorwyn Eclipsed",
+  "rarity": "mythic",
+  "power": "7",
+  "toughness": "7",
+  "keywords": [
+   "Menace"
+  ]
+ },
+ {
+  "id": "6877180c-22a1-4c4d-9178-316f4c34661b",
+  "name": "Moseo, Vein's New Dean",
+  "manaCost": "{2}{B}",
+  "cmc": 3,
+  "typeLine": "Legendary Creature — Bird Skeleton Warlock",
+  "oracleText": "Flying\nWhen Moseo enters, create a 1/1 black and green Pest creature token with \"Whenever this token attacks, you gain 1 life.\"\nInfusion — At the beginning of your end step, if you gained life this turn, return up to one target creature card with mana value X or less from your graveyard to the battlefield, where X is the amount of life you gained this turn.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "sos",
+  "setName": "Secrets of Strixhaven",
+  "rarity": "rare",
+  "power": "2",
+  "toughness": "1",
+  "keywords": [
+   "Infusion",
+   "Flying"
+  ]
+ },
+ {
+  "id": "85177bd7-6c50-48da-b692-ae5fe7bd357c",
+  "name": "Mountain",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Basic Land — Mountain",
+  "oracleText": "({T}: Add {R}.)",
+  "colors": [],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "mdd",
+  "setName": "Marvel: Darkhold Destiny",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "90d684a4-9639-4792-8760-2011a7a85370",
+  "name": "Multiply by Zero",
+  "manaCost": "{1}{B}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Target creature has base power and toughness 0/0 until end of turn.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "f5fb426a-5618-4dd4-9c51-0cc847be8c1d",
+  "name": "Multiversal Passage",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "As this land enters, choose a basic land type. Then you may pay 2 life. If you don't, it enters tapped.\nThis land is the chosen type.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "spm",
+  "setName": "Marvel's Spider-Man",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "52d58fe4-6070-4022-9cd7-c35a11b44525",
+  "name": "Negate",
+  "manaCost": "{1}{U}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Counter target noncreature spell.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "tmt",
+  "setName": "Teenage Mutant Ninja Turtles",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "1e0c695d-62f9-4805-9e2f-7032e8464136",
+  "name": "No More Lies",
+  "manaCost": "{W}{U}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Counter target spell unless its controller pays {3}. If that spell is countered this way, exile it instead of putting it into its owner's graveyard.",
+  "colors": [
+   "U",
+   "W"
+  ],
+  "colorIdentity": [
+   "U",
+   "W"
+  ],
+  "setCode": "mkm",
+  "setName": "Murders at Karlov Manor",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "0fe155f6-888b-41a0-a9a0-be7bea998718",
+  "name": "Nurturing Pixie",
+  "manaCost": "{W}",
+  "cmc": 1,
+  "typeLine": "Creature — Faerie Rogue",
+  "oracleText": "Flying\nWhen this creature enters, return up to one target non-Faerie, nonland permanent you control to its owner's hand. If a permanent was returned this way, put a +1/+1 counter on this creature.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "otj",
+  "setName": "Outlaws of Thunder Junction",
+  "rarity": "uncommon",
+  "power": "1",
+  "toughness": "1",
+  "keywords": [
+   "Flying"
+  ]
+ },
+ {
+  "id": "ce96a826-53a0-4029-bf34-46779d133b13",
+  "name": "Octopus Form",
+  "manaCost": "{U}",
+  "cmc": 1,
+  "typeLine": "Instant — Lesson",
+  "oracleText": "Target creature you control gets +1/+1 and gains hexproof until end of turn. Untap it. (It can't be the target of spells or abilities your opponents control.)",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "tla",
+  "setName": "Avatar: The Last Airbender",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "a5e2d09e-b9f5-4a0d-96d3-984b5c2c387d",
+  "name": "Oildeep Gearhulk",
+  "manaCost": "{U}{U}{B}{B}",
+  "cmc": 4,
+  "typeLine": "Artifact Creature — Construct",
+  "oracleText": "Lifelink, ward {1}\nWhen this creature enters, look at target player's hand. You may choose a card from it. If you do, that player discards that card, then draws a card.",
+  "colors": [
+   "B",
+   "U"
+  ],
+  "colorIdentity": [
+   "B",
+   "U"
+  ],
+  "setCode": "dft",
+  "setName": "Aetherdrift",
+  "rarity": "mythic",
+  "power": "4",
+  "toughness": "4",
+  "keywords": [
+   "Lifelink",
+   "Ward"
+  ]
+ },
+ {
+  "id": "bbc99a51-1501-4525-a3cc-f48249b64bed",
+  "name": "Opt",
+  "manaCost": "{U}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Scry 1. (Look at the top card of your library. You may put that card on the bottom.)\nDraw a card.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "tdc",
+  "setName": "Tarkir: Dragonstorm Commander",
+  "rarity": "common",
+  "keywords": [
+   "Scry"
+  ]
+ },
+ {
+  "id": "b87813fa-ad12-4062-bb9e-436d8418fba5",
+  "name": "Outrageous Robbery",
+  "manaCost": "{X}{B}{B}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Target opponent exiles the top X cards of their library face down. You may look at and play those cards for as long as they remain exiled. If you cast a spell this way, you may spend mana as though it were mana of any type to cast it.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "mkm",
+  "setName": "Murders at Karlov Manor",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "9b911653-7b96-4cf3-a907-13c5c53a14f7",
+  "name": "Overlord of the Balemurk",
+  "manaCost": "{3}{B}{B}",
+  "cmc": 5,
+  "typeLine": "Enchantment Creature — Avatar Horror",
+  "oracleText": "Impending 5—{1}{B} (If you cast this spell for its impending cost, it enters with five time counters and isn't a creature until the last is removed. At the beginning of your end step, remove a time counter from it.)\nWhenever this permanent enters or attacks, mill four cards, then you may return a non-Avatar creature card or a planeswalker card from your graveyard to your hand.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "dsk",
+  "setName": "Duskmourn: House of Horror",
+  "rarity": "mythic",
+  "power": "5",
+  "toughness": "5",
+  "keywords": [
+   "Impending",
+   "Mill"
+  ]
+ },
+ {
+  "id": "355dd460-b0e9-41f2-a058-b7f7e39ac387",
+  "name": "Petrified Hamlet",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "When this land enters, choose a land card name.\nActivated abilities of sources with the chosen name can't be activated unless they're mana abilities.\nLands with the chosen name have \"{T}: Add {C}.\"\n{T}: Add {C}.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "sos",
+  "setName": "Secrets of Strixhaven",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "ea174cea-40e5-424e-9734-e39aae6c6b17",
+  "name": "Pinecone Strike",
+  "manaCost": "{1}{R}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Choose one or both —\n• Pinecone Strike deals 3 damage to target creature. If that creature would die this turn, exile it instead.\n• Destroy target artifact token.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "hob",
+  "setName": "The Hobbit",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "b1f40c4c-a955-4d9c-8225-251fa4159124",
+  "name": "Pinnacle Starcage",
+  "manaCost": "{1}{W}{W}",
+  "cmc": 3,
+  "typeLine": "Artifact",
+  "oracleText": "When this artifact enters, exile all artifacts and creatures with mana value 2 or less until this artifact leaves the battlefield.\n{6}{W}{W}: Put each card exiled with this artifact into its owner's graveyard, then create a 2/2 colorless Robot artifact creature token for each card put into a graveyard this way. Sacrifice this artifact.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "eoe",
+  "setName": "Edge of Eternities",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "09ac862f-0a51-44dd-b86f-9412b8218b13",
+  "name": "Plains",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Basic Land — Plains",
+  "oracleText": "({T}: Add {W}.)",
+  "colors": [],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "mdd",
+  "setName": "Marvel: Darkhold Destiny",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "aa0f77ac-741a-444a-8bf0-a42c644726bf",
+  "name": "Pompous Battlemage // Improvised Act",
+  "manaCost": "{R} // {R}",
+  "cmc": 1,
+  "typeLine": "Creature — Goblin Sorcerer // Sorcery",
+  "oracleText": "Prowess\nThis creature enters prepared. (While it's prepared, you may cast a copy of its spell. Doing so unprepares it.)\n//\nYou may discard a card. If you do, draw a card.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "rare",
+  "power": "1",
+  "toughness": "1",
+  "layout": "prepare",
+  "faces": [
+   {
+    "name": "Pompous Battlemage",
+    "manaCost": "{R}",
+    "typeLine": "Creature — Goblin Sorcerer",
+    "oracleText": "Prowess\nThis creature enters prepared. (While it's prepared, you may cast a copy of its spell. Doing so unprepares it.)",
+    "power": "1",
+    "toughness": "1"
+   },
+   {
+    "name": "Improvised Act",
+    "manaCost": "{R}",
+    "typeLine": "Sorcery",
+    "oracleText": "You may discard a card. If you do, draw a card."
+   }
+  ],
+  "keywords": [
+   "Prowess",
+   "Prepared"
+  ]
+ },
+ {
+  "id": "79c7cf94-c0a1-432d-90d7-7f0599c2e7a8",
+  "name": "Practiced Offense",
+  "manaCost": "{2}{W}",
+  "cmc": 3,
+  "typeLine": "Sorcery",
+  "oracleText": "Put a +1/+1 counter on each creature target player controls. Target creature gains your choice of double strike or lifelink until end of turn.\nFlashback {1}{W} (You may cast this card from your graveyard for its flashback cost. Then exile it.)",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "sos",
+  "setName": "Secrets of Strixhaven",
+  "rarity": "rare",
+  "keywords": [
+   "Flashback"
+  ]
+ },
+ {
+  "id": "9244efad-35ab-45c0-b173-4bc68276cb67",
+  "name": "Precise Redaction",
+  "manaCost": "{1}{U}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Counter target white or black spell.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "8f6c2a5e-fe13-407c-aadd-c9caf2884ff1",
+  "name": "Prismari Charm",
+  "manaCost": "{U}{R}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Choose one —\n• Surveil 2, then draw a card.\n• Prismari Charm deals 1 damage to each of one or two targets.\n• Return target nonland permanent to its owner's hand.",
+  "colors": [
+   "R",
+   "U"
+  ],
+  "colorIdentity": [
+   "R",
+   "U"
+  ],
+  "setCode": "sos",
+  "setName": "Secrets of Strixhaven",
+  "rarity": "uncommon",
+  "keywords": [
+   "Surveil"
+  ]
+ },
+ {
+  "id": "8c93a0f6-5e50-4dda-9ff6-da741fb839ff",
+  "name": "Qarsi Revenant",
+  "manaCost": "{1}{B}{B}",
+  "cmc": 3,
+  "typeLine": "Creature — Vampire",
+  "oracleText": "Flying, deathtouch, lifelink\nRenew — {2}{B}, Exile this card from your graveyard: Put a flying counter, a deathtouch counter, and a lifelink counter on target creature. Activate only as a sorcery.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "tdm",
+  "setName": "Tarkir: Dragonstorm",
+  "rarity": "rare",
+  "power": "3",
+  "toughness": "3",
+  "keywords": [
+   "Deathtouch",
+   "Flying",
+   "Lifelink",
+   "Renew"
+  ]
+ },
+ {
+  "id": "120be808-ff3b-4fca-96a1-4db6b9825856",
+  "name": "Quantum Riddler",
+  "manaCost": "{3}{U}{U}",
+  "cmc": 5,
+  "typeLine": "Creature — Sphinx",
+  "oracleText": "Flying\nWhen this creature enters, draw a card.\nAs long as you have one or fewer cards in hand, if you would draw one or more cards, you draw that many cards plus one instead.\nWarp {1}{U}",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "eoe",
+  "setName": "Edge of Eternities",
+  "rarity": "mythic",
+  "power": "4",
+  "toughness": "6",
+  "keywords": [
+   "Flying",
+   "Warp"
+  ]
+ },
+ {
+  "id": "8fbad757-4081-42f7-a460-68ac03e77510",
+  "name": "Ral Zarek, Guest Lecturer",
+  "manaCost": "{1}{B}{B}",
+  "cmc": 3,
+  "typeLine": "Legendary Planeswalker — Ral",
+  "oracleText": "+1: Surveil 2.\n−1: Any number of target players each discard a card.\n−2: Return target creature card with mana value 3 or less from your graveyard to the battlefield.\n−7: Flip five coins. Target opponent skips their next X turns, where X is the number of coins that came up heads.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "sos",
+  "setName": "Secrets of Strixhaven",
+  "rarity": "mythic",
+  "loyalty": "3",
+  "keywords": [
+   "Surveil"
+  ]
+ },
+ {
+  "id": "acfde780-899a-4c5b-a39b-f4a3ff129103",
+  "name": "Ral, Crackling Wit",
+  "manaCost": "{2}{U}{R}",
+  "cmc": 4,
+  "typeLine": "Legendary Planeswalker — Ral",
+  "oracleText": "Whenever you cast a noncreature spell, put a loyalty counter on Ral.\n+1: Create a 1/1 blue and red Otter creature token with prowess.\n−3: Draw three cards, then discard two cards.\n−10: Draw three cards. You get an emblem with \"Instant and sorcery spells you cast have storm.\" (Whenever you cast an instant or sorcery spell, copy it for each spell cast before it this turn.)",
+  "colors": [
+   "R",
+   "U"
+  ],
+  "colorIdentity": [
+   "R",
+   "U"
+  ],
+  "setCode": "blb",
+  "setName": "Bloomburrow",
+  "rarity": "mythic",
+  "loyalty": "4",
+  "keywords": []
+ },
+ {
+  "id": "154e9ba9-0d0e-4b0e-acf2-f66a993cf3a2",
+  "name": "Requisition Raid",
+  "manaCost": "{W}",
+  "cmc": 1,
+  "typeLine": "Sorcery",
+  "oracleText": "Spree (Choose one or more additional costs.)\n+ {1} — Destroy target artifact.\n+ {1} — Destroy target enchantment.\n+ {1} — Put a +1/+1 counter on each creature target player controls.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "otj",
+  "setName": "Outlaws of Thunder Junction",
+  "rarity": "uncommon",
+  "keywords": [
+   "Spree"
+  ]
+ },
+ {
+  "id": "f21b0fb7-91b6-403f-a81a-562665961276",
+  "name": "Requiting Hex",
+  "manaCost": "{B}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "As an additional cost to cast this spell, you may blight 1. (You may put a -1/-1 counter on a creature you control.)\nDestroy target creature with mana value 2 or less. If this spell's additional cost was paid, you gain 2 life.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "ecl",
+  "setName": "Lorwyn Eclipsed",
+  "rarity": "uncommon",
+  "keywords": [
+   "Blight"
+  ]
+ },
+ {
+  "id": "d108c2b1-236e-4b8d-8445-d9749ccc4fea",
+  "name": "Rest in Peace",
+  "manaCost": "{1}{W}",
+  "cmc": 2,
+  "typeLine": "Enchantment",
+  "oracleText": "When this enchantment enters, exile all graveyards.\nIf a card or token would be put into a graveyard from anywhere, exile it instead.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "big",
+  "setName": "The Big Score",
+  "rarity": "mythic",
+  "keywords": []
+ },
+ {
+  "id": "109900a9-6dcb-4f89-b84c-0ce0a0175e8f",
+  "name": "Restless Anchorage",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "This land enters tapped.\n{T}: Add {W} or {U}.\n{1}{W}{U}: Until end of turn, this land becomes a 2/3 white and blue Bird creature with flying. It's still a land.\nWhenever this land attacks, create a Map token.",
+  "colors": [],
+  "colorIdentity": [
+   "U",
+   "W"
+  ],
+  "setCode": "frc",
+  "setName": "Reality Fracture Commander",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "8a8121c9-2480-419c-aa9c-5b8b55f65014",
+  "name": "Restless Reef",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "This land enters tapped.\n{T}: Add {U} or {B}.\n{2}{U}{B}: Until end of turn, this land becomes a 4/4 blue and black Shark creature with deathtouch. It's still a land.\nWhenever this land attacks, target player mills four cards.",
+  "colors": [],
+  "colorIdentity": [
+   "B",
+   "U"
+  ],
+  "setCode": "lci",
+  "setName": "The Lost Caverns of Ixalan",
+  "rarity": "rare",
+  "keywords": [
+   "Mill"
+  ]
+ },
+ {
+  "id": "a9cc02d1-799d-42aa-9bc2-4c05452b63b4",
+  "name": "Return the Favor",
+  "manaCost": "{R}{R}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Spree (Choose one or more additional costs.)\n+ {1} — Copy target instant spell, sorcery spell, activated ability, or triggered ability. You may choose new targets for the copy.\n+ {1} — Change the target of target spell or ability with a single target.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "otj",
+  "setName": "Outlaws of Thunder Junction",
+  "rarity": "uncommon",
+  "keywords": [
+   "Spree"
+  ]
+ },
+ {
+  "id": "e66ff696-fd39-49ad-9ee5-c0868167df37",
+  "name": "Riverchurn Monument",
+  "manaCost": "{1}{U}",
+  "cmc": 2,
+  "typeLine": "Artifact",
+  "oracleText": "{1}, {T}: Any number of target players each mill two cards. (Each of them puts the top two cards of their library into their graveyard.)\nExhaust — {2}{U}{U}, {T}: Any number of target players each mill cards equal to the number of cards in their graveyard. (Activate each exhaust ability only once.)",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "dft",
+  "setName": "Aetherdrift",
+  "rarity": "rare",
+  "keywords": [
+   "Exhaust",
+   "Mill"
+  ]
+ },
+ {
+  "id": "57a93a71-d77c-417f-85d0-cd420f573331",
+  "name": "Riverpyre Verge",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}: Add {R}.\n{T}: Add {U}. Activate only if you control an Island or a Mountain.",
+  "colors": [],
+  "colorIdentity": [
+   "R",
+   "U"
+  ],
+  "setCode": "dft",
+  "setName": "Aetherdrift",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "94352ffb-d716-484d-b018-4e1c033ef2f3",
+  "name": "Roaring Furnace // Steaming Sauna",
+  "manaCost": "{1}{R} // {3}{U}{U}",
+  "cmc": 7,
+  "typeLine": "Enchantment — Room // Enchantment — Room",
+  "oracleText": "When you unlock this door, this Room deals damage equal to the number of cards in your hand to target creature an opponent controls.\n(You may cast either half. That door unlocks on the battlefield. As a sorcery, you may pay the mana cost of a locked door to unlock it.)\n//\nYou have no maximum hand size.\nAt the beginning of your end step, draw a card.\n(You may cast either half. That door unlocks on the battlefield. As a sorcery, you may pay the mana cost of a locked door to unlock it.)",
+  "colors": [
+   "R",
+   "U"
+  ],
+  "colorIdentity": [
+   "R",
+   "U"
+  ],
+  "setCode": "dsk",
+  "setName": "Duskmourn: House of Horror",
+  "rarity": "rare",
+  "layout": "split",
+  "faces": [
+   {
+    "name": "Roaring Furnace",
+    "manaCost": "{1}{R}",
+    "typeLine": "Enchantment — Room",
+    "oracleText": "When you unlock this door, this Room deals damage equal to the number of cards in your hand to target creature an opponent controls.\n(You may cast either half. That door unlocks on the battlefield. As a sorcery, you may pay the mana cost of a locked door to unlock it.)"
+   },
+   {
+    "name": "Steaming Sauna",
+    "manaCost": "{3}{U}{U}",
+    "typeLine": "Enchantment — Room",
+    "oracleText": "You have no maximum hand size.\nAt the beginning of your end step, draw a card.\n(You may cast either half. That door unlocks on the battlefield. As a sorcery, you may pay the mana cost of a locked door to unlock it.)"
+   }
+  ],
+  "keywords": []
+ },
+ {
+  "id": "a7758cc6-4e18-48a5-8720-5f42b5cd9d31",
+  "name": "Sacred Foundry",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land — Mountain Plains",
+  "oracleText": "({T}: Add {R} or {W}.)\nAs this land enters, you may pay 2 life. If you don't, it enters tapped.",
+  "colors": [],
+  "colorIdentity": [
+   "R",
+   "W"
+  ],
+  "setCode": "trk",
+  "setName": "Star Trek",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "6ade6918-6d1d-448d-ab56-93996051e9a9",
+  "name": "Sage of the Skies",
+  "manaCost": "{2}{W}",
+  "cmc": 3,
+  "typeLine": "Creature — Human Monk",
+  "oracleText": "When you cast this spell, if you've cast another spell this turn, copy this spell. (The copy becomes a token.)\nFlying, lifelink",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "tdm",
+  "setName": "Tarkir: Dragonstorm",
+  "rarity": "rare",
+  "power": "2",
+  "toughness": "3",
+  "keywords": [
+   "Flying",
+   "Lifelink"
+  ]
+ },
+ {
+  "id": "173157aa-712d-44f2-89ba-dd2511a07f26",
+  "name": "Sanar, Unfinished Genius // Wild Idea",
+  "manaCost": "{U}{R} // {3}{U}{R}",
+  "cmc": 2,
+  "typeLine": "Legendary Creature — Goblin Sorcerer // Sorcery",
+  "oracleText": "Sanar enters prepared. (While it's prepared, you may cast a copy of its spell. Doing so unprepares it.)\n{T}: Create a Treasure token. Activate only if you've cast an instant or sorcery spell this turn.\n//\nSearch your library for an instant or sorcery card, reveal it, put it into your hand, then shuffle.",
+  "colors": [
+   "R",
+   "U"
+  ],
+  "colorIdentity": [
+   "R",
+   "U"
+  ],
+  "setCode": "sos",
+  "setName": "Secrets of Strixhaven",
+  "rarity": "uncommon",
+  "power": "0",
+  "toughness": "4",
+  "layout": "prepare",
+  "faces": [
+   {
+    "name": "Sanar, Unfinished Genius",
+    "manaCost": "{U}{R}",
+    "typeLine": "Legendary Creature — Goblin Sorcerer",
+    "oracleText": "Sanar enters prepared. (While it's prepared, you may cast a copy of its spell. Doing so unprepares it.)\n{T}: Create a Treasure token. Activate only if you've cast an instant or sorcery spell this turn.",
+    "power": "0",
+    "toughness": "4"
+   },
+   {
+    "name": "Wild Idea",
+    "manaCost": "{3}{U}{R}",
+    "typeLine": "Sorcery",
+    "oracleText": "Search your library for an instant or sorcery card, reveal it, put it into your hand, then shuffle."
+   }
+  ],
+  "keywords": [
+   "Treasure",
+   "Prepared"
+  ]
+ },
+ {
+  "id": "f93d8357-83bd-4157-a389-68e4aa4985c8",
+  "name": "Scorching Shot",
+  "manaCost": "{R}{R}",
+  "cmc": 2,
+  "typeLine": "Sorcery",
+  "oracleText": "Scorching Shot deals 5 damage to target creature.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "otj",
+  "setName": "Outlaws of Thunder Junction",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "9d298847-2d02-4593-b4d3-c5b722edac1e",
+  "name": "Seam Rip",
+  "manaCost": "{W}",
+  "cmc": 1,
+  "typeLine": "Enchantment",
+  "oracleText": "When this enchantment enters, exile target nonland permanent an opponent controls with mana value 2 or less until this enchantment leaves the battlefield.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "eoe",
+  "setName": "Edge of Eternities",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "aeb4612c-758b-4492-ba03-eb6741b4176e",
+  "name": "Sear",
+  "manaCost": "{1}{R}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Sear deals 4 damage to target creature or planeswalker.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "ecl",
+  "setName": "Lorwyn Eclipsed",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "51d86875-420d-4e82-b69c-4feeb99c9428",
+  "name": "Seasoned Cryomancer",
+  "manaCost": "{1}{U}{U}",
+  "cmc": 3,
+  "typeLine": "Creature — Human Wizard",
+  "oracleText": "When this creature enters, draw two cards, then discard two cards. When you discard one or more nonland cards this way, tap up to that many target creatures and put a stun counter on each of them.\n{3}{U}{U}, Exile this card from your graveyard: Draw two cards.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "mythic",
+  "power": "2",
+  "toughness": "2",
+  "keywords": []
+ },
+ {
+  "id": "5aa0c810-3b7d-4661-979e-e84fb327742d",
+  "name": "Shattered Sanctum",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "This land enters tapped unless you control two or more other lands.\n{T}: Add {W} or {B}.",
+  "colors": [],
+  "colorIdentity": [
+   "B",
+   "W"
+  ],
+  "setCode": "sos",
+  "setName": "Secrets of Strixhaven",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "9e944c5b-68ac-4a30-bbd4-09a4288319ce",
+  "name": "Shipwreck Marsh",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "This land enters tapped unless you control two or more other lands.\n{T}: Add {U} or {B}.",
+  "colors": [],
+  "colorIdentity": [
+   "B",
+   "U"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "180d6528-c524-4bb8-8a72-b3775cd2c177",
+  "name": "Shoot the Sheriff",
+  "manaCost": "{1}{B}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Destroy target non-outlaw creature. (Assassins, Mercenaries, Pirates, Rogues, and Warlocks are outlaws. Everyone else is fair game.)",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "otj",
+  "setName": "Outlaws of Thunder Junction",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "9db2e3a9-b90d-44cd-a2bd-eeb7dbe255b0",
+  "name": "Slagstorm",
+  "manaCost": "{1}{R}{R}",
+  "cmc": 3,
+  "typeLine": "Sorcery",
+  "oracleText": "Choose one —\n• Slagstorm deals 3 damage to each creature.\n• Slagstorm deals 3 damage to each player.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "fdn",
+  "setName": "Foundations",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "80dea5c0-ada3-488a-9f2b-f895b92c762f",
+  "name": "Sleight of Hand",
+  "manaCost": "{U}",
+  "cmc": 1,
+  "typeLine": "Sorcery",
+  "oracleText": "Look at the top two cards of your library. Put one of them into your hand and the other on the bottom of your library.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "woe",
+  "setName": "Wilds of Eldraine",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "7054012b-4f9d-44a0-aaf9-7fd3bddc7b2d",
+  "name": "Slickshot Show-Off",
+  "manaCost": "{1}{R}",
+  "cmc": 2,
+  "typeLine": "Creature — Bird Wizard",
+  "oracleText": "Flying, haste\nWhenever you cast a noncreature spell, this creature gets +2/+0 until end of turn.\nPlot {1}{R} (You may pay {1}{R} and exile this card from your hand. Cast it as a sorcery on a later turn without paying its mana cost. Plot only as a sorcery.)",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "otj",
+  "setName": "Outlaws of Thunder Junction",
+  "rarity": "rare",
+  "power": "1",
+  "toughness": "2",
+  "keywords": [
+   "Flying",
+   "Plot",
+   "Haste"
+  ]
+ },
+ {
+  "id": "f4907e7b-d6d5-4e9b-968f-bce34ae4a577",
+  "name": "Soul-Guide Lantern",
+  "manaCost": "{1}",
+  "cmc": 1,
+  "typeLine": "Artifact",
+  "oracleText": "When this artifact enters, exile target card from a graveyard.\n{T}, Sacrifice this artifact: Exile each opponent's graveyard.\n{1}, {T}, Sacrifice this artifact: Draw a card.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "eoc",
+  "setName": "Edge of Eternities Commander",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "8dd4374f-0301-4b2e-bc99-2cd19568cb3b",
+  "name": "Spell Pierce",
+  "manaCost": "{U}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Counter target noncreature spell unless its controller pays {2}.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "dft",
+  "setName": "Aetherdrift",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "b7551b61-656e-4f37-b9da-73174db983b7",
+  "name": "Spell Snare",
+  "manaCost": "{U}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Counter target spell with mana value 2.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "ecl",
+  "setName": "Lorwyn Eclipsed",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "4499a25b-f4a5-4f2c-9ebd-bc68c7840b39",
+  "name": "Spider-Sense",
+  "manaCost": "{1}{U}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Web-slinging {U} (You may cast this spell for {U} if you also return a tapped creature you control to its owner's hand.)\nCounter target instant spell, sorcery spell, or triggered ability.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "spm",
+  "setName": "Marvel's Spider-Man",
+  "rarity": "rare",
+  "keywords": [
+   "Web-slinging"
+  ]
+ },
+ {
+  "id": "59a04e16-a767-4112-ab01-6ca1b09c286c",
+  "name": "Spirebluff Canal",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "This land enters tapped unless you control two or fewer other lands.\n{T}: Add {U} or {R}.",
+  "colors": [],
+  "colorIdentity": [
+   "R",
+   "U"
+  ],
+  "setCode": "otj",
+  "setName": "Outlaws of Thunder Junction",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "e15ab0aa-4059-4923-9816-6f7a9e5b5a18",
+  "name": "Springleaf Drum",
+  "manaCost": "{1}",
+  "cmc": 1,
+  "typeLine": "Artifact",
+  "oracleText": "{T}, Tap an untapped creature you control: Add one mana of any color.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "ecl",
+  "setName": "Lorwyn Eclipsed",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "1226e575-aa78-4c68-be1d-6e5c2dc6315b",
+  "name": "Starfield Shepherd",
+  "manaCost": "{3}{W}{W}",
+  "cmc": 5,
+  "typeLine": "Creature — Angel",
+  "oracleText": "Flying\nWhen this creature enters, search your library for a basic Plains card or a creature card with mana value 1 or less, reveal it, put it into your hand, then shuffle.\nWarp {1}{W} (You may cast this card from your hand for its warp cost. Exile this creature at the beginning of the next end step, then you may cast it from exile on a later turn.)",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "eoe",
+  "setName": "Edge of Eternities",
+  "rarity": "uncommon",
+  "power": "3",
+  "toughness": "2",
+  "keywords": [
+   "Flying",
+   "Warp"
+  ]
+ },
+ {
+  "id": "53a938a7-0154-4350-87cb-00da24ec3824",
+  "name": "Starscape Cleric",
+  "manaCost": "{1}{B}",
+  "cmc": 2,
+  "typeLine": "Creature — Bat Cleric",
+  "oracleText": "Offspring {2}{B} (You may pay an additional {2}{B} as you cast this spell. If you do, when this creature enters, create a 1/1 token copy of it.)\nFlying\nThis creature can't block.\nWhenever you gain life, each opponent loses 1 life.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "blb",
+  "setName": "Bloomburrow",
+  "rarity": "uncommon",
+  "power": "2",
+  "toughness": "1",
+  "keywords": [
+   "Flying",
+   "Offspring"
+  ]
+ },
+ {
+  "id": "fc7d1912-7e27-49ef-bd98-375d975a42b0",
+  "name": "Starting Town",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land — Town",
+  "oracleText": "This land enters tapped unless it's your first, second, or third turn of the game.\n{T}: Add {C}.\n{T}, Pay 1 life: Add one mana of any color.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "fin",
+  "setName": "Final Fantasy",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "a83903c7-fd51-4526-aed2-359e946fea36",
+  "name": "Steam Vents",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land — Island Mountain",
+  "oracleText": "({T}: Add {U} or {R}.)\nAs this land enters, you may pay 2 life. If you don't, it enters tapped.",
+  "colors": [],
+  "colorIdentity": [
+   "R",
+   "U"
+  ],
+  "setCode": "trk",
+  "setName": "Star Trek",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "6bbf7394-9b17-45f8-a25b-d865e8452b2c",
+  "name": "Steamcore Scholar",
+  "manaCost": "{2}{U}",
+  "cmc": 3,
+  "typeLine": "Creature — Weird Detective",
+  "oracleText": "Flying, vigilance\nWhen this creature enters, draw two cards. Then discard two cards unless you discard an instant or sorcery card or a creature card with flying.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "mkm",
+  "setName": "Murders at Karlov Manor",
+  "rarity": "rare",
+  "power": "2",
+  "toughness": "2",
+  "keywords": [
+   "Flying",
+   "Vigilance"
+  ]
+ },
+ {
+  "id": "2d8e8e5f-3bf5-490d-aa9c-9df2b26f1460",
+  "name": "Stingcaster Mage",
+  "manaCost": "{1}{R}",
+  "cmc": 2,
+  "typeLine": "Creature — Human Wizard",
+  "oracleText": "Haste\nWhen this creature enters, target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost. (You may cast that card from your graveyard for its flashback cost. Then exile it.)",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "mythic",
+  "power": "2",
+  "toughness": "1",
+  "keywords": [
+   "Haste"
+  ]
+ },
+ {
+  "id": "0a786855-6eb4-42c0-a528-4842db46809d",
+  "name": "Stock Up",
+  "manaCost": "{2}{U}",
+  "cmc": 3,
+  "typeLine": "Sorcery",
+  "oracleText": "Look at the top five cards of your library. Put two of them into your hand and the rest on the bottom of your library in any order.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "dft",
+  "setName": "Aetherdrift",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "bd3ae4fa-4c97-410a-8c0a-bd203342595d",
+  "name": "Stormcarved Coast",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "This land enters tapped unless you control two or more other lands.\n{T}: Add {U} or {R}.",
+  "colors": [],
+  "colorIdentity": [
+   "R",
+   "U"
+  ],
+  "setCode": "sos",
+  "setName": "Secrets of Strixhaven",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "95617742-548d-464a-bb89-a858ffa9018f",
+  "name": "Strategic Betrayal",
+  "manaCost": "{1}{B}",
+  "cmc": 2,
+  "typeLine": "Sorcery",
+  "oracleText": "Target opponent exiles a creature they control and their graveyard.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "tdm",
+  "setName": "Tarkir: Dragonstorm",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "e5b6221e-cb22-45e4-bb98-2b960afc614c",
+  "name": "Sunderflock",
+  "manaCost": "{7}{U}{U}",
+  "cmc": 9,
+  "typeLine": "Creature — Elemental",
+  "oracleText": "This spell costs {X} less to cast, where X is the greatest mana value among Elementals you control.\nFlying\nWhen this creature enters, if you cast it, return all non-Elemental creatures to their owners' hands.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "ecl",
+  "setName": "Lorwyn Eclipsed",
+  "rarity": "rare",
+  "power": "5",
+  "toughness": "5",
+  "keywords": [
+   "Flying"
+  ]
+ },
+ {
+  "id": "8995ceaf-b7e0-423c-8f3e-25212d522502",
+  "name": "Sunspine Lynx",
+  "manaCost": "{2}{R}{R}",
+  "cmc": 4,
+  "typeLine": "Creature — Elemental Cat",
+  "oracleText": "Players can't gain life.\nDamage can't be prevented.\nWhen this creature enters, it deals damage to each player equal to the number of nonbasic lands that player controls.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "blb",
+  "setName": "Bloomburrow",
+  "rarity": "rare",
+  "power": "5",
+  "toughness": "4",
+  "keywords": []
+ },
+ {
+  "id": "ad4adc3e-ec41-4406-8ff2-59ba8067cf4e",
+  "name": "Superior Spider-Man",
+  "manaCost": "{2}{U}{B}",
+  "cmc": 4,
+  "typeLine": "Legendary Creature — Spider Human Hero",
+  "oracleText": "Mind Swap — You may have Superior Spider-Man enter as a copy of any creature card in a graveyard, except his name is Superior Spider-Man and he's a 4/4 Spider Human Hero in addition to his other types. When you do, exile that card.",
+  "colors": [
+   "B",
+   "U"
+  ],
+  "colorIdentity": [
+   "B",
+   "U"
+  ],
+  "setCode": "spm",
+  "setName": "Marvel's Spider-Man",
+  "rarity": "rare",
+  "power": "4",
+  "toughness": "4",
+  "keywords": [
+   "Mind Swap"
+  ]
+ },
+ {
+  "id": "b233b117-9369-45c1-80c5-cc857386b6be",
+  "name": "Swamp",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Basic Land — Swamp",
+  "oracleText": "({T}: Add {B}.)",
+  "colors": [],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "mdd",
+  "setName": "Marvel: Darkhold Destiny",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "13059664-a940-4a66-8100-0c90b884bab4",
+  "name": "Tablet of Discovery",
+  "manaCost": "{2}{R}",
+  "cmc": 3,
+  "typeLine": "Artifact",
+  "oracleText": "When this artifact enters, mill a card. You may play that card this turn. (To mill a card, put the top card of your library into your graveyard.)\n{T}: Add {R}.\n{T}: Add {R}{R}. Spend this mana only to cast instant and sorcery spells.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "sos",
+  "setName": "Secrets of Strixhaven",
+  "rarity": "uncommon",
+  "keywords": [
+   "Mill"
+  ]
+ },
+ {
+  "id": "7ebd7e38-b27c-4c6e-aaea-e8ee5ba5e5df",
+  "name": "Terminal Criticism",
+  "manaCost": "{1}{B}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Destroy target creature or planeswalker that's blue or red. You gain 1 life.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "20bb8c55-4b0b-425f-8201-b54fa2fdde86",
+  "name": "The Theorist, Jace Beleren",
+  "manaCost": "{2}{U}{U}",
+  "cmc": 4,
+  "typeLine": "Legendary Planeswalker — Jace",
+  "oracleText": "At the beginning of each opponent's draw step, you draw a card.\n+1: Create a 1/1 blue Illusion creature token.\n−2: For each opponent, return up to one target artifact or creature that player controls to its owner's hand.\n−6: Draw three cards. Then put X +1/+1 counters on each creature you control, where X is the number of cards in your hand.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "mythic",
+  "loyalty": "3",
+  "keywords": []
+ },
+ {
+  "id": "22db5bba-46c9-4a26-821d-303ddb386ea4",
+  "name": "Theorist's Sanctum",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land — Island",
+  "oracleText": "({T}: Add {U}.)\nAs this land enters, you may behold a Jace. If you don't, this land enters tapped. (To behold a Jace, choose a Jace you control or reveal a Jace card from your hand.)\n{2}{U}, {T}: Empower Jace 2.",
+  "colors": [],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "rare",
+  "keywords": [
+   "Empower Jace",
+   "Behold"
+  ]
+ },
+ {
+  "id": "2835c9aa-0904-44db-8da2-e8c4e04201aa",
+  "name": "Theorix Charm",
+  "manaCost": "{U}{B}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Choose one —\n• Counter target noncreature spell unless its controller pays {2}.\n• Target creature gets -2/-2 until end of turn.\n• Mill three cards, then draw a card. (To mill three cards, put the top three cards of your library into your graveyard.)",
+  "colors": [
+   "B",
+   "U"
+  ],
+  "colorIdentity": [
+   "B",
+   "U"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "uncommon",
+  "keywords": [
+   "Mill"
+  ]
+ },
+ {
+  "id": "8fffd839-2337-4a14-9312-cee085a17f4b",
+  "name": "Three Steps Ahead",
+  "manaCost": "{U}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Spree (Choose one or more additional costs.)\n+ {1}{U} — Counter target spell.\n+ {3} — Create a token that's a copy of target artifact or creature you control.\n+ {2} — Draw two cards, then discard a card.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "otj",
+  "setName": "Outlaws of Thunder Junction",
+  "rarity": "rare",
+  "keywords": [
+   "Spree"
+  ]
+ },
+ {
+  "id": "ac2a8a66-e38c-42ab-83e1-d2d99ee48861",
+  "name": "Together as One",
+  "manaCost": "{6}",
+  "cmc": 6,
+  "typeLine": "Sorcery",
+  "oracleText": "Converge — Target player draws X cards, Together as One deals X damage to any target, and you gain X life, where X is the number of colors of mana spent to cast this spell.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "sos",
+  "setName": "Secrets of Strixhaven",
+  "rarity": "rare",
+  "keywords": [
+   "Converge"
+  ]
+ },
+ {
+  "id": "b3d6027c-813f-46df-95b4-e2e305a67620",
+  "name": "Torch the Tower",
+  "manaCost": "{R}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Bargain (You may sacrifice an artifact, enchantment, or token as you cast this spell.)\nTorch the Tower deals 2 damage to target creature or planeswalker. If this spell was bargained, instead it deals 3 damage to that permanent and you scry 1.\nIf a permanent dealt damage by Torch the Tower would die this turn, exile it instead.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "woe",
+  "setName": "Wilds of Eldraine",
+  "rarity": "common",
+  "keywords": [
+   "Bargain",
+   "Scry"
+  ]
+ },
+ {
+  "id": "dbf02a38-d10d-463e-ab99-e7fd848a1bd3",
+  "name": "Torpor Orb",
+  "manaCost": "{2}",
+  "cmc": 2,
+  "typeLine": "Artifact",
+  "oracleText": "Creatures entering don't cause abilities to trigger.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "big",
+  "setName": "The Big Score",
+  "rarity": "mythic",
+  "keywords": []
+ },
+ {
+  "id": "2a812fa7-4599-4e25-97db-20ffc6bc0b26",
+  "name": "Traumatic Critique",
+  "manaCost": "{X}{U}{R}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Traumatic Critique deals X damage to any target. Draw two cards, then discard a card.",
+  "colors": [
+   "R",
+   "U"
+  ],
+  "colorIdentity": [
+   "R",
+   "U"
+  ],
+  "setCode": "sos",
+  "setName": "Secrets of Strixhaven",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "a7ad622a-42ff-48fa-ae95-12e0a5bd9387",
+  "name": "Uldaros Theorix",
+  "manaCost": "{3}{U}{B}{B}",
+  "cmc": 6,
+  "typeLine": "Legendary Creature — Elder Sphinx",
+  "oracleText": "Flying\nWhen Uldaros Theorix enters, if you cast him, exile up to one target nonland card of each card type from your graveyard. Copy those cards. You may cast any number of spells with total mana value 6 or less from among the copies without paying their mana costs. (Permanent spells cast this way become tokens.)",
+  "colors": [
+   "B",
+   "U"
+  ],
+  "colorIdentity": [
+   "B",
+   "U"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "mythic",
+  "power": "5",
+  "toughness": "5",
+  "keywords": [
+   "Flying"
+  ]
+ },
+ {
+  "id": "2b5801fb-2026-4f25-98bc-ebb2f99684b9",
+  "name": "Undercity Sewers",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land — Island Swamp",
+  "oracleText": "({T}: Add {U} or {B}.)\nThis land enters tapped.\nWhen this land enters, surveil 1. (Look at the top card of your library. You may put it into your graveyard.)",
+  "colors": [],
+  "colorIdentity": [
+   "B",
+   "U"
+  ],
+  "setCode": "mkm",
+  "setName": "Murders at Karlov Manor",
+  "rarity": "rare",
+  "keywords": [
+   "Surveil"
+  ]
+ },
+ {
+  "id": "90b12da0-f666-471d-95f5-15d8c9b31c92",
+  "name": "Valley Floodcaller",
+  "manaCost": "{2}{U}",
+  "cmc": 3,
+  "typeLine": "Creature — Otter Wizard",
+  "oracleText": "Flash\nYou may cast noncreature spells as though they had flash.\nWhenever you cast a noncreature spell, Birds, Frogs, Otters, and Rats you control get +1/+1 until end of turn. Untap them.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "blb",
+  "setName": "Bloomburrow",
+  "rarity": "rare",
+  "power": "2",
+  "toughness": "2",
+  "keywords": [
+   "Flash"
+  ]
+ },
+ {
+  "id": "f9ba68ef-6efc-4249-8b74-e33f47173902",
+  "name": "Vibrant Outburst",
+  "manaCost": "{U}{R}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Vibrant Outburst deals 3 damage to any target. Tap up to one target creature.",
+  "colors": [
+   "R",
+   "U"
+  ],
+  "colorIdentity": [
+   "R",
+   "U"
+  ],
+  "setCode": "sos",
+  "setName": "Secrets of Strixhaven",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "e20da6b5-1057-4a28-9e85-07de714e262f",
+  "name": "Wan Shi Tong, Librarian",
+  "manaCost": "{X}{U}{U}",
+  "cmc": 2,
+  "typeLine": "Legendary Creature — Bird Spirit",
+  "oracleText": "Flash\nFlying, vigilance\nWhen Wan Shi Tong enters, put X +1/+1 counters on him. Then draw half X cards, rounded down.\nWhenever an opponent searches their library, put a +1/+1 counter on Wan Shi Tong and draw a card.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "tla",
+  "setName": "Avatar: The Last Airbender",
+  "rarity": "mythic",
+  "power": "1",
+  "toughness": "1",
+  "keywords": [
+   "Flying",
+   "Vigilance",
+   "Flash"
+  ]
+ },
+ {
+  "id": "5525d6a6-e532-4047-9da4-bfae7927fecc",
+  "name": "Watery Grave",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land — Island Swamp",
+  "oracleText": "({T}: Add {U} or {B}.)\nAs this land enters, you may pay 2 life. If you don't, it enters tapped.",
+  "colors": [],
+  "colorIdentity": [
+   "B",
+   "U"
+  ],
+  "setCode": "trk",
+  "setName": "Star Trek",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "abc8c6f5-6135-428e-8476-1751f82623f9",
+  "name": "Wild Ride",
+  "manaCost": "{R}",
+  "cmc": 1,
+  "typeLine": "Sorcery",
+  "oracleText": "Target creature gets +3/+0 and gains haste until end of turn.\nHarmonize {4}{R} (You may cast this card from your graveyard for its harmonize cost. You may tap a creature you control to reduce that cost by {X}, where X is its power. Then exile this spell.)",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "tdm",
+  "setName": "Tarkir: Dragonstorm",
+  "rarity": "common",
+  "keywords": [
+   "Harmonize"
+  ]
+ },
+ {
+  "id": "64d9367c-f50c-4568-aa63-6760c44ecaeb",
+  "name": "Winternight Stories",
+  "manaCost": "{2}{U}",
+  "cmc": 3,
+  "typeLine": "Sorcery",
+  "oracleText": "Draw three cards. Then discard two cards unless you discard a creature card.\nHarmonize {4}{U} (You may cast this card from your graveyard for its harmonize cost. You may tap a creature you control to reduce that cost by {X}, where X is its power. Then exile this spell.)",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "tdm",
+  "setName": "Tarkir: Dragonstorm",
+  "rarity": "rare",
+  "keywords": [
+   "Harmonize"
+  ]
+ },
+ {
+  "id": "45e81487-8b8c-480b-922a-eaa9edc7201d",
+  "name": "Yuriko, Hope from the Shadows",
+  "manaCost": "{U}",
+  "cmc": 1,
+  "typeLine": "Legendary Creature — Human Ninja",
+  "oracleText": "Flash\nWhen Yuriko enters, choose one —\n• Target creature gets -X/-0 until end of turn, where X is the number of cards in your graveyard.\n• Surveil 2. (Look at the top two cards of your library, then put any number of them into your graveyard and the rest on top of your library in any order.)",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "uncommon",
+  "power": "1",
+  "toughness": "1",
+  "keywords": [
+   "Surveil",
+   "Flash"
+  ]
+ },
+ {
+  "id": "b7f99fd5-5298-4b27-923d-9d31203c931a",
+  "name": "Zoraline, Cosmos Caller",
+  "manaCost": "{1}{W}{B}",
+  "cmc": 3,
+  "typeLine": "Legendary Creature — Bat Cleric",
+  "oracleText": "Flying, vigilance\nWhenever a Bat you control attacks, you gain 1 life.\nWhenever Zoraline enters or attacks, you may pay {W}{B} and 2 life. When you do, return target nonland permanent card with mana value 3 or less from your graveyard to the battlefield with a finality counter on it.",
+  "colors": [
+   "B",
+   "W"
+  ],
+  "colorIdentity": [
+   "B",
+   "W"
+  ],
+  "setCode": "blb",
+  "setName": "Bloomburrow",
+  "rarity": "rare",
+  "power": "3",
+  "toughness": "3",
+  "keywords": [
+   "Flying",
+   "Vigilance"
+  ]
+ }
+]

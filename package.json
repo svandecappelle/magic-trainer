@@ -9,7 +9,8 @@
     "build": "tsc && vite build",
     "start": "tsx server/index.ts",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "audit-cards": "tsx scripts/audit-cards.ts"
   },
   "dependencies": {
     "react": "^19.3.0",
