@@ -542,6 +542,14 @@ export const fr: Messages = {
     no: 'Non',
     confirm: 'Confirmer',
     arrangeZones: { top: 'Dessus', bottom: 'Dessous', graveyard: 'Cimetière' },
+    arrangeTitles: { top: 'Dessus de la bibliothèque', bottom: 'Dessous de la bibliothèque', graveyard: 'Cimetière' },
+    arrangeHint: 'Cliquez sur une carte pour la passer de l\'autre côté, ou faites-la glisser. Au-dessus, la première carte est piochée en premier.',
+    orderHint: 'La première reçoit les blessures en premier. Réordonnez avec les flèches.',
+    keepAllTop: 'Tout garder au-dessus',
+    toHandHint: (n) => `Une carte de valeur de mana ${n} ou moins mise au cimetière revient dans votre main.`,
+    moveEarlier: 'Avancer',
+    moveLater: 'Reculer',
+    dropHere: 'Déposez des cartes ici',
     counters: (counter, n) => `${counter} ×${n}`,
     windows: {
       upkeep: (myTurn) =>

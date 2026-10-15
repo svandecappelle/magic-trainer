@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import {
   activatable, activationProblem, abilityMaxX, actor, apply, canAttack, canTapForMana, canUntapForMana, castCost, castOptions, castSources,
@@ -828,12 +829,23 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
               </div>
             </div>
           )}
-          {g.pending && g.pending.choice.player === me && g.pending.choice.kind !== 'targets' && g.winner === null && (
-            <div className="choice-dock">
-              {/* One panel per choice: a choice following another one right away must not keep its picks. */}
-              <ChoicePanel key={choiceKey(g.pending.choice)} choice={g.pending.choice} onAnswer={(answer) => act({ type: 'choose', answer })} onPreview={setPreview} />
-            </div>
-          )}
+          {g.pending && g.pending.choice.player === me && g.pending.choice.kind !== 'targets' && g.winner === null && (() => {
+            const choice = g.pending.choice;
+            // One panel per choice: a choice following another one right away must not keep its picks.
+            const panel = (
+              <ChoicePanel
+                key={choiceKey(choice)}
+                choice={choice}
+                title={choicePrompt(t, choice, show.nameOf, names)}
+                onAnswer={(answer) => act({ type: 'choose', answer })}
+                onPreview={setPreview}
+              />
+            );
+            // Scry, surveil and damage order open a window over the whole page (outside the table's layout).
+            return choice.kind === 'arrange'
+              ? createPortal(<div className="choice-dock modal">{panel}</div>, document.body)
+              : <div className="choice-dock">{panel}</div>;
+          })()}
         </div>
 
         <div className={`fields mine ${multi ? 'multi' : ''}`}>{[me, ...mates].map(field)}</div>

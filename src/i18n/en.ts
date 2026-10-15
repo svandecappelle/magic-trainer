@@ -537,6 +537,14 @@ export const en = {
     no: 'No',
     confirm: 'Confirm',
     arrangeZones: { top: 'Top', bottom: 'Bottom', graveyard: 'Graveyard' },
+    arrangeTitles: { top: 'Top of library', bottom: 'Bottom of library', graveyard: 'Graveyard' },
+    arrangeHint: 'Click a card to move it to the other side, or drag it. On top, the first card is drawn next.',
+    orderHint: 'First = gets damage first. Use the arrows to reorder.',
+    keepAllTop: 'Keep all on top',
+    toHandHint: (n: number) => `A card with mana value ${n} or less put into the graveyard comes back to your hand.`,
+    moveEarlier: 'Move earlier',
+    moveLater: 'Move later',
+    dropHere: 'Drop cards here',
     counters: (counter: string, n: number) => `${counter} ×${n}`,
     windows: {
       upkeep: (myTurn: boolean): string =>
