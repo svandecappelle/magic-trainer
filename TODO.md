@@ -189,7 +189,8 @@ Still missing, most played first:
   (Seam Rip, Deep-Cavern Bat, Pinnacle Starcage)
 - [ ] Emblems (Chandra, Ral, Ajani ultimates); loyalty counters from triggers (Ajani Resolute)
 - [ ] "Any number of target players each …" (Ral Zarek's −1, Riverchurn Monument)
-- [ ] Mana abilities with a life cost (Starting Town, Great Hall of the Biblioplex), lands that choose a basic land
+- [ ] Mana abilities with a life cost next to a free one (Starting Town, Great Hall of the Biblioplex; alone, like
+  Mana Confluence, they work), lands that choose a basic land
   type (Multiversal Passage); Starting Town and Theorist's Sanctum entering tapped
 - [ ] Manlands: "becomes a 4/4 … creature until end of turn" (Restless Reef, Restless Anchorage)
 - [ ] Static power from conditions (Dark Matter Manipulator, Ghitu Lavarunner), "can't block" (Starscape Cleric),
@@ -216,6 +217,39 @@ graveyard"), Abandoned Air Temple (enters tapped unless you control a basic land
   delayed trigger on the stack)
 - [ ] Tokens with their own abilities (Ajani's Pridemate), Warp, Sneak, Cases
 - [ ] Leylines starting the game on the battlefield (CR 103.6)
+
+## Metagame audit 2026-10-15
+
+Top 8 decks of each mtgtop8 format (`npm run audit-meta`, cards playing wrongly first, then the most played).
+Fixed: Command Tower and Arcane Signet (mana in the commander's color identity), Vexing Bauble (counters spells cast
+without mana), City of Brass ("whenever this land becomes tapped", "deals 1 damage to you") and Mana Confluence
+("{T}, Pay 1 life: Add …"), Channel from the hand (Otawara, Eiganjo; {1} less per legendary creature).
+
+Skipped or left "not simulated":
+- [ ] Urza's Saga (18 decks): Sagas (lore counters, chapter abilities) are a new card type for the engine
+- [ ] Boseiju, Who Endures (12 decks): its channel resolves "not simulated" — the opponent's optional search for a
+  land with a basic land type isn't simulated
+- [ ] Starting Town (9 decks): "enters tapped unless it's your first, second, or third turn" (needs each player's
+  turn count) and a life-cost mana ability next to a free one (only {C} for now)
+- [ ] The bot never channels
+
+Still open, most played first:
+- [ ] Mana Vault (12 decks), Grim Monolith (6): "doesn't untap during your untap step", "you may pay {4}. If you do,
+  untap", draw-step damage if tapped, "{4}: Untap this artifact"
+- [ ] Cavern of Souls (11): "As this land enters, choose a creature type" (and its uncounterable mana)
+- [ ] Mox Diamond (11): "discard a land card instead" replacement; Chrome Mox (9): imprint and its mana
+- [ ] Gemstone Caverns (11): opening-hand rule; Leylines likewise
+- [ ] Hexing Squelcher (9): "Ward—Pay 2 life", "Spells you control can't be countered", granted ward
+- [ ] Mox Amber (9): mana of the colors among legends you control
+- [ ] Teferi, Time Raveler (7): opponents cast only at sorcery speed; sorceries with flash
+- [ ] Pithing Needle (7): choose a card name, its activated abilities can't be activated
+- [ ] Quantum Riddler (6): draw replacement, Warp; Gene Pollinator (6) and Springleaf Drum (5): "tap an untapped
+  permanent/creature you control" as a mana cost
+- [ ] Containment Priest (6), Grafdigger's Cage (5): replacement and casting restrictions
+- [ ] Orcish Bowmasters (6), Faerie Mastermind (6): "whenever an opponent draws" triggers
+- [ ] Talon Gates of Madara (6), City of Traitors (6), Multiversal Passage (6), Elvish / Simian Spirit Guide (6):
+  mana with other costs, "when you play another land", chosen basic land type, mana from exiling a card in hand
+- [ ] Defense Grid (5): cost increase off-turn
 
 ## Comprehensive Rules audit (CR 2026-09-25)
 
