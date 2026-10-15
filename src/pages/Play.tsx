@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { BetweenGames } from '../components/BetweenGames';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { DeckOptions } from '../components/DeckOptions';
 import { GameBoard } from '../components/GameBoard';
 import { botAction, fallbackAction } from '../lib/engine/bot';
@@ -19,7 +19,12 @@ export function Play() {
   const t = useT();
   const decks = useApp((s) => s.decks);
   const [game, setGame] = useState<GameState | null>(null);
-  const [myDeck, setMyDeck] = useState(decks[0]?.id ?? 'preset-red');
+  // "/play?deck=<id>" (from the home page) preselects that deck.
+  const [params] = useSearchParams();
+  const [myDeck, setMyDeck] = useState(() => {
+    const wanted = params.get('deck');
+    return wanted && decks.some((d) => d.id === wanted) ? wanted : (decks[0]?.id ?? 'preset-red');
+  });
   const [botDeck, setBotDeck] = useState('preset-green');
   // Two-Headed Giant: your bot teammate's deck and the second opponent's.
   const [twoHeaded, setTwoHeaded] = useState(false);
