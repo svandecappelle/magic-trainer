@@ -65,6 +65,7 @@ const log: LogMessages = {
   prevented: (e, c) => `Damage from ${c.card(e.card)} is prevented`,
   extraTurn: (e, c) => `${c.isMe(e.p) ? 'You will take' : `${c.name(e.p)} will take`} an extra turn`,
   attached: (e, c) => `${c.card(e.card)} is attached to ${c.card(e.to)}`,
+  beginsOnBattlefield: (e, c) => `${c.isMe(e.p) ? 'You begin' : `${c.name(e.p)} begins`} the game with ${c.card(e.card)} on the battlefield`,
   gainsAbility: (e, c) => `${c.card(e.card)} gains "${e.text}"`,
   legendRule: (e, c) => `${c.card(e.card)} goes to the graveyard (legend rule)`,
   shock: (e, c) => (e.paid ? `${c.card(e.card)} enters untapped (${e.paid} life paid)` : `${c.card(e.card)} enters tapped`),

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
-import { actor, apply, canTapForMana, castOptions, IllegalAction, newGame, powerOf, toughnessOf, type GameState, type Permanent, type PlayerId } from './engine';
+import { actor, apply, canTapForMana, castOptions, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
 import { botAction } from './bot';
-import { castInfo, castSpec, finalChapter, manaUnits, parseAbilityText, spellSpec, triggersOf } from './rules';
+import { activatedOf, castInfo, castSpec, finalChapter, manaUnits, parseAbilityText, spellSpec, triggersOf } from './rules';
 
 // Cards from Standard decks on mtgtop8 (Oct 2026), with their Oracle text.
 let n = 0;
@@ -706,5 +706,172 @@ describe('Sagas (Urza\'s Saga)', () => {
     perm(s, 'The Misty Mountains Cold')!.counters.lore = 3;
     s = resolve(endTurn(endTurn(s)));
     expect(perm(s, 'The Misty Mountains Cold')).toBeUndefined();
+  });
+});
+
+describe('Boros Dwarves equipment (mtgtop8 deck 899948)', () => {
+  const equipment = (name: string, manaCost: string, oracleText: string, typeLine = 'Artifact — Equipment') =>
+    card({ name, typeLine, manaCost, cmc: (manaCost.match(/\{/g) ?? []).length, oracleText });
+  const boots = equipment('Lavaspur Boots', '{1}', 'Equipped creature gets +1/+0 and has haste and ward {1}. (Whenever it becomes the target of a spell or ability an opponent controls, counter it unless that player pays {1}.)\nEquip {1}');
+  const blade = equipment('Dragonfire Blade', '{1}', 'Equipped creature gets +2/+2 and has hexproof from monocolored.\nEquip {4}. This ability costs {1} less to activate for each color of the creature it targets.');
+  const chainsaw = equipment('Chainsaw', '{1}{R}', 'When this Equipment enters, it deals 3 damage to up to one target creature.\nWhenever one or more creatures die, put a rev counter on this Equipment.\nEquipped creature gets +X/+0, where X is the number of rev counters on this Equipment.\nEquip {3}');
+  const axe = equipment('Leyline Axe', '{4}', 'If this card is in your opening hand, you may begin the game with it on the battlefield.\nEquipped creature gets +1/+1 and has double strike and trample.\nEquip {3} ({3}: Attach to target creature you control. Equip only as a sorcery.)');
+  const ironMan = equipment('Iron Man Armor', '{3}', 'When this Equipment enters, attach it to target creature you control.\nEquipped creature gets +2/+1 and has flying.\n{2}: If this Equipment isn\'t a creature, it becomes a 0/0 Construct Hero artifact creature with flying and "This creature gets +1/+1 for each artifact you control" until end of turn.\nEquip {2}');
+  // Mana costs made generic: the board's lands are Swamps.
+  const mauler = creature('Dwarven Mauler', 2, 1, { typeLine: 'Creature — Dwarf Warrior', manaCost: '{1}', colors: ['R'], oracleText: 'Equip abilities you activate that target this creature cost {2} less to activate.' });
+  const dains = creature('Dáin\'s Company', 2, 2, {
+    typeLine: 'Creature — Dwarf Warrior', manaCost: '{2}', colors: ['R', 'W'],
+    oracleText: 'This creature has lifelink as long as you control another Dwarf.\nWhen this creature enters, look at the top four cards of your library. You may reveal a Dwarf or Equipment card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.',
+  });
+  const kili = creature('Kíli the Resourceful', 1, 2, {
+    typeLine: 'Legendary Creature — Dwarf Scout', manaCost: '{1}{W}', colors: ['W'],
+    oracleText: 'Storied (If you control three or more artifacts, legendaries, and/or Sagas, you have an enduring story for the rest of the game.)\nAs long as you have an enduring story, you may pay {0} rather than pay the equip cost of the first equip ability you activate each turn.\nWhenever another Dwarf or Equipment you control enters, draw a card. This ability triggers only once each turn.',
+  });
+  const kellan = creature('Kellan, the Fae-Blooded', 2, 2, {
+    typeLine: 'Legendary Creature — Human Faerie', manaCost: '{2}{R}', colors: ['R'], keywords: ['Double strike'],
+    oracleText: 'Double strike\nOther creatures you control get +1/+0 for each Aura and Equipment attached to Kellan.',
+  });
+  const cloud = creature('Cloud, Midgar Mercenary', 2, 1, {
+    typeLine: 'Legendary Creature — Human Soldier Mercenary', manaCost: '{W}{W}', colors: ['W'],
+    oracleText: 'When Cloud enters, search your library for an Equipment card, reveal it, put it into your hand, then shuffle.\nAs long as Cloud is equipped, if a triggered ability of Cloud or an Equipment attached to it triggers, that ability triggers an additional time.',
+  });
+  const lonely = card({
+    name: 'The Lonely Mountain', typeLine: 'Land — Mountain',
+    oracleText: '({T}: Add {R}.)\nThis land enters tapped unless you control an Equipment.\n{4}{R}, {T}: Create a 2/2 red Dwarf creature token. This ability costs {1} less to activate for each Equipment you control. Activate only as a sorcery.',
+  });
+  const verge = card({ name: 'Sunbillow Verge', typeLine: 'Land', oracleText: '{T}: Add {W}.\n{T}: Add {R}. Activate only if you control a Mountain or a Plains.' });
+  const shock = { ...spell('Shock', '{1}', 'Shock deals 2 damage to any target.'), colors: ['R'] };
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 10 && (s.stack.length || s.triggered?.length) && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  const attach = (s: GameState, eq: string, to: string) => { perm(s, eq)!.attachedTo = iidOf(s, to); return s; };
+  const equipIndex = (c: Card) => activatedOf(c).findIndex((a) => a.equip);
+
+  it('Lavaspur Boots: +1/+0, haste and ward {1}', () => {
+    let s = board({ mana: 1, hand: [shock], theirs: [creature('Bear', 2, 2), boots] });
+    s = attach(s, 'Lavaspur Boots', 'Bear');
+    s = apply(s, { type: 'tapForMana', iid: s.battlefield[0].iid });
+    expect(powerOf(perm(s, 'Bear')!)).toBe(3);
+    expect(perm(s, 'Bear')!.statics?.keywords).toContain('haste');
+    // Shock with no mana left for ward: countered.
+    s = resolve(settle(apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] })));
+    expect(perm(s, 'Bear')).toBeDefined();
+    expect(s.log.some((e) => e.k === 'countered' && e.card === 'Shock')).toBe(true);
+  });
+
+  it('Dragonfire Blade: equip {1} less per color; hexproof from monocolored', () => {
+    const golem = creature('Golem', 3, 3);
+    // Dáin's Company is two colors: {4} - 2.
+    let s = board({ mana: 2, mine: [dains, blade, golem] });
+    expect(errorOf(() => apply(s, { type: 'activate', iid: iidOf(s, 'Dragonfire Blade'), index: equipIndex(blade), targets: [[{ kind: 'permanent', iid: iidOf(s, 'Golem') }]] }))).toBe('notEnoughMana');
+    s = apply(s, { type: 'activate', iid: iidOf(s, 'Dragonfire Blade'), index: equipIndex(blade), targets: [[{ kind: 'permanent', iid: iidOf(s, 'Dáin\'s Company') }]] });
+    s = resolve(settle(s));
+    expect(perm(s, 'Dragonfire Blade')!.attachedTo).toBe(iidOf(s, 'Dáin\'s Company'));
+    expect(toughnessOf(perm(s, 'Dáin\'s Company')!)).toBe(4);
+    // The opponent's red Shock can't target it; a two-color spell could.
+    expect(isLegalTarget(s, 1, { kind: 'any', min: 1, max: 1, filter: {} }, { kind: 'permanent', iid: iidOf(s, 'Dáin\'s Company') }, undefined, { ...shock, colors: ['R'] })).toBe(false);
+    expect(isLegalTarget(s, 1, { kind: 'any', min: 1, max: 1, filter: {} }, { kind: 'permanent', iid: iidOf(s, 'Dáin\'s Company') }, undefined, { ...shock, colors: ['R', 'W'] })).toBe(true);
+  });
+
+  it('Dwarven Mauler: equip abilities targeting it cost {2} less', () => {
+    let s = board({ mana: 1, mine: [mauler, axe] });
+    s = resolve(settle(apply(s, { type: 'activate', iid: iidOf(s, 'Leyline Axe'), index: equipIndex(axe), targets: [[{ kind: 'permanent', iid: iidOf(s, 'Dwarven Mauler') }]] })));
+    expect(perm(s, 'Leyline Axe')!.attachedTo).toBe(iidOf(s, 'Dwarven Mauler'));
+    expect(powerOf(perm(s, 'Dwarven Mauler')!)).toBe(3);
+  });
+
+  it('Kíli: an enduring story with three artifacts or legendaries, then the first equip each turn costs {0}', () => {
+    let s = board({ mana: 1, mine: [kili, boots, chainsaw, creature('Golem', 3, 3)] });
+    // Any action checks the story (state-based); the {B} made stays in the pool.
+    s = apply(s, { type: 'tapForMana', iid: s.battlefield[0].iid });
+    s = settle(apply(s, { type: 'activate', iid: iidOf(s, 'Lavaspur Boots'), index: equipIndex(boots), targets: [[{ kind: 'permanent', iid: iidOf(s, 'Golem') }]] }));
+    expect(s.players[0].enduringStory).toBe(true);
+    s = resolve(s);
+    expect(perm(s, 'Lavaspur Boots')!.attachedTo).toBe(iidOf(s, 'Golem'));
+    expect(s.players[0].pool).toHaveLength(1); // paid {0}
+    // The second equip this turn costs its mana.
+    expect(errorOf(() => apply(s, { type: 'activate', iid: iidOf(s, 'Chainsaw'), index: equipIndex(chainsaw), targets: [[{ kind: 'permanent', iid: iidOf(s, 'Golem') }]] }))).toBe('notEnoughMana');
+  });
+
+  it('Kíli draws once each turn when another Dwarf or Equipment enters', () => {
+    const t = triggersOf(kili).find((x) => x.event.on === 'enters')!;
+    expect(t).toMatchObject({ oncePerTurn: true, event: { self: false, another: true, which: { filter: { subtypes: ['dwarf', 'equipment'], controller: 'you' } } } });
+    let s = board({ mana: 2, mine: [kili], hand: [boots, mauler] });
+    const hand = s.players[0].hand.length;
+    s = resolve(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    s = resolve(settle(apply(s, { type: 'cast', iid: 'h1' })));
+    expect(s.players[0].hand.length).toBe(hand - 2 + 1);
+  });
+
+  it('Dáin\'s Company has lifelink only with another Dwarf', () => {
+    let s = board({ mana: 1, mine: [dains] });
+    s = apply(s, { type: 'tapForMana', iid: s.battlefield[0].iid });
+    expect(perm(s, 'Dáin\'s Company')!.statics?.keywords ?? []).not.toContain('lifelink');
+    s = board({ mana: 1, mine: [dains], hand: [mauler] });
+    s = resolve(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    expect(perm(s, 'Dáin\'s Company')!.statics?.keywords).toContain('lifelink');
+    expect(perm(s, 'Dwarven Mauler')!.statics?.keywords ?? []).not.toContain('lifelink');
+  });
+
+  it('Kellan: other creatures get +1/+0 for each Aura and Equipment attached to it', () => {
+    let s = board({ mana: 1, mine: [kellan, boots, chainsaw, creature('Golem', 3, 3)] });
+    attach(s, 'Lavaspur Boots', 'Kellan, the Fae-Blooded');
+    attach(s, 'Chainsaw', 'Kellan, the Fae-Blooded');
+    s = apply(s, { type: 'tapForMana', iid: s.battlefield[0].iid });
+    expect(powerOf(perm(s, 'Golem')!)).toBe(5);
+    expect(powerOf(perm(s, 'Kellan, the Fae-Blooded')!)).toBe(3); // Boots' +1/+0 only
+  });
+
+  it('Chainsaw: one rev counter when creatures die together, +1/+0 each', () => {
+    const wipe = spell('Wipe', '{1}', 'Destroy all creatures.', 'Sorcery');
+    let s = board({ mana: 1, mine: [chainsaw, creature('Golem', 3, 3)], theirs: [creature('Bear', 2, 2), creature('Ogre', 3, 3)], hand: [wipe] });
+    s = resolve(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    expect(perm(s, 'Chainsaw')!.counters.rev).toBe(1);
+  });
+
+  it('Cloud finds an Equipment; equipped, its Equipment\'s triggers happen twice', () => {
+    expect(triggersOf(cloud)[0].ability.effects).toMatchObject([{ kind: 'search', filter: { subtypes: ['equipment'] }, dest: 'hand' }]);
+    let s = board({ mine: [cloud, chainsaw], theirs: [creature('Bear', 2, 2)], hand: [shock] });
+    attach(s, 'Chainsaw', 'Cloud, Midgar Mercenary');
+    s.battlefield.push({ ...s.battlefield[0], iid: 'm0', card: card({ name: 'Mountain', typeLine: 'Basic Land — Mountain' }) });
+    s = resolve(settle(apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] })));
+    expect(perm(s, 'Bear')).toBeUndefined();
+    expect(perm(s, 'Chainsaw')!.counters.rev).toBe(2);
+  });
+
+  it('Iron Man Armor attaches itself as it enters', () => {
+    let s = board({ mana: 3, mine: [creature('Golem', 3, 3)], hand: [ironMan] });
+    s = settle(apply(s, { type: 'cast', iid: 'h0' }));
+    s = resolve(s);
+    if (s.pending) s = resolve(apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Golem') }]] } }));
+    expect(perm(s, 'Iron Man Armor')!.attachedTo).toBe(iidOf(s, 'Golem'));
+    expect(powerOf(perm(s, 'Golem')!)).toBe(5);
+  });
+
+  it('The Lonely Mountain: enters tapped without an Equipment; Dwarves {1} cheaper per Equipment', () => {
+    const play = (mine: Card[]) => perm(apply(board({ mine, hand: [lonely] }), { type: 'playLand', iid: 'h0' }), 'The Lonely Mountain')!.tapped;
+    expect(play([])).toBe(true);
+    expect(play([boots])).toBe(false);
+    // {4}{R} - 2 Equipment = {2}{R}, paid by two Swamps and a Mountain (The Lonely Mountain taps as the cost).
+    let s = board({ mana: 2, mine: [lonely, boots, chainsaw, card({ name: 'Mountain', typeLine: 'Basic Land — Mountain' })] });
+    s = resolve(settle(apply(s, { type: 'activate', iid: iidOf(s, 'The Lonely Mountain'), index: 0 })));
+    expect(perm(s, 'Dwarf')).toMatchObject({ controller: 0 });
+  });
+
+  it('Sunbillow Verge makes {R} only with a Mountain or a Plains', () => {
+    const s = board({ mine: [verge] });
+    expect(unitsOf(s, perm(s, 'Sunbillow Verge')!)).toEqual([['W']]);
+    const t = board({ mine: [verge, card({ name: 'Plains', typeLine: 'Basic Land — Plains' })] });
+    expect(unitsOf(t, perm(t, 'Sunbillow Verge')!)).toEqual([['W', 'R']]);
+  });
+
+  it('Leyline Axe in the opening hand begins the game on the battlefield', () => {
+    const g = newGame({ decks: [[axe, ...Array(39).fill(swamp)], Array(40).fill(island)], names: ['Me', 'Bot'], first: 0, rng: () => 0.99 });
+    let s = g;
+    s.players[0].hand = [{ iid: 'axe', card: axe }, ...s.players[0].hand.slice(1)];
+    for (let i = 0; i < 4 && s.mulligan; i++) s = apply(s, { type: 'keep', bottom: [] });
+    expect(perm(s, 'Leyline Axe')).toMatchObject({ controller: 0 });
+    expect(s.log.some((e) => e.k === 'beginsOnBattlefield')).toBe(true);
   });
 });

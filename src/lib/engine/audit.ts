@@ -1,7 +1,7 @@
 import type { Card } from '../../types';
 import {
   activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, entersCounters, entersTappedRule, frontText, gameRulesOf, isInstantOrSorcery,
-  KEYWORDS, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, type AbilitySpec,
+  KEYWORDS, beginsOnBattlefield, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, type AbilitySpec,
 } from './rules';
 
 /**
@@ -64,6 +64,7 @@ function keywordLine(card: Card, line: string, one: Card): LineReport | null {
     if (k === 'delve') return info.delve;
     if (k === 'affinity') return !!info.affinity;
     if (k === 'mobilize') return triggersOf(one).length > 0;
+    if (k === 'storied') return isStoried(one);
     return false;
   };
   const missing = pieces.filter((p) => !supported(p)).map((p) => keywordOf(p)!);
@@ -117,6 +118,10 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
       : { text: line, status: 'unread', how: 'mana ability not understood' };
   }
   if (staticsOf(one).length) return { text: line, status: 'ok', how: 'static ability' };
+  if (equipDiscount(one)) return { text: line, status: 'ok', how: `equip costs {${equipDiscount(one)}} less` };
+  if (freeFirstEquip(one)) return { text: line, status: 'ok', how: 'first equip each turn for {0} (enduring story)' };
+  if (doublesEquippedTriggers(one)) return { text: line, status: 'ok', how: 'triggers an additional time while equipped' };
+  if (beginsOnBattlefield(one)) return { text: line, status: 'ok', how: 'begins the game on the battlefield (always)' };
   const rules = gameRulesOf(one);
   if (rules.length) return { text: line, status: 'ok', how: `rule for the game: ${rules.join(', ')}` };
   // Cases: "To solve — …" goes with "Solved — …", which is not simulated.

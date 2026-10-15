@@ -214,7 +214,6 @@ graveyard"), Abandoned Air Temple (enters tapped unless you control a basic land
 - [x] Mobilize (Voice of Victory): tapped and attacking Warriors, sacrificed at the next end step (done at once, not as a
   delayed trigger on the stack)
 - [ ] Tokens with their own abilities (Ajani's Pridemate), Warp, Sneak, Cases
-- [ ] Leylines starting the game on the battlefield (CR 103.6)
 
 ## Metagame audit 2026-10-15
 
@@ -243,7 +242,7 @@ Still open, most played first:
   untap", draw-step damage if tapped, "{4}: Untap this artifact"
 - [ ] Cavern of Souls (11): "As this land enters, choose a creature type" (and its uncounterable mana)
 - [ ] Mox Diamond (11): "discard a land card instead" replacement; Chrome Mox (9): imprint and its mana
-- [ ] Gemstone Caverns (11): opening-hand rule; Leylines likewise
+- [ ] Gemstone Caverns (11): opening-hand rule (Leylines now begin on the battlefield)
 - [ ] Hexing Squelcher (9): "Ward—Pay 2 life", "Spells you control can't be countered", granted ward
 - [ ] Mox Amber (9): mana of the colors among legends you control
 - [ ] Teferi, Time Raveler (7): opponents cast only at sorcery speed; sorceries with flash
@@ -255,6 +254,26 @@ Still open, most played first:
 - [ ] Talon Gates of Madara (6), City of Traitors (6), Multiversal Passage (6), Elvish / Simian Spirit Guide (6):
   mana with other costs, "when you play another land", chosen basic land type, mana from exiling a card in hand
 - [ ] Defense Grid (5): cost increase off-turn
+
+## Standard: Boros Dwarves (mtgtop8 deck 899948)
+
+Fixed: granted ward and "hexproof from monocolored" (Lavaspur Boots, Sheltered by Ghosts, Dragonfire Blade), equip
+cost reductions (Dragonfire Blade per color, Dwarven Mauler, Kíli's Storied and free first equip), The Lonely
+Mountain (enters tapped unless you control an Equipment; Dwarf tokens {1} cheaper per Equipment), Dáin's Company's
+lifelink with another Dwarf, Kellan's "+1/+0 for each Aura and Equipment attached", Chainsaw's rev counters ("one or
+more creatures die" once per batch), Cloud's Equipment search and doubled triggers, Iron Man Armor attaching itself,
+Sunbillow Verge's conditional {R}, Leylines in the opening hand (always put onto the battlefield). Fixture:
+`standard-dwarves-2026-10`.
+
+Still missing:
+- [ ] Thorin, Mountain-king (4): "attach any number of target Equipment … to target creature", then a reflexive
+  fight-like damage
+- [ ] Dáin's Company (4): "look at the top four cards … you may reveal a Dwarf or Equipment card and put it into
+  your hand", the rest on the bottom
+- [ ] Cavern of Souls (4): chosen creature type, restricted mana
+- [ ] Iron Man Armor: "{2}: … becomes a 0/0 Construct Hero artifact creature …" (Equipment that becomes a creature)
+- [ ] Sideboard: Mjölnir ("Double all damage", "Equip worthy", discard from hand to deal damage), Chandra, Spark Hunter
+  (Vehicles, crew, emblems)
 
 ## Comprehensive Rules audit (CR 2026-09-25)
 
@@ -356,7 +375,8 @@ Others:
 ### Starting and ending the game (103–104)
 
 - [ ] 103.5 Mulligan options in multiplayer: one free mulligan done for Commander and 2HG; "Vancouver" not needed
-- [ ] 103.6 Opening-hand actions: Leylines (begin the game on the battlefield), Gemstone Caverns, Chancellor reveals
+- [ ] 103.6 Opening-hand actions: Gemstone Caverns, Chancellor reveals (Leylines done: always put onto the battlefield,
+  never asked)
 - [ ] 104.2b/104.3e Alternate win and loss conditions on cards ("you win the game", Laboratory Maniac, Thassa's
   Oracle, Platinum Angel "can't lose")
 - [ ] 104.4b Draw by repeated loop (no mandatory-loop detection; the bot could loop forever)

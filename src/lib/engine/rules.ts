@@ -114,6 +114,25 @@ export function manaUnits(card: Card, identity?: Color[]): Color[][] {
   return single.size ? [[...single]] : [];
 }
 
+/**
+ * Sunbillow Verge: "{T}: Add {R}. Activate only if you control a Mountain or a Plains." → the colors only that
+ * ability makes, and the subtypes one of which its controller must control (see unitsOf in the engine).
+ */
+export function manaConditions(card: Card): { colors: Color[]; subtypes: string[] }[] {
+  const free = new Set<Color>();
+  for (const [type, color] of BASIC_TYPES) if (card.typeLine.split('//')[0].includes(type)) free.add(color);
+  const conditional: { colors: Color[]; subtypes: string[] }[] = [];
+  for (const line of frontText(card).split('\n')) {
+    const m = line.match(/^\{T\}:\s*Add ([^.]*)\.(.*)$/);
+    const units = m && parseManaText(m[1]);
+    if (!m || !units || units.length !== 1) continue;
+    const only = m[2].trim().match(/^Activate only if you control (an? [A-Z][a-z]+(?: or an? [A-Z][a-z]+)*)\.$/);
+    if (only) conditional.push({ colors: units[0], subtypes: only[1].split(' or ').map((w) => w.replace(/^an? /, '').toLowerCase()) });
+    else if (!m[2].trim()) units[0].forEach((c) => free.add(c));
+  }
+  return conditional.map((c) => ({ ...c, colors: c.colors.filter((x) => !free.has(x)) })).filter((c) => c.colors.length);
+}
+
 /** A mana ability "{T}: Add …" (or a basic land type) without a life cost. */
 const freeMana = (card: Card) =>
   /^\{T\}(?:, Sacrifice [^:]*)?:\s*Add /m.test(frontText(card)) || BASIC_TYPES.some(([type]) => card.typeLine.split('//')[0].includes(type));
@@ -324,7 +343,7 @@ export interface TargetSpec {
 // ---------- Effects ----------
 
 /** Counter kinds placed on permanents. */
-export type CounterKind = '+1/+1' | '-1/-1' | 'loyalty' | 'lore';
+export type CounterKind = '+1/+1' | '-1/-1' | 'loyalty' | 'lore' | 'rev';
 
 /**
  * Who an effect applies to: the targets chosen for a slot, the controller, everyone / each opponent,
@@ -546,6 +565,11 @@ export function parseTargetPhrase(phrase: string): TargetSpec | null {
     if (NOUNS[w]) nouns.add(NOUNS[w]);
     else if (w === 'tapped' || w === 'untapped') filter.tapped = w === 'tapped';
     else if (w === 'nonbasic' && words[words.indexOf(w) + 1] === 'land') filter.nonbasicLands = true;
+    // "target Equipment you control": a permanent with that subtype.
+    else if (OTHER_SUBTYPES.includes(w)) {
+      (filter.subtypes ??= []).push(w);
+      nouns.add('permanent');
+    }
     else if (w === 'attacking') filter.attacking = true;
     else if (w === 'blocking') filter.blocking = true;
     else if (COLOR_WORDS[w]) (filter.colors ??= []).push(COLOR_WORDS[w]);
@@ -605,13 +629,15 @@ function cardWordsFilter(words: string): TargetFilter | null {
 }
 
 const LAND_TYPES = ['plains', 'island', 'swamp', 'mountain', 'forest', 'desert', 'gate', 'cave', 'sphere'];
+/** Artifact and enchantment subtypes searched for or counted ("an Equipment card", "an Aura or Equipment card"). */
+const OTHER_SUBTYPES = ['equipment', 'aura', 'vehicle'];
 
 /** "basic land", "Forest or Plains", "creature" (the cards a library search may find). */
 function librarySearchFilter(words: string): TargetFilter | null {
   const filter: TargetFilter = {};
   for (const w of words.toLowerCase().replace(/,? or |, /g, ' ').split(' ').filter(Boolean)) {
     if (w === 'basic') filter.basic = true;
-    else if (LAND_TYPES.includes(w)) (filter.subtypes ??= []).push(w);
+    else if (LAND_TYPES.includes(w) || OTHER_SUBTYPES.includes(w)) (filter.subtypes ??= []).push(w);
     else if (CARD_TYPES.includes(w as CardType)) (filter.types ??= []).push(w as CardType);
     else if (w === 'card') continue;
     else return null;
@@ -920,10 +946,15 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     scan(new RegExp(`(?:^|[.,] *|then |and )${SELF} gains ${KEYWORD_LIST} until end of turn`, 'gi'), (m) => ({
       kind: 'pump', power: 0, toughness: 0, keywords: keywordList(m[1]), to: 'self',
     }));
-    scan(new RegExp(`\\bput (${AMOUNT}) ([+-]1\\/[+-]1|loyalty) counters? on ${SELF}(?=\\.|\\n|$|,)`, 'gi'), (m) => ({
+    scan(new RegExp(`\\bput (${AMOUNT}) ([+-]1\\/[+-]1|loyalty|rev) counters? on ${SELF}(?=\\.|\\n|$|,)`, 'gi'), (m) => ({
       kind: 'addCounters', counter: m[2] as CounterKind, n: toAmount(m[1]), to: 'self',
     }));
     scan(new RegExp(`(?:^|[.,] *|then )sacrifice ${SELF}(?=\\.|$)`, 'gi'), () => ({ kind: 'sacrificeSelf' }));
+    // Iron Man Armor: "When this Equipment enters, attach it to target creature you control."
+    scan(new RegExp(`\\battach (?:it|${SELF}) to (${TARGET})${END}`, 'gi'), (m) => {
+      const to = slotFor(m[1], (spec) => spec.kind === 'creature' && spec.filter.controller === 'you');
+      return to && { kind: 'attach', to };
+    });
   }
 
   // Text that is understood: the effects matched, and sentences that change nothing the engine simulates.
@@ -1261,6 +1292,8 @@ export interface TriggerSpec {
   event: TriggerEvent;
   /** "This ability triggers only once each turn." */
   oncePerTurn?: boolean;
+  /** "Whenever one or more creatures die": once for creatures dying at the same time. */
+  batch?: boolean;
   /** What it does. No effects means the ability is recognized as a trigger but not simulated. */
   ability: AbilitySpec;
 }
@@ -1278,6 +1311,13 @@ const NO_EFFECT: AbilitySpec = { targets: [], effects: [] };
 
 /** "a creature you control", "another nontoken creature", "a land" → which permanents a trigger watches. */
 function triggerSubject(subject: string, underYourControl: boolean): { which: Selector; another: boolean } | null {
+  // Kíli: "another Dwarf or Equipment you control": any permanent of these subtypes.
+  const kinds = subject.match(/^(a|an|another) ((?:[A-Z][a-z]+)(?: or [A-Z][a-z]+)+)( you control)?$/);
+  if (kinds) {
+    const filter: TargetFilter = { subtypes: kinds[2].toLowerCase().split(' or ') };
+    if (kinds[3] || underYourControl) filter.controller = 'you';
+    return { which: { kind: 'permanent', filter }, another: kinds[1] === 'another' };
+  }
   const m = subject.toLowerCase().match(/^(a|an|another) (.+)$/);
   if (!m) return null;
   const spec = parseTargetPhrase(`target ${m[2]}`);
@@ -1410,7 +1450,17 @@ export function triggersOf(card: Card): TriggerSpec[] {
       continue;
     }
 
-    const ev = line.match(/^(?:When|Whenever) (.+?) (enters(?: the battlefield)?( under your control)?|attacks|dies|deals combat damage to a player)(?: or (enters|attacks|dies)(?: the battlefield)?)?, (.+)$/i);
+    // Chainsaw: "Whenever one or more creatures die, put a rev counter on this Equipment."
+    const died = line.match(/^Whenever one or more creatures die, (.+)$/i);
+    if (died) {
+      out.push({ event: { on: 'dies', self: false, which: { kind: 'creature', filter: {} }, another: false }, ability: triggerAbility(died[1], name, true), batch: true });
+      continue;
+    }
+
+    // Kíli: "Whenever another Dwarf or Equipment you control enters, draw a card. This ability triggers only once each turn."
+    const oncePerTurn = / This ability triggers only once each turn\.$/.test(line);
+    const ev = line.replace(/ This ability triggers only once each turn\.$/, '')
+      .match(/^(?:When|Whenever) (.+?) (enters(?: the battlefield)?( under your control)?|attacks|dies|deals combat damage to a player)(?: or (enters|attacks|dies)(?: the battlefield)?)?, (.+)$/i);
     if (ev) {
       const [, rawSubject, verb, under, alsoVerb, text] = ev;
       const ons = [verb, alsoVerb].filter(Boolean).map((v): ObjectEvent => (v.startsWith('deals') ? 'combatDamage' : (v.toLowerCase().split(' ')[0] as ObjectEvent)));
@@ -1422,7 +1472,7 @@ export function triggersOf(card: Card): TriggerSpec[] {
       if (!self && !watched) continue;
       const ability = triggerAbility(text, name, self);
       for (const on of ons) {
-        out.push({ event: self ? { on, self: true } : { on, self: false, ...watched! }, ability });
+        out.push({ event: self ? { on, self: true } : { on, self: false, ...watched! }, ability, ...(oncePerTurn ? { oncePerTurn } : {}) });
       }
       continue;
     }
@@ -1492,6 +1542,13 @@ export interface ActivatedSpec {
   sorcery: boolean;
   /** "Activate only once each turn." */
   once: boolean;
+  /**
+   * An equip ability (Dwarven Mauler and Kíli make some cheaper). `perColor`: Dragonfire Blade's "This ability costs
+   * {1} less to activate for each color of the creature it targets."
+   */
+  equip?: { perColor?: boolean };
+  /** The Lonely Mountain: "This ability costs {1} less to activate for each Equipment you control." */
+  discountPer?: Selector;
 }
 
 const activatedCache = new Map<string, ActivatedSpec[]>();
@@ -1512,10 +1569,10 @@ export function activatedOf(card: Card): ActivatedSpec[] {
   for (const raw of frontText(card).split('\n')) {
     const line = raw.replace(/\s*\([^)]*\)/g, '').replace(/^[A-Z][A-Za-z' ]+ — /, '').trim();
     // "Equip {2}": attach to target creature you control, as a sorcery.
-    const equip = line.match(/^Equip ((?:\{[^}]+\})+)$/);
+    const equip = line.match(/^Equip ((?:\{[^}]+\})+)(\. This ability costs \{1\} less to activate for each color of the creature it targets\.)?$/);
     if (equip) {
       out.push({
-        text: line, cost: { mana: equip[1], tap: false, sacrificeSelf: false, life: 0 }, sorcery: true, once: false,
+        text: line, cost: { mana: equip[1], tap: false, sacrificeSelf: false, life: 0 }, sorcery: true, once: false, equip: equip[2] ? { perColor: true } : {},
         ability: { targets: [{ kind: 'creature', min: 1, max: 1, filter: { controller: 'you' } }], effects: [{ kind: 'attach', to: { slot: 0 } }] },
       });
       continue;
@@ -1549,6 +1606,15 @@ export function activatedOf(card: Card): ActivatedSpec[] {
       else ok = false;
     }
     if (!ok) continue;
+    // "This ability costs {1} less to activate for each Equipment you control."
+    let discountPer: Selector | undefined;
+    const discount = text.match(/ This ability costs \{1\} less to activate for each ([A-Za-z ]+?) you control\./);
+    if (discount) {
+      const counted = parseTargetPhrase(`target ${discount[1]} you control`);
+      if (!counted || (counted.kind !== 'creature' && counted.kind !== 'permanent')) continue;
+      discountPer = { kind: counted.kind, filter: counted.filter };
+      text = text.replace(discount[0], '');
+    }
     const sorcery = /Activate only as a sorcery/i.test(text);
     const once = /Activate only once each turn/i.test(text);
     // Other restrictions ("only during your turn", "only if …") aren't checked: leave the ability out.
@@ -1557,11 +1623,41 @@ export function activatedOf(card: Card): ActivatedSpec[] {
     const optional = /^you may /i.test(text);
     const body = optional ? `you ${text.slice('you may '.length)}` : text;
     const ability = UNSUPPORTED.test(body) ? NO_EFFECT : parseAbilityText(body, name);
-    out.push({ text: line, cost, ability: optional && ability.effects.length ? { ...ability, optional } : ability, sorcery, once });
+    out.push({ text: line, cost, ability: optional && ability.effects.length ? { ...ability, optional } : ability, sorcery, once, ...(discountPer ? { discountPer } : {}) });
   }
   activatedCache.set(key, out);
   return out;
 }
+
+/** Dwarven Mauler: "Equip abilities you activate that target this creature cost {2} less to activate." → 2. */
+export function equipDiscount(card: Card): number {
+  const selves = selfWords(card.name).map(escapeRe).join('|');
+  const m = frontText(card).match(new RegExp(`^Equip abilities you activate that target (?:${selves}) cost \\{(\\d+)\\} less to activate\\.$`, 'im'));
+  return m ? Number(m[1]) : 0;
+}
+
+/**
+ * Kíli: "As long as you have an enduring story, you may pay {0} rather than pay the equip cost of the first equip
+ * ability you activate each turn." (Always taken: it only saves mana.)
+ */
+export const freeFirstEquip = (card: Card) =>
+  /^As long as you have an enduring story, you may pay \{0\} rather than pay the equip cost of the first equip ability you activate each turn\.$/m.test(frontText(card));
+
+/** "Storied": three or more artifacts, legendaries and/or Sagas give its controller an enduring story for the game. */
+export const isStoried = (card: Card) => /^Storied\b/m.test(frontText(card));
+
+/**
+ * Cloud: "As long as Cloud is equipped, if a triggered ability of Cloud or an Equipment attached to it triggers, that
+ * ability triggers an additional time."
+ */
+export function doublesEquippedTriggers(card: Card): boolean {
+  const selves = selfWords(card.name).map(escapeRe).join('|');
+  return new RegExp(`^As long as (?:${selves}) is equipped, if a triggered ability of (?:${selves}) or an Equipment attached to it triggers, that ability triggers an additional time\\.$`, 'im').test(frontText(card));
+}
+
+/** Leylines: "If this card is in your opening hand, you may begin the game with it on the battlefield." */
+export const beginsOnBattlefield = (card: Card) =>
+  /^If this card is in your opening hand, you may begin the game with it on the battlefield\.$/m.test(frontText(card));
 
 // ---------- Entering the battlefield ----------
 
@@ -1602,7 +1698,17 @@ export interface StaticSpec {
   toughness: number;
   /** "gets +1/+1 for each artifact you control": power and toughness count these permanents of its controller. */
   perEach?: Selector;
+  /** Kellan: "for each Aura and Equipment attached to Kellan". */
+  perAttached?: boolean;
+  /** Chainsaw: "+X/+0, where X is the number of rev counters on this Equipment". */
+  perCounter?: CounterKind;
+  /** Dáin's Company: "as long as you control another Dwarf" (a creature type, lower case). */
+  ifAnother?: string;
   keywords: Keyword[];
+  /** "has … ward {2}" (Lavaspur Boots, Sheltered by Ghosts). */
+  ward?: number;
+  /** Dragonfire Blade: "has hexproof from monocolored". */
+  hexproofFromMonocolored?: boolean;
   cantAttack?: boolean;
   cantBlock?: boolean;
 }
@@ -1645,11 +1751,23 @@ export function staticsOf(card: Card): StaticSpec[] {
     const attached = line.match(/^(Enchanted|Equipped) creature (.+)\.$/);
     if (attached) {
       const who = attached[1] === 'Enchanted' ? 'enchanted' : 'equipped';
-      const body = attached[2];
+      // "has haste and ward {1}", "has hexproof from monocolored": abilities that aren't plain keywords.
+      const extra: Partial<StaticSpec> = {};
+      const body = attached[2]
+        .replace(/(?:,? and |, | )ward \{(\d+)\}$/i, (_, n) => ((extra.ward = Number(n)), ''))
+        .replace(/(?:,? and |, | )hexproof from monocolored$/i, () => ((extra.hexproofFromMonocolored = true), ''))
+        .replace(/ and has$| has$/, '');
+      // Chainsaw: "gets +X/+0, where X is the number of rev counters on this Equipment".
+      const perCounter = body.match(/^gets \+X\/\+0, where X is the number of ([a-z]+) counters on this (?:Equipment|Aura)$/i);
+      if (perCounter) {
+        out.push({ who, power: 1, toughness: 0, keywords: [], perCounter: perCounter[1].toLowerCase() as CounterKind });
+        continue;
+      }
       const pump = body.match(new RegExp(`^gets ([+-]\\d+)\\/([+-]\\d+)(?: and has ${KEYWORD_LIST})?$`, 'i'));
       const has = body.match(new RegExp(`^has ${KEYWORD_LIST}$`, 'i'));
-      if (pump) out.push({ who, power: Number(pump[1]), toughness: Number(pump[2]), keywords: kws(pump[3]) });
-      else if (has) out.push({ who, power: 0, toughness: 0, keywords: kws(has[1]) });
+      if (pump) out.push({ who, power: Number(pump[1]), toughness: Number(pump[2]), keywords: kws(pump[3]), ...extra });
+      else if (has) out.push({ who, power: 0, toughness: 0, keywords: kws(has[1]), ...extra });
+      else if (body === '' && (extra.ward || extra.hexproofFromMonocolored)) out.push({ who, power: 0, toughness: 0, keywords: [], ...extra });
       else if (/^can't attack or block$/i.test(body)) out.push({ who, power: 0, toughness: 0, keywords: [], cantAttack: true, cantBlock: true });
       else if (/^can't attack$/i.test(body)) out.push({ who, power: 0, toughness: 0, keywords: [], cantAttack: true });
       else if (/^can't block$/i.test(body)) out.push({ who, power: 0, toughness: 0, keywords: [], cantBlock: true });
@@ -1661,6 +1779,19 @@ export function staticsOf(card: Card): StaticSpec[] {
     const counted = each && parseTargetPhrase(`target ${each[3]} you control`);
     if (each && counted && (counted.kind === 'creature' || counted.kind === 'permanent')) {
       out.push({ who: 'self', power: Number(each[1]), toughness: Number(each[2]), keywords: [], perEach: { kind: counted.kind, filter: counted.filter } });
+      continue;
+    }
+    // Dáin's Company: "This creature has lifelink as long as you control another Dwarf."
+    const ifAnother = line.match(new RegExp(`^(?:${selves}) has ${KEYWORD_LIST} as long as you control another ([A-Z][a-z]+)\\.$`, 'i'));
+    if (ifAnother) {
+      out.push({ who: 'self', power: 0, toughness: 0, keywords: kws(ifAnother[1]), ifAnother: ifAnother[2].toLowerCase() });
+      continue;
+    }
+    // Kellan: "Other creatures you control get +1/+0 for each Aura and Equipment attached to Kellan."
+    const perAttached = line.match(new RegExp(`^(Other creatures you control) get \\+(\\d+)\\/\\+(\\d+) for each Aura and Equipment attached to (?:${selves})\\.$`, 'i'));
+    const attachedSubject = perAttached && anthemSubject(perAttached[1]);
+    if (attachedSubject) {
+      out.push({ who: attachedSubject, power: Number(perAttached![2]), toughness: Number(perAttached![3]), keywords: [], perAttached: true });
       continue;
     }
     const anthem = line.match(/^((?:Other )?[A-Za-z ]*?[Cc]reatures?(?: you control| your opponents control| you don't control)?) (?:get ([+-]\d+)\/([+-]\d+)(?: and have (.+))?|have (.+))\.$/);
@@ -1725,7 +1856,8 @@ export function entersTappedRule(card: Card): EntersTappedRule | null {
     if (lands) return { kind: 'unlessOtherLands', [lands[2] === 'fewer' ? 'max' : 'min']: toNumber(lands[1]) };
     if (what === 'a basic land') return { kind: 'unlessBasic' };
     const types = what.split(/,? or |, /).map((w) => w.replace(/^an? /, ''));
-    if (types.every((t) => LAND_TYPES.includes(t))) return { kind: 'unlessSubtypes', subtypes: types };
+    // "unless you control a Mountain or a Forest"; The Lonely Mountain: "unless you control an Equipment".
+    if (types.every((t) => LAND_TYPES.includes(t) || OTHER_SUBTYPES.includes(t))) return { kind: 'unlessSubtypes', subtypes: types };
     return null;
   }
   const shock = text.match(/As (?:this land|this permanent) enters(?: the battlefield)?, you may pay (\d+) life\. If you don't, it enters(?: the battlefield)? tapped\./i);

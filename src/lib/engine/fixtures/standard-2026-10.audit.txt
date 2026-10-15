@@ -527,11 +527,6 @@ PARTIAL  Into the Flood Maw {U} — Instant
       keyword not simulated: gift
   ✓ Return target creature an opponent controls to its owner's hand. If t…
       spell → bounce (1 target)
-PARTIAL  Leyline of the Void {2}{B}{B} — Enchantment
-  ? If this card is in your opening hand, you may begin the game with it …
-      not read by the engine
-  ✓ If a card would be put into an opponent's graveyard from anywhere, ex…
-      rule for the game: opponentGraveyardsExiled
 PARTIAL  Likeness Looter {U}{B} — Creature — Faerie Shapeshifter
   ✓ Flying
       keyword
@@ -828,6 +823,11 @@ OK       Inevitable Defeat {1}{R}{W}{B} — Instant
       can't be countered
   ✓ Exile target nonland permanent. Its controller loses 3 life and you g…
       spell → destroy+gainLife (1 target)
+OK       Leyline of the Void {2}{B}{B} — Enchantment
+  ✓ If this card is in your opening hand, you may begin the game with it …
+      begins the game on the battlefield (always)
+  ✓ If a card would be put into an opponent's graveyard from anywhere, ex…
+      rule for the game: opponentGraveyardsExiled
 OK       Lunar Convocation {W}{B} — Enchantment
   ✓ At the beginning of your end step, if you gained life this turn, each…
       trigger (endStep) → loseLife, if 1+ life gained this turn
@@ -961,5 +961,5 @@ OK       Watery Grave  — Land — Island Swamp
   ✓ As this land enters, you may pay 2 life. If you don't, it enters tapp…
       enters tapped (payLife)
 
-178 cards: 65 ok, 46 partial, 67 not simulated, 0 can't be cast
+178 cards: 66 ok, 45 partial, 67 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

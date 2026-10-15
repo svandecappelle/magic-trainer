@@ -1,8 +1,8 @@
 import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
-  cardTypes, findPayment, hasInstantSpeed, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, isPlaneswalker, isSaga, finalChapter, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  cardTypes, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
+  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type CastChoice, type Cost, type ObjectEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -49,7 +49,7 @@ export interface Permanent extends CardInst {
   /** Aura or Equipment: the permanent it is attached to. */
   attachedTo?: string;
   /** What static abilities (anthems, Auras, Equipment) give it right now; recomputed by the engine. */
-  statics?: { power: number; toughness: number; keywords: Keyword[]; cantAttack?: boolean; cantBlock?: boolean };
+  statics?: { power: number; toughness: number; keywords: Keyword[]; cantAttack?: boolean; cantBlock?: boolean; ward?: number[]; hexproofFromMonocolored?: boolean };
 }
 
 export interface StackItem extends CardInst {
@@ -90,6 +90,8 @@ export interface Triggered {
   ability: AbilitySpec;
   /** Targets fixed by the rules instead of chosen (ward targets the spell that targeted it). */
   targets?: Target[][];
+  /** A "one or more" trigger: its source and index, so creatures dying together trigger it once. */
+  batch?: string;
 }
 
 /** One mana in a pool: its possible colors, and the permanent that made it (to untap it again). */
@@ -123,6 +125,10 @@ export interface PlayerState {
   identity?: Color[];
   /** Turns this player has begun (Starting Town: "your first, second, or third turn of the game"). */
   turns?: number;
+  /** Storied (Kíli): three or more artifacts, legendaries and/or Sagas were under their control once. */
+  enduringStory?: boolean;
+  /** Equip abilities activated this turn (Kíli: "the first equip ability you activate each turn"). */
+  equipsThisTurn?: number;
 }
 
 /**
@@ -284,6 +290,8 @@ export type LogEntry =
   | { k: 'bounced'; card: string }
   | { k: 'sacrificed'; card: string }
   | { k: 'attached'; card: string; to: string }
+  /** Leylines: a card of the opening hand begins the game on the battlefield. */
+  | { k: 'beginsOnBattlefield'; p: PlayerId; card: string }
   /** Urza's Saga's chapters: the permanent gains an ability (its text). */
   | { k: 'gainsAbility'; card: string; text: string }
   | { k: 'poison'; p: PlayerId; n: number }
@@ -530,11 +538,19 @@ const protectedFrom = (perm: Permanent, source: Card) => protectionsOf(perm.card
  */
 export function unitsOf(s: GameState, perm: Permanent): Color[][] {
   const identity = s.players[perm.controller]?.identity;
-  const units = manaUnits(perm.card, identity);
+  let units = manaUnits(perm.card, identity);
   const pain = manaPain(perm.card, identity);
-  if (!pain || s.players[perm.controller].life >= pain.life) return units;
-  return units.map((u) => u.filter((c) => !pain.colors.includes(c)));
+  if (pain && s.players[perm.controller].life < pain.life) units = units.map((u) => u.filter((c) => !pain.colors.includes(c)));
+  // Sunbillow Verge: "{T}: Add {R}. Activate only if you control a Mountain or a Plains."
+  for (const cond of manaConditions(perm.card)) {
+    const met = s.battlefield.some((x) => x.controller === perm.controller && cond.subtypes.some((t) => subtypesOf(x.card).includes(t)));
+    if (!met) units = units.map((u) => u.filter((c) => !cond.colors.includes(c)));
+  }
+  return units.filter((u) => u.length);
 }
+
+/** A card's subtypes (front face), lower case: "Land — Mountain Plains" → mountain, plains. */
+const subtypesOf = (c: Card) => (c.typeLine.split('//')[0].toLowerCase().split('—')[1] ?? '').trim().split(' ');
 
 /** Starting Town: the colors its mana costs life to be spent as, while its controller can pay that life. */
 function painOf(s: GameState, perm: Permanent) {
@@ -788,10 +804,28 @@ export function landFaces(card: Card): number[] {
 // ---------- Activated abilities ----------
 
 /** The mana part of an ability's cost, with X set. */
-function abilityCost(spec: ActivatedSpec, x = 0) {
+/**
+ * What activating an ability of `perm` costs, with its reductions: The Lonely Mountain's "{1} less for each Equipment
+ * you control"; for equip, Dwarven Mauler's and Dragonfire Blade's (for `target`, or the cheapest creature to equip
+ * when it isn't chosen yet) and Kíli's {0} for the first equip each turn.
+ */
+function abilityCost(s: GameState, perm: Permanent, spec: ActivatedSpec, x = 0, target?: Permanent): Cost {
   const cost = parseCost(spec.cost.mana);
-  return { ...cost, generic: cost.generic + x * (spec.cost.mana.match(/\{X\}/g) ?? []).length };
+  let generic = cost.generic + x * (spec.cost.mana.match(/\{X\}/g) ?? []).length;
+  const p = perm.controller;
+  if (spec.discountPer) generic -= matching(s, p, spec.discountPer).filter((x) => x.controller === p).length;
+  if (spec.equip) {
+    if (freeEquip(s, p)) return { generic: 0, colored: [] };
+    const reduction = (c: Permanent) => equipDiscount(c.card) + (spec.equip!.perColor ? cardColors(c.card).length : 0);
+    const options = target ? [target] : creaturesOf(s, p);
+    generic -= Math.max(0, ...options.map(reduction));
+  }
+  return { ...cost, generic: Math.max(0, generic) };
 }
+
+/** Kíli: with an enduring story, the first equip ability `p` activates each turn costs {0}. */
+const freeEquip = (s: GameState, p: PlayerId) =>
+  !!s.players[p].enduringStory && !s.players[p].equipsThisTurn && s.battlefield.some((x) => x.controller === p && freeFirstEquip(x.card));
 
 /** Mana sources that can pay for an ability of `perm`: not the permanent itself when it must tap. */
 const sourcesFor = (s: GameState, perm: Permanent, spec: ActivatedSpec) =>
@@ -815,7 +849,7 @@ export function activationProblem(s: GameState, p: PlayerId, perm: Permanent, in
   }
   if (spec.cost.life && s.players[p].life < spec.cost.life) return 'notEnoughLife';
   if (spec.cost.sacrifice && !sacrificeOptions(s, perm, spec).length) return 'nothingToSacrifice';
-  if (!findPayment(sourcesFor(s, perm, spec), abilityCost(spec, x))) return 'notEnoughMana';
+  if (!findPayment(sourcesFor(s, perm, spec), abilityCost(s, perm, spec, x))) return 'notEnoughMana';
   return null;
 }
 
@@ -824,7 +858,7 @@ export function abilityMaxX(s: GameState, perm: Permanent, index: number): numbe
   const spec = activatedOf(perm.card)[index];
   if (!spec?.cost.mana.includes('{X}')) return 0;
   let x = 0;
-  while (findPayment(sourcesFor(s, perm, spec), abilityCost(spec, x + 1))) x++;
+  while (findPayment(sourcesFor(s, perm, spec), abilityCost(s, perm, spec, x + 1))) x++;
   return x;
 }
 
@@ -940,6 +974,8 @@ export function isLegalTarget(s: GameState, caster: PlayerId, spec: TargetSpec, 
   const perm = findPermanent(s, t.iid)!;
   if (hasKw(perm, 'shroud')) return false;
   if (hasKw(perm, 'hexproof') && perm.controller !== caster) return false;
+  // Dragonfire Blade: "hexproof from monocolored" (an opponent's spell or ability from a one-color source).
+  if (perm.statics?.hexproofFromMonocolored && perm.controller !== caster && source && cardColors(source).length === 1) return false;
   return !(source && protectedFrom(perm, source));
 }
 
@@ -1162,6 +1198,7 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
   for (const ps of d.players) {
     delete ps.gainedThisTurn;
     delete ps.lostThisTurn;
+    delete ps.equipsThisTurn;
   }
   emptyPools(d);
   for (const perm of d.battlefield) {
@@ -1367,8 +1404,9 @@ function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, op
   const otherLands = d.battlefield.filter((x) => x.controller === controller && isLandCard(x.card));
   if (opts.tapped || rule?.kind === 'always') perm.tapped = true;
   else if (rule?.kind === 'unlessSubtypes') {
-    const subtypesOf = (c: Card) => (c.typeLine.split('//')[0].toLowerCase().split('—')[1] ?? '').split(' ');
-    perm.tapped = !otherLands.some((x) => rule.subtypes.some((t) => subtypesOf(x.card).includes(t)));
+    // Land types, or The Lonely Mountain's Equipment: any other permanent its controller has.
+    const others = d.battlefield.filter((x) => x.controller === controller);
+    perm.tapped = !others.some((x) => rule.subtypes.some((t) => subtypesOf(x.card).includes(t)));
   } else if (rule?.kind === 'unlessEarlyTurn') {
     perm.tapped = !(isActivePlayer(d, controller) && (d.players[controller].turns ?? 0) <= rule.n);
   } else if (rule?.kind === 'unlessBasic') perm.tapped = !otherLands.some((x) => /\bBasic\b/.test(x.card.typeLine));
@@ -1390,6 +1428,21 @@ function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, op
   // A Saga enters with a lore counter (CR 714.3a).
   if (isSaga(perm.card)) addLore(d, perm);
   return perm;
+}
+
+/**
+ * Leylines: "If this card is in your opening hand, you may begin the game with it on the battlefield." Always done
+ * (it costs nothing), before the first turn.
+ */
+function openingHandPermanents(d: GameState) {
+  for (const p of turnOrder(d)) {
+    const ps = d.players[p];
+    for (const inst of ps.hand.filter((c) => beginsOnBattlefield(c.card))) {
+      ps.hand = ps.hand.filter((c) => c !== inst);
+      log(d, { k: 'beginsOnBattlefield', p, card: inst.card.name });
+      enterBattlefield(d, inst, p);
+    }
+  }
 }
 
 /** A lore counter on a Saga: each chapter it reaches triggers (CR 714.2b). */
@@ -1424,13 +1477,27 @@ function conditionMet(d: GameState, p: PlayerId, cond: AbilitySpec['condition'])
   return (ps.gainedThisTurn ?? 0) >= (cond.gained ?? 0) && (!cond.lost || (ps.lostThisTurn ?? 0) > 0);
 }
 
-function queueTrigger(d: GameState, source: CardInst, controller: PlayerId, ability: AbilitySpec) {
+function queueTrigger(d: GameState, source: CardInst, controller: PlayerId, ability: AbilitySpec, batch?: string) {
   if (!ability.effects.length) {
     log(d, { k: 'notSimulated', card: source.card.name });
     return;
   }
   if (!conditionMet(d, controller, ability.condition)) return;
-  (d.triggered ??= []).push({ source: { iid: source.iid, card: source.card }, controller, ability });
+  const n = triggersTwice(d, source.iid) ? 2 : 1;
+  for (let i = 0; i < n; i++) (d.triggered ??= []).push({ source: { iid: source.iid, card: source.card }, controller, ability, ...(batch ? { batch } : {}) });
+}
+
+/**
+ * Cloud: "As long as Cloud is equipped, if a triggered ability of Cloud or an Equipment attached to it triggers, that
+ * ability triggers an additional time."
+ */
+function triggersTwice(d: GameState, iid: string): boolean {
+  const perm = findPermanent(d, iid);
+  if (!perm) return false;
+  const host = doublesEquippedTriggers(perm.card) ? perm
+    : perm.attachedTo && /\bEquipment\b/.test(perm.card.typeLine) ? findPermanent(d, perm.attachedTo) : undefined;
+  return !!host && doublesEquippedTriggers(host.card) &&
+    d.battlefield.some((x) => x.attachedTo === host.iid && /\bEquipment\b/.test(x.card.typeLine));
 }
 
 /** Does `perm` match what a trigger watches, seen from the trigger controller's side? Works for permanents that just left too. */
@@ -1456,7 +1523,10 @@ function fireObject(d: GameState, on: ObjectEvent, perm: Permanent) {
         if (x.triggeredOnce?.includes(i)) return;
         x.triggeredOnce = [...(x.triggeredOnce ?? []), i];
       }
-      queueTrigger(d, x, x.controller, t.ability);
+      // "Whenever one or more creatures die": once for those dying together (still waiting to go on the stack).
+      const batch = t.batch ? `${x.iid}:${i}` : undefined;
+      if (batch && d.triggered?.some((w) => w.batch === batch)) return;
+      queueTrigger(d, x, x.controller, t.ability, batch);
     });
   }
 }
@@ -1511,13 +1581,15 @@ function fireWard(d: GameState, item: StackItem) {
     if (t.kind !== 'permanent' || seen.has(t.iid)) continue;
     seen.add(t.iid);
     const perm = findPermanent(d, t.iid);
-    const n = perm ? wardCost(perm.card) : 0;
-    if (!perm || !n || perm.controller === item.controller) continue;
-    (d.triggered ??= []).push({
-      source: { iid: perm.iid, card: perm.card }, controller: perm.controller,
-      ability: { targets: [{ kind: 'spell', min: 1, max: 1, filter: { abilities: true } }], effects: [{ kind: 'counter', to: { slot: 0 }, unlessPays: n }] },
-      targets: [[{ kind: 'spell', iid: item.iid }]],
-    });
+    if (!perm || perm.controller === item.controller) continue;
+    // Its own ward, and each one granted (Lavaspur Boots): each triggers.
+    for (const n of [wardCost(perm.card), ...(perm.statics?.ward ?? [])].filter((x) => x > 0)) {
+      (d.triggered ??= []).push({
+        source: { iid: perm.iid, card: perm.card }, controller: perm.controller,
+        ability: { targets: [{ kind: 'spell', min: 1, max: 1, filter: { abilities: true } }], effects: [{ kind: 'counter', to: { slot: 0 }, unlessPays: n }] },
+        targets: [[{ kind: 'spell', iid: item.iid }]],
+      });
+    }
   }
 }
 
@@ -1589,6 +1661,13 @@ function checkStateBased(d: GameState) {
       sacrifice(d, perm);
     }
   }
+  // Storied: "If you control three or more artifacts, legendaries, and/or Sagas, you have an enduring story for the
+  // rest of the game."
+  for (const perm of d.battlefield) {
+    if (!isStoried(perm.card) || d.players[perm.controller].enduringStory) continue;
+    const story = d.battlefield.filter((x) => x.controller === perm.controller && (cardTypes(x.card).includes('artifact') || /\bLegendary\b/.test(x.card.typeLine.split('//')[0]) || isSaga(x.card)));
+    if (story.length >= 3) d.players[perm.controller].enduringStory = true;
+  }
   // Auras on something they can't enchant any more go to the graveyard; Equipment just falls off.
   for (const perm of [...d.battlefield]) {
     if (!perm.attachedTo && !auraTarget(perm.card)) continue;
@@ -1627,13 +1706,20 @@ function refreshStatics(d: GameState) {
         : typeof st.who === 'string'
           ? (src.attachedTo ? [findPermanent(d, src.attachedTo)].filter((x) => x !== undefined) : [])
           : matching(d, src.controller, st.who.which).filter((x) => !(typeof st.who !== 'string' && st.who.other && x.iid === src.iid));
-      // "for each artifact you control"
-      const times = st.perEach ? matching(d, src.controller, st.perEach).filter((x) => x.controller === src.controller).length : 1;
+      // Dáin's Company: "as long as you control another Dwarf".
+      if (st.ifAnother && !d.battlefield.some((x) => x.iid !== src.iid && x.controller === src.controller && isCreature(x.card) && subtypesOf(x.card).includes(st.ifAnother!))) continue;
+      // "for each artifact you control", Kellan's "for each Aura and Equipment attached to Kellan", Chainsaw's rev counters.
+      const times = st.perEach ? matching(d, src.controller, st.perEach).filter((x) => x.controller === src.controller).length
+        : st.perAttached ? d.battlefield.filter((x) => x.attachedTo === src.iid && /\b(?:Aura|Equipment)\b/.test(x.card.typeLine.split('//')[0])).length
+        : st.perCounter ? (src.counters[st.perCounter] ?? 0)
+        : 1;
       for (const h of hosts) {
         if (!isCreature(h.card)) continue;
         const b = (h.statics ??= { power: 0, toughness: 0, keywords: [] });
         b.power += st.power * times;
         b.toughness += st.toughness * times;
+        if (st.ward) b.ward = [...(b.ward ?? []), st.ward];
+        if (st.hexproofFromMonocolored) b.hexproofFromMonocolored = true;
         for (const k of st.keywords) if (!b.keywords.includes(k)) b.keywords.push(k);
         if (st.cantAttack) b.cantAttack = true;
         if (st.cantBlock) b.cantBlock = true;
@@ -2592,6 +2678,7 @@ export function apply(state: GameState, action: Action): GameState {
         m.player = next;
       } else {
         d.mulligan = null;
+        openingHandPermanents(d);
         beginTurn(d, d.active, true);
       }
       break;
@@ -2790,7 +2877,10 @@ export function apply(state: GameState, action: Action): GameState {
       if (problem) throw new IllegalAction(problem, { card: perm.card.name });
       const targets = checkTargets(d, p, perm.card, spec.ability, action.targets ?? []);
 
-      pay(d, p, sourcesFor(d, perm, spec), abilityCost(spec, x));
+      const first = targets[0]?.[0];
+      const equipped = spec.equip && first?.kind === 'permanent' ? findPermanent(d, first.iid) : undefined;
+      if (!pay(d, p, sourcesFor(d, perm, spec), abilityCost(d, perm, spec, x, equipped))) throw new IllegalAction('notEnoughMana', { card: perm.card.name });
+      if (spec.equip) me.equipsThisTurn = (me.equipsThisTurn ?? 0) + 1;
       if (spec.cost.tap) tapPermanent(d, perm);
       if (spec.cost.life) changeLife(d, p, -spec.cost.life);
       if (spec.once || spec.cost.loyalty !== undefined) perm.used = [...(perm.used ?? []), action.index];

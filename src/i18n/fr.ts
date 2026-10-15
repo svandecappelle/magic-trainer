@@ -79,6 +79,7 @@ const log: LogMessages = {
   prevented: (e, c) => `Les blessures de ${c.card(e.card)} sont prévenues`,
   extraTurn: (e, c) => `${c.isMe(e.p) ? 'Vous jouerez' : `${c.name(e.p)} jouera`} un tour supplémentaire`,
   attached: (e, c) => `${c.card(e.card)} est attaché à ${c.card(e.to)}`,
+  beginsOnBattlefield: (e, c) => `${c.isMe(e.p) ? 'Vous commencez' : `${c.name(e.p)} commence`} la partie avec ${c.card(e.card)} sur le champ de bataille`,
   gainsAbility: (e, c) => `${c.card(e.card)} acquiert « ${e.text} »`,
   legendRule: (e, c) => `${c.card(e.card)} va au cimetière (règle des légendes)`,
   shock: (e, c) => (e.paid ? `${c.card(e.card)} arrive dégagé (${e.paid} points de vie payés)` : `${c.card(e.card)} arrive engagé`),
