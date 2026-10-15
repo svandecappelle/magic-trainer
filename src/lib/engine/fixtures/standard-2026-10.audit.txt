@@ -391,8 +391,8 @@ PARTIAL  Cavern of Souls  — Land
       not read by the engine
   ✓ {T}: Add {C}.
       mana: C
-  ✓ {T}: Add one mana of any color. Spend this mana only to cast a creatu…
-      mana: W/U/B/R/G
+  ? {T}: Add one mana of any color. Spend this mana only to cast a creatu…
+      mana ability not understood
 PARTIAL  Chandra, Torch of Defiance {2}{R}{R} — Legendary Planeswalker — Chandra
   ✗ +1: Exile the top card of your library. You may cast that card. If yo…
       activated ability, effect not simulated
@@ -649,20 +649,13 @@ PARTIAL  Starscape Cleric {1}{B} — Creature — Bat Cleric
       not read by the engine
   ✓ Whenever you gain life, each opponent loses 1 life.
       trigger (gainLife) → loseLife
-PARTIAL  Starting Town  — Land — Town
-  ? This land enters tapped unless it's your first, second, or third turn…
-      not read by the engine
-  ✓ {T}: Add {C}.
-      mana: C
-  ? {T}, Pay 1 life: Add one mana of any color.
-      mana ability not understood
 PARTIAL  Tablet of Discovery {2}{R} — Artifact
   ✗ When this artifact enters, mill a card. You may play that card this t…
       trigger (enters), effect not simulated
   ✓ {T}: Add {R}.
       mana: R
-  ✓ {T}: Add {R}{R}. Spend this mana only to cast instant and sorcery spe…
-      mana: R R
+  ? {T}: Add {R}{R}. Spend this mana only to cast instant and sorcery spe…
+      mana ability not understood
 PARTIAL  The Theorist, Jace Beleren {2}{U}{U} — Legendary Planeswalker — Jace
   ? At the beginning of each opponent's draw step, you draw a card.
       not read by the engine
@@ -788,7 +781,7 @@ OK       Enlightened Confidant {1}{W} — Creature — Kor Cleric
       trigger (endStep) → surveil, if 1+ life gained this turn
 OK       Erode {W} — Instant
   ✓ Destroy target creature or planeswalker. Its controller may search th…
-      spell → destroy (1 target)
+      spell → destroy+search (1 target)
 OK       Firebending Lesson {R} — Instant — Lesson
   ✓ Kicker {4}
       keyword
@@ -926,6 +919,13 @@ OK       Spirebluff Canal  — Land
       enters tapped (unlessOtherLands)
   ✓ {T}: Add {U} or {R}.
       mana: U/R
+OK       Starting Town  — Land — Town
+  ✓ This land enters tapped unless it's your first, second, or third turn…
+      enters tapped (unlessEarlyTurn)
+  ✓ {T}: Add {C}.
+      mana: C
+  ✓ {T}, Pay 1 life: Add one mana of any color.
+      mana: W/U/B/R/G (pays life)
 OK       Steam Vents  — Land — Island Mountain
   ✓ As this land enters, you may pay 2 life. If you don't, it enters tapp…
       enters tapped (payLife)
@@ -961,5 +961,5 @@ OK       Watery Grave  — Land — Island Swamp
   ✓ As this land enters, you may pay 2 life. If you don't, it enters tapp…
       enters tapped (payLife)
 
-178 cards: 64 ok, 47 partial, 67 not simulated, 0 can't be cast
+178 cards: 65 ok, 46 partial, 67 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

@@ -55,7 +55,10 @@ const log: LogMessages = {
     const gains = e.keywords.length ? c.list(e.keywords.map((k) => keywordNames[k])) : '';
     return `${c.card(e.card)} gagne ${[stats, gains].filter(Boolean).join(' et ')} jusqu'à la fin du tour`;
   },
-  counters: (e, c) => `${c.card(e.card)} reçoit ${e.n === 1 ? `un marqueur ${e.counter}` : `${e.n} marqueurs ${e.counter}`}`,
+  counters: (e, c) => {
+    const kind = e.counter === 'lore' ? '« histoire »' : e.counter;
+    return `${c.card(e.card)} reçoit ${e.n === 1 ? `un marqueur ${kind}` : `${e.n} marqueurs ${kind}`}`;
+  },
   paid: (e, c) => `${c.isMe(e.p) ? 'Vous payez' : `${c.name(e.p)} paie`} {${e.n}} : ${c.card(e.card)} n'est pas contrecarré`,
   countered: (e, c) => `${c.card(e.card)} est contrecarré`,
   fizzles: (e, c) => `${c.card(e.card)} n'a plus de cible et n'a aucun effet`,
@@ -76,6 +79,7 @@ const log: LogMessages = {
   prevented: (e, c) => `Les blessures de ${c.card(e.card)} sont prévenues`,
   extraTurn: (e, c) => `${c.isMe(e.p) ? 'Vous jouerez' : `${c.name(e.p)} jouera`} un tour supplémentaire`,
   attached: (e, c) => `${c.card(e.card)} est attaché à ${c.card(e.to)}`,
+  gainsAbility: (e, c) => `${c.card(e.card)} acquiert « ${e.text} »`,
   legendRule: (e, c) => `${c.card(e.card)} va au cimetière (règle des légendes)`,
   shock: (e, c) => (e.paid ? `${c.card(e.card)} arrive dégagé (${e.paid} points de vie payés)` : `${c.card(e.card)} arrive engagé`),
   attackPlaneswalker: (e, c) => `${c.card(e.card)} attaque ${c.card(e.pw)}`,

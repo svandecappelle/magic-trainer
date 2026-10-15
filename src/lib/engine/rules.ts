@@ -91,6 +91,8 @@ export function parseManaText(text: string, identity?: Color[]): Color[][] | nul
  * The mana a permanent makes when tapped: basic land types plus "{T}: Add …" abilities. With several
  * one-mana abilities (pain lands), one mana of any of their colors; otherwise the biggest ability.
  * `identity`: the controller's commanders' color identity (Command Tower).
+ * A one-mana "{T}, Pay N life: Add …" next to a free ability adds its colors too: they cost life when spent as
+ * them (Starting Town, see manaPain). Mana with a spending restriction ("Spend this mana only …") is left out.
  */
 export function manaUnits(card: Card, identity?: Color[]): Color[][] {
   const single = new Set<Color>();
@@ -99,10 +101,12 @@ export function manaUnits(card: Card, identity?: Color[]): Color[][] {
   for (const [type, color] of BASIC_TYPES) if (front.includes(type)) single.add(color);
   const life = manaLifeCost(card) > 0;
   for (const line of frontText(card).split('\n')) {
-    const m = line.match(life ? /^\{T\}, Pay \d+ life:\s*Add ([^.]*)\./ : /^\{T\}(?:, Sacrifice [^:]*)?:\s*Add ([^.]*)\./);
-    if (!m) continue;
-    const units = parseManaText(m[1], identity);
+    const m = line.match(/^\{T\}(?:, Sacrifice [^:]*|, Pay (\d+) life)?:\s*Add ([^.]*)\.(.*)$/);
+    if (!m || /\bSpend this mana only\b/i.test(m[3])) continue;
+    if (life && !m[1]) continue;
+    const units = parseManaText(m[2], identity);
     if (!units) continue;
+    if (m[1] && !life && units.length > 1) continue;
     if (units.length === 1) units[0].forEach((c) => single.add(c));
     else if (units.length > best.length) best = units;
   }
@@ -110,15 +114,39 @@ export function manaUnits(card: Card, identity?: Color[]): Color[][] {
   return single.size ? [[...single]] : [];
 }
 
+/** A mana ability "{T}: Add …" (or a basic land type) without a life cost. */
+const freeMana = (card: Card) =>
+  /^\{T\}(?:, Sacrifice [^:]*)?:\s*Add /m.test(frontText(card)) || BASIC_TYPES.some(([type]) => card.typeLine.split('//')[0].includes(type));
+
 /**
  * Mana Confluence: "{T}, Pay 1 life: Add one mana of any color." → 1. Only for a permanent whose sole mana ability it
- * is: with a free one too (Starting Town's "{T}: Add {C}."), the life ability is left out (tapping makes one mana).
+ * is: with a free one too, see manaPain.
  */
 export function manaLifeCost(card: Card): number {
-  const text = frontText(card);
-  const m = text.match(/^\{T\}, Pay (\d+) life:\s*Add /m);
-  const free = /^\{T\}(?:, Sacrifice [^:]*)?:\s*Add /m.test(text) || BASIC_TYPES.some(([type]) => card.typeLine.split('//')[0].includes(type));
-  return m && !free ? Number(m[1]) : 0;
+  const m = frontText(card).match(/^\{T\}, Pay (\d+) life:\s*Add /m);
+  return m && !freeMana(card) ? Number(m[1]) : 0;
+}
+
+/**
+ * Starting Town: "{T}: Add {C}." and "{T}, Pay 1 life: Add one mana of any color." → the colors only the life
+ * ability makes, and its life: tapping makes one mana, which costs that life when spent as one of these colors.
+ */
+export function manaPain(card: Card, identity?: Color[]): { life: number; colors: Color[] } | null {
+  if (!freeMana(card)) return null;
+  const free = new Set<Color>();
+  for (const [type, color] of BASIC_TYPES) if (card.typeLine.split('//')[0].includes(type)) free.add(color);
+  let pain: { life: number; colors: Color[] } | null = null;
+  for (const line of frontText(card).split('\n')) {
+    const m = line.match(/^\{T\}(?:, Sacrifice [^:]*|, Pay (\d+) life)?:\s*Add ([^.]*)\.(.*)$/);
+    if (!m || /\bSpend this mana only\b/i.test(m[3])) continue;
+    const units = parseManaText(m[2], identity);
+    if (!units || units.length !== 1) continue;
+    if (m[1]) pain = { life: Number(m[1]), colors: units[0] };
+    else units[0].forEach((c) => free.add(c));
+  }
+  if (!pain) return null;
+  const colors = pain.colors.filter((c) => !free.has(c));
+  return colors.length ? { life: pain.life, colors } : null;
 }
 
 /** Colors a permanent can tap for. */
@@ -155,12 +183,16 @@ export interface ManaSource {
   units?: Color[][];
   /** Spent only when nothing else can pay (convoke creatures, delve cards, mana that costs life or deals damage). */
   last?: boolean;
+  /** Starting Town: spending its mana as one of these colors costs this much life (see manaPain). */
+  pain?: { life: number; colors: Color[] };
 }
 
 /** One mana spent: unit `index` of source `iid`. */
 export interface ManaPick {
   iid: string;
   index: number;
+  /** Life paid for spending it as a color its source makes for life (Starting Town). */
+  life?: number;
 }
 
 /**
@@ -169,21 +201,31 @@ export interface ManaPick {
  */
 export function planPayment(sources: ManaSource[], cost: Cost): ManaPick[] | null {
   const units = sources.flatMap((s) => (s.units ?? [s.colors]).map((colors, index) => ({
-    iid: s.iid, index, colors, pool: s.iid.startsWith('pool:'), size: (s.units ?? [s.colors]).length, last: !!s.last,
+    iid: s.iid, index, colors, pool: s.iid.startsWith('pool:'), size: (s.units ?? [s.colors]).length, last: !!s.last, pain: s.pain,
   })));
   if (units.length < cost.generic + cost.colored.length) return null;
   // Pool first, then bigger sources (their other mana would be wasted), then the least flexible.
   units.sort((a, b) => Number(b.pool) - Number(a.pool) || Number(a.last) - Number(b.last) || b.size - a.size || a.colors.length - b.colors.length);
   const reqs = [...cost.colored].sort((a, b) => a.length - b.length);
   const used = new Set<number>();
+  /** Life paid when unit `u` pays requirement `req`: only when none of its free colors can. */
+  const lifeFor = (u: number, req: Color[]) => {
+    const { colors, pain } = units[u];
+    return pain && !colors.some((c) => req.includes(c) && !pain.colors.includes(c)) ? pain.life : 0;
+  };
+  // Mana that costs life is tried last for a colored requirement.
+  const order = (req: Color[]) => units.map((_, u) => u).sort((a, b) => Number(lifeFor(a, req) > 0) - Number(lifeFor(b, req) > 0));
+  const paidBy = new Map<number, Color[]>();
 
   const assign = (i: number): boolean => {
     if (i === reqs.length) return true;
-    for (let u = 0; u < units.length; u++) {
+    for (const u of order(reqs[i])) {
       if (used.has(u) || !units[u].colors.some((c) => reqs[i].includes(c))) continue;
       used.add(u);
+      paidBy.set(u, reqs[i]);
       if (assign(i + 1)) return true;
       used.delete(u);
+      paidBy.delete(u);
     }
     return false;
   };
@@ -195,10 +237,16 @@ export function planPayment(sources: ManaSource[], cost: Cost): ManaPick[] | nul
     const open = units.map((_, u) => u).filter((u) => !used.has(u));
     if (!open.length) return null;
     const busy = tapped();
-    const pick = open.find((u) => units[u].pool) ?? open.find((u) => busy.has(units[u].iid)) ?? open[0];
+    // Mana that only comes for life (all its colors cost life) last.
+    const free = open.filter((u) => !units[u].pain || units[u].colors.some((c) => !units[u].pain!.colors.includes(c)));
+    const pick = free.find((u) => units[u].pool) ?? free.find((u) => busy.has(units[u].iid)) ?? free[0] ?? open[0];
     used.add(pick);
   }
-  return [...used].map((u) => ({ iid: units[u].iid, index: units[u].index }));
+  return [...used].map((u) => {
+    const req = paidBy.get(u);
+    const life = req ? lifeFor(u, req) : units[u].pain && units[u].colors.every((c) => units[u].pain!.colors.includes(c)) ? units[u].pain!.life : 0;
+    return { iid: units[u].iid, index: units[u].index, ...(life ? { life } : {}) };
+  });
 }
 
 /** Which sources a payment uses (the permanents to tap, and pool mana), or null if it can't be paid. */
@@ -246,10 +294,14 @@ export interface TargetFilter {
   abilities?: boolean;
   maxManaValue?: number;
   minManaValue?: number;
+  /** "with mana cost {0} or {1}" (Urza's Saga): exactly one of these mana costs. */
+  manaCosts?: string[];
   minPower?: number;
   maxPower?: number;
   /** Basic lands only ("basic land card"). */
   basic?: boolean;
+  /** Lands must be nonbasic: "artifact, enchantment, or nonbasic land" (Boseiju). */
+  nonbasicLands?: boolean;
   /** At least one of these subtypes ("Forest or Plains card"), lower case. */
   subtypes?: string[];
 }
@@ -272,7 +324,7 @@ export interface TargetSpec {
 // ---------- Effects ----------
 
 /** Counter kinds placed on permanents. */
-export type CounterKind = '+1/+1' | '-1/-1' | 'loyalty';
+export type CounterKind = '+1/+1' | '-1/-1' | 'loyalty' | 'lore';
 
 /**
  * Who an effect applies to: the targets chosen for a slot, the controller, everyone / each opponent,
@@ -338,9 +390,12 @@ export type Effect =
   /** Mana into the controller's pool (rituals: "Add {B}{B}{B}"). One entry per mana, with its possible colors. */
   | { kind: 'addMana'; units: Color[][] }
   /** Search your library for up to `n` matching cards, then shuffle. */
-  | { kind: 'search'; n: number; filter: TargetFilter; dest: 'hand' | 'battlefield'; tapped: boolean }
+  /** `searcher`: the controller of the permanent in that target slot searches instead of you (Path to Exile, Boseiju). */
+  | { kind: 'search'; n: number; filter: TargetFilter; dest: 'hand' | 'battlefield'; tapped: boolean; searcher?: { slot: number } }
   /** Equip: attach the ability's source to the target. */
   | { kind: 'attach'; to: Affected }
+  /** Urza's Saga: "This Saga gains \"…\"" — the ability's source gets this ability text while it stays. */
+  | { kind: 'gainAbility'; text: string }
   | { kind: 'poison'; n: Amount; to: Affected }
   /** Add one counter of each kind already there: chosen automatically (the controller's side gains, opponents lose). */
   | { kind: 'proliferate' }
@@ -397,6 +452,8 @@ export interface AbilitySpec {
   optional?: boolean;
   /** "if you gained life this turn" (gained: 1), "if you've gained 3 or more life", "if you gained and lost life". */
   condition?: { gained?: number; lost?: boolean };
+  /** A Saga's chapter ability: its Saga isn't sacrificed while it waits or is on the stack. */
+  chapter?: number;
 }
 
 const WORD_NUMBERS: Record<string, number> = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7 };
@@ -488,6 +545,7 @@ export function parseTargetPhrase(phrase: string): TargetSpec | null {
     if (w === '|' || w === '') continue;
     if (NOUNS[w]) nouns.add(NOUNS[w]);
     else if (w === 'tapped' || w === 'untapped') filter.tapped = w === 'tapped';
+    else if (w === 'nonbasic' && words[words.indexOf(w) + 1] === 'land') filter.nonbasicLands = true;
     else if (w === 'attacking') filter.attacking = true;
     else if (w === 'blocking') filter.blocking = true;
     else if (COLOR_WORDS[w]) (filter.colors ??= []).push(COLOR_WORDS[w]);
@@ -570,7 +628,7 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** Ways rules text names its own card: "Goblin Guide", "Ragavan" (legends), "this creature". */
 function selfWords(name: string): string[] {
   const front = name.split(' // ')[0];
-  return [front, ...front.split(',').map((w) => w.trim()), 'this creature', 'this permanent', 'this artifact', 'this enchantment', 'this land', 'this token', 'this aura', 'this equipment'];
+  return [front, ...front.split(',').map((w) => w.trim()), 'this creature', 'this permanent', 'this artifact', 'this enchantment', 'this land', 'this token', 'this aura', 'this equipment', 'this saga'];
 }
 
 /**
@@ -717,12 +775,23 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     return units && { kind: 'addMana', units };
   });
   // "Search your library for a basic land card, put it onto the battlefield tapped, then shuffle."
-  scan(new RegExp(`\\bsearch your library for (up to ${NUMBER} |an? |${NUMBER} )([a-z ,-]+?) cards?(?: with mana value (\\d+) or less)?, (?:reveal (?:it|them|that card|those cards), )?(?:and )?put (?:it|them|that card|those cards) (into your hand|onto the battlefield( tapped)?)(?:,? (?:then|and) shuffle)?`, 'gi'), (m) => {
+  scan(new RegExp(`\\bsearch your library for (up to ${NUMBER} |an? |${NUMBER} )([a-z ,-]+?) cards?(?: with mana value (\\d+) or less| with mana cost ((?:\\{\\d+\\})(?: or \\{\\d+\\})*))?, (?:reveal (?:it|them|that card|those cards), )?(?:and )?put (?:it|them|that card|those cards) (into your hand|onto the battlefield( tapped)?)(?:,? (?:then|and) shuffle)?`, 'gi'), (m) => {
     const count = m[1].trim().replace(/^up to /i, '');
     const filter = librarySearchFilter(m[2]);
     if (!filter) return null;
     if (m[3]) filter.maxManaValue = Number(m[3]);
-    return { kind: 'search', n: toNumber(count), filter, dest: m[4].toLowerCase() === 'into your hand' ? 'hand' : 'battlefield', tapped: !!m[5] };
+    // Urza's Saga: "an artifact card with mana cost {0} or {1}".
+    if (m[4]) filter.manaCosts = m[4].split(' or ');
+    return { kind: 'search', n: toNumber(count), filter, dest: m[5].toLowerCase() === 'into your hand' ? 'hand' : 'battlefield', tapped: !!m[6] };
+  });
+  // Path to Exile: "Its controller may search their library for a basic land card, put it onto the battlefield tapped,
+  // then shuffle."; Boseiju: "That player may search their library for a land card with a basic land type, …".
+  scan(new RegExp(CONTROLLER_SEARCH.source, 'gi'), (m) => {
+    if (targets.length !== 1 || (targets[0].kind !== 'creature' && targets[0].kind !== 'permanent')) return null;
+    const filter: TargetFilter = /basic land type/i.test(m[1])
+      ? { types: ['land'], subtypes: ['plains', 'island', 'swamp', 'mountain', 'forest'] }
+      : { basic: true, types: ['land'] };
+    return { kind: 'search', n: 1, filter, dest: 'battlefield', tapped: !!m[2], searcher: { slot: 0 } };
   });
   scan(new RegExp(`\\bput (${AMOUNT}) ([+-]1\\/[+-]1) counters? on (${TARGET})${END}`, 'gi'), (m) => {
     const to = slotFor(m[3], (spec) => spec.kind === 'creature');
@@ -810,14 +879,17 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     return to && which && { kind: 'sacrifice', n: toAmount(m[2]), to, which };
   });
   // Tokens: "create two 1/1 white Soldier creature tokens with flying", "create a Treasure token".
-  scan(new RegExp(`\\b[Cc]reates? (${AMOUNT}) (\\d+)\\/(\\d+) ((?:(?:white|blue|black|red|green|colorless)(?:,? and |, | ))+)([A-Z][A-Za-z' -]*?) ((?:artifact |enchantment )?)creature tokens?(?: named ([A-Z][A-Za-z' -]*?))?(?: with ${KEYWORD_LIST})?(?=\\.|,| and |$)`, 'g'), (m) => {
+  scan(new RegExp(`\\b[Cc]reates? (${AMOUNT}) (\\d+)\\/(\\d+) ((?:(?:white|blue|black|red|green|colorless)(?:,? and |, | ))+)([A-Z][A-Za-z' -]*?) ((?:artifact |enchantment )?)creature tokens?(?: named ([A-Z][A-Za-z' -]*?))?(?: with ${KEYWORD_LIST}| with "([^"]+)")?(?=\\.|,| and |$)`, 'g'), (m) => {
     const colors = m[4].toLowerCase().split(/,? and |, | /).filter((w) => COLOR_WORDS[w]).map((w) => COLOR_WORDS[w]);
     const kws = keywordList(m[8]);
     const types = `Token ${m[6] ? m[6].trim().replace(/^./, (c) => c.toUpperCase()) + ' ' : ''}Creature — ${m[5]}`;
-    return {
-      kind: 'token', n: toAmount(m[1]),
-      token: { name: m[7] ?? m[5], typeLine: types, colors, power: Number(m[2]), toughness: Number(m[3]), keywords: kws, oracleText: kws.map((k) => k.replace(/^./, (c) => c.toUpperCase())).join(', ') },
+    const token: TokenSpec = {
+      name: m[7] ?? m[5], typeLine: types, colors, power: Number(m[2]), toughness: Number(m[3]), keywords: kws,
+      oracleText: m[9] ?? kws.map((k) => k.replace(/^./, (c) => c.toUpperCase())).join(', '),
     };
+    // A token with its own ability ("with \"This token gets +1/+1 for each artifact you control.\""): only when understood.
+    if (m[9] && !staticsOf(tokenCard(token)).length) return null;
+    return { kind: 'token', n: toAmount(m[1]), token };
   });
   scan(new RegExp(`\\bcreates? (${AMOUNT}) (Treasure|Clue|Food) tokens?`, 'gi'), (m) => ({
     kind: 'token', n: toAmount(m[1]), token: PREDEFINED_TOKENS[m[2].toLowerCase()],
@@ -880,6 +952,9 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
   return { targets, effects };
 }
 
+/** Path to Exile, Boseiju: the removed permanent's controller may search for a land (see parseAbilityText). */
+const CONTROLLER_SEARCH = /\b(?:Its|That (?:land|permanent|creature)'s|That player) (?:controller )?may search (?:their|his or her) library for (a basic land card|a land card with a basic land type), put it onto the battlefield( tapped)?, then shuffle(?=\.)/;
+
 /** Enlightened Confidant's second sentence, after "surveil 1." */
 const SURVEIL_TO_HAND = /If you put a card with mana value less than or equal to the amount of life you gained this turn into your graveyard this way, put that card into your hand\./;
 
@@ -892,9 +967,8 @@ const IGNORED = new RegExp([
   /You may choose new targets for the copy\./,
   /If that spell is countered this way, exile it instead of putting it into its owner's graveyard\./,
   // Small upsides for the opponent of a removal spell, not simulated (listed in TODO.md): Swords to Plowshares' life,
-  // Path to Exile's and Erode's basic land, Get Lost's Map tokens.
+  // Get Lost's Map tokens.
   /Its controller gains life equal to its power\./,
-  /(?:Its|That (?:land|permanent)'s) controller may search (?:their|his or her) library for a basic land card, put it onto the battlefield(?: tapped)?, then shuffle\./,
   /Its controller creates two Map tokens\./,
   // Loyalty for a Jace you control (Countersculpt, Fatehold Charm): not simulated, listed in TODO.md.
   /Empower Jace \d+\./,
@@ -1033,7 +1107,7 @@ export function castInfo(card: Card, face = 0): CastInfo {
     } else if ((m = line.match(/^Channel — ((?:\{[^}]+\})+), Discard this card: (.+)$/))) {
       const discount = / This ability costs \{1\} less to activate for each legendary creature you control\.$/;
       const body = m[2].replace(discount, '');
-      info.channel = { cost: m[1], ability: UNSUPPORTED.test(body) ? NO_EFFECT : parseAbilityText(body, selfName(c)), legendaryDiscount: discount.test(m[2]) };
+      info.channel = { cost: m[1], ability: UNSUPPORTED.test(body.replace(CONTROLLER_SEARCH, '')) ? NO_EFFECT : parseAbilityText(body, selfName(c)), legendaryDiscount: discount.test(m[2]) };
     } else if (/^Affinity for artifacts$/i.test(line)) info.affinity = { types: ['artifact'] };
     else if (/^[A-Za-z ,]+$/.test(line) && line.split(/,\s*/).some((w) => /^(convoke|delve)$/i.test(w.trim()))) {
       for (const w of line.split(/,\s*/).map((x) => x.trim().toLowerCase())) {
@@ -1172,6 +1246,8 @@ export type TriggerEvent =
   | { on: ObjectEvent; self: false; which: Selector; another: boolean }
   /** At the beginning of an upkeep or end step: yours, each one, or each opponent's. */
   | { on: 'upkeep' | 'endStep'; whose: 'you' | 'each' | 'opponent' }
+  /** A Saga's chapter: lore counters reach `n` ("I — …", "II, III — …"). */
+  | { on: 'chapter'; n: number }
   /** Whenever you cast a spell matching the card words ("noncreature", "instant or sorcery"). */
   | { on: 'cast'; filter: TargetFilter }
   /** Whenever you gain life. */
@@ -1194,7 +1270,9 @@ export interface TriggerSpec {
  * replacements, references to the triggering object). Such abilities are not simulated rather
  * than simulated wrongly.
  */
-const UNSUPPORTED = /\b(?:if|unless|for each|where|instead|that (?:creature|card|player|land|spell|permanent)|those|otherwise|this way|exiled with)\b/i;
+const UNSUPPORTED_WORDS = /\b(?:if|unless|for each|where|instead|that (?:creature|card|player|land|spell|permanent)|those|otherwise|this way|exiled with)\b/i;
+/** Wordings the effect parser would misread. Quoted text is an ability given to something else (a token), read on its own. */
+const UNSUPPORTED = { test: (text: string) => UNSUPPORTED_WORDS.test(text.replace(/"[^"]*"/g, '""')) };
 
 const NO_EFFECT: AbilitySpec = { targets: [], effects: [] };
 
@@ -1249,6 +1327,37 @@ function selfName(card: Card): string {
   return /\bLegendary\b/.test(card.typeLine) && !front.includes(',') && front.includes(' ') ? `${front}, ${front.split(' ')[0]}` : front;
 }
 
+const ROMAN: Record<string, number> = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7 };
+
+/** "II, III — Effect." → chapters [2, 3] and the effect text. */
+function sagaChapter(line: string): { ns: number[]; text: string } | null {
+  const m = line.match(/^((?:I|II|III|IV|V|VI|VII)(?:, (?:I|II|III|IV|V|VI|VII))*) — (.+)$/);
+  return m ? { ns: m[1].split(', ').map((r) => ROMAN[r]), text: m[2].trim() } : null;
+}
+
+/** A Saga (CR 714): an enchantment with chapter abilities (Urza's Saga is also a land). */
+export const isSaga = (card: Card) => /\bSaga\b/.test(card.typeLine.split('//')[0].split('—')[1] ?? '');
+
+/** The Saga's last chapter: it's sacrificed once it has that many lore counters (and that chapter has resolved). */
+export function finalChapter(card: Card): number {
+  return Math.max(0, ...frontText(card).split('\n').flatMap((l) => sagaChapter(l)?.ns ?? []));
+}
+
+/**
+ * A chapter's effect. "This Saga gains \"{T}: Add {C}.\"" (Urza's Saga) gives the Saga that ability for as long as it
+ * stays, when the engine understands it; inner quotes ('…') become the granted ability's own quotes.
+ */
+function chapterAbility(text: string, name: string): AbilitySpec {
+  const gains = text.match(/^(?:This Saga|This permanent) gains "(.+)"$/);
+  if (gains) {
+    const granted = gains[1].replace(/ with '([^']+)'/g, ' with "$1"');
+    const test: Card = { id: 'granted', name, manaCost: '', cmc: 0, typeLine: 'Enchantment', oracleText: granted, colors: [], colorIdentity: [], setCode: '', setName: '', rarity: '', keywords: [] };
+    const understood = manaUnits({ ...test, typeLine: 'Land' }).length > 0 || activatedOf(test).some((a) => a.ability.effects.length);
+    return understood ? { targets: [], effects: [{ kind: 'gainAbility', text: granted }] } : NO_EFFECT;
+  }
+  return triggerAbility(text, name, true);
+}
+
 const triggerCache = new Map<string, TriggerSpec[]>();
 
 /** Triggered abilities printed on a permanent card (front face), plus prowess. */
@@ -1269,6 +1378,13 @@ export function triggersOf(card: Card): TriggerSpec[] {
   }
 
   for (const raw of frontText(card).split('\n')) {
+    // A Saga's chapters: "I — …", "II, III — …".
+    const chapter = sagaChapter(raw);
+    if (chapter) {
+      const ability = chapterAbility(chapter.text, name);
+      for (const n of chapter.ns) out.push({ event: { on: 'chapter', n }, ability: ability.effects.length ? { ...ability, chapter: n } : ability });
+      continue;
+    }
     // Drop reminder text and ability words ("Landfall — Whenever…").
     const line = raw.replace(/\s*\([^)]*\)/g, '').replace(/^[A-Z][A-Za-z' ]+ — /, '').trim();
 
@@ -1480,10 +1596,12 @@ export const isPlaneswalker = (card: Card) => cardTypes(card).includes('planeswa
 
 /** What a static ability changes on the creatures it applies to. */
 export interface StaticSpec {
-  /** The creature this Aura / Equipment is attached to, or every creature matching a selector (anthems). */
-  who: 'enchanted' | 'equipped' | { which: Selector; other: boolean };
+  /** The creature this Aura / Equipment is attached to, itself, or every creature matching a selector (anthems). */
+  who: 'enchanted' | 'equipped' | 'self' | { which: Selector; other: boolean };
   power: number;
   toughness: number;
+  /** "gets +1/+1 for each artifact you control": power and toughness count these permanents of its controller. */
+  perEach?: Selector;
   keywords: Keyword[];
   cantAttack?: boolean;
   cantBlock?: boolean;
@@ -1537,6 +1655,14 @@ export function staticsOf(card: Card): StaticSpec[] {
       else if (/^can't block$/i.test(body)) out.push({ who, power: 0, toughness: 0, keywords: [], cantBlock: true });
       continue;
     }
+    // Construct tokens: "This token gets +1/+1 for each artifact you control."
+    const selves = selfWords(card.name).map(escapeRe).join('|');
+    const each = line.match(new RegExp(`^(?:${selves}) gets \\+(\\d+)\\/\\+(\\d+) for each ([a-z ]+?) you control\\.$`, 'i'));
+    const counted = each && parseTargetPhrase(`target ${each[3]} you control`);
+    if (each && counted && (counted.kind === 'creature' || counted.kind === 'permanent')) {
+      out.push({ who: 'self', power: Number(each[1]), toughness: Number(each[2]), keywords: [], perEach: { kind: counted.kind, filter: counted.filter } });
+      continue;
+    }
     const anthem = line.match(/^((?:Other )?[A-Za-z ]*?[Cc]reatures?(?: you control| your opponents control| you don't control)?) (?:get ([+-]\d+)\/([+-]\d+)(?: and have (.+))?|have (.+))\.$/);
     if (anthem) {
       const subject = anthemSubject(anthem[1]);
@@ -1581,13 +1707,17 @@ export type EntersTappedRule =
   /** Shock lands: "As this land enters, you may pay 2 life. If you don't, it enters tapped." */
   | { kind: 'payLife'; n: number }
   /** "unless you control a basic land" (Abandoned Air Temple). */
-  | { kind: 'unlessBasic' };
+  | { kind: 'unlessBasic' }
+  /** Starting Town: "enters tapped unless it's your first, second, or third turn of the game" (n: 3). */
+  | { kind: 'unlessEarlyTurn'; n: number };
 
 /** When a permanent enters tapped. */
 export function entersTappedRule(card: Card): EntersTappedRule | null {
   const text = frontText(card);
   const selves = selfWords(card.name).map(escapeRe).join('|');
   if (entersTapped(card)) return { kind: 'always' };
+  const early = text.match(new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)? tapped unless it's your (first|first or second|first, second, or third) turn of the game\\.`, 'i'));
+  if (early) return { kind: 'unlessEarlyTurn', n: early[1].split(/,? or |, /).length };
   const unless = text.match(new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)? tapped unless you control (.+?)\\.`, 'i'));
   if (unless) {
     const what = unless[1].toLowerCase();

@@ -1,8 +1,8 @@
 import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
-  cardTypes, findPayment, hasInstantSpeed, manaLifeCost, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, isPlaneswalker, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  cardTypes, findPayment, hasInstantSpeed, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
+  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, isPlaneswalker, isSaga, finalChapter, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type CastChoice, type Cost, type ObjectEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -96,6 +96,8 @@ export interface Triggered {
 export interface PoolMana {
   colors: Color[];
   source?: string;
+  /** Starting Town: spent as one of these colors, it costs this much life. */
+  pain?: { life: number; colors: Color[] };
 }
 
 export interface PlayerState {
@@ -119,6 +121,8 @@ export interface PlayerState {
   commanderDamage?: Record<string, number>;
   /** Commander: the commanders' color identity (Command Tower's mana). */
   identity?: Color[];
+  /** Turns this player has begun (Starting Town: "your first, second, or third turn of the game"). */
+  turns?: number;
 }
 
 /**
@@ -228,6 +232,8 @@ export interface Resolving {
   sub?: number;
   /** An optional ability ("you may") whose controller said yes. */
   accepted?: boolean;
+  /** Controllers of the permanents this resolution removed (Path to Exile: "Its controller may search …"). */
+  removed?: Record<string, PlayerId>;
   reason: WindowReason;
 }
 
@@ -278,6 +284,8 @@ export type LogEntry =
   | { k: 'bounced'; card: string }
   | { k: 'sacrificed'; card: string }
   | { k: 'attached'; card: string; to: string }
+  /** Urza's Saga's chapters: the permanent gains an ability (its text). */
+  | { k: 'gainsAbility'; card: string; text: string }
   | { k: 'poison'; p: PlayerId; n: number }
   | { k: 'proliferate'; p: PlayerId }
   | { k: 'control'; p: PlayerId; card: string }
@@ -516,8 +524,23 @@ export const toughnessOf = (perm: Permanent) => toughness(perm.card) + sum(perm,
 /** Does `perm` have protection from a source of these colors? */
 const protectedFrom = (perm: Permanent, source: Card) => protectionsOf(perm.card).some((c) => cardColors(source).includes(c));
 
-/** The mana one tap of `perm` makes (Command Tower: in its controller's commander's colors). */
-export const unitsOf = (s: GameState, perm: Permanent) => manaUnits(perm.card, s.players[perm.controller]?.identity);
+/**
+ * The mana one tap of `perm` makes (Command Tower: in its controller's commander's colors). Starting Town's colors
+ * that cost life are left out when its controller can't pay that life.
+ */
+export function unitsOf(s: GameState, perm: Permanent): Color[][] {
+  const identity = s.players[perm.controller]?.identity;
+  const units = manaUnits(perm.card, identity);
+  const pain = manaPain(perm.card, identity);
+  if (!pain || s.players[perm.controller].life >= pain.life) return units;
+  return units.map((u) => u.filter((c) => !pain.colors.includes(c)));
+}
+
+/** Starting Town: the colors its mana costs life to be spent as, while its controller can pay that life. */
+function painOf(s: GameState, perm: Permanent) {
+  const pain = manaPain(perm.card, s.players[perm.controller]?.identity);
+  return pain && s.players[perm.controller].life >= pain.life ? pain : undefined;
+}
 
 /** Can this permanent be tapped for mana now? */
 export const canTapForMana = (s: GameState, perm: Permanent) =>
@@ -548,12 +571,20 @@ const graveyardExiled = (s: GameState, owner: PlayerId) =>
 
 /** What `p` can pay with: mana in their pool ("pool:N"), then untapped mana sources. */
 export function manaSources(s: GameState, p: PlayerId): ManaSource[] {
-  const pool = (s.players[p].pool ?? []).map((m, i): ManaSource => ({ iid: `pool:${i}`, colors: m.colors }));
+  const life = s.players[p].life;
+  const pool = (s.players[p].pool ?? []).map((m, i): ManaSource => {
+    // Starting Town's mana kept in the pool: its colors that cost life only while that life can be paid.
+    if (m.pain && life < m.pain.life) return { iid: `pool:${i}`, colors: m.colors.filter((c) => !m.pain!.colors.includes(c)) };
+    return { iid: `pool:${i}`, colors: m.colors, ...(m.pain ? { pain: m.pain } : {}) };
+  });
   const perms = s.battlefield
     .filter((x) => x.controller === p && canTapForMana(s, x))
     .map((x): ManaSource => {
       const units = unitsOf(s, x);
-      return { iid: x.iid, colors: [...new Set(units.flat())], ...(units.length > 1 ? { units } : {}), ...(painfulMana(x) ? { last: true } : {}) };
+      const pain = painOf(s, x);
+      return {
+        iid: x.iid, colors: [...new Set(units.flat())], ...(units.length > 1 ? { units } : {}), ...(painfulMana(x) ? { last: true } : {}), ...(pain ? { pain } : {}),
+      };
     });
   return [...pool, ...perms];
 }
@@ -850,10 +881,11 @@ export function activatable(s: GameState, p: PlayerId): { perm: Permanent; index
 
 const blockerIds = (s: GameState) => Object.values(s.blocks).flat();
 
-/** Supertype and subtype conditions: "basic", "Forest or Plains". */
+/** Supertype and subtype conditions: "basic", "nonbasic land", "Forest or Plains". */
 function fitsTypeLine(card: Card, f: TargetFilter): boolean {
   const [types, subtypes = ''] = card.typeLine.split('//')[0].toLowerCase().split('—');
   if (f.basic && !types.includes('basic')) return false;
+  if (f.nonbasicLands && types.includes('land') && types.includes('basic')) return false;
   if (f.subtypes && !f.subtypes.some((t) => subtypes.split(' ').includes(t))) return false;
   return true;
 }
@@ -948,7 +980,8 @@ export function matching(s: GameState, caster: PlayerId, which: Selector): Perma
 export const cardMatches = (card: Card, f: TargetFilter) => {
   const types = cardTypes(card);
   return (!f.types || f.types.some((t) => types.includes(t))) && !f.nonTypes?.some((t) => types.includes(t)) &&
-    (f.maxManaValue === undefined || card.cmc <= f.maxManaValue) && fitsTypeLine(card, f);
+    (f.maxManaValue === undefined || card.cmc <= f.maxManaValue) && fitsTypeLine(card, f) &&
+    (!f.manaCosts || f.manaCosts.includes(card.manaCost.split(' // ')[0]));
 };
 
 /** Every legal choice for a target slot right now. */
@@ -1122,7 +1155,10 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
   delete d.headsDone;
   d.turn++;
   d.step = 'main1';
-  for (const q of teamPlayers(d, p)) d.players[q].landPlayed = false;
+  for (const q of teamPlayers(d, p)) {
+    d.players[q].landPlayed = false;
+    d.players[q].turns = (d.players[q].turns ?? 0) + 1;
+  }
   for (const ps of d.players) {
     delete ps.gainedThisTurn;
     delete ps.lostThisTurn;
@@ -1151,6 +1187,8 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
 function drawStep(d: GameState, skipDraw: boolean) {
   d.step = 'main1';
   if (!skipDraw) for (const q of teamPlayers(d, d.active)) draw(d, q, 1);
+  // After the draw step, each Saga of the active player gets a lore counter (CR 714.3b).
+  for (const perm of d.battlefield.filter((x) => isActivePlayer(d, x.controller) && isSaga(x.card))) addLore(d, perm);
   if (d.winner === null) openForOpponents(d, 'begin');
 }
 
@@ -1275,11 +1313,15 @@ function payMana(d: GameState, p: PlayerId, plan: ManaPick[]) {
     }
     const perm = findPermanent(d, iid)!;
     const spent = new Set(plan.filter((m) => m.iid === iid).map((m) => m.index));
+    const pain = painOf(d, perm);
     unitsOf(d, perm).forEach((colors, i) => {
-      if (!spent.has(i)) next.push({ colors, source: iid });
+      if (!spent.has(i)) next.push({ colors, source: iid, ...(pain ? { pain } : {}) });
     });
     tapForManaOnly(d, perm);
   }
+  // Starting Town: "{T}, Pay 1 life: Add one mana of any color." spent as a color.
+  const life = plan.reduce((n, m) => n + (m.life ?? 0), 0);
+  if (life) changeLife(d, p, -life);
   if (next.length) ps.pool = next;
   else delete ps.pool;
 }
@@ -1327,6 +1369,8 @@ function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, op
   else if (rule?.kind === 'unlessSubtypes') {
     const subtypesOf = (c: Card) => (c.typeLine.split('//')[0].toLowerCase().split('—')[1] ?? '').split(' ');
     perm.tapped = !otherLands.some((x) => rule.subtypes.some((t) => subtypesOf(x.card).includes(t)));
+  } else if (rule?.kind === 'unlessEarlyTurn') {
+    perm.tapped = !(isActivePlayer(d, controller) && (d.players[controller].turns ?? 0) <= rule.n);
   } else if (rule?.kind === 'unlessBasic') perm.tapped = !otherLands.some((x) => /\bBasic\b/.test(x.card.typeLine));
   else if (rule?.kind === 'unlessOtherLands') {
     perm.tapped = (rule.max !== undefined && otherLands.length > rule.max) || (rule.min !== undefined && otherLands.length < rule.min);
@@ -1343,7 +1387,32 @@ function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, op
   if (isPlaneswalker(inst.card)) perm.counters = { ...perm.counters, loyalty: startingLoyalty(inst.card) };
   d.battlefield.push(perm);
   fireObject(d, 'enters', perm);
+  // A Saga enters with a lore counter (CR 714.3a).
+  if (isSaga(perm.card)) addLore(d, perm);
   return perm;
+}
+
+/** A lore counter on a Saga: each chapter it reaches triggers (CR 714.2b). */
+function addLore(d: GameState, perm: Permanent) {
+  const before = perm.counters.lore ?? 0;
+  perm.counters = { ...perm.counters, lore: before + 1 };
+  log(d, { k: 'counters', card: perm.card.name, counter: 'lore', n: 1 });
+  for (const t of triggersOf(perm.card)) {
+    if (t.event.on === 'chapter' && t.event.n === before + 1) queueTrigger(d, perm, perm.controller, t.ability);
+  }
+}
+
+/**
+ * A Saga with as many lore counters as its last chapter is sacrificed (CR 714.4), once none of its chapter abilities
+ * is waiting to go on the stack or on it.
+ */
+function sagaDone(d: GameState, perm: Permanent): boolean {
+  if (!isSaga(perm.card) || (perm.counters.lore ?? 0) < finalChapter(perm.card) || !finalChapter(perm.card)) return false;
+  const chapterOf = (iid: string | undefined, ability: AbilitySpec | undefined) => iid === perm.iid && !!ability?.chapter;
+  return !(d.triggered ?? []).some((t) => chapterOf(t.source.iid, t.ability)) &&
+    !d.stack.some((x) => chapterOf(x.source, x.ability)) &&
+    !(d.pending?.trigger && chapterOf(d.pending.trigger.source.iid, d.pending.trigger.ability)) &&
+    !(d.resolving && chapterOf(d.resolving.item.source, d.resolving.item.ability));
 }
 
 // ---------- Triggers ----------
@@ -1516,6 +1585,8 @@ function checkStateBased(d: GameState) {
     } else if (isPlaneswalker(perm.card) && !isCreature(perm.card) && (perm.counters.loyalty ?? 0) <= 0) {
       removePermanent(d, perm, 'graveyard');
       log(d, { k: 'destroyed', card: perm.card.name });
+    } else if (sagaDone(d, perm)) {
+      sacrifice(d, perm);
     }
   }
   // Auras on something they can't enchant any more go to the graveyard; Equipment just falls off.
@@ -1552,14 +1623,17 @@ function refreshStatics(d: GameState) {
   for (const perm of d.battlefield) delete perm.statics;
   for (const src of d.battlefield) {
     for (const st of staticsOf(src.card)) {
-      const hosts = typeof st.who === 'string'
-        ? (src.attachedTo ? [findPermanent(d, src.attachedTo)].filter((x) => x !== undefined) : [])
-        : matching(d, src.controller, st.who.which).filter((x) => !(typeof st.who !== 'string' && st.who.other && x.iid === src.iid));
+      const hosts = st.who === 'self' ? [src]
+        : typeof st.who === 'string'
+          ? (src.attachedTo ? [findPermanent(d, src.attachedTo)].filter((x) => x !== undefined) : [])
+          : matching(d, src.controller, st.who.which).filter((x) => !(typeof st.who !== 'string' && st.who.other && x.iid === src.iid));
+      // "for each artifact you control"
+      const times = st.perEach ? matching(d, src.controller, st.perEach).filter((x) => x.controller === src.controller).length : 1;
       for (const h of hosts) {
         if (!isCreature(h.card)) continue;
         const b = (h.statics ??= { power: 0, toughness: 0, keywords: [] });
-        b.power += st.power;
-        b.toughness += st.toughness;
+        b.power += st.power * times;
+        b.toughness += st.toughness * times;
         for (const k of st.keywords) if (!b.keywords.includes(k)) b.keywords.push(k);
         if (st.cantAttack) b.cantAttack = true;
         if (st.cantBlock) b.cantBlock = true;
@@ -1819,6 +1893,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       for (const perm of perms) {
         if (!e.exile && hasKw(perm, 'indestructible')) continue;
         removePermanent(d, perm, e.exile ? 'exile' : 'graveyard');
+        (r.removed ??= {})[perm.iid] = perm.controller;
         log(d, { k: e.exile ? 'exiled' : 'destroyed', card: perm.card.name });
         if (e.untilLeaves) (d.exiledUntil ??= []).push({ source: item.source!, iid: perm.iid, owner: perm.owner ?? perm.controller });
       }
@@ -1846,17 +1921,27 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       break;
     }
     case 'search': {
-      const ps = d.players[caster];
+      // Path to Exile, Boseiju: the controller of the permanent targeted (and removed) searches; nothing if it was an
+      // illegal target.
+      let searcher = caster;
+      if (e.searcher) {
+        const t = r.legal[e.searcher.slot]?.[0];
+        const iid = t && t.kind === 'permanent' ? t.iid : undefined;
+        const who = iid === undefined ? undefined : (r.removed?.[iid] ?? findPermanent(d, iid)?.controller);
+        if (who === undefined) break;
+        searcher = who;
+      }
+      const ps = d.players[searcher];
       const found = ps.library.filter((c) => cardMatches(c.card, e.filter));
       if (found.length && (!answer || answer.kind !== 'cards')) {
-        return { kind: 'cards', player: caster, purpose: 'search', min: 0, max: Math.min(e.n, found.length), options: found, params: { n: e.n } };
+        return { kind: 'cards', player: searcher, purpose: 'search', min: 0, max: Math.min(e.n, found.length), options: found, params: { n: e.n } };
       }
       const chosen = answer?.kind === 'cards' ? answer.iids.map((iid) => found.find((c) => c.iid === iid)!) : [];
       ps.library = ps.library.filter((c) => !chosen.includes(c));
-      log(d, { k: 'search', p: caster, n: chosen.length, dest: e.dest });
+      log(d, { k: 'search', p: searcher, n: chosen.length, dest: e.dest });
       for (const inst of chosen) {
         if (e.dest === 'hand') ps.hand.push(inst);
-        else enterBattlefield(d, inst, caster, { tapped: e.tapped });
+        else enterBattlefield(d, inst, searcher, { tapped: e.tapped });
       }
       ps.library = shuffle(ps.library, () => random(d));
       break;
@@ -2016,6 +2101,16 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       }
       r.sub = 0;
       break;
+    case 'gainAbility': {
+      // The Saga keeps the ability while it stays; what leaves the battlefield is the printed card.
+      const src = item.source ? findPermanent(d, item.source) : undefined;
+      if (src) {
+        src.printed ??= src.card;
+        src.card = { ...src.card, oracleText: `${src.card.oracleText}\n${e.text}` };
+        log(d, { k: 'gainsAbility', card: src.card.name, text: e.text });
+      }
+      break;
+    }
     case 'attach': {
       const src = item.source ? findPermanent(d, item.source) : undefined;
       const host = perms[0];
@@ -2729,7 +2824,8 @@ export function apply(state: GameState, action: Action): GameState {
       if (!perm || perm.controller !== p) throw new IllegalAction('noSuchAbility');
       if (!canTapForMana(d, perm)) throw new IllegalAction(perm.tapped ? 'alreadyTapped' : 'summoningSick', { card: perm.card.name });
       const units = unitsOf(d, perm);
-      d.players[p].pool = [...(d.players[p].pool ?? []), ...units.map((colors) => ({ colors, source: perm.iid }))];
+      const pain = painOf(d, perm);
+      d.players[p].pool = [...(d.players[p].pool ?? []), ...units.map((colors) => ({ colors, source: perm.iid, ...(pain ? { pain } : {}) }))];
       tapForManaOnly(d, perm);
       break;
     }

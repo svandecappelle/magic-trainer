@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
 import { actor, apply, canTapForMana, castOptions, IllegalAction, newGame, powerOf, toughnessOf, type GameState, type Permanent, type PlayerId } from './engine';
-import { castInfo, castSpec, manaUnits, parseAbilityText, spellSpec, triggersOf } from './rules';
+import { botAction } from './bot';
+import { castInfo, castSpec, finalChapter, manaUnits, parseAbilityText, spellSpec, triggersOf } from './rules';
 
 // Cards from Standard decks on mtgtop8 (Oct 2026), with their Oracle text.
 let n = 0;
@@ -480,7 +481,7 @@ describe('Mana that hurts: City of Brass, Mana Confluence', () => {
     expect(errorOf(() => apply(s, { type: 'untapForMana', iid: iidOf(s, 'City of Brass') }))).toBe('manaSpent');
   });
 
-  it('Mana Confluence costs 1 life, and Starting Town only makes {C} for now', () => {
+  it('Mana Confluence costs 1 life', () => {
     let s = board({ mine: [confluence], hand: [bear] });
     s = resolve(settle(apply(s, { type: 'cast', iid: 'h0' })));
     expect(perm(s, 'Bear')).toBeDefined();
@@ -493,7 +494,44 @@ describe('Mana that hurts: City of Brass, Mana Confluence', () => {
     let u = board({ mana: 1, mine: [confluence], hand: [creature('Rat', 1, 1, { manaCost: '{B}' })] });
     u = resolve(settle(apply(u, { type: 'cast', iid: 'h0' })));
     expect(u.players[0].life).toBe(20);
-    expect(manaUnits(startingTown)).toEqual([['C']]);
+  });
+
+  it('Starting Town: {C} for free, a color for 1 life', () => {
+    expect(manaUnits(startingTown)).toEqual([['C', 'W', 'U', 'B', 'R', 'G']]);
+    // Spent as {G}: 1 life.
+    let s = board({ mine: [startingTown], hand: [bear] });
+    s = resolve(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    expect(perm(s, 'Bear')).toBeDefined();
+    expect(s.players[0].life).toBe(19);
+    // Spent as generic mana: {C}, free.
+    let t = board({ mine: [startingTown], hand: [creature('Golem', 1, 1)] });
+    t = resolve(settle(apply(t, { type: 'cast', iid: 'h0' })));
+    expect(perm(t, 'Golem')).toBeDefined();
+    expect(t.players[0].life).toBe(20);
+    // A Swamp pays {B} before Starting Town's life does; Starting Town's {C} pays the {1}.
+    let u = board({ mana: 1, mine: [startingTown], hand: [creature('Rat', 2, 1, { manaCost: '{1}{B}' })] });
+    u = resolve(settle(apply(u, { type: 'cast', iid: 'h0' })));
+    expect(perm(u, 'Rat')).toBeDefined();
+    expect(u.players[0].life).toBe(20);
+    // Tapped first, its mana waits in the pool: the life is paid when it's spent as a color.
+    let v = board({ mine: [startingTown], hand: [bear] });
+    v = apply(v, { type: 'tapForMana', iid: iidOf(v, 'Starting Town') });
+    expect(v.players[0].life).toBe(20);
+    v = resolve(settle(apply(v, { type: 'cast', iid: 'h0' })));
+    expect(v.players[0].life).toBe(19);
+  });
+
+  it('Starting Town enters untapped on its controller\'s first three turns only', () => {
+    const play = (turns: number) => {
+      const s = board({ hand: [startingTown] });
+      s.players[0].turns = turns;
+      return perm(apply(s, { type: 'playLand', iid: 'h0' }), 'Starting Town')!.tapped;
+    };
+    expect(play(1)).toBe(false);
+    expect(play(3)).toBe(false);
+    expect(play(4)).toBe(true);
+    // A real game counts each player's turns.
+    expect(board({}).players[0].turns).toBe(1);
   });
 });
 
@@ -504,7 +542,7 @@ describe('Channel (Otawara, Boseiju, Eiganjo)', () => {
   });
   const boseiju = card({
     name: 'Boseiju, Who Endures', typeLine: 'Legendary Land',
-    oracleText: '{T}: Add {G}.\nChannel — {1}{G}, Discard this card: Destroy target artifact, enchantment, or nonbasic land an opponent controls. That permanent\'s controller may search their library for a land card with a basic land type, put it onto the battlefield, then shuffle. This ability costs {1} less to activate for each legendary creature you control.',
+    oracleText: '{T}: Add {G}.\nChannel — {1}{G}, Discard this card: Destroy target artifact, enchantment, or nonbasic land an opponent controls. That player may search their library for a land card with a basic land type, put it onto the battlefield, then shuffle. This ability costs {1} less to activate for each legendary creature you control.',
   });
   const eiganjo = card({
     name: 'Eiganjo, Seat of the Empire', typeLine: 'Legendary Land',
@@ -516,12 +554,32 @@ describe('Channel (Otawara, Boseiju, Eiganjo)', () => {
     return s;
   };
 
-  it('reads the channel abilities; Boseiju\'s search for the opponent is not simulated', () => {
+  it('reads the channel abilities', () => {
     expect(castInfo(otawara).channel).toMatchObject({ cost: '{3}{U}', legendaryDiscount: true, ability: { effects: [{ kind: 'bounce' }] } });
     expect(castInfo(eiganjo).channel).toMatchObject({ ability: { targets: [{ kind: 'creature', filter: { inCombat: true } }], effects: [{ kind: 'damage', amount: 4 }] } });
-    expect(castInfo(boseiju).channel?.ability.effects).toEqual([]);
+    expect(castInfo(boseiju).channel?.ability).toMatchObject({
+      targets: [{ kind: 'permanent', filter: { controller: 'opponent' } }],
+      effects: [{ kind: 'destroy', to: { slot: 0 } }, { kind: 'search', n: 1, dest: 'battlefield', tapped: false, searcher: { slot: 0 } }],
+    });
   });
 
+  it('Boseiju destroys a nonbasic land; its controller may search for a land with a basic land type', () => {
+    const forest = card({ name: 'Forest', typeLine: 'Basic Land — Forest' });
+    const shock = card({ name: 'Watery Grave', typeLine: 'Land — Island Swamp', oracleText: '({T}: Add {U} or {B}.)' });
+    const vault = card({ name: 'Urza\'s Vault', typeLine: 'Land' });
+    let s = board({ mana: 1, mine: [forest], theirs: [vault], hand: [boseiju] });
+    s.players[1].library = [{ iid: 'l0', card: vault }, { iid: 'l1', card: shock }, { iid: 'l2', card: island }];
+    s = settle(apply(s, { type: 'channel', iid: 'h0', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Urza\'s Vault') }]] }));
+    for (let i = 0; i < 6 && s.stack.length && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    // The opponent chooses: a land with a basic land type (not Urza's Vault).
+    expect(s.pending?.choice).toMatchObject({ kind: 'cards', player: 1, purpose: 'search', min: 0, max: 1 });
+    const options = s.pending!.choice.kind === 'cards' ? s.pending!.choice.options.map((c) => c.card.name) : [];
+    expect(options.sort()).toEqual(['Island', 'Watery Grave']);
+    s = apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['l1'] } });
+    expect(s.players[1].graveyard.map((c) => c.card.name)).toEqual(['Urza\'s Vault']);
+    expect(perm(s, 'Watery Grave')).toMatchObject({ controller: 1 });
+    expect(s.players[1].library).toHaveLength(2);
+  });
   it('Otawara bounces from the hand, {1} cheaper for each legendary creature', () => {
     const legend = creature('Legend', 2, 2, { typeLine: 'Legendary Creature — Human' });
     const ogre = creature('Ogre', 3, 3);
@@ -535,5 +593,118 @@ describe('Channel (Otawara, Boseiju, Eiganjo)', () => {
     // Without the legend, three mana isn't enough.
     const t = islandUp(board({ mana: 2, theirs: [ogre], hand: [otawara] }), 1);
     expect(errorOf(() => apply(t, { type: 'channel', iid: 'h0', targets: [[{ kind: 'permanent', iid: iidOf(t, 'Ogre') }]] }))).toBe('notEnoughMana');
+  });
+
+  it('the bot channels to remove a permanent, keeping a land to play', () => {
+    const ogre = creature('Ogre', 3, 3, { manaCost: '{2}{G}', cmc: 3 });
+    // Its land for the turn already played: Otawara bounces the Ogre.
+    let s = islandUp(board({ mana: 3, theirs: [ogre], hand: [otawara] }), 1);
+    s.players[0].landPlayed = true;
+    expect(botAction(s)).toEqual({ type: 'channel', iid: 'h0', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Ogre') }]] });
+    // Otawara is its only land in hand and no land was played: it's played as a land instead.
+    s = islandUp(board({ mana: 3, theirs: [ogre], hand: [otawara] }), 1);
+    expect(botAction(s)).toMatchObject({ type: 'playLand', iid: 'h0' });
+    // Nothing of the opponent's to bounce: kept.
+    s = islandUp(board({ mana: 3, hand: [otawara] }), 1);
+    s.players[0].landPlayed = true;
+    expect(botAction(s)).toEqual({ type: 'pass' });
+  });
+});
+
+describe('Path to Exile', () => {
+  it('exiles the creature; its controller may search for a basic land, put onto the battlefield tapped', () => {
+    const path = spell('Path to Exile', '{W}', 'Exile target creature. Its controller may search their library for a basic land card, put it onto the battlefield tapped, then shuffle.');
+    expect(spellSpec(path).effects).toMatchObject([{ kind: 'destroy', exile: true }, { kind: 'search', filter: { basic: true }, tapped: true, searcher: { slot: 0 } }]);
+    const plains = card({ name: 'Plains', typeLine: 'Basic Land — Plains' });
+    let s = board({ mine: [plains], theirs: [creature('Ogre', 3, 3)], hand: [path] });
+    s = settle(apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Ogre') }]] }));
+    for (let i = 0; i < 6 && s.stack.length && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    expect(s.pending?.choice).toMatchObject({ player: 1, purpose: 'search' });
+    // It may decline.
+    s = apply(s, { type: 'choose', answer: { kind: 'cards', iids: [] } });
+    expect(s.players[1].exile.map((c) => c.card.name)).toEqual(['Ogre']);
+    expect(s.battlefield.filter((x) => x.controller === 1)).toHaveLength(0);
+  });
+});
+
+describe('Sagas (Urza\'s Saga)', () => {
+  const urzasSaga = card({
+    name: 'Urza\'s Saga', typeLine: 'Enchantment Land — Urza\'s Saga',
+    oracleText: '(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.)\nI — This Saga gains "{T}: Add {C}."\nII — This Saga gains "{2}, {T}: Create a 0/0 colorless Construct artifact creature token with \'This token gets +1/+1 for each artifact you control.\'"\nIII — Search your library for an artifact card with mana cost {0} or {1}, put it onto the battlefield, then shuffle.',
+  });
+  const ornithopter = card({ name: 'Ornithopter', typeLine: 'Artifact Creature — Thopter', manaCost: '{0}', power: '0', toughness: '2', keywords: ['Flying'], oracleText: 'Flying' });
+  const solRing = card({ name: 'Sol Ring', typeLine: 'Artifact', manaCost: '{1}', cmc: 1, oracleText: '{T}: Add {C}{C}.' });
+  const wurmcoil = card({ name: 'Wurmcoil Engine', typeLine: 'Artifact Creature — Phyrexian Wurm', manaCost: '{6}', cmc: 6, power: '6', toughness: '6' });
+  /** Passes (both players) until the next turn begins. */
+  const endTurn = (s: GameState) => {
+    const turn = s.turn;
+    for (let i = 0; i < 40 && s.turn === turn && s.winner === null; i++) {
+      s = s.pending ? apply(s, { type: 'choose', answer: { kind: 'cards', iids: [] } })
+        : !s.priority && s.step === 'attack' ? apply(s, { type: 'declareAttackers', attackers: [] })
+        : apply(s, { type: 'pass' });
+    }
+    return s;
+  };
+  /** Resolves what's waiting (chapter abilities), the opponent passing; stops at a choice. */
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 10 && (s.stack.length || s.triggered?.length) && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+
+  it('reads the chapters', () => {
+    const chapters = triggersOf(urzasSaga).map((t) => [t.event, t.ability.effects.map((e) => e.kind)]);
+    expect(chapters).toEqual([
+      [{ on: 'chapter', n: 1 }, ['gainAbility']], [{ on: 'chapter', n: 2 }, ['gainAbility']], [{ on: 'chapter', n: 3 }, ['search']],
+    ]);
+    // No mana before chapter I.
+    expect(manaUnits(urzasSaga)).toEqual([]);
+  });
+
+  it('gains its abilities chapter by chapter, finds a {0} or {1} artifact, and is sacrificed after III', () => {
+    let s = board({ mana: 2, hand: [urzasSaga] });
+    // Below the cards drawn meanwhile.
+    s.players[0].library = [...s.players[0].library, { iid: 'l0', card: wurmcoil }, { iid: 'l1', card: ornithopter }, { iid: 'l2', card: solRing }];
+    // I: a lore counter as it enters, then "{T}: Add {C}."
+    s = resolve(apply(s, { type: 'playLand', iid: 'h0' }));
+    expect(perm(s, 'Urza\'s Saga')!.counters.lore).toBe(1);
+    expect(canTapForMana(s, perm(s, 'Urza\'s Saga')!)).toBe(true);
+
+    // II, after the next draw step: the Construct ability.
+    s = resolve(endTurn(endTurn(s)));
+    const saga = perm(s, 'Urza\'s Saga')!;
+    expect(saga.counters.lore).toBe(2);
+    s = resolve(settle(apply(s, { type: 'activate', iid: saga.iid, index: 0 })));
+    // A 0/0 Construct, +1/+1 for each artifact: itself.
+    const construct = perm(s, 'Construct')!;
+    expect([powerOf(construct), toughnessOf(construct)]).toEqual([1, 1]);
+
+    // III: only the {0} and {1} artifacts can be found; then the Saga is sacrificed.
+    s = endTurn(endTurn(s));
+    s = resolve(s);
+    expect(s.pending?.choice).toMatchObject({ kind: 'cards', purpose: 'search', player: 0 });
+    const options = s.pending!.choice.kind === 'cards' ? s.pending!.choice.options.map((c) => c.card.name).sort() : [];
+    expect(options).toEqual(['Ornithopter', 'Sol Ring']);
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['l2'] } }));
+    expect(perm(s, 'Sol Ring')).toBeDefined();
+    expect(perm(s, 'Urza\'s Saga')).toBeUndefined();
+    // The printed card goes to the graveyard, without the abilities it gained.
+    expect(s.players[0].graveyard.find((c) => c.card.name === 'Urza\'s Saga')?.card.oracleText).toBe(urzasSaga.oracleText);
+    // Two artifacts now: the Construct is 2/2.
+    expect(powerOf(perm(s, 'Construct')!)).toBe(2);
+  });
+
+  it('a chapter the engine can\'t do is "not simulated", and the Saga still goes after its last chapter', () => {
+    const misty = card({
+      name: 'The Misty Mountains Cold', typeLine: 'Enchantment — Saga', manaCost: '{3}', cmc: 3,
+      oracleText: '(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI, II, III, IV — Create a Treasure token. Then if you control four or more Treasures, create a 4/4 red Dragon creature token with flying.',
+    });
+    expect(finalChapter(misty)).toBe(4);
+    let s = board({ mana: 3, hand: [misty] });
+    s = resolve(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    expect(perm(s, 'The Misty Mountains Cold')!.counters.lore).toBe(1);
+    expect(s.log.some((e) => e.k === 'notSimulated')).toBe(true);
+    perm(s, 'The Misty Mountains Cold')!.counters.lore = 3;
+    s = resolve(endTurn(endTurn(s)));
+    expect(perm(s, 'The Misty Mountains Cold')).toBeUndefined();
   });
 });

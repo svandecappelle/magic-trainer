@@ -69,7 +69,7 @@ OK       Enlightened Confidant {1}{W} — Creature — Kor Cleric
       trigger (endStep) → surveil, if 1+ life gained this turn
 OK       Erode {W} — Instant
   ✓ Destroy target creature or planeswalker. Its controller may search th…
-      spell → destroy (1 target)
+      spell → destroy+search (1 target)
 OK       Germinate Recruits {2}{W} — Instant
   ✓ Create X 2/2 colorless Wizard Soldier creature tokens named Cadet, wh…
       spell → token

@@ -1,10 +1,10 @@
 import {
-  abilityMaxX, activatable, actor, firstOpponent, mulliganBottom, isActivePlayer, opponentsOf, teamOf, canAttack, castCost, castOptions, castSources, findInGraveyard, landFaces, manaSources, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
+  abilityMaxX, activatable, actor, channelCost, firstOpponent, mulliganBottom, isActivePlayer, opponentsOf, teamOf, canAttack, castCost, castOptions, castSources, findInGraveyard, landFaces, manaSources, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
   legalTargets, matching, maxX, powerOf, toughnessOf, xCount,
   type Action, type Answer, type CastOption, type CardInst, type Choice, type GameState, type Permanent, type PlayerId, type StackItem, type Target,
 } from './engine';
 import {
-  auraTarget, castInfo, castSpec, creatureValue, modeSets, faceCard, findPayment, hasInstantSpeed, isAdventure, isPlaneswalker, isToken, staticsOf, hasKeyword, isCreature, isInstantOrSorcery, isLandCard, manaColors,
+  auraTarget, castInfo, castSpec, creatureValue, modeSets, faceCard, findPayment, hasInstantSpeed, isAdventure, isPlaneswalker, isSaga, isToken, staticsOf, hasKeyword, isCreature, isInstantOrSorcery, isLandCard, manaColors,
   parseCost, spellSpec, type AbilitySpec, type Amount, type Effect,
 } from './rules';
 import type { Card } from '../../types';
@@ -218,7 +218,8 @@ function chooseDoubleBlock(a: Permanent, options: Permanent[], mustBlock: boolea
 function chooseLand(s: GameState, me: PlayerId): { iid: string; face: number } | null {
   const player = s.players[me];
   if (player.landPlayed) return null;
-  const colorsOf = (c: Card) => manaColors(c, player.identity);
+  // Urza's Saga makes {C} from its chapter I.
+  const colorsOf = (c: Card): string[] => (isSaga(c) && !manaColors(c).length ? ['C'] : manaColors(c, player.identity));
   const lands = player.hand.filter((c) => isLandCard(c.card) && colorsOf(c.card).length);
   if (!lands.length) {
     // A modal double-faced card with a land on its back, when there's no other land to play.
@@ -615,9 +616,25 @@ function abilityPlays(s: GameState, me: PlayerId): (Play & { perm: Permanent; ta
     }));
 }
 
+/**
+ * Channel abilities of cards in hand (Otawara, Boseiju, Eiganjo). The card is lost, and it's often a land: only to
+ * remove something (see useAbility), and keeping a land to play this turn.
+ */
+function channelPlays(s: GameState, me: PlayerId): Play[] {
+  const hand = s.players[me].hand;
+  const landsInHand = hand.filter((c) => isLandCard(c.card)).length;
+  return hand.flatMap((c) => {
+    const channel = castInfo(c.card).channel;
+    const cost = channel && channelCost(s, me, c.card);
+    if (!channel || !cost || !findPayment(manaSources(s, me), cost)) return [];
+    if (isLandCard(c.card) && !s.players[me].landPlayed && landsInHand <= 1) return [];
+    return [{ spec: channel.ability, source: c.card, hasX: false, maxX: 0, act: (targets: Target[][]): Action => ({ type: 'channel', iid: c.iid, ...(targets.length ? { targets } : {}) }) }];
+  });
+}
+
 /** Does the action hit one of the opponent's permanents (removal, as opposed to burn to the face or card draw)? */
 const hitsTheirPermanent = (s: GameState, me: PlayerId, action: Action) =>
-  action.type === 'activate' && (action.targets ?? []).flat().some((t) => {
+  (action.type === 'activate' || action.type === 'channel') && (action.targets ?? []).flat().some((t) => {
     const perm = t.kind === 'permanent' ? findPermanent(s, t.iid) : undefined;
     return !!perm && !friend(s, me, perm.controller);
   });
@@ -638,6 +655,10 @@ function useAbility(s: GameState, me: PlayerId, among?: Permanent[]): Action | n
     if (play.sacrifice && !removal && !doomed(play.perm) && !(play.spendable && freeTime)) continue;
     if (play.tapsCreature && !removal && !freeTime) continue;
     return action;
+  }
+  for (const play of channelPlays(s, me)) {
+    const action = playWithGoodTarget(s, me, play, among);
+    if (action && hitsTheirPermanent(s, me, action)) return action;
   }
   return null;
 }

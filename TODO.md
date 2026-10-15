@@ -174,8 +174,8 @@ the engine. Fixed:
   "that's blue or red"; "It gains …" / "Untap it." after a target; Harmonize, Paradigm, Web-slinging, Gift and
   Bargain lines (the option is never used)
 
-Approximations kept on purpose (small upsides ignored): Swords to Plowshares' life, Path to Exile / Erode's basic
-land, Get Lost's Map tokens, Empower Jace, No More Lies exiling instead of the graveyard, "exile it instead if it
+Approximations kept on purpose (small upsides ignored): Swords to Plowshares' life, Get Lost's Map
+tokens, Empower Jace, No More Lies exiling instead of the graveyard, "exile it instead if it
 would die this turn".
 
 Still missing, most played first:
@@ -189,9 +189,7 @@ Still missing, most played first:
   (Seam Rip, Deep-Cavern Bat, Pinnacle Starcage)
 - [ ] Emblems (Chandra, Ral, Ajani ultimates); loyalty counters from triggers (Ajani Resolute)
 - [ ] "Any number of target players each …" (Ral Zarek's −1, Riverchurn Monument)
-- [ ] Mana abilities with a life cost next to a free one (Starting Town, Great Hall of the Biblioplex; alone, like
-  Mana Confluence, they work), lands that choose a basic land
-  type (Multiversal Passage); Starting Town and Theorist's Sanctum entering tapped
+- [ ] Lands that choose a basic land type (Multiversal Passage); Theorist's Sanctum entering tapped
 - [ ] Manlands: "becomes a 4/4 … creature until end of turn" (Restless Reef, Restless Anchorage)
 - [ ] Static power from conditions (Dark Matter Manipulator, Ghitu Lavarunner), "can't block" (Starscape Cleric),
   Moonshadow losing its counters
@@ -225,13 +223,20 @@ Fixed: Command Tower and Arcane Signet (mana in the commander's color identity),
 without mana), City of Brass ("whenever this land becomes tapped", "deals 1 damage to you") and Mana Confluence
 ("{T}, Pay 1 life: Add …"), Channel from the hand (Otawara, Eiganjo; {1} less per legendary creature).
 
-Skipped or left "not simulated":
-- [ ] Urza's Saga (18 decks): Sagas (lore counters, chapter abilities) are a new card type for the engine
-- [ ] Boseiju, Who Endures (12 decks): its channel resolves "not simulated" — the opponent's optional search for a
-  land with a basic land type isn't simulated
-- [ ] Starting Town (9 decks): "enters tapped unless it's your first, second, or third turn" (needs each player's
-  turn count) and a life-cost mana ability next to a free one (only {C} for now)
-- [ ] The bot never channels
+Then: Sagas (lore counters as they enter and after the draw step, chapter abilities, sacrificed after the last
+chapter; Urza's Saga's "This Saga gains …", its Construct tokens "+1/+1 for each artifact you control" and the
+"mana cost {0} or {1}" search), Boseiju and Path to Exile / Erode (the removed permanent's controller may search for a
+land), Starting Town ({C} free, a color for 1 life; untapped on its controller's first three turns), the bot channels
+to remove something.
+
+Left "not simulated" or found on the way:
+- [ ] Saga chapters still not simulated: transforming ("Exile this Saga, then return it … transformed": Fable of the
+  Mirror-Breaker, Kumano Faces Kakkazan, The Legend of Roku), tokens with a triggered ability (Fable's Goblin
+  Shaman), reflexive "When you do" (Awaken the Honored Dead III, The Last Ronin II), The Misty Mountains Cold's
+  "Then if you control four or more Treasures"; read ahead
+- [ ] Mana with a spending restriction ("Spend this mana only to cast …": Cavern of Souls, Great Hall of the
+  Biblioplex, Tablet of Discovery) is left out: those lands make only their other mana
+- [ ] Pain lands' "This land deals 1 damage to you." (Karplusan Forest) is still ignored
 
 Still open, most played first:
 - [ ] Mana Vault (12 decks), Grim Monolith (6): "doesn't untap during your untap step", "you may pay {4}. If you do,
