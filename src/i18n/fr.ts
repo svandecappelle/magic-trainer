@@ -274,6 +274,9 @@ export const fr: Messages = {
   },
 
   editor: {
+    engineTitle: 'Moteur de règles',
+    engineSummary: (ok, partial, none) => `${ok} entièrement simulées · ${partial} en partie · ${none} non simulées (deck principal, exemplaires)`,
+    engineGapsTitle: 'Non simulé sur cette carte :',
     commander: 'Commandant',
     toCommander: 'En faire le commandant',
     noCommanderYet: 'Pas encore de commandant : utilisez 👑 sur une créature légendaire du deck.',

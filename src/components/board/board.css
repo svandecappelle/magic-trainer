@@ -211,13 +211,8 @@
 @media (hover: hover) {
   .hand-card:hover { --lift: -18px; z-index: 6; filter: none; transform: translateY(var(--lift)) scale(1.08); }
 }
-/* What the rules engine doesn't simulate, on the card before you cast it. */
-.engine-badge {
-  position: absolute; left: 4px; top: 22%; padding: 1px 6px; border-radius: 4px; pointer-events: none;
-  font-size: 0.62rem; font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; box-shadow: 0 1px 4px #000;
-}
-.engine-badge.partial { background: #5a4417; color: #f6d8a2; }
-.engine-badge.none, .engine-badge.refused { background: #5a2220; color: #ffc1bc; }
+/* What the rules engine doesn't simulate, on the card before you cast it (colors in index.css). */
+.hand-card .engine-badge { position: absolute; left: 4px; top: 22%; pointer-events: none; box-shadow: 0 1px 4px #000; }
 .hand-card.selected img { box-shadow: 0 0 0 3px var(--accent), 0 0 18px var(--accent); }
 
 /* ---------- Center bar ---------- */
@@ -369,9 +364,6 @@
 .side-card { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow: auto; }
 .game-side .card-preview { flex: 0 0 auto; }
 .engine-status { font-size: 0.8rem; }
-.engine-status.ok { color: #8fd19e; }
-.engine-status.partial { color: #f0c97a; }
-.engine-status.none, .engine-status.refused { color: #f2a29e; }
 .side-play { display: flex; flex-direction: column; gap: 6px; }
 .side-play .ability-option {
   padding: 9px 12px; text-align: left; font-weight: 600; background: var(--panel-2); color: var(--text); border: 1px solid var(--accent);

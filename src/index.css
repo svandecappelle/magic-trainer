@@ -220,6 +220,19 @@ footer { padding: 16px 20px; border-top: 1px solid var(--border); }
 .play-notice .clock { font-weight: 600; }
 .play-notice { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
 .lang-select { padding: 3px 6px; font-size: 0.85rem; }
+/* How much of a card the rules engine simulates (game board, deck editor). */
+.engine-badge { padding: 1px 6px; border-radius: 4px; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; }
+.engine-badge.partial { background: #5a4417; color: #f6d8a2; }
+.engine-badge.none, .engine-badge.refused { background: #5a2220; color: #ffc1bc; }
+.engine-status.ok { color: #8fd19e; }
+.engine-status.partial { color: #f0c97a; }
+.engine-status.none, .engine-status.refused { color: #f2a29e; }
+.engine-bar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: var(--panel-2); }
+.engine-bar .ok { background: #5fbf74; }
+.engine-bar .partial { background: #e0b25a; }
+.engine-bar .none { background: #e06560; }
+.engine-gaps { margin: 4px 0 0; padding-left: 18px; }
+.engine-gaps li { margin: 3px 0; }
 /* Phone tab bar (see the small screens section). */
 .tabbar { display: none; }
 

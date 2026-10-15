@@ -10,6 +10,7 @@ import { resolveDecklist } from '../lib/importDeck';
 import { primaryType, TYPE_ORDER } from '../lib/stats';
 import { useT } from '../i18n';
 import { useCardDisplay } from '../lib/cardLocale';
+import { engineGaps, engineStatus } from '../lib/engineStatus';
 import { useApp } from '../store/useApp';
 import { FORMATS, type Board, type Card } from '../types';
 
@@ -94,6 +95,9 @@ export function DeckEditor() {
                 <li key={e.card.id} onMouseEnter={() => setPreview(e.card)}>
                   <span className="qty">{e.qty}</span>
                   <span className="card-name">{show.name(e.card)}</span>
+                  {engineStatus(e.card) !== 'ok' && (
+                    <span className={`engine-badge ${engineStatus(e.card)}`} title={t.game.engineStatus[engineStatus(e.card)]}>{t.game.engineBadge[engineStatus(e.card)]}</span>
+                  )}
                   <ManaCost cost={e.card.manaCost} />
                   <span className={`owned small ${owned >= e.qty ? 'ok' : 'missing'}`} title={t.editor.owned}>
                     {owned}/{e.qty}
@@ -203,6 +207,40 @@ export function DeckEditor() {
           ) : (
             <div className="card-preview placeholder muted small">{t.common.hoverPreview}</div>
           )}
+          {preview && (
+            <div className="small">
+              <span className={`engine-status ${engineStatus(preview)}`}>{t.game.engineStatus[engineStatus(preview)]}</span>
+              {engineGaps(preview).length > 0 && (
+                <>
+                  <div className="muted" style={{ marginTop: 6 }}>{t.editor.engineGapsTitle}</div>
+                  <ul className="engine-gaps">
+                    {engineGaps(preview).map((l, i) => <li key={i}>{l.text}</li>)}
+                  </ul>
+                </>
+              )}
+            </div>
+          )}
+          {(() => {
+            // How much of the main deck the rules engine simulates, counting copies.
+            const count = { ok: 0, partial: 0, none: 0 };
+            for (const e of deck.entries.filter((x) => x.board === 'main')) {
+              const st = engineStatus(e.card);
+              count[st === 'ok' ? 'ok' : st === 'partial' ? 'partial' : 'none'] += e.qty;
+            }
+            const total = count.ok + count.partial + count.none;
+            if (!total) return null;
+            return (
+              <div className="small">
+                <h4>{t.editor.engineTitle}</h4>
+                <div className="engine-bar" aria-hidden="true">
+                  <span className="ok" style={{ flex: count.ok }} />
+                  <span className="partial" style={{ flex: count.partial }} />
+                  <span className="none" style={{ flex: count.none }} />
+                </div>
+                <p className="muted" style={{ margin: '6px 0 0' }}>{t.editor.engineSummary(count.ok, count.partial, count.none)}</p>
+              </div>
+            );
+          })()}
           <DeckStats entries={deck.entries} />
         </aside>
       </div>

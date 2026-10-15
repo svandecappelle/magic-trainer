@@ -9,9 +9,9 @@ import {
 import { errorText, logText, useT, type AppError } from '../i18n';
 import { useCardDisplay } from '../lib/cardLocale';
 import {
-  activatedOf, castInfo, castSpec, faceCard, faceName, modeSimulated, findPayment, isCreature, isInstantOrSorcery, isLandCard, isPlaneswalker, parseCost, type AbilitySpec,
+  activatedOf, castInfo, castSpec, faceCard, faceName, modeSimulated, findPayment, isCreature, isLandCard, isPlaneswalker, parseCost, type AbilitySpec,
 } from '../lib/engine/rules';
-import { auditCard, type CardStatus } from '../lib/engine/audit';
+import { engineStatus } from '../lib/engineStatus';
 import { ChoicePanel, choiceKey, choicePrompt } from './ChoicePanel';
 import { Lines, type Line } from './board/Lines';
 import { useBoardFx, type Float } from './board/useBoardFx';
@@ -45,20 +45,6 @@ const sameTarget = (a: Target, b: Target) => JSON.stringify(a) === JSON.stringif
 const targetKey = (t: Target) => (t.kind === 'player' ? `player:${t.player}` : t.kind === 'spell' ? `stack:${t.iid}` : `perm:${t.iid}`);
 
 // A player with an empty name (the human in Play vs Bot) is shown as "You" in the current language.
-
-/** How much of a card the rules engine simulates (cached: the audit reads the whole card text). */
-const statusCache = new Map<string, CardStatus>();
-function engineStatus(card: Card): CardStatus {
-  const key = `${card.name}\n${card.oracleText}`;
-  let status = statusCache.get(key);
-  if (!status) {
-    status = auditCard(card).status;
-    // A permanent whose abilities aren't simulated still enters the battlefield (a creature still fights): partly.
-    if (status === 'none' && !isInstantOrSorcery(card)) status = 'partial';
-    statusCache.set(key, status);
-  }
-  return status;
-}
 
 type SideTab = 'card' | 'log' | 'settings';
 

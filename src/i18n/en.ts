@@ -268,6 +268,9 @@ export const en = {
   },
 
   editor: {
+    engineTitle: 'Rules engine',
+    engineSummary: (ok: number, partial: number, none: number) => `${ok} fully simulated · ${partial} partly · ${none} not simulated (main deck, copies)`,
+    engineGapsTitle: 'Not simulated on this card:',
     commander: 'Commander',
     toCommander: 'Make it the commander',
     noCommanderYet: 'No commander yet: use 👑 on a legendary creature of the deck.',
