@@ -18,6 +18,11 @@ npm run audit-cards -- … --problems             # hide fully simulated cards
 npm run audit-cards -- … --save file.json       # keep the cards (offline re-runs: --cards file.json)
 ```
 
+For the whole metagame (the top 8 decks of each mtgtop8 format), `npm run audit-meta` writes a ranked report to
+`audit-reports/<date>/` (git-ignored): `report.md`, `report.json` (its `problems` list, cards playing wrongly first),
+and `cards.json` (reuse it with `--cards`). `npm run fix-meta` runs that audit and then this skill headless on a new
+branch, with a cap on fixes and spending (`--dry-run` shows the instructions without changing anything).
+
 Put pasted decklists and downloads in the session scratchpad, not in the repo. Respect the sites: the script
 already waits between requests; don't loop over hundreds of decks.
 

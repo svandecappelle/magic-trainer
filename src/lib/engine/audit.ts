@@ -115,6 +115,8 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   const tapped = entersTappedRule(one);
   if (tapped) return { text: line, status: 'ok', how: `enters tapped (${tapped.kind})` };
   if (entersAsCopy(one)) return { text: line, status: 'ok', how: 'enters as a copy' };
+  // Handled by the counter effect itself (engine.ts), on any spell.
+  if (/^This spell can't be countered\.$/.test(line)) return { text: line, status: 'ok', how: 'can\'t be countered' };
   if (spell) return null;
   if (/^[^:"]+: /.test(line)) return { text: line, status: 'unread', how: 'activated ability with a cost or restriction not understood' };
   return { text: line, status: 'unread', how: 'not read by the engine' };

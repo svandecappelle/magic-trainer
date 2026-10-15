@@ -10,59 +10,9 @@
  * e.g. as a fixture for src/lib/engine/audit.test.ts). Several inputs can be given; cards are merged by name.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { parseDecklist } from '../src/lib/deckText';
 import { auditCard, formatAudit } from '../src/lib/engine/audit';
-import { toCard, type ScryfallCard } from '../src/lib/scryfall';
 import type { Card } from '../src/types';
-
-const HEADERS = { 'User-Agent': 'magic-trainer-audit/1.0', Accept: 'application/json' };
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/** Card names of a decklist text. */
-const namesOf = (text: string) => parseDecklist(text).lines.map((l) => l.name);
-
-/** The decklists behind an mtgtop8 URL: the deck (d=…), or the first 8 decks of an event page. */
-async function mtgtop8(url: string): Promise<string[]> {
-  const deck = url.match(/[?&]d=(\d+)/);
-  let ids = deck ? [deck[1]] : [];
-  if (!ids.length) {
-    const page = await (await fetch(url, { headers: { 'User-Agent': HEADERS['User-Agent'] } })).text();
-    ids = [...new Set([...page.matchAll(/[?&]d=(\d+)/g)].map((m) => m[1]))].slice(0, 8);
-  }
-  const names: string[] = [];
-  for (const id of ids) {
-    const res = await fetch(`https://www.mtgtop8.com/mtgo?d=${id}`, { headers: { 'User-Agent': HEADERS['User-Agent'] } });
-    if (!res.ok) throw new Error(`mtgtop8 deck ${id}: HTTP ${res.status}`);
-    names.push(...namesOf(await res.text()));
-    await sleep(300);
-  }
-  return names;
-}
-
-/** Oracle data from Scryfall, 75 names per request. */
-async function scryfall(names: string[]): Promise<Card[]> {
-  const cards: Card[] = [];
-  const missing: string[] = [];
-  for (let i = 0; i < names.length; i += 75) {
-    const identifiers = names.slice(i, i + 75).map((n) => ({ name: n.split(/\s*\/\/?\s*/)[0] }));
-    const res = await fetch('https://api.scryfall.com/cards/collection', {
-      method: 'POST', headers: { ...HEADERS, 'Content-Type': 'application/json' }, body: JSON.stringify({ identifiers }),
-    });
-    if (!res.ok) throw new Error(`Scryfall: HTTP ${res.status}`);
-    const body = (await res.json()) as { data: ScryfallCard[]; not_found?: { name: string }[] };
-    cards.push(...body.data.map(toCard));
-    missing.push(...(body.not_found ?? []).map((m) => m.name));
-    await sleep(120);
-  }
-  if (missing.length) console.error(`Not found on Scryfall: ${missing.join(', ')}`);
-  return cards;
-}
-
-/** A card without what the audit doesn't need (images, prices, legalities, translations). */
-function slim(c: Card): Card {
-  const { imageSmall: _i, imageNormal: _n, priceUsd: _p, legalities: _l, lang: _g, printedName: _pn, printedTypeLine: _pt, ...rest } = c;
-  return rest;
-}
+import { mtgtop8Url, namesOf, scryfallCards, slim } from './lib/sources';
 
 async function main() {
   const args = process.argv.slice(2);
@@ -77,7 +27,7 @@ async function main() {
 
   const names: string[] = [];
   for (const input of inputs) {
-    if (/^https?:\/\/(www\.)?mtgtop8\.com\//.test(input)) names.push(...(await mtgtop8(input)));
+    if (/^https?:\/\/(www\.)?mtgtop8\.com\//.test(input)) names.push(...(await mtgtop8Url(input)));
     else if (existsSync(input)) names.push(...namesOf(readFileSync(input, 'utf8')));
     else names.push(input);
   }
@@ -85,7 +35,9 @@ async function main() {
   const saved = value('--cards');
   if (saved) for (const c of JSON.parse(readFileSync(saved, 'utf8')) as Card[]) byName.set(c.name, c);
   const unique = [...new Set(names)].filter((n) => !byName.has(n));
-  for (const c of await scryfall(unique)) byName.set(c.name, c);
+  const missing: string[] = [];
+  for (const c of await scryfallCards(unique, missing)) byName.set(c.name, c);
+  if (missing.length) console.error(`Not found on Scryfall: ${missing.join(', ')}`);
   const cards = [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
 
   const savePath = value('--save');

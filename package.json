@@ -10,7 +10,9 @@
     "start": "tsx server/index.ts",
     "preview": "vite preview",
     "test": "vitest run",
-    "audit-cards": "tsx scripts/audit-cards.ts"
+    "audit-cards": "tsx scripts/audit-cards.ts",
+    "audit-meta": "tsx scripts/audit-meta.ts",
+    "fix-meta": "bash scripts/fix-meta.sh"
   },
   "dependencies": {
     "react": "^19.3.0",

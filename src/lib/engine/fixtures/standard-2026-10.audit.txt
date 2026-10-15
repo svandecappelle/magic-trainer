@@ -832,7 +832,7 @@ OK       Impractical Joke {R} — Sorcery
       spell → damage (1 target)
 OK       Inevitable Defeat {1}{R}{W}{B} — Instant
   ✓ This spell can't be countered.
-      spell → destroy+gainLife (1 target)
+      can't be countered
   ✓ Exile target nonland permanent. Its controller loses 3 life and you g…
       spell → destroy+gainLife (1 target)
 OK       Lunar Convocation {W}{B} — Enchantment
