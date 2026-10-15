@@ -1,7 +1,7 @@
 import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
-  cardTypes, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
+  cardTypes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
   activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type CastChoice, type Cost, type ObjectEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
@@ -48,8 +48,12 @@ export interface Permanent extends CardInst {
   controlUntilEndOfTurn?: boolean;
   /** Aura or Equipment: the permanent it is attached to. */
   attachedTo?: string;
+  /** Cavern of Souls: the creature type chosen as it entered. */
+  chosenType?: string;
+  /** A noncreature permanent that is a creature until end of turn (crewed Vehicle, Iron Man Armor): its own card. */
+  unanimated?: Card;
   /** What static abilities (anthems, Auras, Equipment) give it right now; recomputed by the engine. */
-  statics?: { power: number; toughness: number; keywords: Keyword[]; cantAttack?: boolean; cantBlock?: boolean; ward?: number[]; hexproofFromMonocolored?: boolean };
+  statics?: { power: number; toughness: number; keywords: Keyword[]; cantAttack?: boolean; cantBlock?: boolean; ward?: number[]; hexproofFromMonocolored?: boolean; doubleDamage?: boolean };
 }
 
 export interface StackItem extends CardInst {
@@ -71,6 +75,8 @@ export interface StackItem extends CardInst {
   from?: CastZone;
   /** A spell cast without spending mana (free spells, all convoke or delve): Vexing Bauble counters it. */
   noMana?: boolean;
+  /** Cast with Cavern of Souls' mana: "that spell can't be countered". */
+  uncounterable?: boolean;
 }
 
 /** Where a spell is cast from: hand, graveyard (flashback) or exile (a creature back from its adventure). */
@@ -100,6 +106,8 @@ export interface PoolMana {
   source?: string;
   /** Starting Town: spent as one of these colors, it costs this much life. */
   pain?: { life: number; colors: Color[] };
+  /** Cavern of Souls: these colors only for a creature spell of that type. */
+  forType?: { type: string; colors: Color[] };
 }
 
 export interface PlayerState {
@@ -129,6 +137,8 @@ export interface PlayerState {
   enduringStory?: boolean;
   /** Equip abilities activated this turn (Kíli: "the first equip ability you activate each turn"). */
   equipsThisTurn?: number;
+  /** Emblems (Chandra's −7): cards with the emblem's ability. */
+  emblems?: Card[];
 }
 
 /**
@@ -185,7 +195,11 @@ export type ChoicePurpose =
   | 'sacrificeCost' // "Sacrifice a creature:" when activating, or as a spell's additional cost
   | 'discardCost' // a spell's additional cost: discard a card
   | 'exileCost' // a spell's additional cost: exile cards from your graveyard
-  | 'costChoice'; // a spell's additional cost "A or B": yes pays the first
+  | 'costChoice' // a spell's additional cost "A or B": yes pays the first
+  | 'creatureType' // Cavern of Souls: "choose a creature type"
+  | 'crewCost' // Crew N: which creatures to tap
+  | 'dig' // "look at the top N cards …": which to put into the hand
+  | 'tradeForCard'; // Chandra's +2: sacrifice an artifact or discard a card (or neither)
 
 /** Where "arrange" choices may put cards (scry: top/bottom, surveil: top/graveyard). */
 export type ArrangeZone = 'top' | 'bottom' | 'graveyard';
@@ -217,7 +231,7 @@ export interface Pending {
    * What continues once answered: the end of turn, the spell or ability being resolved, or a
    * triggered ability waiting for targets (`trigger`).
    */
-  resume: 'cleanup' | 'effect' | 'trigger' | 'activation' | 'legend' | 'payLife' | 'castCost' | 'clone' | 'damageOrder';
+  resume: 'cleanup' | 'effect' | 'trigger' | 'activation' | 'legend' | 'payLife' | 'castCost' | 'clone' | 'damageOrder' | 'creatureType' | 'crew';
   /** For clone: the window the resolving spell belongs to. */
   reason?: WindowReason;
   /** For payLife: the land that entered. */
@@ -240,6 +254,8 @@ export interface Resolving {
   accepted?: boolean;
   /** Controllers of the permanents this resolution removed (Path to Exile: "Its controller may search …"). */
   removed?: Record<string, PlayerId>;
+  /** "If you do, …" wasn't done (Chandra's +2): the remaining effects are skipped. */
+  stopped?: boolean;
   reason: WindowReason;
 }
 
@@ -292,6 +308,11 @@ export type LogEntry =
   | { k: 'attached'; card: string; to: string }
   /** Leylines: a card of the opening hand begins the game on the battlefield. */
   | { k: 'beginsOnBattlefield'; p: PlayerId; card: string }
+  | { k: 'chosenType'; card: string; type: string }
+  | { k: 'emblem'; p: PlayerId; card: string }
+  | { k: 'becomesCreature'; card: string }
+  | { k: 'crewed'; card: string }
+  | { k: 'dig'; p: PlayerId; n: number; took: number }
   /** Urza's Saga's chapters: the permanent gains an ability (its text). */
   | { k: 'gainsAbility'; card: string; text: string }
   | { k: 'poison'; p: PlayerId; n: number }
@@ -431,7 +452,7 @@ export type GameErrorCode =
   | 'notAttackStep' | 'cannotAttack' | 'notBlockStep' | 'notAttacking' | 'menace' | 'cannotBlock'
   | 'makeChoiceFirst' | 'nothingToChoose' | 'badChoice' | 'badX'
   | 'notEnoughLoyalty' | 'cannotAttackThat' | 'manaSpent' | 'badModes' | 'nothingToDiscard' | 'activationForbidden' | 'castingForbidden' | 'notEnoughInGraveyard' | 'costNotSimulated' | 'cannotCycle'
-  | 'noSuchAbility' | 'activateTiming' | 'alreadyTapped' | 'summoningSick' | 'onceEachTurn' | 'notEnoughLife' | 'nothingToSacrifice';
+  | 'noSuchAbility' | 'activateTiming' | 'alreadyTapped' | 'summoningSick' | 'onceEachTurn' | 'notEnoughLife' | 'nothingToSacrifice' | 'notEnoughCrew';
 
 export type ErrorParams = Record<string, string | number>;
 
@@ -536,9 +557,12 @@ const protectedFrom = (perm: Permanent, source: Card) => protectionsOf(perm.card
  * The mana one tap of `perm` makes (Command Tower: in its controller's commander's colors). Starting Town's colors
  * that cost life are left out when its controller can't pay that life.
  */
-export function unitsOf(s: GameState, perm: Permanent): Color[][] {
+export function unitsOf(s: GameState, perm: Permanent, spell?: Card): Color[][] {
   const identity = s.players[perm.controller]?.identity;
   let units = manaUnits(perm.card, identity);
+  // Cavern of Souls: its colored mana for a creature spell of the chosen type.
+  const typed = chosenTypeMana(perm.card);
+  if (typed && spell && perm.chosenType && ofType(spell, perm.chosenType)) units = [[...new Set([...(units[0] ?? []), ...typed])]];
   const pain = manaPain(perm.card, identity);
   if (pain && s.players[perm.controller].life < pain.life) units = units.map((u) => u.filter((c) => !pain.colors.includes(c)));
   // Sunbillow Verge: "{T}: Add {R}. Activate only if you control a Mountain or a Plains."
@@ -548,6 +572,9 @@ export function unitsOf(s: GameState, perm: Permanent): Color[][] {
   }
   return units.filter((u) => u.length);
 }
+
+/** Is the card a creature (spell) of this creature type? (Cavern of Souls) */
+const ofType = (card: Card, type: string) => isCreature(card) && subtypesOf(card).includes(type.toLowerCase());
 
 /** A card's subtypes (front face), lower case: "Land — Mountain Plains" → mountain, plains. */
 const subtypesOf = (c: Card) => (c.typeLine.split('//')[0].toLowerCase().split('—')[1] ?? '').trim().split(' ');
@@ -586,9 +613,11 @@ const graveyardExiled = (s: GameState, owner: PlayerId) =>
   withRule(s, 'opponentGraveyardsExiled').some((x) => teamOf(s, x.controller) !== teamOf(s, owner));
 
 /** What `p` can pay with: mana in their pool ("pool:N"), then untapped mana sources. */
-export function manaSources(s: GameState, p: PlayerId): ManaSource[] {
+export function manaSources(s: GameState, p: PlayerId, spell?: Card): ManaSource[] {
   const life = s.players[p].life;
   const pool = (s.players[p].pool ?? []).map((m, i): ManaSource => {
+    // Cavern of Souls' mana kept in the pool: its colors only for a creature spell of the chosen type.
+    if (m.forType && !(spell && ofType(spell, m.forType.type))) return { iid: `pool:${i}`, colors: m.colors.filter((c) => !m.forType!.colors.includes(c)) };
     // Starting Town's mana kept in the pool: its colors that cost life only while that life can be paid.
     if (m.pain && life < m.pain.life) return { iid: `pool:${i}`, colors: m.colors.filter((c) => !m.pain!.colors.includes(c)) };
     return { iid: `pool:${i}`, colors: m.colors, ...(m.pain ? { pain: m.pain } : {}) };
@@ -596,7 +625,7 @@ export function manaSources(s: GameState, p: PlayerId): ManaSource[] {
   const perms = s.battlefield
     .filter((x) => x.controller === p && canTapForMana(s, x))
     .map((x): ManaSource => {
-      const units = unitsOf(s, x);
+      const units = unitsOf(s, x, spell);
       const pain = painOf(s, x);
       return {
         iid: x.iid, colors: [...new Set(units.flat())], ...(units.length > 1 ? { units } : {}), ...(painfulMana(x) ? { last: true } : {}), ...(pain ? { pain } : {}),
@@ -632,7 +661,7 @@ export function costWithX(card: Card, x = 0) {
 }
 
 export const canPay = (s: GameState, p: PlayerId, card: Card, x = 0) =>
-  findPayment(manaSources(s, p), costWithX(card, x)) !== null;
+  findPayment(manaSources(s, p, card), costWithX(card, x)) !== null;
 
 /** The mana cost of casting `card` a given way: its face's cost (or flashback), kicker, X, minus affinity. */
 /** Why `p` can't pay an additional cost of casting the card `iid` (null: they can). */
@@ -701,7 +730,7 @@ export function castCost(s: GameState, p: PlayerId, card: Card, opt: { face?: nu
 /** What can pay for casting `card`: mana, plus creatures to tap (convoke) and graveyard cards to exile (delve). */
 export function castSources(s: GameState, p: PlayerId, card: Card, iid: string, face = 0): ManaSource[] {
   const info = castInfo(card, face);
-  const out = manaSources(s, p);
+  const out = manaSources(s, p, faceCard(card, face));
   if (info.convoke) {
     for (const x of s.battlefield) {
       if (x.controller !== p || x.tapped || !isCreature(x.card)) continue;
@@ -823,6 +852,12 @@ function abilityCost(s: GameState, perm: Permanent, spec: ActivatedSpec, x = 0, 
   return { ...cost, generic: Math.max(0, generic) };
 }
 
+/** Can `perm`'s ability `index` be paid now, aimed at `target` (equip costs depend on the creature)? */
+export const canPayAbility = (s: GameState, perm: Permanent, index: number, target?: Permanent) => {
+  const spec = activatedOf(perm.card)[index];
+  return !!spec && !!findPayment(sourcesFor(s, perm, spec), abilityCost(s, perm, spec, 0, target));
+};
+
 /** Kíli: with an enduring story, the first equip ability `p` activates each turn costs {0}. */
 const freeEquip = (s: GameState, p: PlayerId) =>
   !!s.players[p].enduringStory && !s.players[p].equipsThisTurn && s.battlefield.some((x) => x.controller === p && freeFirstEquip(x.card));
@@ -849,6 +884,7 @@ export function activationProblem(s: GameState, p: PlayerId, perm: Permanent, in
   }
   if (spec.cost.life && s.players[p].life < spec.cost.life) return 'notEnoughLife';
   if (spec.cost.sacrifice && !sacrificeOptions(s, perm, spec).length) return 'nothingToSacrifice';
+  if (spec.cost.crew !== undefined && crewOptions(s, perm).reduce((n, x) => n + powerOf(x), 0) < spec.cost.crew) return 'notEnoughCrew';
   if (!findPayment(sourcesFor(s, perm, spec), abilityCost(s, perm, spec, x))) return 'notEnoughMana';
   return null;
 }
@@ -920,6 +956,8 @@ function fitsTypeLine(card: Card, f: TargetFilter): boolean {
   const [types, subtypes = ''] = card.typeLine.split('//')[0].toLowerCase().split('—');
   if (f.basic && !types.includes('basic')) return false;
   if (f.nonbasicLands && types.includes('land') && types.includes('basic')) return false;
+  if (f.legendary && !types.includes('legendary')) return false;
+  if (f.nonSubtypes?.some((t) => subtypes.split(' ').includes(t))) return false;
   if (f.subtypes && !f.subtypes.some((t) => subtypes.split(' ').includes(t))) return false;
   return true;
 }
@@ -1263,6 +1301,11 @@ function finishCleanup(d: GameState, p: PlayerId, iids: string[]) {
 
 function finishTurn(d: GameState) {
   for (const perm of d.battlefield) {
+    // "until end of turn": a crewed Vehicle or Iron Man Armor is no longer a creature.
+    if (perm.unanimated) {
+      perm.card = perm.unanimated;
+      delete perm.unanimated;
+    }
     perm.damage = 0;
     perm.deathtouched = false;
     perm.boosts = perm.boosts.filter((b) => b.until !== 'endOfTurn');
@@ -1324,7 +1367,7 @@ function removePermanent(d: GameState, perm: Permanent, zone: 'graveyard' | 'exi
   d.battlefield = d.battlefield.filter((x) => x.iid !== perm.iid);
   returnExiledUntil(d, perm);
   // A token that leaves the battlefield ceases to exist (it still "dies").
-  if (!isToken(perm.printed ?? perm.card)) putInZone(d, perm.owner ?? perm.controller, { iid: perm.iid, card: perm.printed ?? perm.card, ...(perm.commander ? { commander: true } : {}) }, zone);
+  if (!isToken(printedCard(perm))) putInZone(d, perm.owner ?? perm.controller, { iid: perm.iid, card: printedCard(perm), ...(perm.commander ? { commander: true } : {}) }, zone);
   if (zone === 'graveyard' && isCreature(perm.card)) fireObject(d, 'dies', perm);
 }
 
@@ -1445,6 +1488,56 @@ function openingHandPermanents(d: GameState) {
   }
 }
 
+/**
+ * A noncreature permanent becomes a creature until end of turn (Iron Man Armor, crewed Vehicles, Chandra): its own
+ * card is kept to come back at the end of the turn. Already a creature, it only gains the keywords.
+ */
+function animate(d: GameState, perm: Permanent, e: Extract<Effect, { kind: 'animate' }>) {
+  if (e.keywords.length) perm.boosts.push({ power: 0, toughness: 0, keywords: e.keywords, until: 'endOfTurn' });
+  if (isCreature(perm.card)) return;
+  const own = perm.card;
+  const [types, subtypes = ''] = own.typeLine.split(' // ')[0].split(' — ');
+  const typeLine = `${types.replace(/\bArtifact\b/, 'Artifact Creature')}${/\bCreature\b/.test(types.replace(/\bArtifact\b/, 'Artifact Creature')) ? '' : ' Creature'} — ${[subtypes, ...e.subtypes].filter(Boolean).join(' ')}`;
+  perm.unanimated ??= own;
+  perm.card = {
+    ...own, typeLine,
+    power: String(e.power ?? own.power ?? 0), toughness: String(e.toughness ?? own.toughness ?? 0),
+    ...(e.text ? { oracleText: `${own.oracleText}\n${e.text}` } : {}),
+  };
+  log(d, { k: 'becomesCreature', card: own.name });
+}
+
+/** The card a permanent leaves the battlefield as: its printed card, not a face, an animation or gained abilities. */
+const printedCard = (perm: Permanent) => perm.printed ?? perm.unanimated ?? perm.card;
+
+/** Cavern of Souls: creature types of `p`'s cards, the most frequent first. */
+function creatureTypeOptions(d: GameState, p: PlayerId): string[] {
+  const ps = d.players[p];
+  const count = new Map<string, number>();
+  const cards = [...ps.library, ...ps.hand, ...ps.graveyard, ...d.battlefield.filter((x) => x.controller === p)].map((c) => c.card);
+  for (const c of cards) {
+    if (!isCreature(c)) continue;
+    for (const t of (c.typeLine.split(' // ')[0].split(' — ')[1] ?? '').split(' ').filter(Boolean)) count.set(t, (count.get(t) ?? 0) + 1);
+  }
+  const types = [...count.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t).slice(0, 12);
+  return types.length ? types : ['Human'];
+}
+
+/** Cavern of Souls: "As this land enters, choose a creature type." (asked once nothing else is going on). */
+function askCreatureType(d: GameState): boolean {
+  const perm = d.battlefield.find((x) => choosesCreatureType(x.card) && !x.chosenType);
+  if (!perm) return false;
+  d.pending = {
+    choice: { kind: 'mode', player: perm.controller, purpose: 'creatureType', min: 1, max: 1, modes: creatureTypeOptions(d, perm.controller), params: { card: perm.card.name } },
+    resume: 'creatureType', iid: perm.iid,
+  };
+  return true;
+}
+
+/** Untapped creatures that can crew `perm` (not itself). */
+export const crewOptions = (s: GameState, perm: Permanent) =>
+  s.battlefield.filter((x) => x.controller === perm.controller && x.iid !== perm.iid && !x.tapped && isCreature(x.card));
+
 /** A lore counter on a Saga: each chapter it reaches triggers (CR 714.2b). */
 function addLore(d: GameState, perm: Permanent) {
   const before = perm.counters.lore ?? 0;
@@ -1511,7 +1604,7 @@ function fits(d: GameState, viewer: PlayerId, which: Selector, perm: Permanent):
  * for it. A creature that died still sees its own death ("When this creature dies").
  */
 function fireObject(d: GameState, on: ObjectEvent, perm: Permanent) {
-  const watchers = d.battlefield.some((x) => x.iid === perm.iid) ? d.battlefield : [...d.battlefield, perm];
+  const watchers = [...(d.battlefield.some((x) => x.iid === perm.iid) ? d.battlefield : [...d.battlefield, perm]), ...emblemSources(d)];
   for (const x of watchers) {
     triggersOf(x.card).forEach((t, i) => {
       const e: TriggerEvent = t.event;
@@ -1531,8 +1624,15 @@ function fireObject(d: GameState, on: ObjectEvent, perm: Permanent) {
   }
 }
 
+/** Emblems as trigger sources (Chandra's: "Whenever an artifact you control enters, this emblem deals 3 damage …"). */
+function emblemSources(d: GameState): Permanent[] {
+  return playersOf(d).flatMap((p) => (d.players[p].emblems ?? []).map((card, i): Permanent => ({
+    iid: `emblem-${p}-${i}`, card, controller: p, tapped: false, sick: false, damage: 0, deathtouched: false, counters: {}, boosts: [],
+  })));
+}
+
 /** The beginning of the active player's upkeep or end step. */
-function fireStep(d: GameState, on: 'upkeep' | 'endStep') {
+function fireStep(d: GameState, on: 'upkeep' | 'endStep' | 'beginCombat') {
   // Mobilize tokens: "Sacrifice them at the beginning of the next end step."
   if (on === 'endStep' && d.sacrificeAtEnd?.length) {
     for (const iid of d.sacrificeAtEnd) {
@@ -1541,7 +1641,7 @@ function fireStep(d: GameState, on: 'upkeep' | 'endStep') {
     }
     delete d.sacrificeAtEnd;
   }
-  for (const x of d.battlefield) {
+  for (const x of [...d.battlefield, ...emblemSources(d)]) {
     for (const t of triggersOf(x.card)) {
       if (t.event.on !== on) continue;
       const mine = isActivePlayer(d, x.controller);
@@ -1552,7 +1652,7 @@ function fireStep(d: GameState, on: 'upkeep' | 'endStep') {
 
 /** `p` cast `card`: "whenever you cast …" and prowess. */
 function fireCast(d: GameState, p: PlayerId, card: Card) {
-  for (const x of d.battlefield) {
+  for (const x of [...d.battlefield, ...emblemSources(d)]) {
     if (x.controller !== p) continue;
     for (const t of triggersOf(x.card)) {
       if (t.event.on === 'cast' && cardMatches(card, t.event.filter)) queueTrigger(d, x, p, t.ability);
@@ -1678,7 +1778,7 @@ function checkStateBased(d: GameState) {
         removePermanent(d, perm, 'graveyard');
         log(d, { k: 'destroyed', card: perm.card.name });
       }
-    } else if (!host || !isCreature(host.card) || host.controller !== perm.controller || protectedFrom(host, perm.card)) {
+    } else if (!host || !isCreature(host.card) || isCreature(perm.card) || host.controller !== perm.controller || protectedFrom(host, perm.card)) {
       delete perm.attachedTo;
     }
   }
@@ -1720,6 +1820,7 @@ function refreshStatics(d: GameState) {
         b.toughness += st.toughness * times;
         if (st.ward) b.ward = [...(b.ward ?? []), st.ward];
         if (st.hexproofFromMonocolored) b.hexproofFromMonocolored = true;
+        if (st.doubleDamage) b.doubleDamage = true;
         for (const k of st.keywords) if (!b.keywords.includes(k)) b.keywords.push(k);
         if (st.cantAttack) b.cantAttack = true;
         if (st.cantBlock) b.cantBlock = true;
@@ -1730,6 +1831,9 @@ function refreshStatics(d: GameState) {
 
 function dealDamage(d: GameState, source: CardInst, controller: PlayerId, target: Permanent | PlayerId, amount: number, combat = false) {
   if (amount <= 0) return;
+  // Mjölnir: "Double all damage equipped creature would deal." (the creature, or its own ability.)
+  const dealer = findPermanent(d, source.iid) ?? ((source as StackItem).source ? findPermanent(d, (source as StackItem).source!) : undefined);
+  if (dealer?.statics?.doubleDamage) amount *= 2;
   if (typeof target !== 'number' && protectedFrom(target, source.card)) return; // protection prevents it
   // "Prevent the next N damage" shields.
   const key = typeof target === 'number' ? `player:${target}` : target.iid;
@@ -1942,6 +2046,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
     case 'counter':
       for (const target of spells) {
         if (!target.ability && /\bThis spell can't be countered\./.test(castCard(target).oracleText)) continue;
+        if (target.uncounterable) continue;
         if (e.unlessPays) {
           const payer = target.controller;
           const cost = { generic: e.unlessPays, colored: [] };
@@ -2151,12 +2256,12 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       for (const perm of e.kind === 'bounceAll' ? matching(d, caster, e.which) : perms) {
         d.battlefield = d.battlefield.filter((x) => x.iid !== perm.iid);
         returnExiledUntil(d, perm);
-        if (!isToken(perm.printed ?? perm.card)) putInZone(d, perm.owner ?? perm.controller, { iid: perm.iid, card: perm.printed ?? perm.card, ...(perm.commander ? { commander: true } : {}) }, 'hand');
+        if (!isToken(printedCard(perm))) putInZone(d, perm.owner ?? perm.controller, { iid: perm.iid, card: printedCard(perm), ...(perm.commander ? { commander: true } : {}) }, 'hand');
         log(d, { k: 'bounced', card: perm.card.name });
       }
       break;
     case 'fight': {
-      const [a] = affected(d, r, e.a) as Permanent[];
+      const [a] = 'iid' in e.a ? [findPermanent(d, e.a.iid)].filter((x) => x !== undefined) : affected(d, r, e.a) as Permanent[];
       const [b] = affected(d, r, e.b);
       if (!a || b === undefined) break;
       if (typeof b === 'number') {
@@ -2187,6 +2292,71 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       }
       r.sub = 0;
       break;
+    case 'dig': {
+      // "Look at the top N cards …": the chosen ones into the hand, the rest on the bottom in a random order.
+      const ps = d.players[caster];
+      const top = ps.library.slice(0, e.n);
+      const options = e.filter ? top.filter((c) => cardMatches(c.card, e.filter!)) : top;
+      const max = Math.min(e.take, options.length);
+      if (max && answer?.kind !== 'cards') {
+        return { kind: 'cards', player: caster, purpose: 'dig', min: e.optional ? 0 : max, max, options, params: { n: top.length } };
+      }
+      const picked = answer?.kind === 'cards' ? answer.iids : [];
+      const chosen = options.filter((c) => picked.includes(c.iid));
+      ps.library = ps.library.slice(top.length);
+      ps.hand.push(...chosen);
+      ps.library.push(...shuffle(top.filter((c) => !chosen.includes(c)), () => random(d)));
+      log(d, { k: 'dig', p: caster, n: top.length, took: chosen.length });
+      break;
+    }
+    case 'attachEquipment': {
+      // Thorin: the Equipment still there go on the creature; if any did, the reflexive trigger.
+      const [host] = affected(d, r, e.to).filter((x): x is Permanent => typeof x !== 'number' && isPermanent(x));
+      if (!host) break;
+      let n = 0;
+      for (const eq of affected(d, r, e.what)) {
+        if (typeof eq === 'number' || !isPermanent(eq) || eq.controller !== host.controller || isCreature(eq.card)) continue;
+        eq.attachedTo = host.iid;
+        log(d, { k: 'attached', card: eq.card.name, to: host.card.name });
+        n++;
+      }
+      if (n && e.thenDamage) {
+        (d.triggered ??= []).push({
+          source: { iid: item.source ?? item.iid, card: item.card }, controller: caster,
+          ability: { targets: [e.thenDamage], effects: [{ kind: 'fight', a: { iid: host.iid }, b: { slot: 0 }, oneSided: true }] },
+        });
+      }
+      break;
+    }
+    case 'animate':
+      for (const perm of perms) animate(d, perm, e);
+      break;
+    case 'emblem': {
+      const emblem: Card = {
+        id: `emblem:${item.card.name}`, name: `${item.card.name.split(' // ')[0]} emblem`, manaCost: '', cmc: 0, typeLine: 'Emblem', oracleText: e.text,
+        colors: [], colorIdentity: [], setCode: '', setName: '', rarity: '', keywords: [],
+      };
+      (d.players[caster].emblems ??= []).push(emblem);
+      log(d, { k: 'emblem', p: caster, card: item.card.name });
+      break;
+    }
+    case 'tradeForCard': {
+      // "You may sacrifice an artifact or discard a card. If you do, draw a card."
+      const ps = d.players[caster];
+      const options: CardInst[] = [...matching(d, caster, e.sacrifice).filter((x) => x.controller === caster), ...ps.hand];
+      if (options.length && answer?.kind !== 'cards') {
+        return { kind: 'cards', player: caster, purpose: 'tradeForCard', min: 0, max: 1, options, params: { card: item.card.name } };
+      }
+      const iid = answer?.kind === 'cards' ? answer.iids[0] : undefined;
+      const perm = iid ? findPermanent(d, iid) : undefined;
+      const inHand = iid ? ps.hand.find((c) => c.iid === iid) : undefined;
+      if (perm) sacrifice(d, perm);
+      else if (inHand) {
+        moveToGraveyard(d, caster, inHand, 'hand');
+        log(d, { k: 'discard', p: caster, card: inHand.card.name });
+      } else r.stopped = true;
+      break;
+    }
     case 'gainAbility': {
       // The Saga keeps the ability while it stays; what leaves the battlefield is the printed card.
       const src = item.source ? findPermanent(d, item.source) : undefined;
@@ -2257,7 +2427,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
     case 'tokenCopy':
       for (const perm of perms) {
         d.abilities = (d.abilities ?? 0) + 1;
-        const model = perm.printed ?? perm.card;
+        const model = printedCard(perm);
         enterBattlefield(d, { iid: `token-${d.abilities}`, card: { ...model, id: `token:copy:${model.id}` } }, caster);
         log(d, { k: 'token', p: caster, card: model.name, n: 1 });
       }
@@ -2381,6 +2551,7 @@ function continueResolving(d: GameState, answer?: Answer) {
       return;
     }
     r.next++;
+    if (r.stopped) r.next = effects.length;
   }
   d.resolving = null;
   if (!r.item.ability) putAwaySpell(d, r.item, true);
@@ -2422,7 +2593,7 @@ function settle(d: GameState) {
   for (;;) {
     checkStateBased(d);
     if (d.winner !== null || d.pending || d.mulligan) return;
-    if (askLegendRule(d) || askLifeChoice(d)) return;
+    if (askLegendRule(d) || askLifeChoice(d) || askCreatureType(d)) return;
     if (d.triggered?.length) {
       if (!flushTrigger(d)) return;
       continue;
@@ -2702,6 +2873,21 @@ export function apply(state: GameState, action: Action): GameState {
             log(d, { k: 'legendRule', card: perm.card.name });
           }
         }
+      } else if (pending.resume === 'creatureType' && action.answer.kind === 'mode') {
+        const perm = findPermanent(d, pending.iid!);
+        const type = (pending.choice as { modes: string[] }).modes[action.answer.modes[0]];
+        if (perm && type) {
+          perm.chosenType = type;
+          log(d, { k: 'chosenType', card: perm.card.name, type });
+        }
+      } else if (pending.resume === 'crew' && action.answer.kind === 'cards') {
+        const crew = action.answer.iids.map((iid) => findPermanent(d, iid)!);
+        const n = Number(pending.choice.params?.n ?? 0);
+        const item = pending.activation!.item;
+        if (crew.reduce((sum, x) => sum + powerOf(x), 0) < n) throw new IllegalAction('notEnoughCrew', { card: item.card.name, n });
+        for (const x of crew) tapPermanent(d, x);
+        log(d, { k: 'crewed', card: item.card.name });
+        finishActivation(d, item, pending.activation!.named);
       } else if (pending.resume === 'payLife' && action.answer.kind === 'yesNo') {
         const perm = findPermanent(d, pending.iid!);
         const n = Number(pending.choice.params?.n ?? 0);
@@ -2717,7 +2903,7 @@ export function apply(state: GameState, action: Action): GameState {
         const item = pending.activation!.item;
         const model = action.answer.iids[0] ? findPermanent(d, action.answer.iids[0]) : undefined;
         const own = castCard(item);
-        const copy = model ? { ...(model.printed ?? model.card), id: model.card.id } : own;
+        const copy = model ? { ...(printedCard(model)), id: model.card.id } : own;
         log(d, { k: 'enters', card: own.name });
         if (model) log(d, { k: 'copied', card: own.name, as: model.card.name });
         const perm = enterBattlefield(d, { iid: item.iid, card: copy, ...(item.commander ? { commander: true } : {}) }, item.controller, { x: item.x });
@@ -2809,6 +2995,15 @@ export function apply(state: GameState, action: Action): GameState {
 
       const plan = planPayment(castSources(d, p, inst.card, inst.iid, face), castCost(d, p, inst.card, { face, kicked, from, iid: inst.iid }, x));
       if (!plan) throw new IllegalAction('notEnoughMana', { card: card.name });
+      // Cavern of Souls' mana spent on a creature spell of the chosen type: it can't be countered.
+      const uncounterable = plan.some((m) => {
+        if (m.iid.startsWith('pool:')) {
+          const forType = me.pool?.[Number(m.iid.slice(5))]?.forType;
+          return !!forType && ofType(card, forType.type);
+        }
+        const src = findPermanent(d, m.iid);
+        return !!src?.chosenType && !!chosenTypeMana(src.card) && ofType(card, src.chosenType);
+      });
       payMana(d, p, plan);
       // Creatures tapped for convoke and cards exiled for delve aren't mana.
       const noMana = plan.every((m) => /^(?:convoke|delve):/.test(m.iid));
@@ -2822,7 +3017,7 @@ export function apply(state: GameState, action: Action): GameState {
       const item: StackItem = {
         iid: inst.iid, card: inst.card, controller: p, targets, ...(xCount(card) ? { x } : {}),
         ...(face ? { face } : {}), ...(modes ? { modes } : {}), ...(kicked ? { kicked } : {}), ...(from !== 'hand' ? { from } : {}),
-        ...(inst.commander ? { commander: true } : {}), ...(noMana ? { noMana } : {}),
+        ...(inst.commander ? { commander: true } : {}), ...(noMana ? { noMana } : {}), ...(uncounterable ? { uncounterable } : {}),
       };
       if (extra && payExtraCost(d, p, extra, item, named)) break;
       finishCast(d, item, named);
@@ -2894,6 +3089,16 @@ export function apply(state: GameState, action: Action): GameState {
         iid: `${perm.iid}-ability-${d.abilities}`, card: perm.card, controller: p, targets, ability: spec.ability, source: perm.iid,
         ...(spec.cost.mana.includes('{X}') ? { x } : {}),
       };
+      if (spec.cost.crew !== undefined) {
+        // Crew N: the player picks the creatures to tap.
+        const options = crewOptions(d, perm);
+        d.pending = {
+          choice: { kind: 'cards', player: p, purpose: 'crewCost', min: 1, max: options.length, options, params: { card: perm.card.name, n: spec.cost.crew } },
+          resume: 'crew',
+          activation: { item, named },
+        };
+        break;
+      }
       if (spec.cost.sacrifice) {
         // The rest of the cost is paid; the player now picks what to sacrifice.
         d.pending = {
@@ -2913,9 +3118,12 @@ export function apply(state: GameState, action: Action): GameState {
       const perm = findPermanent(d, action.iid);
       if (!perm || perm.controller !== p) throw new IllegalAction('noSuchAbility');
       if (!canTapForMana(d, perm)) throw new IllegalAction(perm.tapped ? 'alreadyTapped' : 'summoningSick', { card: perm.card.name });
-      const units = unitsOf(d, perm);
+      const typed = perm.chosenType ? chosenTypeMana(perm.card) : null;
+      // Cavern of Souls: the mana keeps both choices until spent ({C}, or a color for a creature of the chosen type).
+      const units = typed ? [[...new Set([...(unitsOf(d, perm)[0] ?? []), ...typed])]] : unitsOf(d, perm);
       const pain = painOf(d, perm);
-      d.players[p].pool = [...(d.players[p].pool ?? []), ...units.map((colors) => ({ colors, source: perm.iid, ...(pain ? { pain } : {}) }))];
+      const forType = typed ? { type: perm.chosenType!, colors: typed } : undefined;
+      d.players[p].pool = [...(d.players[p].pool ?? []), ...units.map((colors) => ({ colors, source: perm.iid, ...(pain ? { pain } : {}), ...(forType ? { forType } : {}) }))];
       tapForManaOnly(d, perm);
       break;
     }
@@ -2941,8 +3149,11 @@ export function apply(state: GameState, action: Action): GameState {
         d.turnHead = d.active;
         delete d.headsDone;
         emptyPools(d);
+        // "At the beginning of combat on your turn" (Chandra): the active player gets priority with them on the stack.
+        fireStep(d, 'beginCombat');
+        if (d.triggered?.length) d.priority = { player: d.active, passes: 0, reason: 'combat' };
         // Skip combat entirely when nothing can attack.
-        if (teamPlayers(d, d.active).some((q) => creaturesOf(d, q).some(canAttack))) openForOpponents(d, 'combat');
+        else if (teamPlayers(d, d.active).some((q) => creaturesOf(d, q).some(canAttack))) openForOpponents(d, 'combat');
         else d.step = 'main2';
       } else if (d.step === 'attack') {
         declareAttacks(d, p, [], {});

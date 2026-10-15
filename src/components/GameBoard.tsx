@@ -230,7 +230,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     const channel = inHand ? castInfo(card).channel : undefined;
     const channelCostNow = channel && channelCost(g, me, card);
     if (channel && channelCostNow && cycleTiming && !g.pending && findPayment(manaSources(g, me), channelCostNow)) {
-      items.push({ key: 'channel', label: t.game.channelFor(channel.cost), run: () => beginChannel(iid, card) });
+      items.push({ key: 'channel', label: channel.keyword ? t.game.channelFor(channel.cost) : t.game.discardFor(channel.cost), run: () => beginChannel(iid, card) });
     }
     return items;
   }
@@ -667,6 +667,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
         {loyalty !== null && <span className="loyalty" title={t.game.loyaltyTitle}>{loyalty}</span>}
         {counters.length > 0 && <span className="counters">{counters.map(([c, n]) => t.game.counters(c, n!)).join(' ')}</span>}
         {granted.length > 0 && <span className="granted">{granted.join(', ')}</span>}
+        {perm.chosenType && <span className="granted chosen" title={t.game.chosenTypeTitle}>{perm.chosenType}</span>}
         {!ghost && floatsFor(`perm:${perm.iid}`)}
       </div>
     );
@@ -743,6 +744,9 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
           {zone('exile', '🌀')}
           {ps.command && zone('command', '👑')}
           {commanderDamage > 0 && <span className="poison" title={t.game.commanderDamageTitle}>⚔ {commanderDamage}</span>}
+          {(ps.emblems ?? []).map((e, i) => (
+            <span key={i} className="emblem" title={e.oracleText} {...zoomable(e)}>★ {t.game.emblem}</span>
+          ))}
         </div>
       </div>
     );

@@ -258,9 +258,6 @@ NONE     Stingcaster Mage {1}{R} — Creature — Human Wizard
       keyword
   ✗ When this creature enters, target instant or sorcery card in your gra…
       trigger (enters), effect not simulated
-NONE     Stock Up {2}{U} — Sorcery
-  ✗ Look at the top five cards of your library. Put two of them into your…
-      spell not simulated
 NONE     Strategic Betrayal {1}{B} — Sorcery
   ✗ Target opponent exiles a creature they control and their graveyard.
       spell not simulated
@@ -386,13 +383,6 @@ PARTIAL  Case of the Uneaten Feast {W} — Enchantment — Case
       Case: solving not simulated
   ✗ Solved — Sacrifice this Case: Creature cards in your graveyard gain "…
       keyword not simulated: solved
-PARTIAL  Cavern of Souls  — Land
-  ? As this land enters, choose a creature type.
-      not read by the engine
-  ✓ {T}: Add {C}.
-      mana: C
-  ? {T}: Add one mana of any color. Spend this mana only to cast a creatu…
-      mana ability not understood
 PARTIAL  Chandra, Torch of Defiance {2}{R}{R} — Legendary Planeswalker — Chandra
   ✗ +1: Exile the top card of your library. You may cast that card. If yo…
       activated ability, effect not simulated
@@ -400,8 +390,8 @@ PARTIAL  Chandra, Torch of Defiance {2}{R}{R} — Legendary Planeswalker — Cha
       loyalty ability → addMana
   ✓ −3: Chandra deals 4 damage to target creature.
       loyalty ability → damage (1 target)
-  ✗ −7: You get an emblem with "Whenever you cast a spell, this emblem de…
-      activated ability, effect not simulated
+  ✓ −7: You get an emblem with "Whenever you cast a spell, this emblem de…
+      loyalty ability → emblem
 PARTIAL  Cori Mountain Monastery  — Land
   ✓ This land enters tapped unless you control a Plains or an Island.
       enters tapped (unlessSubtypes)
@@ -431,11 +421,6 @@ PARTIAL  Decorum Dissertation {3}{B}{B} — Sorcery — Lesson
       keyword not simulated: paradigm
   ✓ Target player draws two cards and loses 2 life.
       spell → draw+loseLife (1 target)
-PARTIAL  Demolition Field  — Land
-  ✓ {T}: Add {C}.
-      mana: C
-  ✗ {2}, {T}, Sacrifice this land: Destroy target nonbasic land an oppone…
-      activated ability, effect not simulated
 PARTIAL  Doomsday Excruciator {B}{B}{B}{B}{B}{B} — Creature — Demon
   ✓ Flying
       keyword
@@ -506,8 +491,8 @@ PARTIAL  Great Hall of the Biblioplex  — Land
 PARTIAL  Guiding Hydra {X}{W} — Creature — Hydra Horror
   ✓ This creature enters with X +1/+1 counters on it.
       enters with X +1/+1 counters
-  ? At the beginning of combat on your turn, you may remove a +1/+1 count…
-      not read by the engine
+  ✗ At the beginning of combat on your turn, you may remove a +1/+1 count…
+      trigger (beginCombat), effect not simulated
 PARTIAL  Haliya, Guided by Light {2}{W} — Legendary Creature — Human Soldier
   ✓ Whenever Haliya or another creature or artifact you control enters, y…
       trigger (enters) → gainLife
@@ -730,6 +715,13 @@ OK       Cathar Commando {1}{W} — Creature — Human Soldier
       keyword
   ✓ {1}, Sacrifice this creature: Destroy target artifact or enchantment.
       activated → destroy (1 target)
+OK       Cavern of Souls  — Land
+  ✓ As this land enters, choose a creature type.
+      chooses a creature type as it enters
+  ✓ {T}: Add {C}.
+      mana: C
+  ✓ {T}: Add one mana of any color. Spend this mana only to cast a creatu…
+      mana for a creature spell of the chosen type (can't be countered)
 OK       Clarion Conqueror {2}{W} — Creature — Dragon
   ✓ Flying
       keyword
@@ -753,6 +745,11 @@ OK       Curious Farm Animals {W} — Creature — Boar Elk Bird Ox
 OK       Day of Judgment {2}{W}{W} — Sorcery
   ✓ Destroy all creatures.
       spell → destroyAll
+OK       Demolition Field  — Land
+  ✓ {T}: Add {C}.
+      mana: C
+  ✓ {2}, {T}, Sacrifice this land: Destroy target nonbasic land an oppone…
+      activated → destroy+search+search (1 target)
 OK       Deserted Beach  — Land
   ✓ This land enters tapped unless you control two or more other lands.
       enters tapped (unlessOtherLands)
@@ -929,6 +926,9 @@ OK       Starting Town  — Land — Town
 OK       Steam Vents  — Land — Island Mountain
   ✓ As this land enters, you may pay 2 life. If you don't, it enters tapp…
       enters tapped (payLife)
+OK       Stock Up {2}{U} — Sorcery
+  ✓ Look at the top five cards of your library. Put two of them into your…
+      spell → dig
 OK       Stormcarved Coast  — Land
   ✓ This land enters tapped unless you control two or more other lands.
       enters tapped (unlessOtherLands)
@@ -961,5 +961,5 @@ OK       Watery Grave  — Land — Island Swamp
   ✓ As this land enters, you may pay 2 life. If you don't, it enters tapp…
       enters tapped (payLife)
 
-178 cards: 66 ok, 45 partial, 67 not simulated, 0 can't be cast
+178 cards: 69 ok, 43 partial, 66 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

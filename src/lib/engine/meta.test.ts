@@ -71,8 +71,8 @@ describe('partly understood texts are not simulated', () => {
     expect(parseAbilityText('Exile target creature you control, then return that card to the battlefield under its owner\'s control with a +1/+1 counter on it.').effects).toEqual([]);
     // Jeskai Revelation: the bounce of a spell isn't simulated, so nothing is.
     expect(parseAbilityText('Return target spell or permanent to its owner\'s hand. Jeskai Revelation deals 4 damage to any target. You gain 4 life.').effects).toEqual([]);
-    // An emblem isn't a one-time effect.
-    expect(parseAbilityText('You get an emblem with "Whenever you cast a spell, this emblem deals 5 damage to any target."').effects).toEqual([]);
+    // An emblem with an ability the engine can't do isn't created.
+    expect(parseAbilityText('You get an emblem with "Creatures you control get +1/+1 and have trample as long as you control a Dragon."').effects).toEqual([]);
     // Spree modes have their own costs: not all modes for the base cost.
     const threeSteps = spell('Three Steps Ahead', '{U}', 'Spree\n+ {1}{U} — Counter target spell.\n+ {3} — Create a token that\'s a copy of target artifact or creature you control.\n+ {2} — Draw two cards, then discard a card.');
     expect(spellSpec(threeSteps).effects).toEqual([]);
@@ -873,5 +873,189 @@ describe('Boros Dwarves equipment (mtgtop8 deck 899948)', () => {
     for (let i = 0; i < 4 && s.mulligan; i++) s = apply(s, { type: 'keep', bottom: [] });
     expect(perm(s, 'Leyline Axe')).toMatchObject({ controller: 0 });
     expect(s.log.some((e) => e.k === 'beginsOnBattlefield')).toBe(true);
+  });
+});
+
+describe('Boros Dwarves, second pass: Thorin, Dáin\'s Company, Iron Man Armor, Mjölnir, Cavern of Souls, Chandra', () => {
+  const equipment = (name: string, manaCost: string, oracleText: string, typeLine = 'Artifact — Equipment') =>
+    card({ name, typeLine, manaCost, cmc: (manaCost.match(/\{/g) ?? []).length, oracleText });
+  const boots = equipment('Lavaspur Boots', '{1}', 'Equipped creature gets +1/+0 and has haste and ward {1}.\nEquip {1}');
+  const collar = equipment('Basilisk Collar', '{1}', 'Equipped creature has deathtouch and lifelink.\nEquip {2}');
+  const thorin = creature('Thorin, Mountain-king', 3, 4, {
+    typeLine: 'Legendary Creature — Dwarf Noble', manaCost: '{4}', cmc: 4, keywords: ['Trample'], colors: ['R'],
+    oracleText: 'Trample\nWhen Thorin enters, attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature.',
+  });
+  const dains = creature('Dáin\'s Company', 2, 2, {
+    typeLine: 'Creature — Dwarf Warrior', manaCost: '{2}', colors: ['R', 'W'],
+    oracleText: 'This creature has lifelink as long as you control another Dwarf.\nWhen this creature enters, look at the top four cards of your library. You may reveal a Dwarf or Equipment card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.',
+  });
+  const ironMan = equipment('Iron Man Armor', '{3}', 'When this Equipment enters, attach it to target creature you control.\nEquipped creature gets +2/+1 and has flying.\n{2}: If this Equipment isn\'t a creature, it becomes a 0/0 Construct Hero artifact creature with flying and "This creature gets +1/+1 for each artifact you control" until end of turn.\nEquip {2}');
+  const mjolnir = card({
+    name: 'Mjölnir, Hammer of Thor', typeLine: 'Legendary Artifact — Equipment', manaCost: '{4}', cmc: 4, colors: ['R'],
+    oracleText: 'When Mjölnir enters, it deals 4 damage to up to one target creature.\nDouble all damage equipped creature would deal.\nEquip worthy {1} (A creature is worthy if it\'s a legendary non-Villain that\'s red and/or white.)\n{2}, Discard this card: It deals 2 damage to each creature.',
+  });
+  const cavern = card({
+    name: 'Cavern of Souls', typeLine: 'Land',
+    oracleText: 'As this land enters, choose a creature type.\n{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a creature spell of the chosen type, and that spell can\'t be countered.',
+  });
+  const chandra = card({
+    name: 'Chandra, Spark Hunter', typeLine: 'Legendary Planeswalker — Chandra', manaCost: '{4}', cmc: 4, colors: ['R'], loyalty: '4',
+    oracleText: 'At the beginning of combat on your turn, choose up to one target Vehicle you control. Until end of turn, it becomes an artifact creature and gains haste.\n+2: You may sacrifice an artifact or discard a card. If you do, draw a card.\n0: Create a 3/2 colorless Vehicle artifact token with crew 1.\n−7: You get an emblem with "Whenever an artifact you control enters, this emblem deals 3 damage to any target."',
+  });
+  const dwarf = creature('Dwarf', 2, 1, { typeLine: 'Creature — Dwarf Warrior', manaCost: '{R}', colors: ['R'] });
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 10 && (s.stack.length || s.triggered?.length) && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  const answer = (s: GameState, a: Parameters<typeof apply>[1] extends infer A ? (A extends { type: 'choose'; answer: infer B } ? B : never) : never) =>
+    resolve(apply(s, { type: 'choose', answer: a }));
+  const iids = (s: GameState, ...names: string[]) => names.map((n) => ({ kind: 'permanent' as const, iid: iidOf(s, n) }));
+
+  it('Dáin\'s Company looks at the top four: a Dwarf or Equipment into the hand, the rest on the bottom', () => {
+    let s = board({ mana: 2, hand: [dains] });
+    s.players[0].library = [{ iid: 'l0', card: swamp }, { iid: 'l1', card: boots }, { iid: 'l2', card: dwarf }, { iid: 'l3', card: swamp }, { iid: 'l4', card: island }];
+    s = resolve(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    expect(s.pending?.choice).toMatchObject({ kind: 'cards', purpose: 'dig', min: 0, max: 1 });
+    const options = s.pending!.choice.kind === 'cards' ? s.pending!.choice.options.map((c) => c.card.name) : [];
+    expect(options).toEqual(['Lavaspur Boots', 'Dwarf']);
+    s = answer(s, { kind: 'cards', iids: ['l1'] });
+    expect(s.players[0].hand.map((c) => c.card.name)).toEqual(['Lavaspur Boots']);
+    // The Island stays on top; the other three are below it.
+    expect(s.players[0].library.map((c) => c.iid)[0]).toBe('l4');
+    expect(s.players[0].library.map((c) => c.iid).slice(1).sort()).toEqual(['l0', 'l2', 'l3']);
+  });
+
+  it('Thorin attaches Equipment to a creature, which then deals damage equal to its power', () => {
+    let s = board({ mana: 4, mine: [dwarf, boots, collar], theirs: [creature('Ogre', 3, 3)], hand: [thorin] });
+    s = settle(apply(s, { type: 'cast', iid: 'h0' }));
+    s = resolve(s);
+    expect(s.pending?.choice).toMatchObject({ kind: 'targets', purpose: 'triggerTargets' });
+    s = answer(s, { kind: 'targets', targets: [iids(s, 'Lavaspur Boots', 'Basilisk Collar'), iids(s, 'Dwarf')] });
+    expect(perm(s, 'Lavaspur Boots')!.attachedTo).toBe(iidOf(s, 'Dwarf'));
+    expect(perm(s, 'Basilisk Collar')!.attachedTo).toBe(iidOf(s, 'Dwarf'));
+    // The reflexive trigger: up to one target creature.
+    expect(s.pending?.choice).toMatchObject({ kind: 'targets', purpose: 'triggerTargets' });
+    s = answer(s, { kind: 'targets', targets: [iids(s, 'Ogre')] });
+    // 3 damage (2 + the Boots) with deathtouch: the Ogre dies; lifelink gains 3.
+    expect(perm(s, 'Ogre')).toBeUndefined();
+    expect(s.players[0].life).toBe(23);
+  });
+
+  it('Iron Man Armor becomes a creature until end of turn (and falls off what it equipped)', () => {
+    let s = board({ mana: 2, mine: [ironMan, creature('Golem', 3, 3), boots] });
+    perm(s, 'Iron Man Armor')!.attachedTo = iidOf(s, 'Golem');
+    const index = activatedOf(ironMan).findIndex((a) => a.ability.effects.some((e) => e.kind === 'animate'));
+    s = resolve(settle(apply(s, { type: 'activate', iid: iidOf(s, 'Iron Man Armor'), index })));
+    const armor = perm(s, 'Iron Man Armor')!;
+    expect(armor.attachedTo).toBeUndefined();
+    // 0/0, +1/+1 for each artifact: itself and the Boots.
+    expect([powerOf(armor), toughnessOf(armor)]).toEqual([2, 2]);
+    expect(powerOf(perm(s, 'Golem')!)).toBe(3);
+    // The next turn, it's an Equipment again.
+    s = settle(apply(s, { type: 'pass' }));
+    for (let i = 0; i < 30 && s.active === 0; i++) s = s.step === 'attack' && !s.priority ? apply(s, { type: 'declareAttackers', attackers: [] }) : apply(s, { type: 'pass' });
+    expect(perm(s, 'Iron Man Armor')!.card.typeLine).toBe('Artifact — Equipment');
+  });
+
+  it('Mjölnir: only worthy creatures; it doubles their damage; discarded, it deals 2 to each creature', () => {
+    const villain = creature('Villain', 2, 2, { typeLine: 'Legendary Creature — Human Villain', colors: ['R'] });
+    const blue = creature('Blue Legend', 2, 2, { typeLine: 'Legendary Creature — Human', colors: ['U'] });
+    const thor = creature('Thor', 3, 3, { typeLine: 'Legendary Creature — God Hero', colors: ['R', 'W'] });
+    let s = board({ mana: 1, mine: [mjolnir, villain, blue, thor] });
+    const equip = activatedOf(mjolnir).findIndex((a) => a.equip);
+    for (const name of ['Villain', 'Blue Legend']) {
+      expect(errorOf(() => apply(s, { type: 'activate', iid: iidOf(s, 'Mjölnir, Hammer of Thor'), index: equip, targets: [iids(s, name)] }))).toBe('illegalTarget');
+    }
+    s = resolve(settle(apply(s, { type: 'activate', iid: iidOf(s, 'Mjölnir, Hammer of Thor'), index: equip, targets: [iids(s, 'Thor')] })));
+    expect(perm(s, 'Mjölnir, Hammer of Thor')!.attachedTo).toBe(iidOf(s, 'Thor'));
+    expect(perm(s, 'Thor')!.statics?.doubleDamage).toBe(true);
+    // Discarded from the hand.
+    expect(castInfo(mjolnir).channel).toMatchObject({ cost: '{2}', keyword: false, ability: { effects: [{ kind: 'damageAll', amount: 2 }] } });
+    let t = board({ mana: 2, mine: [creature('Bear', 2, 2)], theirs: [creature('Ogre', 3, 3)], hand: [mjolnir] });
+    t = resolve(settle(apply(t, { type: 'channel', iid: 'h0' })));
+    expect(perm(t, 'Bear')).toBeUndefined();
+    expect(perm(t, 'Ogre')!.damage).toBe(2);
+  });
+
+  it('Mjölnir doubles combat damage', () => {
+    const thor = creature('Thor', 3, 3, { typeLine: 'Legendary Creature — God Hero', colors: ['R'] });
+    let s = board({ mine: [thor, mjolnir] });
+    perm(s, 'Mjölnir, Hammer of Thor')!.attachedTo = iidOf(s, 'Thor');
+    s = settle(apply(s, { type: 'pass' }));
+    s = apply(s, { type: 'declareAttackers', attackers: [iidOf(s, 'Thor')] });
+    for (let i = 0; i < 10 && s.attackers.length; i++) s = s.step === 'block' && !s.priority ? apply(s, { type: 'declareBlockers', blocks: {} }) : apply(s, { type: 'pass' });
+    expect(s.players[1].life).toBe(14);
+  });
+
+  it('Cavern of Souls: a chosen type; its colored mana only for that type, which can\'t be countered', () => {
+    const counter = spell('Cancel', '{1}', 'Counter target spell.');
+    const elf = creature('Elf', 1, 1, { typeLine: 'Creature — Elf', manaCost: '{G}', colors: ['G'] });
+    let s = board({ hand: [cavern, dwarf, elf], oppMana: 2, oppHand: [counter] });
+    s.players[0].library = [{ iid: 'l0', card: dwarf }, ...s.players[0].library];
+    s = apply(s, { type: 'playLand', iid: 'h0' });
+    expect(s.pending?.choice).toMatchObject({ kind: 'mode', purpose: 'creatureType' });
+    const modes = s.pending!.choice.kind === 'mode' ? s.pending!.choice.modes : [];
+    expect(modes[0]).toBe('Dwarf');
+    s = apply(s, { type: 'choose', answer: { kind: 'mode', modes: [modes.indexOf('Dwarf')] } });
+    expect(perm(s, 'Cavern of Souls')!.chosenType).toBe('Dwarf');
+    // {G} for the Elf: no.
+    expect(errorOf(() => apply(s, { type: 'cast', iid: 'h2' }))).toBe('notEnoughMana');
+    // {R} for the Dwarf: yes, and the opponent's Cancel can't counter it.
+    s = apply(s, { type: 'cast', iid: 'h1' });
+    expect(s.stack.at(-1)).toMatchObject({ card: { name: 'Dwarf' }, uncounterable: true });
+    s = settle(apply(s, { type: 'pass' }));
+    if (s.priority?.player === 1) s = apply(s, { type: 'cast', iid: 'o0', targets: [[{ kind: 'spell', iid: s.stack.find((x) => x.card.name === 'Dwarf')!.iid }]] });
+    s = resolve(s);
+    expect(perm(s, 'Dwarf')).toBeDefined();
+  });
+
+  it('Chandra: a Vehicle token with crew 1; at the beginning of combat it becomes a creature with haste', () => {
+    let s = board({ mine: [chandra, dwarf] });
+    perm(s, 'Chandra, Spark Hunter')!.counters.loyalty = 4;
+    const zero = activatedOf(chandra).findIndex((a) => a.cost.loyalty === 0);
+    s = resolve(settle(apply(s, { type: 'activate', iid: iidOf(s, 'Chandra, Spark Hunter'), index: zero })));
+    const vehicle = perm(s, 'Vehicle')!;
+    expect(vehicle.card).toMatchObject({ typeLine: 'Token Artifact — Vehicle', power: '3', toughness: '2', oracleText: 'Crew 1' });
+    // Crew 1 with the Dwarf: a 3/2 artifact creature.
+    s = apply(s, { type: 'activate', iid: vehicle.iid, index: 0 });
+    expect(s.pending?.choice).toMatchObject({ kind: 'cards', purpose: 'crewCost' });
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: [iidOf(s, 'Dwarf')] } }));
+    expect(perm(s, 'Dwarf')!.tapped).toBe(true);
+    expect(perm(s, 'Vehicle')!.card.typeLine).toContain('Creature');
+    // Combat: Chandra's trigger gives it haste, so the new Vehicle can attack.
+    s = settle(apply(s, { type: 'pass' }));
+    if (s.pending?.choice.kind === 'targets') s = answer(s, { kind: 'targets', targets: [iids(s, 'Vehicle')] });
+    s = resolve(s);
+    expect(s.step).toBe('attack');
+    s = apply(s, { type: 'declareAttackers', attackers: [iidOf(s, 'Vehicle')] });
+    for (let i = 0; i < 10 && s.attackers.length; i++) s = s.step === 'block' && !s.priority ? apply(s, { type: 'declareBlockers', blocks: {} }) : apply(s, { type: 'pass' });
+    expect(s.players[1].life).toBe(17);
+  });
+
+  it('Chandra\'s +2 trades a card for a card; her emblem deals 3 damage when an artifact enters', () => {
+    let s = board({ mine: [chandra], hand: [swamp] });
+    perm(s, 'Chandra, Spark Hunter')!.counters.loyalty = 4;
+    s.players[0].library = [{ iid: 'l0', card: island }, ...s.players[0].library];
+    const plus = activatedOf(chandra).findIndex((a) => a.cost.loyalty === 2);
+    s = resolve(settle(apply(s, { type: 'activate', iid: iidOf(s, 'Chandra, Spark Hunter'), index: plus })));
+    expect(s.pending?.choice).toMatchObject({ kind: 'cards', purpose: 'tradeForCard', min: 0, max: 1 });
+    s = answer(s, { kind: 'cards', iids: ['h0'] });
+    expect(s.players[0].hand.map((c) => c.card.name)).toEqual(['Island']);
+    // Declined: no card drawn.
+    let t = board({ mine: [chandra], hand: [swamp] });
+    perm(t, 'Chandra, Spark Hunter')!.counters.loyalty = 4;
+    t = resolve(settle(apply(t, { type: 'activate', iid: iidOf(t, 'Chandra, Spark Hunter'), index: plus })));
+    t = answer(t, { kind: 'cards', iids: [] });
+    expect(t.players[0].hand.map((c) => c.card.name)).toEqual(['Swamp']);
+
+    // The emblem.
+    let u = board({ mana: 1, mine: [chandra], hand: [boots] });
+    perm(u, 'Chandra, Spark Hunter')!.counters.loyalty = 7;
+    const minus = activatedOf(chandra).findIndex((a) => a.cost.loyalty === -7);
+    u = resolve(settle(apply(u, { type: 'activate', iid: iidOf(u, 'Chandra, Spark Hunter'), index: minus })));
+    expect(u.players[0].emblems).toHaveLength(1);
+    u = resolve(settle(apply(u, { type: 'cast', iid: 'h0' })));
+    if (u.pending?.choice.kind === 'targets') u = answer(u, { kind: 'targets', targets: [[{ kind: 'player', player: 1 }]] });
+    expect(u.players[1].life).toBe(17);
   });
 });

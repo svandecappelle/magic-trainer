@@ -1,10 +1,10 @@
 import {
-  abilityMaxX, activatable, actor, channelCost, firstOpponent, mulliganBottom, isActivePlayer, opponentsOf, teamOf, canAttack, castCost, castOptions, castSources, findInGraveyard, landFaces, manaSources, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
+  abilityMaxX, activatable, activationProblem, canPayAbility, actor, channelCost, crewOptions, firstOpponent, mulliganBottom, isActivePlayer, opponentsOf, teamOf, canAttack, castCost, castOptions, castSources, findInGraveyard, landFaces, manaSources, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
   legalTargets, matching, maxX, powerOf, toughnessOf, xCount,
   type Action, type Answer, type CastOption, type CardInst, type Choice, type GameState, type Permanent, type PlayerId, type StackItem, type Target,
 } from './engine';
 import {
-  auraTarget, castInfo, castSpec, creatureValue, modeSets, faceCard, findPayment, hasInstantSpeed, isAdventure, isPlaneswalker, isSaga, isToken, staticsOf, hasKeyword, isCreature, isInstantOrSorcery, isLandCard, manaColors,
+  activatedOf, auraTarget, castInfo, castSpec, creatureValue, modeSets, faceCard, findPayment, hasInstantSpeed, isAdventure, isPlaneswalker, isSaga, isToken, staticsOf, hasKeyword, isCreature, isInstantOrSorcery, isLandCard, manaColors,
   parseCost, spellSpec, type AbilitySpec, type Amount, type Effect,
 } from './rules';
 import type { Card } from '../../types';
@@ -322,7 +322,30 @@ function chooseMainPhaseSpell(s: GameState, me: PlayerId): Action | null {
     const action = castCandidate(s, me, c);
     if (action) return action;
   }
-  return usePlaneswalkers(s, me) ?? useAbility(s, me) ?? (s.step === 'main2' ? chooseCycle(s, me) : null);
+  return usePlaneswalkers(s, me) ?? useAbility(s, me) ?? crewVehicles(s, me) ?? (s.step === 'main2' ? chooseCycle(s, me) : null);
+}
+
+/**
+ * Crew a Vehicle before combat when it hits harder than the creatures tapped for it would (those that can't attack
+ * anyway cost nothing).
+ */
+function crewVehicles(s: GameState, me: PlayerId): Action | null {
+  if (s.step !== 'main1' || !isActivePlayer(s, me) || s.priority) return null;
+  for (const v of s.battlefield) {
+    if (v.controller !== me || isCreature(v.card) || (v.sick && !hasKeyword(v.card, 'haste'))) continue;
+    const index = activatedOf(v.card).findIndex((a) => a.cost.crew !== undefined);
+    if (index < 0 || activationProblem(s, me, v, index)) continue;
+    const n = activatedOf(v.card)[index].cost.crew!;
+    let power = 0;
+    let lost = 0;
+    for (const c of crewOptions(s, v).sort((a, b) => powerOf(a) - powerOf(b))) {
+      if (power >= n) break;
+      power += powerOf(c);
+      if (canAttack(c)) lost += powerOf(c);
+    }
+    if (power >= n && powerOf(v) > lost) return { type: 'activate', iid: v.iid, index };
+  }
+  return null;
 }
 
 /**
@@ -514,7 +537,17 @@ function playWithGoodTarget(s: GameState, me: PlayerId, play: Play, among?: Perm
 }
 
 /** Pick our creature and theirs for a fight or "bite": ours must kill theirs (and survive a real fight). */
-function chooseFight(s: GameState, me: PlayerId, spec: AbilitySpec, e: Extract<Effect, { kind: 'fight' }>): Target[][] | null {
+function chooseFight(s: GameState, me: PlayerId, spec: AbilitySpec, e: Extract<Effect, { kind: 'fight' }>, source?: Card): Target[][] | null {
+  if ('iid' in e.a) {
+    // Thorin's reflexive trigger: the creature is fixed; the best of theirs it kills, if any.
+    const a = findPermanent(s, e.a.iid);
+    const victim = a && legalTargets(s, me, spec.targets[e.b.slot], undefined, source).flatMap((t) => (t.kind === 'permanent' ? [findPermanent(s, t.iid)!] : []))
+      .filter((x) => !friend(s, me, x.controller) && powerOf(a) >= toughnessOf(x) - x.damage)
+      .sort((x, y) => creatureValue(y.card) - creatureValue(x.card))[0];
+    const out: Target[][] = spec.targets.map(() => []);
+    if (victim) out[e.b.slot] = [{ kind: 'permanent', iid: victim.iid }];
+    return out;
+  }
   const slotA = spec.targets[e.a.slot];
   const slotB = spec.targets[e.b.slot];
   const legal = (slot: typeof slotA) => legalTargets(s, me, slot).flatMap((t) => (t.kind === 'permanent' ? [findPermanent(s, t.iid)!] : []));
@@ -593,16 +626,20 @@ const isLandSearch = (spec: AbilitySpec) =>
 // ---------- Activated abilities ----------
 
 /** Abilities the bot may use now, with the rules it follows for their costs. */
-function abilityPlays(s: GameState, me: PlayerId): (Play & { perm: Permanent; tapsCreature: boolean; sacrifice: boolean; spendable: boolean })[] {
+function abilityPlays(s: GameState, me: PlayerId): (Play & { perm: Permanent; index: number; equip: boolean; tapsCreature: boolean; sacrifice: boolean; spendable: boolean })[] {
   return activatable(s, me)
     // Never pay life (it could loop until death), except a little for a fetch land.
     .filter(({ spec }) => !spec.cost.life || (isLandSearch(spec.ability) && s.players[me].life > 6))
     // Free abilities could repeat forever; loyalty abilities are once a turn and handled by usePlaneswalkers.
     .filter(({ spec }) => (spec.cost.tap || spec.cost.mana || spec.cost.sacrificeSelf) && spec.cost.loyalty === undefined)
+    // Becoming a creature until end of turn (Iron Man Armor) isn't planned by the bot; Vehicles are crewed by crewVehicles.
+    .filter(({ spec }) => !spec.ability.effects.some((e) => e.kind === 'animate'))
     // Equipment already on a creature stays there.
     .filter(({ perm, spec }) => !(spec.ability.effects.some((e) => e.kind === 'attach') && perm.attachedTo && findPermanent(s, perm.attachedTo)))
     .map(({ perm, index, spec }) => ({
       perm,
+      index,
+      equip: !!spec.equip,
       spec: spec.ability,
       hasX: spec.cost.mana.includes('{X}'),
       maxX: abilityMaxX(s, perm, index),
@@ -649,7 +686,9 @@ function useAbility(s: GameState, me: PlayerId, among?: Permanent[]): Action | n
   const doomed = (perm: Permanent) => !!top && !friend(s, me, top.controller) && top.targets.flat().some((t) => t.kind === 'permanent' && t.iid === perm.iid);
   const freeTime = (isActivePlayer(s, me) && s.step === 'main2' && !s.priority) || (s.priority?.reason === 'end' && !isActivePlayer(s, me));
   for (const play of abilityPlays(s, me)) {
-    const action = playWithGoodTarget(s, me, play, among);
+    // Equip costs depend on the creature (Dwarven Mauler, Dragonfire Blade): only the ones we can pay for.
+    const affordable = play.equip ? creaturesOf(s, me).filter((c) => canPayAbility(s, play.perm, play.index, c)) : undefined;
+    const action = playWithGoodTarget(s, me, play, affordable ? (among ? among.filter((x) => affordable.includes(x)) : affordable) : among);
     if (!action) continue;
     const removal = hitsTheirPermanent(s, me, action);
     if (play.sacrifice && !removal && !doomed(play.perm) && !(play.spendable && freeTime)) continue;
@@ -780,6 +819,32 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
         const best = [...options].sort((a, b) => creatureValue(b.card) - creatureValue(a.card))[0];
         return { kind: 'cards', iids: best ? [best.iid] : [] };
       }
+      if (choice.purpose === 'crewCost') {
+        // The weakest creatures that are enough; all of them when unsure (always enough: crewing was allowed).
+        const n = Number(choice.params?.n ?? 0);
+        if (safe) return { kind: 'cards', iids: options.map((c) => c.iid) };
+        const crew: string[] = [];
+        let power = 0;
+        for (const c of [...options].sort((a, b) => powerOf(findPermanent(s, a.iid)!) - powerOf(findPermanent(s, b.iid)!))) {
+          if (power >= n) break;
+          crew.push(c.iid);
+          power += powerOf(findPermanent(s, c.iid)!);
+        }
+        return { kind: 'cards', iids: crew };
+      }
+      if (!safe && choice.purpose === 'dig') {
+        // The best cards: Equipment and creatures we can cast soon.
+        options.sort((a, b) => cardWorth(b.card) - cardWorth(a.card));
+        return { kind: 'cards', iids: options.slice(0, choice.max).map((c) => c.iid) };
+      }
+      if (!safe && choice.purpose === 'tradeForCard') {
+        // Chandra's +2: a spare land from the hand, or an artifact token; otherwise nothing.
+        const hand = s.players[choice.player].hand;
+        const spareLand = hand.filter((c) => isLandCard(c.card)).length >= 2 ? options.find((c) => isLandCard(c.card) && hand.includes(c)) : undefined;
+        const token = options.find((c) => isToken(c.card) && !isCreature(c.card) && !/\bVehicle\b/.test(c.card.typeLine));
+        const pick = spareLand ?? token;
+        return { kind: 'cards', iids: pick ? [pick.iid] : [] };
+      }
       if (!safe && choice.purpose === 'legendRule') {
         // Keep the copy with the most counters (loyalty, +1/+1).
         const counters = (c: CardInst) => Object.values(findPermanent(s, c.iid)?.counters ?? {}).reduce((n, x) => n + (x ?? 0), 0);
@@ -849,7 +914,7 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
       }
       return { kind: 'yesNo', yes: !safe && (choice.purpose === 'payOrCounter' || choice.purpose === 'optional') };
     case 'targets':
-      return { kind: 'targets', targets: triggerTargets(s, choice.player, { targets: choice.slots, effects: triggerEffects(s, choice) }, safe) };
+      return { kind: 'targets', targets: triggerTargets(s, choice.player, { targets: choice.slots, effects: triggerEffects(s, choice) }, safe, choice.source.card) };
   }
 }
 
@@ -862,12 +927,13 @@ function triggerEffects(s: GameState, choice: Choice): Effect[] {
  * Targets for a triggered ability. Unlike a spell, it can't be kept for later: when the only
  * legal targets are bad ones, the least bad are chosen.
  */
-function triggerTargets(s: GameState, me: PlayerId, spec: AbilitySpec, safe: boolean): Target[][] {
+function triggerTargets(s: GameState, me: PlayerId, spec: AbilitySpec, safe: boolean, source?: Card): Target[][] {
   const fight = spec.effects.find((e) => e.kind === 'fight');
-  const pair = !safe && fight?.kind === 'fight' ? chooseFight(s, me, spec, fight) : null;
+  const pair = !safe && fight?.kind === 'fight' ? chooseFight(s, me, spec, fight, source) : null;
   if (pair) return pair;
   return spec.targets.map((slot, i) => {
-    const legal = legalTargets(s, me, slot);
+    // With the source, for protection and hexproof from monocolored.
+    const legal = legalTargets(s, me, slot, undefined, source);
     if (safe) return legal.slice(0, slot.min);
     const onSlot = spec.effects.filter((e) => 'to' in e && typeof e.to === 'object' && e.to.slot === i);
     const harm = onSlot.some((e) => intentOf(e) === 'harm');

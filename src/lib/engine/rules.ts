@@ -133,6 +133,20 @@ export function manaConditions(card: Card): { colors: Color[]; subtypes: string[
   return conditional.map((c) => ({ ...c, colors: c.colors.filter((x) => !free.has(x)) })).filter((c) => c.colors.length);
 }
 
+/** Cavern of Souls: "As this land enters, choose a creature type." */
+export const choosesCreatureType = (card: Card) =>
+  /^As (?:this land|this permanent|this artifact) enters, choose a creature type\.$/m.test(frontText(card));
+
+/**
+ * Cavern of Souls: "{T}: Add one mana of any color. Spend this mana only to cast a creature spell of the chosen type, and
+ * that spell can't be countered." → those colors (for such a spell only; it then can't be countered).
+ */
+export function chosenTypeMana(card: Card): Color[] | null {
+  const m = frontText(card).match(/^\{T\}: Add ([^.]+)\. Spend this mana only to cast a creature spell of the chosen type, and that spell can't be countered\.$/m);
+  const units = m && parseManaText(m[1]);
+  return units?.length === 1 ? units[0] : null;
+}
+
 /** A mana ability "{T}: Add …" (or a basic land type) without a life cost. */
 const freeMana = (card: Card) =>
   /^\{T\}(?:, Sacrifice [^:]*)?:\s*Add /m.test(frontText(card)) || BASIC_TYPES.some(([type]) => card.typeLine.split('//')[0].includes(type));
@@ -321,6 +335,10 @@ export interface TargetFilter {
   basic?: boolean;
   /** Lands must be nonbasic: "artifact, enchantment, or nonbasic land" (Boseiju). */
   nonbasicLands?: boolean;
+  /** Legendary only (Mjölnir's "worthy": a legendary non-Villain that's red and/or white). */
+  legendary?: boolean;
+  /** None of these subtypes, lower case ("non-Villain"). */
+  nonSubtypes?: string[];
   /** At least one of these subtypes ("Forest or Plains card"), lower case. */
   subtypes?: string[];
 }
@@ -393,8 +411,9 @@ export type Effect =
   /** Damage to each matching creature, and optionally to each player or each opponent. */
   | { kind: 'damageAll'; amount: Amount; which: Selector; players?: 'each-player' | 'each-opponent' }
   | { kind: 'pumpAll'; power: number; toughness: number; keywords: Keyword[]; which: Selector }
-  /** `a` and `b` deal damage equal to their power to each other; only `a` deals damage when `oneSided` ("bite"). */
-  | { kind: 'fight'; a: { slot: number }; b: { slot: number }; oneSided: boolean }
+  /** `a` deals damage equal to its power to `b` (and back unless one-sided). `{ iid }`: a creature fixed when a reflexive
+   * trigger was created (Thorin: "that creature deals damage equal to its power to up to one target creature"). */
+  | { kind: 'fight'; a: { slot: number } | { iid: string }; b: { slot: number }; oneSided: boolean }
   /** Each affected player sacrifices N permanents of their choice ("edict"). */
   | { kind: 'sacrifice'; n: Amount; to: Affected; which: Selector }
   /** "Sacrifice this creature" as an effect (Ball Lightning). */
@@ -413,6 +432,30 @@ export type Effect =
   | { kind: 'search'; n: number; filter: TargetFilter; dest: 'hand' | 'battlefield'; tapped: boolean; searcher?: { slot: number } }
   /** Equip: attach the ability's source to the target. */
   | { kind: 'attach'; to: Affected }
+  /**
+   * Thorin: "attach any number of target Equipment you control to target creature you control. When one or more
+   * Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one
+   * target creature." (`thenDamage`: the reflexive trigger's target.)
+   */
+  | { kind: 'attachEquipment'; what: { slot: number }; to: { slot: number }; thenDamage?: TargetSpec }
+  /**
+   * "Look at the top N cards of your library. You may reveal a Dwarf or Equipment card from among them and put it into
+   * your hand. Put the rest on the bottom of your library in a random order." (`take` cards, `filter` to reveal.)
+   */
+  | { kind: 'dig'; n: number; take: number; optional: boolean; filter?: TargetFilter }
+  /**
+   * Until end of turn, a noncreature permanent becomes a creature: Iron Man Armor ("becomes a 0/0 Construct Hero
+   * artifact creature with flying and \"…\""), crewed Vehicles and Chandra's ("becomes an artifact creature").
+   * Without power and toughness, it keeps its own.
+   */
+  | { kind: 'animate'; to: Affected; power?: number; toughness?: number; subtypes: string[]; keywords: Keyword[]; text?: string }
+  /** Chandra's −7: "You get an emblem with \"…\"" (the emblem's ability). */
+  | { kind: 'emblem'; text: string }
+  /**
+   * Chandra's +2: "You may sacrifice an artifact or discard a card. If you do, draw a card." (The draw is the next
+   * effect; it's skipped when nothing was paid.)
+   */
+  | { kind: 'tradeForCard'; sacrifice: Selector }
   /** Urza's Saga: "This Saga gains \"…\"" — the ability's source gets this ability text while it stays. */
   | { kind: 'gainAbility'; text: string }
   | { kind: 'poison'; n: Amount; to: Affected }
@@ -633,6 +676,18 @@ const LAND_TYPES = ['plains', 'island', 'swamp', 'mountain', 'forest', 'desert',
 const OTHER_SUBTYPES = ['equipment', 'aura', 'vehicle'];
 
 /** "basic land", "Forest or Plains", "creature" (the cards a library search may find). */
+/** "Dwarf or Equipment", "creature", "Aura or Equipment" (a card revealed from the top of the library). */
+function revealFilter(words: string): TargetFilter | null {
+  const filter: TargetFilter = {};
+  for (const w of words.split(' or ')) {
+    if (CARD_TYPES.includes(w as CardType)) (filter.types ??= []).push(w as CardType);
+    else if (/^[A-Z][a-z]+$/.test(w)) (filter.subtypes ??= []).push(w.toLowerCase());
+    else return null;
+  }
+  // Types and subtypes would both be required: "creature or Equipment" isn't read.
+  return filter.types && filter.subtypes ? null : filter;
+}
+
 function librarySearchFilter(words: string): TargetFilter | null {
   const filter: TargetFilter = {};
   for (const w of words.toLowerCase().replace(/,? or |, /g, ' ').split(' ').filter(Boolean)) {
@@ -654,7 +709,7 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** Ways rules text names its own card: "Goblin Guide", "Ragavan" (legends), "this creature". */
 function selfWords(name: string): string[] {
   const front = name.split(' // ')[0];
-  return [front, ...front.split(',').map((w) => w.trim()), 'this creature', 'this permanent', 'this artifact', 'this enchantment', 'this land', 'this token', 'this aura', 'this equipment', 'this saga'];
+  return [front, ...front.split(',').map((w) => w.trim()), 'this creature', 'this permanent', 'this artifact', 'this enchantment', 'this land', 'this token', 'this aura', 'this equipment', 'this saga', 'this emblem'];
 }
 
 /**
@@ -812,6 +867,42 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
   });
   // Path to Exile: "Its controller may search their library for a basic land card, put it onto the battlefield tapped,
   // then shuffle."; Boseiju: "That player may search their library for a land card with a basic land type, …".
+  // Dáin's Company: "Look at the top four cards of your library. You may reveal a Dwarf or Equipment card from among them
+  // and put it into your hand. Put the rest on the bottom of your library in a random order."
+  scan(/\bLook at the top (\w+) cards of your library\. You may reveal an? ([A-Za-z ]+?) card from among them and put it into your hand\. Put the rest on the bottom of your library in (?:a random|any) order\./gi, (m) => {
+    const filter = revealFilter(m[2]);
+    return filter && { kind: 'dig', n: toNumber(m[1]), take: 1, optional: true, filter };
+  });
+  // Stock Up: "Look at the top five cards of your library. Put two of them into your hand and the rest on the bottom of
+  // your library in any order."
+  scan(/\bLook at the top (\w+) cards of your library\. Put (one|two) of them into your hand and the rest on the bottom of your library in (?:a random|any) order\./gi, (m) => ({
+    kind: 'dig', n: toNumber(m[1]), take: toNumber(m[2]), optional: false,
+  }));
+  // Thorin (see the attachEquipment effect).
+  scan(new RegExp(THORIN_ATTACH.source, 'g'), (m) => {
+    targets.push({ kind: 'permanent', min: 0, max: 20, filter: { subtypes: ['equipment'], controller: 'you' } });
+    const to = slotFor(m[1], (spec) => spec.kind === 'creature');
+    const thenDamage = parseTargetPhrase(m[2]);
+    return to && thenDamage && typeof to === 'object' ? { kind: 'attachEquipment', what: { slot: targets.length - 2 }, to, thenDamage } : null;
+  });
+  // Iron Man Armor: "If this Equipment isn't a creature, it becomes a 0/0 Construct Hero artifact creature with flying
+  // and \"This creature gets +1/+1 for each artifact you control\" until end of turn."
+  scan(new RegExp(BECOMES_CREATURE.source, 'g'), (m) => {
+    const keywords = keywordList(m[4]);
+    if (!keywords.every((k) => (KEYWORDS as readonly string[]).includes(k))) return null;
+    const text = m[5] && `${m[5].replace(/\.$/, '')}.`;
+    if (text && !staticsOf({ ...tokenCard({ name: 'x', typeLine: 'Creature', colors: [], keywords: [], oracleText: text }), name: 'This creature' }).length) return null;
+    return { kind: 'animate', to: 'self', power: Number(m[1]), toughness: Number(m[2]), subtypes: m[3].split(' '), keywords, ...(text ? { text } : {}) };
+  });
+  // Chandra's −7: "You get an emblem with \"Whenever an artifact you control enters, this emblem deals 3 damage to any target.\""
+  scan(/\bYou get an emblem with "([^"]+)"/g, (m) => {
+    const emblem: Card = { id: 'emblem', name: 'Emblem', manaCost: '', cmc: 0, typeLine: 'Emblem', oracleText: m[1], colors: [], colorIdentity: [], setCode: '', setName: '', rarity: '', keywords: [] };
+    return triggersOf(emblem).some((t) => t.ability.effects.length) ? { kind: 'emblem', text: m[1] } : null;
+  });
+  // Chandra's +2: "You may sacrifice an artifact or discard a card. If you do, draw a card."
+  scan(new RegExp(TRADE_FOR_CARD.source, 'g'), (m) => ({
+    kind: 'tradeForCard', sacrifice: { kind: m[1] === 'creature' ? 'creature' : 'permanent', filter: { types: [m[1] as CardType], controller: 'you' } },
+  }));
   scan(new RegExp(CONTROLLER_SEARCH.source, 'gi'), (m) => {
     if (targets.length !== 1 || (targets[0].kind !== 'creature' && targets[0].kind !== 'permanent')) return null;
     const filter: TargetFilter = /basic land type/i.test(m[1])
@@ -917,6 +1008,16 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     if (m[9] && !staticsOf(tokenCard(token)).length) return null;
     return { kind: 'token', n: toAmount(m[1]), token };
   });
+  // Chandra's 0: "Create a 3/2 colorless Vehicle artifact token with crew 1."
+  scan(new RegExp(`\\b[Cc]reates? (${AMOUNT}) (\\d+)\\/(\\d+) colorless Vehicle artifact tokens? with crew (\\d+)(?=\\.)`, 'g'), (m) => ({
+    kind: 'token', n: toAmount(m[1]),
+    token: { name: 'Vehicle', typeLine: 'Token Artifact — Vehicle', colors: [], power: Number(m[2]), toughness: Number(m[3]), keywords: [], oracleText: `Crew ${m[4]}` },
+  }));
+  // Chandra: "choose up to one target Vehicle you control. Until end of turn, it becomes an artifact creature and gains haste."
+  scan(/\bchoose (up to one target Vehicle you control)\. Until end of turn, it becomes an artifact creature and gains haste\./g, (m) => {
+    const to = slotFor(m[1]);
+    return to && { kind: 'animate', to, subtypes: [], keywords: ['haste'] };
+  });
   scan(new RegExp(`\\bcreates? (${AMOUNT}) (Treasure|Clue|Food) tokens?`, 'gi'), (m) => ({
     kind: 'token', n: toAmount(m[1]), token: PREDEFINED_TOKENS[m[2].toLowerCase()],
   }));
@@ -982,6 +1083,11 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
   if (/[a-z0-9{]/i.test(rest.replace(/\([^)]*\)/g, '').replace(/\b(?:then|and|or)\b/gi, ''))) return { targets: [], effects: [] };
   return { targets, effects };
 }
+
+/** Wordings parseAbilityText handles although they contain words UNSUPPORTED refuses ("if", "that creature", "this way"). */
+const THORIN_ATTACH = /\battach any number of target Equipment you control to (target creature you control)\. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to (up to one target creature)\./;
+const BECOMES_CREATURE = /\bIf this (?:Equipment|artifact) isn't a creature, it becomes an? (\d+)\/(\d+) ([A-Z][a-z]+(?: [A-Z][a-z]+)*) artifact creature(?: with ([a-z ,]+?))?(?: and "([^"]+)")? until end of turn\./;
+const TRADE_FOR_CARD = /\bYou may sacrifice an? (artifact|creature) or discard a card\. If you do, draw a card\./;
 
 /** Path to Exile, Boseiju: the removed permanent's controller may search for a land (see parseAbilityText). */
 const CONTROLLER_SEARCH = /\b(?:Its|That (?:land|permanent|creature)'s|That player) (?:controller )?may search (?:their|his or her) library for (a basic land card|a land card with a basic land type), put it onto the battlefield( tapped)?, then shuffle(?=\.)/;
@@ -1106,10 +1212,11 @@ export interface CastInfo {
   /** Cycling (draw a card) or landcycling (search for a land card: `search`). */
   cycling?: { cost: string; search?: TargetFilter };
   /**
-   * "Channel — {3}{U}, Discard this card: …", activated from the hand at instant speed (no effects: not simulated).
+   * "Channel — {3}{U}, Discard this card: …", activated from the hand at instant speed (no effects: not simulated);
+   * `keyword` is false for the same ability without the word (Mjölnir's "{2}{R}, Discard this card: …").
    * `legendaryDiscount`: "This ability costs {1} less to activate for each legendary creature you control."
    */
-  channel?: { cost: string; ability: AbilitySpec; legendaryDiscount: boolean };
+  channel?: { cost: string; ability: AbilitySpec; legendaryDiscount: boolean; keyword: boolean };
   convoke: boolean;
   delve: boolean;
   /** "Affinity for artifacts": costs {1} less for each matching permanent you control. */
@@ -1135,10 +1242,11 @@ export function castInfo(card: Card, face = 0): CastInfo {
     else if ((m = line.match(/^Cycling ((?:\{[^}]+\})+)$/))) info.cycling = { cost: m[1] };
     else if ((m = line.match(/^(Basic land|Plains|Island|Swamp|Mountain|Forest)cycling ((?:\{[^}]+\})+)$/))) {
       info.cycling = { cost: m[2], search: m[1] === 'Basic land' ? { basic: true, types: ['land'] } : { subtypes: [m[1].toLowerCase()] } };
-    } else if ((m = line.match(/^Channel — ((?:\{[^}]+\})+), Discard this card: (.+)$/))) {
+    } else if ((m = line.match(/^(?:Channel — )?((?:\{[^}]+\})+), Discard this card: (.+)$/))) {
+      // Also Mjölnir's "{2}{R}, Discard this card: It deals 2 damage to each creature." (from the hand, like channel).
       const discount = / This ability costs \{1\} less to activate for each legendary creature you control\.$/;
       const body = m[2].replace(discount, '');
-      info.channel = { cost: m[1], ability: UNSUPPORTED.test(body.replace(CONTROLLER_SEARCH, '')) ? NO_EFFECT : parseAbilityText(body, selfName(c)), legendaryDiscount: discount.test(m[2]) };
+      info.channel = { cost: m[1], ability: UNSUPPORTED.test(body.replace(CONTROLLER_SEARCH, '')) ? NO_EFFECT : parseAbilityText(body, selfName(c)), legendaryDiscount: discount.test(m[2]), keyword: line.startsWith('Channel') };
     } else if (/^Affinity for artifacts$/i.test(line)) info.affinity = { types: ['artifact'] };
     else if (/^[A-Za-z ,]+$/.test(line) && line.split(/,\s*/).some((w) => /^(convoke|delve)$/i.test(w.trim()))) {
       for (const w of line.split(/,\s*/).map((x) => x.trim().toLowerCase())) {
@@ -1192,7 +1300,7 @@ export function modeSets(modal: { min: number; max: number; modes: string[] }): 
 function shiftSlots(effects: Effect[], offset: number): Effect[] {
   const shift = (a: Affected): Affected => (typeof a === 'object' ? { slot: a.slot + offset } : a);
   return effects.map((e) => {
-    if (e.kind === 'fight') return { ...e, a: { slot: e.a.slot + offset }, b: { slot: e.b.slot + offset } };
+    if (e.kind === 'fight') return { ...e, a: 'iid' in e.a ? e.a : { slot: e.a.slot + offset }, b: { slot: e.b.slot + offset } };
     if ('to' in e) return { ...e, to: shift(e.to) } as Effect;
     return e;
   });
@@ -1276,7 +1384,7 @@ export type TriggerEvent =
   /** A matching permanent does ("Whenever another creature you control enters", landfall). */
   | { on: ObjectEvent; self: false; which: Selector; another: boolean }
   /** At the beginning of an upkeep or end step: yours, each one, or each opponent's. */
-  | { on: 'upkeep' | 'endStep'; whose: 'you' | 'each' | 'opponent' }
+  | { on: 'upkeep' | 'endStep' | 'beginCombat'; whose: 'you' | 'each' | 'opponent' }
   /** A Saga's chapter: lore counters reach `n` ("I — …", "II, III — …"). */
   | { on: 'chapter'; n: number }
   /** Whenever you cast a spell matching the card words ("noncreature", "instant or sorcery"). */
@@ -1305,7 +1413,13 @@ export interface TriggerSpec {
  */
 const UNSUPPORTED_WORDS = /\b(?:if|unless|for each|where|instead|that (?:creature|card|player|land|spell|permanent)|those|otherwise|this way|exiled with)\b/i;
 /** Wordings the effect parser would misread. Quoted text is an ability given to something else (a token), read on its own. */
-const UNSUPPORTED = { test: (text: string) => UNSUPPORTED_WORDS.test(text.replace(/"[^"]*"/g, '""')) };
+const UNSUPPORTED = {
+  test: (text: string) => {
+    let rest = text;
+    for (const handled of [CONTROLLER_SEARCH, SURVEIL_TO_HAND, THORIN_ATTACH, BECOMES_CREATURE, TRADE_FOR_CARD]) rest = rest.replace(handled, '');
+    return UNSUPPORTED_WORDS.test(rest.replace(/"[^"]*"/g, '""'));
+  },
+};
 
 const NO_EFFECT: AbilitySpec = { targets: [], effects: [] };
 
@@ -1477,6 +1591,12 @@ export function triggersOf(card: Card): TriggerSpec[] {
       continue;
     }
 
+    // Chandra, Spark Hunter: "At the beginning of combat on your turn, …"
+    const combat = line.match(/^At the beginning of combat on your turn, (.+)$/i);
+    if (combat) {
+      out.push({ event: { on: 'beginCombat', whose: 'you' }, ability: triggerAbility(combat[1], name, true) });
+      continue;
+    }
     const step = line.match(/^At the beginning of (your|each|each player's|each opponent's|the) (upkeep|end step), (.+)$/i);
     if (step) {
       const w = step[1].toLowerCase();
@@ -1531,6 +1651,8 @@ export interface ActivationCost {
   life: number;
   /** Loyalty ability: loyalty counters added (positive) or removed (negative). */
   loyalty?: number;
+  /** Crew N: tap untapped creatures you control with total power N or more (chosen when activating). */
+  crew?: number;
 }
 
 export interface ActivatedSpec {
@@ -1569,11 +1691,22 @@ export function activatedOf(card: Card): ActivatedSpec[] {
   for (const raw of frontText(card).split('\n')) {
     const line = raw.replace(/\s*\([^)]*\)/g, '').replace(/^[A-Z][A-Za-z' ]+ — /, '').trim();
     // "Equip {2}": attach to target creature you control, as a sorcery.
-    const equip = line.match(/^Equip ((?:\{[^}]+\})+)(\. This ability costs \{1\} less to activate for each color of the creature it targets\.)?$/);
+    const equip = line.match(/^Equip( worthy)? ((?:\{[^}]+\})+)(\. This ability costs \{1\} less to activate for each color of the creature it targets\.)?$/);
     if (equip) {
+      // Mjölnir: "Equip worthy {1} (A creature is worthy if it's a legendary non-Villain that's red and/or white.)"
+      const worthy: TargetFilter = equip[1] ? { legendary: true, nonSubtypes: ['villain'], colors: ['R', 'W'] } : {};
       out.push({
-        text: line, cost: { mana: equip[1], tap: false, sacrificeSelf: false, life: 0 }, sorcery: true, once: false, equip: equip[2] ? { perColor: true } : {},
-        ability: { targets: [{ kind: 'creature', min: 1, max: 1, filter: { controller: 'you' } }], effects: [{ kind: 'attach', to: { slot: 0 } }] },
+        text: line, cost: { mana: equip[2], tap: false, sacrificeSelf: false, life: 0 }, sorcery: true, once: false, equip: equip[3] ? { perColor: true } : {},
+        ability: { targets: [{ kind: 'creature', min: 1, max: 1, filter: { controller: 'you', ...worthy } }], effects: [{ kind: 'attach', to: { slot: 0 } }] },
+      });
+      continue;
+    }
+    // Vehicles: "Crew 1" (tap creatures with total power 1 or more: it becomes an artifact creature until end of turn).
+    const crew = line.match(/^Crew (\d+)$/);
+    if (crew) {
+      out.push({
+        text: line, cost: { mana: '', tap: false, sacrificeSelf: false, life: 0, crew: Number(crew[1]) }, sorcery: false, once: false,
+        ability: { targets: [], effects: [{ kind: 'animate', to: 'self', subtypes: [], keywords: [] }] },
       });
       continue;
     }
@@ -1709,6 +1842,8 @@ export interface StaticSpec {
   ward?: number;
   /** Dragonfire Blade: "has hexproof from monocolored". */
   hexproofFromMonocolored?: boolean;
+  /** Mjölnir: "Double all damage equipped creature would deal." */
+  doubleDamage?: boolean;
   cantAttack?: boolean;
   cantBlock?: boolean;
 }
@@ -1748,6 +1883,11 @@ export function staticsOf(card: Card): StaticSpec[] {
   for (const raw of frontText(card).split('\n')) {
     const line = raw.replace(/\s*\([^)]*\)/g, '').trim();
     const kws = (text: string | undefined) => keywordList(text?.toLowerCase());
+    const doubled = line.match(/^Double all damage (enchanted|equipped) creature would deal\.$/i);
+    if (doubled) {
+      out.push({ who: doubled[1].toLowerCase() as 'enchanted' | 'equipped', power: 0, toughness: 0, keywords: [], doubleDamage: true });
+      continue;
+    }
     const attached = line.match(/^(Enchanted|Equipped) creature (.+)\.$/);
     if (attached) {
       const who = attached[1] === 'Enchanted' ? 'enchanted' : 'equipped';

@@ -1,7 +1,7 @@
 import type { Card } from '../../types';
 import {
   activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, entersCounters, entersTappedRule, frontText, gameRulesOf, isInstantOrSorcery,
-  KEYWORDS, beginsOnBattlefield, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, type AbilitySpec,
+  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, type AbilitySpec,
 } from './rules';
 
 /**
@@ -44,6 +44,8 @@ function effectsText(spec: AbilitySpec): string | null {
 
 /** Keywords on a line ("Flying, lifelink", "Ward {2}", "Kicker {1}{U}"), or null if it isn't a keyword line. */
 function keywordLine(card: Card, line: string, one: Card): LineReport | null {
+  // A static ability starting like a keyword ("Double all damage …", Scryfall's keyword "Double").
+  if (staticsOf(one).length) return null;
   const known = (card.keywords ?? []).map((k) => k.toLowerCase());
   const pieces = line.split(/,\s*/).map((p) => p.trim().toLowerCase());
   const keywordOf = (p: string) => [...known, ...KEYWORDS].sort((a, b) => b.length - a.length).find((k) => p === k || p.startsWith(`${k} `) || p.startsWith(`${k}—`));
@@ -65,6 +67,7 @@ function keywordLine(card: Card, line: string, one: Card): LineReport | null {
     if (k === 'affinity') return !!info.affinity;
     if (k === 'mobilize') return triggersOf(one).length > 0;
     if (k === 'storied') return isStoried(one);
+    if (k === 'crew') return activatedOf(one).some((a) => a.cost.crew !== undefined);
     return false;
   };
   const missing = pieces.filter((p) => !supported(p)).map((p) => keywordOf(p)!);
@@ -107,6 +110,7 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
       ? { text: line, status: 'ok', how: `${activated[0].cost.loyalty !== undefined ? 'loyalty ability' : 'activated'} → ${read}` }
       : { text: line, status: 'notSimulated', how: 'activated ability, effect not simulated' };
   }
+  if (chosenTypeMana(one)) return { text: line, status: 'ok', how: 'mana for a creature spell of the chosen type (can\'t be countered)' };
   if (/\bAdd \{|\bAdd (?:one|two|three) mana\b/.test(line) && !spell) {
     // Command Tower: read with a five-color commander.
     const units = manaUnits({ ...one, typeLine: 'Land' }, ['W', 'U', 'B', 'R', 'G']);
@@ -121,6 +125,7 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   if (equipDiscount(one)) return { text: line, status: 'ok', how: `equip costs {${equipDiscount(one)}} less` };
   if (freeFirstEquip(one)) return { text: line, status: 'ok', how: 'first equip each turn for {0} (enduring story)' };
   if (doublesEquippedTriggers(one)) return { text: line, status: 'ok', how: 'triggers an additional time while equipped' };
+  if (choosesCreatureType(one)) return { text: line, status: 'ok', how: 'chooses a creature type as it enters' };
   if (beginsOnBattlefield(one)) return { text: line, status: 'ok', how: 'begins the game on the battlefield (always)' };
   const rules = gameRulesOf(one);
   if (rules.length) return { text: line, status: 'ok', how: `rule for the game: ${rules.join(', ')}` };

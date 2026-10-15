@@ -1,52 +1,15 @@
-NONE     Chandra, Spark Hunter {3}{R} — Legendary Planeswalker — Chandra
-  ? At the beginning of combat on your turn, choose up to one target Vehi…
-      not read by the engine
-  ✗ +2: You may sacrifice an artifact or discard a card. If you do, draw …
-      activated ability, effect not simulated
-  ✗ 0: Create a 3/2 colorless Vehicle artifact token with crew 1.
-      activated ability, effect not simulated
-  ✗ −7: You get an emblem with "Whenever an artifact you control enters, …
-      activated ability, effect not simulated
-NONE     Thorin, Mountain-king {3}{R} — Legendary Creature — Dwarf Noble
-  ✓ Trample
-      keyword
-  ✗ When Thorin enters, attach any number of target Equipment you control…
-      trigger (enters), effect not simulated
-PARTIAL  Cavern of Souls  — Land
-  ? As this land enters, choose a creature type.
-      not read by the engine
-  ✓ {T}: Add {C}.
-      mana: C
-  ? {T}: Add one mana of any color. Spend this mana only to cast a creatu…
-      mana ability not understood
-PARTIAL  Dáin's Company {R}{W} — Creature — Dwarf Warrior
-  ✓ This creature has lifelink as long as you control another Dwarf.
-      static ability
-  ✗ When this creature enters, look at the top four cards of your library…
-      trigger (enters), effect not simulated
-PARTIAL  Iron Man Armor {3} — Artifact — Equipment
-  ✓ When this Equipment enters, attach it to target creature you control.
-      trigger (enters) → attach (1 target)
-  ✓ Equipped creature gets +2/+1 and has flying.
-      static ability
-  ✗ {2}: If this Equipment isn't a creature, it becomes a 0/0 Construct H…
-      activated ability, effect not simulated
-  ✓ Equip {2}
-      keyword
-PARTIAL  Mjölnir, Hammer of Thor {3}{R} — Legendary Artifact — Equipment
-  ✓ When Mjölnir enters, it deals 4 damage to up to one target creature.
-      trigger (enters) → damage (1 target)
-  ✗ Double all damage equipped creature would deal.
-      keyword not simulated: double
-  ? Equip worthy {1}
-      not read by the engine
-  ? {2}{R}, Discard this card: It deals 2 damage to each creature.
-      activated ability with a cost or restriction not understood
 OK       Basilisk Collar {1} — Artifact — Equipment
   ✓ Equipped creature has deathtouch and lifelink.
       static ability
   ✓ Equip {2}
       keyword
+OK       Cavern of Souls  — Land
+  ✓ As this land enters, choose a creature type.
+      chooses a creature type as it enters
+  ✓ {T}: Add {C}.
+      mana: C
+  ✓ {T}: Add one mana of any color. Spend this mana only to cast a creatu…
+      mana for a creature spell of the chosen type (can't be countered)
 OK       Chainsaw {1}{R} — Artifact — Equipment
   ✓ When this Equipment enters, it deals 3 damage to up to one target cre…
       trigger (enters) → damage (1 target)
@@ -56,11 +19,25 @@ OK       Chainsaw {1}{R} — Artifact — Equipment
       static ability
   ✓ Equip {3}
       keyword
+OK       Chandra, Spark Hunter {3}{R} — Legendary Planeswalker — Chandra
+  ✓ At the beginning of combat on your turn, choose up to one target Vehi…
+      trigger (beginCombat) → animate (1 target)
+  ✓ +2: You may sacrifice an artifact or discard a card. If you do, draw …
+      loyalty ability → tradeForCard+draw
+  ✓ 0: Create a 3/2 colorless Vehicle artifact token with crew 1.
+      loyalty ability → token
+  ✓ −7: You get an emblem with "Whenever an artifact you control enters, …
+      loyalty ability → emblem
 OK       Cloud, Midgar Mercenary {W}{W} — Legendary Creature — Human Soldier Mercenary
   ✓ When Cloud enters, search your library for an Equipment card, reveal …
       trigger (enters) → search
   ✓ As long as Cloud is equipped, if a triggered ability of Cloud or an E…
       triggers an additional time while equipped
+OK       Dáin's Company {R}{W} — Creature — Dwarf Warrior
+  ✓ This creature has lifelink as long as you control another Dwarf.
+      static ability
+  ✓ When this creature enters, look at the top four cards of your library…
+      trigger (enters) → dig
 OK       Dragonfire Blade {1} — Artifact — Equipment
   ✓ Equipped creature gets +2/+2 and has hexproof from monocolored.
       static ability
@@ -77,6 +54,15 @@ OK       Inspiring Vantage  — Land
       enters tapped (unlessOtherLands)
   ✓ {T}: Add {R} or {W}.
       mana: R/W
+OK       Iron Man Armor {3} — Artifact — Equipment
+  ✓ When this Equipment enters, attach it to target creature you control.
+      trigger (enters) → attach (1 target)
+  ✓ Equipped creature gets +2/+1 and has flying.
+      static ability
+  ✓ {2}: If this Equipment isn't a creature, it becomes a 0/0 Construct H…
+      activated → animate
+  ✓ Equip {2}
+      keyword
 OK       Kellan, the Fae-Blooded // Birthright Boon {2}{R} // {1}{W} — Legendary Creature — Human Faerie // Sorcery — Adventure (other faces not audited)
   ✓ Double strike
       keyword
@@ -101,6 +87,15 @@ OK       Leyline Axe {4} — Artifact — Equipment
       static ability
   ✓ Equip {3}
       keyword
+OK       Mjölnir, Hammer of Thor {3}{R} — Legendary Artifact — Equipment
+  ✓ When Mjölnir enters, it deals 4 damage to up to one target creature.
+      trigger (enters) → damage (1 target)
+  ✓ Double all damage equipped creature would deal.
+      static ability
+  ✓ Equip worthy {1}
+      activated → attach (1 target)
+  ✓ {2}{R}, Discard this card: It deals 2 damage to each creature.
+      channel (from hand) → damageAll
 OK       Rest in Peace {1}{W} — Enchantment
   ✓ When this enchantment enters, exile all graveyards.
       trigger (enters) → exileGraveyards
@@ -133,11 +128,16 @@ OK       The Lonely Mountain  — Land — Mountain
       enters tapped (unlessSubtypes)
   ✓ {4}{R}, {T}: Create a 2/2 red Dwarf creature token. This ability cost…
       activated → token
+OK       Thorin, Mountain-king {3}{R} — Legendary Creature — Dwarf Noble
+  ✓ Trample
+      keyword
+  ✓ When Thorin enters, attach any number of target Equipment you control…
+      trigger (enters) → attachEquipment (2 targets)
 OK       Voice of Victory {1}{W} — Creature — Human Bard
   ✓ Mobilize 2
       keyword
   ✓ Your opponents can't cast spells during your turn.
       rule for the game: opponentsCantCastOnYourTurn
 
-24 cards: 18 ok, 4 partial, 2 not simulated, 0 can't be cast
+24 cards: 24 ok, 0 partial, 0 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

@@ -179,15 +179,15 @@ tokens, Empower Jace, No More Lies exiling instead of the graveyard, "exile it i
 would die this turn".
 
 Still missing, most played first:
-- [ ] "Look at the top N cards, put one (two) into your hand, the rest on the bottom" (Consult the Star Charts,
-  Stock Up, Sleight of Hand, Flow State)
+- [ ] "Look at the top N cards …" variants still missing (Consult the Star Charts, Sleight of Hand, Flow State; Stock
+  Up done)
 - [ ] Modal triggers "When … enters, choose one —" (Yuriko) and reflexive triggers "When you do / … this way"
   (Seasoned Cryomancer, Zoraline)
 - [ ] Mill, then "you may return a … card from your graveyard to your hand" (Overlord of the Balemurk); impending
 - [ ] Spree and Tiered (Three Steps Ahead, Requisition Raid, Return the Favor, Fire Magic): modes with extra costs
 - [ ] Blink: "exile …, then return it to the battlefield" (Daydream); "exile … until this leaves the battlefield"
   (Seam Rip, Deep-Cavern Bat, Pinnacle Starcage)
-- [ ] Emblems (Chandra, Ral, Ajani ultimates); loyalty counters from triggers (Ajani Resolute)
+- [ ] Emblems with static abilities (Ajani; triggered emblems work); loyalty counters from triggers (Ajani Resolute)
 - [ ] "Any number of target players each …" (Ral Zarek's −1, Riverchurn Monument)
 - [ ] Lands that choose a basic land type (Multiversal Passage); Theorist's Sanctum entering tapped
 - [ ] Manlands: "becomes a 4/4 … creature until end of turn" (Restless Reef, Restless Anchorage)
@@ -240,7 +240,6 @@ Left "not simulated" or found on the way:
 Still open, most played first:
 - [ ] Mana Vault (12 decks), Grim Monolith (6): "doesn't untap during your untap step", "you may pay {4}. If you do,
   untap", draw-step damage if tapped, "{4}: Untap this artifact"
-- [ ] Cavern of Souls (11): "As this land enters, choose a creature type" (and its uncounterable mana)
 - [ ] Mox Diamond (11): "discard a land card instead" replacement; Chrome Mox (9): imprint and its mana
 - [ ] Gemstone Caverns (11): opening-hand rule (Leylines now begin on the battlefield)
 - [ ] Hexing Squelcher (9): "Ward—Pay 2 life", "Spells you control can't be countered", granted ward
@@ -265,15 +264,13 @@ more creatures die" once per batch), Cloud's Equipment search and doubled trigge
 Sunbillow Verge's conditional {R}, Leylines in the opening hand (always put onto the battlefield). Fixture:
 `standard-dwarves-2026-10`.
 
-Still missing:
-- [ ] Thorin, Mountain-king (4): "attach any number of target Equipment … to target creature", then a reflexive
-  fight-like damage
-- [ ] Dáin's Company (4): "look at the top four cards … you may reveal a Dwarf or Equipment card and put it into
-  your hand", the rest on the bottom
-- [ ] Cavern of Souls (4): chosen creature type, restricted mana
-- [ ] Iron Man Armor: "{2}: … becomes a 0/0 Construct Hero artifact creature …" (Equipment that becomes a creature)
-- [ ] Sideboard: Mjölnir ("Double all damage", "Equip worthy", discard from hand to deal damage), Chandra, Spark Hunter
-  (Vehicles, crew, emblems)
+Second pass: Thorin (attach Equipment, reflexive damage), Dáin's Company and Stock Up (look at the top cards), Iron
+Man Armor and Vehicles becoming creatures until end of turn (crew), Mjölnir (double damage, equip worthy, discard
+ability from the hand), Cavern of Souls (chosen creature type, mana only for it, can't be countered), Chandra, Spark
+Hunter (beginning of combat triggers, Vehicle tokens, emblems, "sacrifice or discard: draw"). All 24 cards read.
+
+Approximations: "the rest on the bottom in any order" is put in a random order; Leylines are always put onto the
+battlefield.
 
 ## Comprehensive Rules audit (CR 2026-09-25)
 

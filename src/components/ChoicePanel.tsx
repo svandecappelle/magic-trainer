@@ -27,6 +27,10 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
     case 'legendRule': return t.game.choice.legendRule({ card: card(String(p.card)) });
     case 'payLife': return t.game.choice.payLife({ card: card(String(p.card)), n });
     case 'sacrificeCost': return t.game.choice.sacrificeCost({ card: card(String(p.card)) });
+    case 'creatureType': return t.game.choice.creatureType({ card: card(String(p.card)) });
+    case 'crewCost': return t.game.choice.crewCost({ card: card(String(p.card)), n });
+    case 'dig': return t.game.choice.dig({ n });
+    case 'tradeForCard': return t.game.choice.tradeForCard({ card: card(String(p.card)) });
     case 'triggerTargets':
       if (choice.kind === 'targets') {
         return t.game.choice.triggerTargets({ card: card(String(p.card)), kind: t.game.targetKinds[choice.slots[0].kind] });
