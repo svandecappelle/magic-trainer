@@ -31,6 +31,7 @@ export function Online() {
   const [bestOf, setBestOf] = useState<1 | 3>(1);
   const [twoHeaded, setTwoHeaded] = useState(false);
   const [commander, setCommander] = useState(false);
+  const [deckId, setDeckId] = useState(decks[0]?.id ?? 'preset-red');
   const chosen = decks.find((d) => d.id === deckId);
   useEffect(() => {
     if (chosen?.format === 'commander') setCommander(true);
@@ -69,7 +70,6 @@ export function Online() {
     return () => clearInterval(timer);
   }, [clock]);
   const [name, setName] = useState(savedName);
-  const [deckId, setDeckId] = useState(decks[0]?.id ?? 'preset-red');
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
