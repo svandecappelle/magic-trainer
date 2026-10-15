@@ -496,3 +496,44 @@ describe('Mana that hurts: City of Brass, Mana Confluence', () => {
     expect(manaUnits(startingTown)).toEqual([['C']]);
   });
 });
+
+describe('Channel (Otawara, Boseiju, Eiganjo)', () => {
+  const otawara = card({
+    name: 'Otawara, Soaring City', typeLine: 'Legendary Land',
+    oracleText: '{T}: Add {U}.\nChannel — {3}{U}, Discard this card: Return target artifact, creature, enchantment, or planeswalker to its owner\'s hand. This ability costs {1} less to activate for each legendary creature you control.',
+  });
+  const boseiju = card({
+    name: 'Boseiju, Who Endures', typeLine: 'Legendary Land',
+    oracleText: '{T}: Add {G}.\nChannel — {1}{G}, Discard this card: Destroy target artifact, enchantment, or nonbasic land an opponent controls. That permanent\'s controller may search their library for a land card with a basic land type, put it onto the battlefield, then shuffle. This ability costs {1} less to activate for each legendary creature you control.',
+  });
+  const eiganjo = card({
+    name: 'Eiganjo, Seat of the Empire', typeLine: 'Legendary Land',
+    oracleText: '{T}: Add {W}.\nChannel — {2}{W}, Discard this card: It deals 4 damage to target attacking or blocking creature. This ability costs {1} less to activate for each legendary creature you control.',
+  });
+  const islandUp = (s: GameState, n: number) => {
+    // n untapped Islands for player 0 (the board's mana is Swamps).
+    for (let i = 0; i < n; i++) s.battlefield.push({ iid: `i${i}`, card: island, controller: 0, tapped: false, sick: false, damage: 0, deathtouched: false, counters: {}, boosts: [] });
+    return s;
+  };
+
+  it('reads the channel abilities; Boseiju\'s search for the opponent is not simulated', () => {
+    expect(castInfo(otawara).channel).toMatchObject({ cost: '{3}{U}', legendaryDiscount: true, ability: { effects: [{ kind: 'bounce' }] } });
+    expect(castInfo(eiganjo).channel).toMatchObject({ ability: { targets: [{ kind: 'creature', filter: { inCombat: true } }], effects: [{ kind: 'damage', amount: 4 }] } });
+    expect(castInfo(boseiju).channel?.ability.effects).toEqual([]);
+  });
+
+  it('Otawara bounces from the hand, {1} cheaper for each legendary creature', () => {
+    const legend = creature('Legend', 2, 2, { typeLine: 'Legendary Creature — Human' });
+    const ogre = creature('Ogre', 3, 3);
+    let s = islandUp(board({ mana: 2, mine: [legend], theirs: [ogre], hand: [otawara] }), 1);
+    // {3}{U} - 1 = 3 mana: two Swamps and an Island.
+    s = settle(apply(s, { type: 'channel', iid: 'h0', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Ogre') }]] }));
+    for (let i = 0; i < 6 && s.stack.length; i++) s = settle(apply(s, { type: 'pass' }));
+    expect(perm(s, 'Ogre')).toBeUndefined();
+    expect(s.players[1].hand.map((c) => c.card.name)).toContain('Ogre');
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toEqual(['Otawara, Soaring City']);
+    // Without the legend, three mana isn't enough.
+    const t = islandUp(board({ mana: 2, theirs: [ogre], hand: [otawara] }), 1);
+    expect(errorOf(() => apply(t, { type: 'channel', iid: 'h0', targets: [[{ kind: 'permanent', iid: iidOf(t, 'Ogre') }]] }))).toBe('notEnoughMana');
+  });
+});

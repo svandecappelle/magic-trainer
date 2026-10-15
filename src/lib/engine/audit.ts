@@ -92,6 +92,13 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
       ? { text: line, status: 'ok', how: `trigger (${event}${triggers.some((t) => t.oncePerTurn) ? ', once each turn' : ''}) → ${read.join(' | ')}` }
       : { text: line, status: 'notSimulated', how: `trigger (${event}), effect not simulated` };
   }
+  const channel = castInfo(one).channel;
+  if (channel) {
+    const read = effectsText(channel.ability);
+    return read
+      ? { text: line, status: 'ok', how: `channel (from hand) → ${read}${channel.legendaryDiscount ? ', {1} less per legendary creature' : ''}` }
+      : { text: line, status: 'notSimulated', how: 'channel, effect not simulated' };
+  }
   const activated = activatedOf(one);
   if (activated.length) {
     const read = effectsText(activated[0].ability);

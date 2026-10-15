@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom';
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import {
-  activatable, activationProblem, abilityMaxX, actor, apply, canAttack, canTapForMana, canUntapForMana, castCost, castOptions, castSources,
+  activatable, activationProblem, abilityMaxX, actor, apply, canAttack, canTapForMana, canUntapForMana, castCost, castOptions, castSources, channelCost, manaSources,
   landFaces, findInGraveyard, legalTargets, canBlock, findPermanent, hasKw, IllegalAction, isActivePlayer, mulliganBottom, isLegalTarget, isMainStep, firstOpponent, opponentsOf, teammatesOf, teamPlayers, wonBy,
   powerOf, toughnessOf, xCount,
   type Action, type CardInst, type CastOption, type GameState, type Permanent, type PlayerId, type Target,
@@ -90,6 +90,8 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     activate?: number;
     /** Set when casting a spell: the cast action, targets aside. */
     cast?: Extract<Action, { type: 'cast' }>;
+    /** Set when channeling card `iid` from the hand. */
+    channel?: boolean;
   } | null>(null);
   /** Choosing X before casting a spell (`plan`) or activating an ability (`ability`) with {X} in its cost. */
   const [xPick, setXPick] = useState<{
@@ -225,6 +227,11 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     if (cycling && cycleTiming && !g.pending && findPayment(castSources(g, me, card, iid), parseCost(cycling.cost))) {
       items.push({ key: 'cycle', label: t.game.cycleFor(cycling.cost), run: () => act({ type: 'cycle', iid }) });
     }
+    const channel = inHand ? castInfo(card).channel : undefined;
+    const channelCostNow = channel && channelCost(g, me, card);
+    if (channel && channelCostNow && cycleTiming && !g.pending && findPayment(manaSources(g, me), channelCostNow)) {
+      items.push({ key: 'channel', label: t.game.channelFor(channel.cost), run: () => beginChannel(iid, card) });
+    }
     return items;
   }
 
@@ -237,6 +244,18 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     // Nothing possible: let the rules explain why.
     if (isLandCard(card)) return act({ type: 'playLand', iid });
     setError({ code: g.priority ? 'cannotCastNow' : 'notEnoughMana', params: { card: show.name(card) } });
+  }
+
+  /** Channel a card in hand: its targets first, if any. */
+  function beginChannel(iid: string, card: Card) {
+    setCastMenu(null);
+    const spec = castInfo(card).channel!.ability;
+    if (!spec.targets.length) return act({ type: 'channel', iid });
+    if (spec.targets.some((slot) => legalTargets(g, me, slot, undefined, card).length < slot.min)) {
+      return setError({ code: 'nothingToTarget', params: { card: show.name(card) } });
+    }
+    setTargeting({ iid, spec, slot: 0, picked: spec.targets.map(() => []), channel: true });
+    setError(null);
   }
 
   /** Cast a card a given way: modes first if it's modal, then X, then targets. */
@@ -286,6 +305,10 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     }
     if (tg.activate !== undefined) {
       act({ type: 'activate', iid: tg.iid, index: tg.activate, targets: tg.picked, ...(tg.x === undefined ? {} : { x: tg.x }) });
+      return setTargeting(null);
+    }
+    if (tg.channel) {
+      act({ type: 'channel', iid: tg.iid, targets: tg.picked });
       return setTargeting(null);
     }
     setTargeting(null);

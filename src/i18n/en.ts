@@ -604,6 +604,7 @@ export const en = {
     castFromExile: (card: string) => `Cast ${card} from exile`,
     playAsLand: (card: string) => `Play ${card} (land)`,
     cycleFor: (cost: string) => `Cycle (${cost})`,
+    channelFor: (cost: string) => `Channel (${cost})`,
     modeNotSimulated: 'This mode is not simulated',
     poisonTitle: 'Poison counters: 10 and you lose',
     commanderDamageTitle: 'Most combat damage taken from one commander (21 loses)',

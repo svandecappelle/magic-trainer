@@ -1000,6 +1000,11 @@ export interface CastInfo {
   flashback?: string;
   /** Cycling (draw a card) or landcycling (search for a land card: `search`). */
   cycling?: { cost: string; search?: TargetFilter };
+  /**
+   * "Channel — {3}{U}, Discard this card: …", activated from the hand at instant speed (no effects: not simulated).
+   * `legendaryDiscount`: "This ability costs {1} less to activate for each legendary creature you control."
+   */
+  channel?: { cost: string; ability: AbilitySpec; legendaryDiscount: boolean };
   convoke: boolean;
   delve: boolean;
   /** "Affinity for artifacts": costs {1} less for each matching permanent you control. */
@@ -1025,6 +1030,10 @@ export function castInfo(card: Card, face = 0): CastInfo {
     else if ((m = line.match(/^Cycling ((?:\{[^}]+\})+)$/))) info.cycling = { cost: m[1] };
     else if ((m = line.match(/^(Basic land|Plains|Island|Swamp|Mountain|Forest)cycling ((?:\{[^}]+\})+)$/))) {
       info.cycling = { cost: m[2], search: m[1] === 'Basic land' ? { basic: true, types: ['land'] } : { subtypes: [m[1].toLowerCase()] } };
+    } else if ((m = line.match(/^Channel — ((?:\{[^}]+\})+), Discard this card: (.+)$/))) {
+      const discount = / This ability costs \{1\} less to activate for each legendary creature you control\.$/;
+      const body = m[2].replace(discount, '');
+      info.channel = { cost: m[1], ability: UNSUPPORTED.test(body) ? NO_EFFECT : parseAbilityText(body, selfName(c)), legendaryDiscount: discount.test(m[2]) };
     } else if (/^Affinity for artifacts$/i.test(line)) info.affinity = { types: ['artifact'] };
     else if (/^[A-Za-z ,]+$/.test(line) && line.split(/,\s*/).some((w) => /^(convoke|delve)$/i.test(w.trim()))) {
       for (const w of line.split(/,\s*/).map((x) => x.trim().toLowerCase())) {

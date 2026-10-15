@@ -390,6 +390,8 @@ export type Action =
     }
   /** Cycling (or landcycling) a card in hand. */
   | { type: 'cycle'; iid: string }
+  /** Channel: discard a card from hand to activate its channel ability. */
+  | { type: 'channel'; iid: string; targets?: Target[][] }
   /** Activate ability number `index` (in activatedOf order) of a permanent you control. */
   | { type: 'activate'; iid: string; index: number; targets?: Target[][]; x?: number }
   | { type: 'pass' }
@@ -560,6 +562,17 @@ export function manaSources(s: GameState, p: PlayerId): ManaSource[] {
 export function canUntapForMana(s: GameState, p: PlayerId, perm: Permanent): boolean {
   if (perm.controller !== p || !perm.tapped || painfulMana(perm)) return false;
   return (s.players[p].pool ?? []).filter((m) => m.source === perm.iid).length === unitsOf(s, perm).length;
+}
+
+/** A card's channel cost ({1} less per legendary creature `p` controls, for Otawara), or null without channel. */
+export function channelCost(s: GameState, p: PlayerId, card: Card): Cost | null {
+  const channel = castInfo(card).channel;
+  if (!channel) return null;
+  const cost = parseCost(channel.cost);
+  const legends = channel.legendaryDiscount
+    ? s.battlefield.filter((x) => x.controller === p && isCreature(x.card) && /\bLegendary\b/.test(x.card.typeLine.split('//')[0])).length
+    : 0;
+  return { ...cost, generic: Math.max(0, cost.generic - legends) };
 }
 
 /** How many {X} the cost has (Fireball: 1, some spells: 2). */
@@ -2654,6 +2667,21 @@ export function apply(state: GameState, action: Action): GameState {
       } else {
         openWindow(d, 'main', nextPlayer(d, p), 0);
       }
+      break;
+    }
+
+    case 'channel': {
+      const inst = me.hand.find((c) => c.iid === action.iid);
+      const channel = inst && castInfo(inst.card).channel;
+      if (!inst || !channel) throw new IllegalAction('noSuchAbility');
+      if (!d.priority && !(isMainStep(d) && isActivePlayer(d, p))) throw new IllegalAction('activateTiming');
+      const targets = checkTargets(d, p, inst.card, channel.ability, action.targets ?? []);
+      if (!pay(d, p, manaSources(d, p), channelCost(d, p, inst.card)!)) throw new IllegalAction('notEnoughMana', { card: inst.card.name });
+      me.hand = me.hand.filter((c) => c !== inst);
+      putInZone(d, p, inst, 'graveyard');
+      d.abilities = (d.abilities ?? 0) + 1;
+      // An ability with no effects (Boseiju) still goes on the stack, and resolves "not simulated".
+      finishActivation(d, { iid: `${inst.iid}-channel-${d.abilities}`, card: inst.card, controller: p, targets, ability: channel.ability }, targets.flat().map((t) => targetName(d, t)));
       break;
     }
 

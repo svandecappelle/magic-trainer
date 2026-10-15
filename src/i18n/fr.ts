@@ -611,6 +611,7 @@ export const fr: Messages = {
     castFromExile: (card) => `Lancer ${card} depuis l'exil`,
     playAsLand: (card) => `Jouer ${card} (terrain)`,
     cycleFor: (cost) => `Recycler (${cost})`,
+    channelFor: (cost) => `Canaliser (${cost})`,
     modeNotSimulated: "Ce mode n'est pas simulé",
     poisonTitle: 'Marqueurs poison : à 10, la partie est perdue',
     commanderDamageTitle: "Le plus de blessures de combat reçues d'un même commandant (21 : partie perdue)",
