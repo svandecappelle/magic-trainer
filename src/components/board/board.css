@@ -49,7 +49,11 @@
 .battlefield { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow: auto; padding: 6px 8px; }
 .battlefield.theirs { justify-content: flex-end; }
 .battlefield.mine { justify-content: flex-start; }
-.perm-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; align-items: center; }
+.perm-row {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; align-items: center;
+  padding: 4px 6px; border-radius: 10px; background: rgba(255, 255, 255, 0.025);
+}
+.perm-row.lands { background: rgba(255, 255, 255, 0.015); }
 .perm-row.creatures { min-height: calc(var(--perm-w) * 1.4 + 4px); }
 .perm-row.lands { min-height: calc(var(--land-w) * 1.1); gap: 6px; }
 
@@ -184,10 +188,9 @@
 .hand-card {
   --rot: 0deg; --drop: 0px; --lift: 0px;
   position: relative; flex: 0 1 var(--hand-w); min-width: 14px;
-  transform: translateY(calc(var(--drop) + var(--lift))) rotate(var(--rot));
-  transform-origin: 50% 120%;
+  transform: translateY(var(--lift));
   transition: transform 0.2s ease-out, filter 0.2s;
-  filter: brightness(0.72);
+  filter: brightness(0.8);
   cursor: pointer;
   animation: draw-in 0.4s ease-out;
 }
@@ -204,10 +207,17 @@
 .hand-card img { width: var(--hand-w); max-width: none; display: block; border-radius: 6px; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6); }
 .hand-card.playable { filter: none; }
 .hand-card.playable img { box-shadow: 0 0 0 2px var(--ok), 0 0 12px rgba(92, 184, 92, 0.5); }
-.hand-card.selected { --rot: 0deg !important; --drop: 0px !important; --lift: -30px; z-index: 6; filter: none; }
+.hand-card.selected { --lift: -18px; z-index: 6; filter: none; }
 @media (hover: hover) {
-  .hand-card:hover { --rot: 0deg !important; --drop: 0px !important; --lift: -30px; z-index: 6; filter: none; transform: translateY(var(--lift)) scale(1.12); }
+  .hand-card:hover { --lift: -18px; z-index: 6; filter: none; transform: translateY(var(--lift)) scale(1.08); }
 }
+/* What the rules engine doesn't simulate, on the card before you cast it. */
+.engine-badge {
+  position: absolute; left: 4px; top: 22%; padding: 1px 6px; border-radius: 4px; pointer-events: none;
+  font-size: 0.62rem; font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; box-shadow: 0 1px 4px #000;
+}
+.engine-badge.partial { background: #5a4417; color: #f6d8a2; }
+.engine-badge.none, .engine-badge.refused { background: #5a2220; color: #ffc1bc; }
 .hand-card.selected img { box-shadow: 0 0 0 3px var(--accent), 0 0 18px var(--accent); }
 
 /* ---------- Center bar ---------- */
@@ -323,10 +333,26 @@
 
 /* ---------- Side column ---------- */
 
-.game-side { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.game-side { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.side-tabs { display: flex; gap: 4px; padding: 4px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; }
+.side-tabs button {
+  flex: 1; padding: 7px 8px; border: none; border-radius: 7px; background: transparent; color: var(--muted);
+  font-size: 0.85rem; font-weight: 500;
+}
+.side-tabs button.on { background: var(--panel-2); color: var(--text); font-weight: 700; }
+.side-card { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow: auto; }
 .game-side .card-preview { flex: 0 0 auto; }
+.engine-status { font-size: 0.8rem; }
+.engine-status.ok { color: #8fd19e; }
+.engine-status.partial { color: #f0c97a; }
+.engine-status.none, .engine-status.refused { color: #f2a29e; }
+.side-play { display: flex; flex-direction: column; gap: 6px; }
+.side-play .ability-option {
+  padding: 9px 12px; text-align: left; font-weight: 600; background: var(--panel-2); color: var(--text); border: 1px solid var(--accent);
+}
 .game-side h4 { margin: 4px 0 0; }
 .game-side .log { flex: 1 1 auto; min-height: 80px; max-height: none; margin: 0; padding-left: 32px; overflow: auto; }
+.game-side .log li.log-turn { margin-top: 8px; color: var(--accent); font-weight: 700; }
 .game-side .log li { padding: 1px 4px; border-radius: 4px; }
 .game-side .log li.fresh { color: var(--text); animation: fresh 2.5s ease-out; }
 .game-options .full-control { display: flex; align-items: center; gap: 6px; cursor: pointer; }
@@ -392,20 +418,19 @@
   .game-side .log { max-height: 260px; }
 }
 
-/* Short screens (small laptops, phones): the hand peeks from the bottom edge and rises when picked. */
+/* Short screens (small laptops): smaller cards, but the whole hand stays visible. */
 @media (max-height: 860px) {
-  .my-hand { min-height: 0; height: calc(var(--hand-w) * 1.05); align-items: flex-start; padding-top: 4px; }
-  .hand-card.selected { --lift: calc(var(--hand-w) * -0.45); }
-  .player-bar.mine { align-items: flex-start; }
-}
-@media (max-height: 860px) and (hover: hover) {
-  .hand-card:hover { --lift: calc(var(--hand-w) * -0.45); transform: translateY(var(--lift)); }
+  .game { --hand-w: clamp(52px, min(11.5vh, 14vw), 96px); --perm-w: clamp(40px, min(9.5vh, 9vw), 86px); }
+  .my-hand { min-height: calc(var(--hand-w) * 1.4 + 6px); padding-top: 6px; }
 }
 
 /* Phones and other small screens: compact bars, one toast at a time. */
 @media (max-width: 640px) {
   /* Portrait phones are short of width, not height. */
   .game { --perm-w: clamp(44px, min(9vh, 14vw), 72px); --hand-w: clamp(56px, 19vw, 84px); }
+  /* The hand gets the whole width, under your life and zones. */
+  .player-bar.mine { flex-wrap: wrap; }
+  .player-bar.mine .my-hand { flex-basis: 100%; min-height: calc(var(--hand-w) * 1.4 + 4px); padding-top: 4px; }
 }
 @media (max-width: 640px), (max-height: 560px) {
   .game { margin-top: 4px; gap: 8px; }
