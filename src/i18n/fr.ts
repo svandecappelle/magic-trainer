@@ -644,7 +644,7 @@ export const fr: Messages = {
     blocks: (name) => `bloque ${name}`,
     sick: "Mal d'invocation",
     concede: 'Abandonner',
-    sideTabs: { card: 'Carte', log: 'Journal', settings: 'Réglages' },
+    sideTabs: { label: 'Carte et réglages', card: 'Carte', settings: 'Réglages' },
     playThisCard: 'Jouer cette carte',
     engineStatus: { ok: 'Simulée par le moteur de règles', partial: 'Partiellement simulée : certaines capacités ne font rien', none: 'Non simulée : la lancer ne fait rien', refused: 'Impossible à lancer : son coût n\'est pas simulé' },
     engineBadge: { partial: 'Partielle', none: 'Non simulée', refused: 'Non lançable' },

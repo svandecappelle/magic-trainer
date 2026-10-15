@@ -46,7 +46,7 @@ const targetKey = (t: Target) => (t.kind === 'player' ? `player:${t.player}` : t
 
 // A player with an empty name (the human in Play vs Bot) is shown as "You" in the current language.
 
-type SideTab = 'card' | 'log' | 'settings';
+type SideTab = 'card' | 'settings';
 
 /** The two-player game table, shared by Play vs Bot and online multiplayer. */
 export function GameBoard({ game: g, me, onAction, endControls, notice }: Props) {
@@ -63,7 +63,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   const [error, setError] = useState<AppError | null>(null);
   const [preview, setPreview] = useState<Card | null>(null);
   // Under 1000px the side panel goes below the table and has no room for a large preview: start on the log.
-  const [sideTab, setSideTab] = useState<SideTab>(() => (typeof window !== 'undefined' && window.matchMedia?.('(max-width: 1000px)').matches ? 'log' : 'card'));
+  const [sideTab, setSideTab] = useState<SideTab>('card');
   const [zoneView, setZoneView] = useState<{ p: PlayerId; zone: 'graveyard' | 'exile' | 'command' } | null>(null);
   const zoneCards = (p: PlayerId, z: 'graveyard' | 'exile' | 'command') => (z === 'command' ? g.players[p].command ?? [] : g.players[p][z]);
   /** A card shown large after a long press (touch screens have no hover preview) or a right click. */
@@ -951,8 +951,8 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
 
       <aside className="game-side">
         {notice && <div className="small play-notice">{notice}</div>}
-        <div className="side-tabs" role="tablist" aria-label={t.common.log}>
-          {(['card', 'log', 'settings'] as SideTab[]).map((tab) => (
+        <div className="side-tabs" role="tablist" aria-label={t.game.sideTabs.label}>
+          {(['card', 'settings'] as SideTab[]).map((tab) => (
             <button key={tab} type="button" role="tab" aria-selected={sideTab === tab} className={sideTab === tab ? 'on' : ''} onClick={() => setSideTab(tab)}>
               {t.game.sideTabs[tab]}
             </button>
@@ -982,13 +982,6 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
             </div>
           );
         })()}
-        {sideTab === 'log' && (
-          <ol className="log small" reversed>
-            {[...g.log].reverse().map((l, i) => (
-              <li key={g.log.length - i} className={`${i < fx.freshLog ? 'fresh' : ''} ${l.k === 'turn' ? 'log-turn' : ''}`}>{logText(t, l, names, me, show.nameOf)}</li>
-            ))}
-          </ol>
-        )}
         {sideTab === 'settings' && g.winner === null && (
           <div className="game-options">
             <label className="full-control small" title={t.game.fullControlHint(fullControl)}>
@@ -1004,6 +997,16 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
           </div>
         )}
       </aside>
+
+      {/* The log stays visible: under the card on medium screens, in its own column on wide ones. */}
+      <section className="game-log" aria-label={t.common.log}>
+        <h4 className="small muted">{t.common.log}</h4>
+        <ol className="log small" reversed>
+          {[...g.log].reverse().map((l, i) => (
+            <li key={g.log.length - i} className={`${i < fx.freshLog ? 'fresh' : ''} ${l.k === 'turn' ? 'log-turn' : ''}`}>{logText(t, l, names, me, show.nameOf)}</li>
+          ))}
+        </ol>
+      </section>
     </div>
   );
 }

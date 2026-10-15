@@ -634,7 +634,7 @@ export const en = {
     blocks: (name: string) => `blocks ${name}`,
     sick: 'Summoning sick',
     concede: 'Concede',
-    sideTabs: { card: 'Card', log: 'Log', settings: 'Settings' },
+    sideTabs: { label: 'Card and settings', card: 'Card', settings: 'Settings' },
     playThisCard: 'Play this card',
     engineStatus: { ok: 'Simulated by the rules engine', partial: 'Partly simulated: some abilities do nothing', none: 'Not simulated: casting it does nothing', refused: 'Can\'t be cast: its cost is not simulated' } as Record<string, string>,
     engineBadge: { partial: 'Partly', none: 'Not simulated', refused: 'Not castable' } as Record<string, string>,
