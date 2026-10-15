@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
-import { actor, apply, castOptions, IllegalAction, newGame, powerOf, toughnessOf, type GameState, type Permanent, type PlayerId } from './engine';
+import { actor, apply, canTapForMana, castOptions, IllegalAction, newGame, powerOf, toughnessOf, type GameState, type Permanent, type PlayerId } from './engine';
 import { castInfo, castSpec, parseAbilityText, spellSpec, triggersOf } from './rules';
 
 // Cards from Standard decks on mtgtop8 (Oct 2026), with their Oracle text.
@@ -409,5 +409,26 @@ describe('Mobilize (Voice of Victory)', () => {
     expect(s.players[1].life).toBe(17);
     s = apply(s, { type: 'pass' }); // end of main 2: end step
     expect(s.battlefield.filter((p) => p.card.name === 'Warrior')).toHaveLength(0);
+  });
+});
+
+describe('Command Tower and Arcane Signet (commander\'s color identity)', () => {
+  const tower = card({ name: 'Command Tower', typeLine: 'Land', oracleText: '{T}: Add one mana of any color in your commander\'s color identity.' });
+  const signet = card({ name: 'Arcane Signet', typeLine: 'Artifact', manaCost: '{2}', cmc: 2, oracleText: '{T}: Add one mana of any color in your commander\'s color identity.' });
+  const boss = creature('Boss', 3, 3, { typeLine: 'Legendary Creature — Elf', colorIdentity: ['B', 'G'] });
+
+  it('makes mana of the commander\'s colors, and none without a commander', () => {
+    const s = newGame({ decks: [Array(40).fill(swamp), Array(40).fill(island)], names: ['Me', 'Bot'], first: 0, rng: () => 0.5, mulligans: false, mode: { commander: true }, commanders: [[boss], []] });
+    s.battlefield = [tower, signet, tower].map((c, i): Permanent => ({
+      iid: `p${i}`, card: c, controller: (i === 2 ? 1 : 0) as PlayerId, tapped: false, sick: false, damage: 0, deathtouched: false, counters: {}, boosts: [],
+    }));
+    let t = apply(s, { type: 'tapForMana', iid: 'p0' });
+    t = apply(t, { type: 'tapForMana', iid: 'p1' });
+    expect(t.players[0].pool?.map((m) => m.colors)).toEqual([['B', 'G'], ['B', 'G']]);
+    // The opponent has no commander: their Command Tower makes nothing.
+    expect(canTapForMana(t, t.battlefield[2])).toBe(false);
+    // Outside a Commander game, no mana either.
+    const duel = board({ mine: [tower] });
+    expect(canTapForMana(duel, perm(duel, 'Command Tower')!)).toBe(false);
   });
 });

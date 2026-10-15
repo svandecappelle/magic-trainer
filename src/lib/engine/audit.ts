@@ -100,7 +100,8 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
       : { text: line, status: 'notSimulated', how: 'activated ability, effect not simulated' };
   }
   if (/\bAdd \{|\bAdd (?:one|two|three) mana\b/.test(line) && !spell) {
-    const units = manaUnits({ ...one, typeLine: 'Land' });
+    // Command Tower: read with a five-color commander.
+    const units = manaUnits({ ...one, typeLine: 'Land' }, ['W', 'U', 'B', 'R', 'G']);
     return units.length
       ? { text: line, status: 'ok', how: `mana: ${units.map((u) => u.join('/')).join(' ')}` }
       : { text: line, status: 'unread', how: 'mana ability not understood' };

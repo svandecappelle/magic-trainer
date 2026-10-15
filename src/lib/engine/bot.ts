@@ -218,7 +218,8 @@ function chooseDoubleBlock(a: Permanent, options: Permanent[], mustBlock: boolea
 function chooseLand(s: GameState, me: PlayerId): { iid: string; face: number } | null {
   const player = s.players[me];
   if (player.landPlayed) return null;
-  const lands = player.hand.filter((c) => isLandCard(c.card) && manaColors(c.card).length);
+  const colorsOf = (c: Card) => manaColors(c, player.identity);
+  const lands = player.hand.filter((c) => isLandCard(c.card) && colorsOf(c.card).length);
   if (!lands.length) {
     // A modal double-faced card with a land on its back, when there's no other land to play.
     const mdfc = player.hand.find((c) => landFaces(c.card).some((f) => f > 0));
@@ -230,7 +231,7 @@ function chooseLand(s: GameState, me: PlayerId): { iid: string; face: number } |
     .filter((c) => !isLandCard(c.card))
     .flatMap((c) => parseCost(c.card.manaCost).colored.flat());
   const score = (colors: string[]) => pips.filter((c) => colors.includes(c)).length;
-  return { iid: lands.reduce((best, l) => (score(manaColors(l.card)) > score(manaColors(best.card)) ? l : best)).iid, face: 0 };
+  return { iid: lands.reduce((best, l) => (score(colorsOf(l.card)) > score(colorsOf(best.card)) ? l : best)).iid, face: 0 };
 }
 
 /** One way to cast one card: the option (face, kicker, zone) and, for a modal spell, its modes. */
@@ -769,9 +770,9 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
       } else if (!safe && choice.purpose === 'search') {
         // Lands of the colors our hand needs most; otherwise the most expensive card.
         const pips = s.players[choice.player].hand.flatMap((c) => parseCost(c.card.manaCost).colored.flat());
-        const have = new Set(s.battlefield.filter((x) => x.controller === choice.player).flatMap((x) => manaColors(x.card)));
+        const have = new Set(s.battlefield.filter((x) => x.controller === choice.player).flatMap((x) => manaColors(x.card, s.players[choice.player].identity)));
         const score = (c: CardInst) => isLandCard(c.card)
-          ? manaColors(c.card).reduce((n, col) => n + pips.filter((p) => p === col).length + (have.has(col) ? 0 : 2), 0)
+          ? manaColors(c.card, s.players[choice.player].identity).reduce((n, col) => n + pips.filter((p) => p === col).length + (have.has(col) ? 0 : 2), 0)
           : cardWorth(c.card);
         options.sort((a, b) => score(b) - score(a));
         return { kind: 'cards', iids: options.slice(0, choice.max).map((c) => c.iid) };

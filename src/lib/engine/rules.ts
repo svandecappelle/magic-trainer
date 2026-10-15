@@ -73,9 +73,12 @@ const MANA_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, 
  * Mana in an "Add …" text, one entry per mana with the colors it may be:
  * "{C}{C}" → [[C], [C]], "{R} or {G}" → [[R, G]], "two mana of any one color" → two entries of all colors
  * (simplified: they may be different colors). Null when not understood (X mana, "for each…").
+ * `identity`: the controller's commanders' color identity, for "one mana of any color in your commander's color
+ * identity" (no mana without a commander or with a colorless one).
  */
-export function parseManaText(text: string): Color[][] | null {
+export function parseManaText(text: string, identity?: Color[]): Color[][] | null {
   const t = text.trim().replace(/\.$/, '');
+  if (/^one mana of any color in your commander's color identity$/i.test(t)) return identity?.length ? [identity] : null;
   const any = t.match(/^(one|two|three|four|five) mana of any (?:one )?color$/i);
   if (any) return Array.from({ length: MANA_WORDS[any[1].toLowerCase()] }, () => [...ALL_COLORS]);
   if (/^(\{[WUBRGC]\})+$/.test(t)) return [...t.matchAll(/\{([WUBRGC])\}/g)].map((m) => [m[1] as Color]);
@@ -87,8 +90,9 @@ export function parseManaText(text: string): Color[][] | null {
 /**
  * The mana a permanent makes when tapped: basic land types plus "{T}: Add …" abilities. With several
  * one-mana abilities (pain lands), one mana of any of their colors; otherwise the biggest ability.
+ * `identity`: the controller's commanders' color identity (Command Tower).
  */
-export function manaUnits(card: Card): Color[][] {
+export function manaUnits(card: Card, identity?: Color[]): Color[][] {
   const single = new Set<Color>();
   let best: Color[][] = [];
   const front = card.typeLine.split('//')[0];
@@ -96,7 +100,7 @@ export function manaUnits(card: Card): Color[][] {
   for (const line of frontText(card).split('\n')) {
     const m = line.match(/^\{T\}(?:, Sacrifice [^:]*)?:\s*Add ([^.]*)\./);
     if (!m) continue;
-    const units = parseManaText(m[1]);
+    const units = parseManaText(m[1], identity);
     if (!units) continue;
     if (units.length === 1) units[0].forEach((c) => single.add(c));
     else if (units.length > best.length) best = units;
@@ -106,7 +110,7 @@ export function manaUnits(card: Card): Color[][] {
 }
 
 /** Colors a permanent can tap for. */
-export const manaColors = (card: Card): Color[] => [...new Set(manaUnits(card).flat())];
+export const manaColors = (card: Card, identity?: Color[]): Color[] => [...new Set(manaUnits(card, identity).flat())];
 
 export interface Cost {
   generic: number;

@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, findPayment, hasInstantSpeed, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, isPlaneswalker, isToken, manaColors, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, isPlaneswalker, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type CastChoice, type Cost, type ObjectEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -115,6 +115,8 @@ export interface PlayerState {
   command?: CardInst[];
   commanderCasts?: Record<string, number>;
   commanderDamage?: Record<string, number>;
+  /** Commander: the commanders' color identity (Command Tower's mana). */
+  identity?: Color[];
 }
 
 /**
@@ -510,9 +512,12 @@ export const toughnessOf = (perm: Permanent) => toughness(perm.card) + sum(perm,
 /** Does `perm` have protection from a source of these colors? */
 const protectedFrom = (perm: Permanent, source: Card) => protectionsOf(perm.card).some((c) => cardColors(source).includes(c));
 
+/** The mana one tap of `perm` makes (Command Tower: in its controller's commander's colors). */
+export const unitsOf = (s: GameState, perm: Permanent) => manaUnits(perm.card, s.players[perm.controller]?.identity);
+
 /** Can this permanent be tapped for mana now? */
 export const canTapForMana = (s: GameState, perm: Permanent) =>
-  !perm.tapped && !(isCreature(perm.card) && perm.sick && !hasKw(perm, 'haste')) && manaUnits(perm.card).length > 0 && !activationsForbidden(s, perm);
+  !perm.tapped && !(isCreature(perm.card) && perm.sick && !hasKw(perm, 'haste')) && unitsOf(s, perm).length > 0 && !activationsForbidden(s, perm);
 
 /** Permanents on the battlefield with a rule-changing static ability. */
 const withRule = (s: GameState, rule: GameRule) => s.battlefield.filter((x) => gameRulesOf(x.card).includes(rule));
@@ -539,8 +544,8 @@ export function manaSources(s: GameState, p: PlayerId): ManaSource[] {
   const perms = s.battlefield
     .filter((x) => x.controller === p && canTapForMana(s, x))
     .map((x): ManaSource => {
-      const units = manaUnits(x.card);
-      return { iid: x.iid, colors: manaColors(x.card), ...(units.length > 1 ? { units } : {}) };
+      const units = unitsOf(s, x);
+      return { iid: x.iid, colors: [...new Set(units.flat())], ...(units.length > 1 ? { units } : {}) };
     });
   return [...pool, ...perms];
 }
@@ -548,7 +553,7 @@ export function manaSources(s: GameState, p: PlayerId): ManaSource[] {
 /** Can the permanent's mana be taken back (all of it still unspent in the pool)? */
 export function canUntapForMana(s: GameState, p: PlayerId, perm: Permanent): boolean {
   if (perm.controller !== p || !perm.tapped) return false;
-  return (s.players[p].pool ?? []).filter((m) => m.source === perm.iid).length === manaUnits(perm.card).length;
+  return (s.players[p].pool ?? []).filter((m) => m.source === perm.iid).length === unitsOf(s, perm).length;
 }
 
 /** How many {X} the cost has (Fireball: 1, some spells: 2). */
@@ -1031,7 +1036,10 @@ export function newGame({ decks, names, first, mode, commanders, rng = Math.rand
     graveyard: [],
     exile: [],
     landPlayed: false,
-    ...(mode?.commander ? { command: (commanders?.[p] ?? []).map((card, i) => ({ iid: `${p}-cmd-${i}`, card, commander: true })) } : {}),
+    ...(mode?.commander ? {
+      command: (commanders?.[p] ?? []).map((card, i) => ({ iid: `${p}-cmd-${i}`, card, commander: true })),
+      identity: [...new Set((commanders?.[p] ?? []).flatMap((c) => c.colorIdentity))] as Color[],
+    } : {}),
   });
   const d: GameState = {
     players: decks.map((_, p) => player(p)),
@@ -1247,7 +1255,7 @@ function payMana(d: GameState, p: PlayerId, plan: ManaPick[]) {
     }
     const perm = findPermanent(d, iid)!;
     const spent = new Set(plan.filter((m) => m.iid === iid).map((m) => m.index));
-    manaUnits(perm.card).forEach((colors, i) => {
+    unitsOf(d, perm).forEach((colors, i) => {
       if (!spent.has(i)) next.push({ colors, source: iid });
     });
     tapForManaOnly(d, perm);
@@ -2662,7 +2670,7 @@ export function apply(state: GameState, action: Action): GameState {
       const perm = findPermanent(d, action.iid);
       if (!perm || perm.controller !== p) throw new IllegalAction('noSuchAbility');
       if (!canTapForMana(d, perm)) throw new IllegalAction(perm.tapped ? 'alreadyTapped' : 'summoningSick', { card: perm.card.name });
-      const units = manaUnits(perm.card);
+      const units = unitsOf(d, perm);
       d.players[p].pool = [...(d.players[p].pool ?? []), ...units.map((colors) => ({ colors, source: perm.iid }))];
       tapForManaOnly(d, perm);
       break;
