@@ -1,7 +1,7 @@
 import type { Card } from '../../types';
 import {
   activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, entersCounters, entersTappedRule, frontText, gameRulesOf, isInstantOrSorcery,
-  KEYWORDS, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, type AbilitySpec,
+  KEYWORDS, manaLifeCost, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, type AbilitySpec,
 } from './rules';
 
 /**
@@ -102,7 +102,9 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   if (/\bAdd \{|\bAdd (?:one|two|three) mana\b/.test(line) && !spell) {
     // Command Tower: read with a five-color commander.
     const units = manaUnits({ ...one, typeLine: 'Land' }, ['W', 'U', 'B', 'R', 'G']);
-    return units.length
+    // A life-cost mana ability next to a free one is left out (see manaLifeCost).
+    const lifeLeftOut = /^\{T\}, Pay \d+ life:/.test(line) && !manaLifeCost(card);
+    return units.length && !lifeLeftOut
       ? { text: line, status: 'ok', how: `mana: ${units.map((u) => u.join('/')).join(' ')}` }
       : { text: line, status: 'unread', how: 'mana ability not understood' };
   }

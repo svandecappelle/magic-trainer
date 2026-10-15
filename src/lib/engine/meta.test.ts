@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
 import { actor, apply, canTapForMana, castOptions, IllegalAction, newGame, powerOf, toughnessOf, type GameState, type Permanent, type PlayerId } from './engine';
-import { castInfo, castSpec, parseAbilityText, spellSpec, triggersOf } from './rules';
+import { castInfo, castSpec, manaUnits, parseAbilityText, spellSpec, triggersOf } from './rules';
 
 // Cards from Standard decks on mtgtop8 (Oct 2026), with their Oracle text.
 let n = 0;
@@ -452,5 +452,47 @@ describe('Vexing Bauble', () => {
     s = settle(apply(s, { type: 'cast', iid: 'h1' }));
     for (let i = 0; i < 6 && s.stack.length; i++) s = settle(apply(s, { type: 'pass' }));
     expect(perm(s, 'Bear')).toBeDefined();
+  });
+});
+
+describe('Mana that hurts: City of Brass, Mana Confluence', () => {
+  const city = card({ name: 'City of Brass', typeLine: 'Land', oracleText: 'Whenever this land becomes tapped, it deals 1 damage to you.\n{T}: Add one mana of any color.' });
+  const confluence = card({ name: 'Mana Confluence', typeLine: 'Land', oracleText: '{T}, Pay 1 life: Add one mana of any color.' });
+  const startingTown = card({
+    name: 'Starting Town', typeLine: 'Land',
+    oracleText: 'This land enters tapped unless it\'s your first, second, or third turn of the game.\n{T}: Add {C}.\n{T}, Pay 1 life: Add one mana of any color.',
+  });
+  const bear = creature('Bear', 2, 2, { manaCost: '{G}' });
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 6 && (s.stack.length || s.triggered?.length); i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+
+  it('City of Brass deals 1 damage each time it becomes tapped', () => {
+    expect(triggersOf(city)[0]).toMatchObject({ event: { on: 'becomesTapped' }, ability: { effects: [{ kind: 'damage', amount: 1, to: 'you' }] } });
+    let s = board({ mine: [city], hand: [bear] });
+    s = resolve(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    expect(perm(s, 'Bear')).toBeDefined();
+    expect(s.players[0].life).toBe(19);
+    // Tapped by hand for mana: the damage can't be undone by untapping.
+    s.battlefield.forEach((p) => { p.tapped = false; });
+    s = apply(s, { type: 'tapForMana', iid: iidOf(s, 'City of Brass') });
+    expect(errorOf(() => apply(s, { type: 'untapForMana', iid: iidOf(s, 'City of Brass') }))).toBe('manaSpent');
+  });
+
+  it('Mana Confluence costs 1 life, and Starting Town only makes {C} for now', () => {
+    let s = board({ mine: [confluence], hand: [bear] });
+    s = resolve(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    expect(perm(s, 'Bear')).toBeDefined();
+    expect(s.players[0].life).toBe(19);
+    // At 0 life it can't be paid.
+    const t = board({ mine: [confluence] });
+    t.players[0].life = 0;
+    expect(canTapForMana(t, perm(t, 'Mana Confluence')!)).toBe(false);
+    // Swamps are tapped first; Mana Confluence only when needed.
+    let u = board({ mana: 1, mine: [confluence], hand: [creature('Rat', 1, 1, { manaCost: '{B}' })] });
+    u = resolve(settle(apply(u, { type: 'cast', iid: 'h0' })));
+    expect(u.players[0].life).toBe(20);
+    expect(manaUnits(startingTown)).toEqual([['C']]);
   });
 });

@@ -97,8 +97,9 @@ export function manaUnits(card: Card, identity?: Color[]): Color[][] {
   let best: Color[][] = [];
   const front = card.typeLine.split('//')[0];
   for (const [type, color] of BASIC_TYPES) if (front.includes(type)) single.add(color);
+  const life = manaLifeCost(card) > 0;
   for (const line of frontText(card).split('\n')) {
-    const m = line.match(/^\{T\}(?:, Sacrifice [^:]*)?:\s*Add ([^.]*)\./);
+    const m = line.match(life ? /^\{T\}, Pay \d+ life:\s*Add ([^.]*)\./ : /^\{T\}(?:, Sacrifice [^:]*)?:\s*Add ([^.]*)\./);
     if (!m) continue;
     const units = parseManaText(m[1], identity);
     if (!units) continue;
@@ -107,6 +108,17 @@ export function manaUnits(card: Card, identity?: Color[]): Color[][] {
   }
   if (best.length) return best;
   return single.size ? [[...single]] : [];
+}
+
+/**
+ * Mana Confluence: "{T}, Pay 1 life: Add one mana of any color." → 1. Only for a permanent whose sole mana ability it
+ * is: with a free one too (Starting Town's "{T}: Add {C}."), the life ability is left out (tapping makes one mana).
+ */
+export function manaLifeCost(card: Card): number {
+  const text = frontText(card);
+  const m = text.match(/^\{T\}, Pay (\d+) life:\s*Add /m);
+  const free = /^\{T\}(?:, Sacrifice [^:]*)?:\s*Add /m.test(text) || BASIC_TYPES.some(([type]) => card.typeLine.split('//')[0].includes(type));
+  return m && !free ? Number(m[1]) : 0;
 }
 
 /** Colors a permanent can tap for. */
@@ -141,7 +153,7 @@ export interface ManaSource {
   iid: string;
   colors: Color[];
   units?: Color[][];
-  /** Spent only when nothing else can pay (convoke creatures, delve cards). */
+  /** Spent only when nothing else can pay (convoke creatures, delve cards, mana that costs life or deals damage). */
   last?: boolean;
 }
 
@@ -622,9 +634,9 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
   };
   const PLAYER = '(target player|target opponent|each player|each opponent|you)';
 
-  scan(new RegExp(`deals (\\d+|X) damage to (each opponent|each player|${TARGET})${END}`, 'gi'), (m) => {
+  scan(new RegExp(`deals (\\d+|X) damage to (each opponent|each player|you|${TARGET})${END}`, 'gi'), (m) => {
     const w = m[2].toLowerCase();
-    const to = w === 'each opponent' ? 'each-opponent' : w === 'each player' ? 'each-player' : slotFor(m[2]);
+    const to = w === 'each opponent' ? 'each-opponent' : w === 'each player' ? 'each-player' : w === 'you' ? 'you' : slotFor(m[2]);
     return to && { kind: 'damage', amount: toAmount(m[1]), to };
   });
   scan(/deals (\d+|X) damage to each (creature[a-z ,'-]*?)(?: and each (player|opponent))?(?=\.)/gi, (m) => {
@@ -1156,7 +1168,9 @@ export type TriggerEvent =
   /** Whenever you gain life. */
   | { on: 'gainLife' }
   /** Vexing Bauble: "Whenever a player casts a spell, if no mana was spent to cast it, …" (the ability's slot 0 is that spell). */
-  | { on: 'castWithoutMana' };
+  | { on: 'castWithoutMana' }
+  /** City of Brass: "Whenever this land becomes tapped, …" (not when it enters tapped). */
+  | { on: 'becomesTapped' };
 
 export interface TriggerSpec {
   event: TriggerEvent;
@@ -1302,6 +1316,12 @@ export function triggersOf(card: Card): TriggerSpec[] {
         event: { on: 'castWithoutMana' },
         ability: { targets: [{ kind: 'spell', min: 1, max: 1, filter: {} }], effects: [{ kind: 'counter', to: { slot: 0 } }] },
       });
+      continue;
+    }
+
+    const tapped = line.match(/^Whenever (.+?) becomes tapped, (.+)$/i);
+    if (tapped && selves.includes(tapped[1].toLowerCase())) {
+      out.push({ event: { on: 'becomesTapped' }, ability: triggerAbility(tapped[2], name, true) });
       continue;
     }
 

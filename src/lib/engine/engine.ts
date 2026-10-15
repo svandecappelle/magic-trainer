@@ -1,7 +1,7 @@
 import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
-  cardTypes, findPayment, hasInstantSpeed, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
+  cardTypes, findPayment, hasInstantSpeed, manaLifeCost, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
   activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, isPlaneswalker, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type CastChoice, type Cost, type ObjectEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
@@ -519,7 +519,11 @@ export const unitsOf = (s: GameState, perm: Permanent) => manaUnits(perm.card, s
 
 /** Can this permanent be tapped for mana now? */
 export const canTapForMana = (s: GameState, perm: Permanent) =>
-  !perm.tapped && !(isCreature(perm.card) && perm.sick && !hasKw(perm, 'haste')) && unitsOf(s, perm).length > 0 && !activationsForbidden(s, perm);
+  !perm.tapped && !(isCreature(perm.card) && perm.sick && !hasKw(perm, 'haste')) && unitsOf(s, perm).length > 0 && !activationsForbidden(s, perm) &&
+  s.players[perm.controller].life >= manaLifeCost(perm.card);
+
+/** Tapping it for mana costs life (Mana Confluence) or deals damage (City of Brass): tapped last, and can't be undone. */
+const painfulMana = (perm: Permanent) => manaLifeCost(perm.card) > 0 || triggersOf(perm.card).some((t) => t.event.on === 'becomesTapped');
 
 /** Permanents on the battlefield with a rule-changing static ability. */
 const withRule = (s: GameState, rule: GameRule) => s.battlefield.filter((x) => gameRulesOf(x.card).includes(rule));
@@ -547,14 +551,14 @@ export function manaSources(s: GameState, p: PlayerId): ManaSource[] {
     .filter((x) => x.controller === p && canTapForMana(s, x))
     .map((x): ManaSource => {
       const units = unitsOf(s, x);
-      return { iid: x.iid, colors: [...new Set(units.flat())], ...(units.length > 1 ? { units } : {}) };
+      return { iid: x.iid, colors: [...new Set(units.flat())], ...(units.length > 1 ? { units } : {}), ...(painfulMana(x) ? { last: true } : {}) };
     });
   return [...pool, ...perms];
 }
 
 /** Can the permanent's mana be taken back (all of it still unspent in the pool)? */
 export function canUntapForMana(s: GameState, p: PlayerId, perm: Permanent): boolean {
-  if (perm.controller !== p || !perm.tapped) return false;
+  if (perm.controller !== p || !perm.tapped || painfulMana(perm)) return false;
   return (s.players[p].pool ?? []).filter((m) => m.source === perm.iid).length === unitsOf(s, perm).length;
 }
 
@@ -1247,7 +1251,7 @@ function payMana(d: GameState, p: PlayerId, plan: ManaPick[]) {
   const next = pool.filter((_, i) => !spentPool.has(i));
   for (const iid of new Set(plan.filter((m) => !m.iid.startsWith('pool:')).map((m) => m.iid))) {
     if (iid.startsWith('convoke:')) {
-      findPermanent(d, iid.slice(8))!.tapped = true;
+      tapPermanent(d, findPermanent(d, iid.slice(8))!);
       continue;
     }
     if (iid.startsWith('delve:')) {
@@ -1267,9 +1271,18 @@ function payMana(d: GameState, p: PlayerId, plan: ManaPick[]) {
   else delete ps.pool;
 }
 
+/** Taps an untapped permanent: City of Brass's "whenever this land becomes tapped" triggers. */
+function tapPermanent(d: GameState, perm: Permanent) {
+  if (perm.tapped) return;
+  perm.tapped = true;
+  for (const t of triggersOf(perm.card)) if (t.event.on === 'becomesTapped') queueTrigger(d, perm, perm.controller, t.ability);
+}
+
 /** Taps a mana source (sacrificing a Treasure); the caller deals with its mana. */
 function tapForManaOnly(d: GameState, perm: Permanent) {
-  perm.tapped = true;
+  tapPermanent(d, perm);
+  const life = manaLifeCost(perm.card);
+  if (life) changeLife(d, perm.controller, -life);
   if (/\{T\}, Sacrifice [^:]*: Add/i.test(perm.card.oracleText)) sacrifice(d, perm);
 }
 
@@ -1944,7 +1957,8 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
     }
     case 'tap':
       for (const perm of perms) {
-        perm.tapped = !e.untap;
+        if (e.untap) perm.tapped = false;
+        else tapPermanent(d, perm);
         log(d, { k: 'tapped', card: perm.card.name, untap: e.untap });
       }
       break;
@@ -2330,7 +2344,7 @@ function declareAttacks(d: GameState, p: PlayerId, ids: string[], pw: Record<str
     }
     targets[aid] = pwIid;
   }
-  for (const a of attackers) if (!hasKw(a, 'vigilance')) a.tapped = true;
+  for (const a of attackers) if (!hasKw(a, 'vigilance')) tapPermanent(d, a);
   d.attackers = [...d.attackers, ...attackers.map((a) => a.iid)];
   if (Object.keys(targets).length) d.attackTargets = targets;
   d.blocks = {};
@@ -2654,7 +2668,7 @@ export function apply(state: GameState, action: Action): GameState {
       const targets = checkTargets(d, p, perm.card, spec.ability, action.targets ?? []);
 
       pay(d, p, sourcesFor(d, perm, spec), abilityCost(spec, x));
-      if (spec.cost.tap) perm.tapped = true;
+      if (spec.cost.tap) tapPermanent(d, perm);
       if (spec.cost.life) changeLife(d, p, -spec.cost.life);
       if (spec.once || spec.cost.loyalty !== undefined) perm.used = [...(perm.used ?? []), action.index];
       if (spec.cost.loyalty !== undefined) {
