@@ -69,6 +69,8 @@ export interface StackItem extends CardInst {
   modes?: number[];
   kicked?: boolean;
   from?: CastZone;
+  /** A spell cast without spending mana (free spells, all convoke or delve): Vexing Bauble counters it. */
+  noMana?: boolean;
 }
 
 /** Where a spell is cast from: hand, graveyard (flashback) or exile (a creature back from its adventure). */
@@ -793,6 +795,7 @@ function finishCast(d: GameState, item: StackItem, named: LogTarget[]) {
     k: 'cast', p, card: faceName(item.card, item.face ?? 0), ...(named.length ? { targets: named } : {}), ...(item.kicked ? { kicked: true } : {}), ...(item.from ? { from: item.from } : {}),
   });
   fireCast(d, p, card);
+  if (item.noMana) fireCastWithoutMana(d, item);
   fireWard(d, item);
   if (d.priority) {
     d.priority.passes = 0;
@@ -1388,6 +1391,17 @@ function fireCast(d: GameState, p: PlayerId, card: Card) {
     if (x.controller !== p) continue;
     for (const t of triggersOf(x.card)) {
       if (t.event.on === 'cast' && cardMatches(card, t.event.filter)) queueTrigger(d, x, p, t.ability);
+    }
+  }
+}
+
+/** A spell was cast without spending mana: Vexing Bauble's trigger, aimed at that spell. */
+function fireCastWithoutMana(d: GameState, item: StackItem) {
+  for (const x of d.battlefield) {
+    for (const t of triggersOf(x.card)) {
+      if (t.event.on === 'castWithoutMana') {
+        (d.triggered ??= []).push({ source: { iid: x.iid, card: x.card }, controller: x.controller, ability: t.ability, targets: [[{ kind: 'spell', iid: item.iid }]] });
+      }
     }
   }
 }
@@ -2584,9 +2598,11 @@ export function apply(state: GameState, action: Action): GameState {
         if (problem) throw problem;
       }
 
-      if (!pay(d, p, castSources(d, p, inst.card, inst.iid, face), castCost(d, p, inst.card, { face, kicked, from, iid: inst.iid }, x))) {
-        throw new IllegalAction('notEnoughMana', { card: card.name });
-      }
+      const plan = planPayment(castSources(d, p, inst.card, inst.iid, face), castCost(d, p, inst.card, { face, kicked, from, iid: inst.iid }, x));
+      if (!plan) throw new IllegalAction('notEnoughMana', { card: card.name });
+      payMana(d, p, plan);
+      // Creatures tapped for convoke and cards exiled for delve aren't mana.
+      const noMana = plan.every((m) => /^(?:convoke|delve):/.test(m.iid));
       if (from === 'hand') me.hand = me.hand.filter((c) => c.iid !== inst.iid);
       else if (from === 'graveyard') me.graveyard = me.graveyard.filter((c) => c.iid !== inst.iid);
       else if (from === 'command') {
@@ -2597,7 +2613,7 @@ export function apply(state: GameState, action: Action): GameState {
       const item: StackItem = {
         iid: inst.iid, card: inst.card, controller: p, targets, ...(xCount(card) ? { x } : {}),
         ...(face ? { face } : {}), ...(modes ? { modes } : {}), ...(kicked ? { kicked } : {}), ...(from !== 'hand' ? { from } : {}),
-        ...(inst.commander ? { commander: true } : {}),
+        ...(inst.commander ? { commander: true } : {}), ...(noMana ? { noMana } : {}),
       };
       if (extra && payExtraCost(d, p, extra, item, named)) break;
       finishCast(d, item, named);

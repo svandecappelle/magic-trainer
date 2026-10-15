@@ -1154,7 +1154,9 @@ export type TriggerEvent =
   /** Whenever you cast a spell matching the card words ("noncreature", "instant or sorcery"). */
   | { on: 'cast'; filter: TargetFilter }
   /** Whenever you gain life. */
-  | { on: 'gainLife' };
+  | { on: 'gainLife' }
+  /** Vexing Bauble: "Whenever a player casts a spell, if no mana was spent to cast it, …" (the ability's slot 0 is that spell). */
+  | { on: 'castWithoutMana' };
 
 export interface TriggerSpec {
   event: TriggerEvent;
@@ -1291,6 +1293,15 @@ export function triggersOf(card: Card): TriggerSpec[] {
       const w = step[1].toLowerCase();
       const whose = w === 'your' ? 'you' : w === "each opponent's" ? 'opponent' : 'each';
       out.push({ event: { on: step[2].toLowerCase() === 'upkeep' ? 'upkeep' : 'endStep', whose }, ability: triggerAbility(step[3], name, true) });
+      continue;
+    }
+
+    // Vexing Bauble: "Whenever a player casts a spell, if no mana was spent to cast it, counter that spell."
+    if (/^Whenever a player casts a spell, if no mana was spent to cast it, counter that spell\.$/i.test(line)) {
+      out.push({
+        event: { on: 'castWithoutMana' },
+        ability: { targets: [{ kind: 'spell', min: 1, max: 1, filter: {} }], effects: [{ kind: 'counter', to: { slot: 0 } }] },
+      });
       continue;
     }
 

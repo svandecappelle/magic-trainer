@@ -432,3 +432,25 @@ describe('Command Tower and Arcane Signet (commander\'s color identity)', () => 
     expect(canTapForMana(duel, perm(duel, 'Command Tower')!)).toBe(false);
   });
 });
+
+describe('Vexing Bauble', () => {
+  const bauble = card({
+    name: 'Vexing Bauble', typeLine: 'Artifact', manaCost: '{1}', cmc: 1,
+    oracleText: 'Whenever a player casts a spell, if no mana was spent to cast it, counter that spell.\n{1}, {T}, Sacrifice this artifact: Draw a card.',
+  });
+  const ornithopter = creature('Ornithopter', 0, 2, { manaCost: '{0}', cmc: 0, typeLine: 'Artifact Creature — Thopter', keywords: ['Flying'] });
+
+  it('counters a spell cast without mana, not one paid with mana', () => {
+    expect(triggersOf(bauble)[0]).toMatchObject({ event: { on: 'castWithoutMana' }, ability: { effects: [{ kind: 'counter' }] } });
+    // The opponent's Bauble counters my free spell.
+    let s = board({ mana: 1, theirs: [bauble], hand: [ornithopter, creature('Bear', 2, 2)] });
+    s = settle(apply(s, { type: 'cast', iid: 'h0' }));
+    for (let i = 0; i < 6 && s.stack.length; i++) s = settle(apply(s, { type: 'pass' }));
+    expect(perm(s, 'Ornithopter')).toBeUndefined();
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toContain('Ornithopter');
+    // A spell paid with a Swamp resolves.
+    s = settle(apply(s, { type: 'cast', iid: 'h1' }));
+    for (let i = 0; i < 6 && s.stack.length; i++) s = settle(apply(s, { type: 'pass' }));
+    expect(perm(s, 'Bear')).toBeDefined();
+  });
+});
