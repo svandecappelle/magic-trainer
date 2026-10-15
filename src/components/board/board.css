@@ -464,6 +464,11 @@
   .choice-dock { position: fixed; top: auto; bottom: 8px; left: 50%; margin: 0; max-width: calc(100vw - 16px); max-height: 60dvh; overflow: auto; }
 }
 
+/* Portrait phones: the tab bar takes the bottom of the screen. */
+@media (max-width: 640px) {
+  .board { height: calc(100dvh - 52px - var(--tabbar-h)); }
+}
+
 /* Landscape phones: lands and creatures side by side, to save height. */
 @media (max-height: 560px) {
   .battlefield { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: center; }

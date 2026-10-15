@@ -205,6 +205,7 @@ export const fr: Messages = {
     turn: 'Tour',
     log: 'Journal',
     language: 'Langue',
+    sections: 'Rubriques',
   },
   nav: {
     decks: 'Decks',
@@ -214,6 +215,7 @@ export const fr: Messages = {
     online: 'En ligne',
     life: 'Points de vie',
   },
+  tabs: { decks: 'Decks', collection: 'Collection', goldfish: 'Goldfish', play: 'Bot', online: 'En ligne', life: 'Vie' },
   footer: {
     dataFrom: 'Données et images des cartes :',
     wotc: 'Magic: The Gathering est © Wizards of the Coast.',

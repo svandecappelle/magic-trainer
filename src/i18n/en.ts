@@ -198,6 +198,7 @@ export const en = {
     turn: 'Turn',
     log: 'Log',
     language: 'Language',
+    sections: 'Sections',
   },
   nav: {
     decks: 'Decks',
@@ -207,6 +208,8 @@ export const en = {
     online: 'Play Online',
     life: 'Life tracker',
   },
+  /** Short labels of the phone tab bar. */
+  tabs: { decks: 'Decks', collection: 'Collection', goldfish: 'Goldfish', play: 'Bot', online: 'Online', life: 'Life' },
   footer: {
     dataFrom: 'Card data and images from',
     wotc: 'Magic: The Gathering is © Wizards of the Coast.',
