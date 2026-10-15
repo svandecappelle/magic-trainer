@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useT } from '../i18n';
 import { useCardDisplay } from '../lib/cardLocale';
 import { goldfishReducer, initialState, type GoldfishLogEntry, type Instance, type Zone } from '../lib/goldfish';
-import { isLand } from '../lib/stats';
+import { countCards, isLand } from '../lib/stats';
 import { useApp } from '../store/useApp';
 import type { Card } from '../types';
 
@@ -67,11 +67,15 @@ export function Goldfish() {
         {decks.length === 0 ? (
           <p className="muted">{t.goldfish.noDecks} <Link to="/decks">{t.goldfish.createOne}</Link>.</p>
         ) : (
-          <ul className="plain-list">
+          <div className="deck-tiles">
             {decks.map((d) => (
-              <li key={d.id}><Link to={`/goldfish/${d.id}`}>{d.name}</Link></li>
+              <article key={d.id} className="panel deck-tile">
+                <span className="tile-name">{d.name}</span>
+                <span className="small muted">{t.home.deckLine(countCards(d.entries.filter((e) => e.board === 'main')), 0)}</span>
+                <Link className="button" to={`/goldfish/${d.id}`}>{t.home.goldfish}</Link>
+              </article>
             ))}
-          </ul>
+          </div>
         )}
       </div>
     );
