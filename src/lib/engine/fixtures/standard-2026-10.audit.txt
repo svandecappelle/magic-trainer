@@ -324,15 +324,6 @@ NONE     Winternight Stories {2}{U} — Sorcery
       keyword not simulated: harmonize
   ✗ Draw three cards. Then discard two cards unless you discard a creatur…
       spell not simulated
-NONE     Yuriko, Hope from the Shadows {U} — Legendary Creature — Human Ninja
-  ✓ Flash
-      keyword
-  ✗ When Yuriko enters, choose one —
-      trigger (enters), effect not simulated
-  ✗ • Target creature gets -X/-0 until end of turn, where X is the number…
-      mode of the ability above
-  ✗ • Surveil 2.
-      mode of the ability above
 NONE     Zoraline, Cosmos Caller {1}{W}{B} — Legendary Creature — Bat Cleric
   ✓ Flying, vigilance
       keyword
@@ -557,13 +548,6 @@ PARTIAL  Petrified Hamlet  — Land
       mana ability not understood
   ✓ {T}: Add {C}.
       mana: C
-PARTIAL  Pinecone Strike {1}{R} — Instant
-  ✓ Choose one or both —
-      modal: choose 1–2
-  ✓ • Pinecone Strike deals 3 damage to target creature. If that creature…
-      mode
-  ✗ • Destroy target artifact token.
-      mode not simulated (can't be chosen)
 PARTIAL  Prismari Charm {U}{R} — Instant
   ✓ Choose one —
       modal: choose 1–1
@@ -653,6 +637,15 @@ PARTIAL  Wild Ride {R} — Sorcery
       keyword not simulated: harmonize
   ✓ Target creature gets +3/+0 and gains haste until end of turn.
       spell → pump (1 target)
+PARTIAL  Yuriko, Hope from the Shadows {U} — Legendary Creature — Human Ninja
+  ✓ Flash
+      keyword
+  ✓ When Yuriko enters, choose one —
+      trigger (enters) → choose 1–1 modes
+  ✗ • Target creature gets -X/-0 until end of turn, where X is the number…
+      mode not simulated (can't be chosen)
+  ✓ • Surveil 2.
+      mode → surveil
 OK       Abandoned Air Temple  — Land
   ✓ This land enters tapped unless you control a basic land.
       enters tapped (unlessBasic)
@@ -837,6 +830,13 @@ OK       No More Lies {W}{U} — Instant
 OK       Octopus Form {U} — Instant — Lesson
   ✓ Target creature you control gets +1/+1 and gains hexproof until end o…
       spell → pump+tap (1 target)
+OK       Pinecone Strike {1}{R} — Instant
+  ✓ Choose one or both —
+      modal: choose 1–2
+  ✓ • Pinecone Strike deals 3 damage to target creature. If that creature…
+      mode
+  ✓ • Destroy target artifact token.
+      mode
 OK       Pompous Battlemage // Improvised Act {R} // {R} — Creature — Goblin Sorcerer // Sorcery (other faces not audited)
   ✓ Prowess
       keyword
@@ -961,5 +961,5 @@ OK       Watery Grave  — Land — Island Swamp
   ✓ As this land enters, you may pay 2 life. If you don't, it enters tapp…
       enters tapped (payLife)
 
-178 cards: 69 ok, 43 partial, 66 not simulated, 0 can't be cast
+178 cards: 70 ok, 43 partial, 65 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

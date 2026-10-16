@@ -181,8 +181,16 @@ would die this turn".
 Still missing, most played first:
 - [ ] "Look at the top N cards …" variants still missing (Consult the Star Charts, Sleight of Hand, Flow State; Stock
   Up and Dáin's Company done)
-- [ ] Modal triggers "When … enters, choose one —" (Yuriko) and reflexive triggers "When you do / … this way"
-  (Seasoned Cryomancer, Zoraline)
+- [x] Modal triggers "When … enters, choose one —" / "choose up to one —": the mode is chosen as the trigger goes on
+  the stack, then its targets; modes not understood or without a legal target can't be chosen (Kutzil's Flanker,
+  Gaius van Baelsar, Yuriko's surveil, Charming Scoundrel, Hullbreaker Horror's bounce). Edicts and targets read
+  "token" / "nontoken" (Gaius, Pinecone Strike); "Exile target player's graveyard"
+- [x] Reflexive triggers "you may discard a card / pay {…} (and N life). When you do, …": the "When you do" part
+  triggers with its own targets (Inti, Icewrought Sentry, Thousand Moons Crackshot); "Whenever you attack" (Inti)
+- [ ] Reflexive triggers still not simulated: other costs (sacrifice: Ruthless Lawbringer; energy: Guide of Souls;
+  remove a counter: Leatherhead), "When you discard one or more nonland cards this way" (Seasoned Cryomancer), finality
+  and stun counters (Zoraline, Grim Reaper, Snaremaster Sprite), "can't block this turn" (Ty Lee); Inti's "Whenever
+  you discard one or more cards" (impulse draw)
 - [ ] Mill, then "you may return a … card from your graveyard to your hand" (Overlord of the Balemurk); impending
 - [ ] Spree and Tiered (Three Steps Ahead, Requisition Raid, Return the Favor, Fire Magic): modes with extra costs
 - [ ] Blink: "exile …, then return it to the battlefield" (Daydream); "exile … until this leaves the battlefield"

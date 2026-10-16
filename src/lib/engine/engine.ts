@@ -1,7 +1,7 @@
 import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
-  cardTypes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
+  cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
   activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type CastChoice, type Cost, type ObjectEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
@@ -199,7 +199,10 @@ export type ChoicePurpose =
   | 'creatureType' // Cavern of Souls: "choose a creature type"
   | 'crewCost' // Crew N: which creatures to tap
   | 'dig' // "look at the top N cards …": which to put into the hand
-  | 'tradeForCard'; // Chandra's +2: sacrifice an artifact or discard a card (or neither)
+  | 'tradeForCard' // Chandra's +2: sacrifice an artifact or discard a card (or neither)
+  | 'reflexiveCost' // "you may discard a card. When you do, …": which card, or none
+  | 'reflexivePay' // "you may pay {W}{B} and 2 life. When you do, …"
+  | 'triggerMode'; // a modal trigger ("When … enters, choose one —"): which mode
 
 /** Where "arrange" choices may put cards (scry: top/bottom, surveil: top/graveyard). */
 export type ArrangeZone = 'top' | 'bottom' | 'graveyard';
@@ -212,7 +215,8 @@ export type Choice = { player: PlayerId; purpose: ChoicePurpose; params?: ErrorP
   | { kind: 'cards'; min: number; max: number; options: CardInst[] }
   /** Put each card in one of `zones`; for "top", listed first means on top. */
   | { kind: 'arrange'; cards: CardInst[]; zones: ArrangeZone[] }
-  | { kind: 'mode'; min: number; max: number; modes: string[] }
+  /** `disabled`: modes that can't be chosen (not simulated, or no legal target). */
+  | { kind: 'mode'; min: number; max: number; modes: string[]; disabled?: number[] }
   | { kind: 'yesNo' }
   /** Targets for each slot, like casting a spell. `source` is where the ability comes from. */
   | { kind: 'targets'; slots: TargetSpec[]; source: CardInst }
@@ -231,7 +235,7 @@ export interface Pending {
    * What continues once answered: the end of turn, the spell or ability being resolved, or a
    * triggered ability waiting for targets (`trigger`).
    */
-  resume: 'cleanup' | 'effect' | 'trigger' | 'activation' | 'legend' | 'payLife' | 'castCost' | 'clone' | 'damageOrder' | 'creatureType' | 'crew';
+  resume: 'cleanup' | 'effect' | 'trigger' | 'activation' | 'legend' | 'payLife' | 'castCost' | 'clone' | 'damageOrder' | 'creatureType' | 'crew' | 'triggerMode';
   /** For clone: the window the resolving spell belongs to. */
   reason?: WindowReason;
   /** For payLife: the land that entered. */
@@ -1011,6 +1015,7 @@ function matchesFilter(s: GameState, f: TargetFilter, caster: PlayerId, x: CardI
   if (f.maxPower !== undefined && pow > f.maxPower) return false;
   // Battlefield-only conditions.
   if (f.tapped !== undefined && perm?.tapped !== f.tapped) return false;
+  if (f.token !== undefined && (!perm || isToken(printedCard(perm)) !== f.token)) return false;
   const attacking = !!perm && s.attackers.includes(perm.iid);
   const blocking = !!perm && blockerIds(s).includes(perm.iid);
   if (f.attacking && !attacking) return false;
@@ -1144,7 +1149,7 @@ export function validateAnswer(choice: Choice, answer: Answer): void {
   } else if (choice.kind === 'mode' && answer.kind === 'mode') {
     const modes = new Set(answer.modes);
     if (modes.size !== answer.modes.length || modes.size < choice.min || modes.size > choice.max) throw bad();
-    if (answer.modes.some((m) => !Number.isInteger(m) || m < 0 || m >= choice.modes.length)) throw bad();
+    if (answer.modes.some((m) => !Number.isInteger(m) || m < 0 || m >= choice.modes.length || choice.disabled?.includes(m))) throw bad();
   } else if (choice.kind === 'targets' && answer.kind === 'targets') {
     if (!Array.isArray(answer.targets) || answer.targets.length > choice.slots.length || answer.targets.some((ts) => !Array.isArray(ts))) throw bad();
   }
@@ -1743,6 +1748,27 @@ function flushTrigger(d: GameState): boolean {
   const i = Math.max(0, queue.findIndex((t) => t.controller === d.active));
   const [t] = queue.splice(i, 1);
   if (!queue.length) delete d.triggered;
+  const modal = t.ability.modal;
+  if (modal) {
+    // "choose one —": modes that aren't understood, or have no legal target, can't be chosen.
+    const disabled = modal.specs.flatMap((sp, k) =>
+      !sp.effects.length || sp.targets.some((slot) => legalTargets(d, t.controller, slot, undefined, t.source.card).length < slot.min) ? [k] : []);
+    if (modal.min > modal.specs.length - disabled.length) {
+      log(d, { k: 'noTarget', card: t.source.card.name });
+      return true;
+    }
+    d.pending = {
+      choice: { kind: 'mode', player: t.controller, purpose: 'triggerMode', min: modal.min, max: modal.max, modes: modal.texts, disabled, params: { card: t.source.card.name } },
+      resume: 'triggerMode',
+      trigger: t,
+    };
+    return false;
+  }
+  return stackTrigger(d, t);
+}
+
+/** Puts a trigger on the stack, or asks its controller for its targets first (false then). */
+function stackTrigger(d: GameState, t: Triggered): boolean {
   const slots = t.ability.targets;
   if (!slots.length) {
     pushAbility(d, t, []);
@@ -2383,6 +2409,33 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       } else r.stopped = true;
       break;
     }
+    case 'reflexive': {
+      // "you may discard a card. When you do, …" / "you may pay {W}{B} and 2 life. When you do, …"
+      const ps = d.players[caster];
+      if (e.cost.discard) {
+        if (!ps.hand.length) break;
+        if (answer?.kind !== 'cards') return { kind: 'cards', player: caster, purpose: 'reflexiveCost', min: 0, max: 1, options: ps.hand, params: { card: item.card.name } };
+        const picked = answer.iids[0];
+        const inst = ps.hand.find((c) => c.iid === picked);
+        if (!inst) break;
+        moveToGraveyard(d, caster, inst, 'hand');
+        log(d, { k: 'discard', p: caster, card: inst.card.name });
+      } else {
+        const cost = parseCost(e.cost.mana ?? '');
+        const life = e.cost.life ?? 0;
+        const sources = manaSources(d, caster);
+        if (!findPayment(sources, cost) || ps.life < life) break;
+        if (answer?.kind !== 'yesNo') {
+          return { kind: 'yesNo', player: caster, purpose: 'reflexivePay', params: { card: item.card.name, cost: e.cost.mana ?? '', life } };
+        }
+        if (!answer.yes) break;
+        pay(d, caster, sources, cost);
+        if (life) changeLife(d, caster, -life);
+      }
+      // "When you do": a new trigger, its targets chosen now.
+      (d.triggered ??= []).push({ source: { iid: item.source ?? item.iid, card: item.card }, controller: caster, ability: e.then });
+      break;
+    }
     case 'gainAbility': {
       // The Saga keeps the ability while it stays; what leaves the battlefield is the printed card.
       const src = item.source ? findPermanent(d, item.source) : undefined;
@@ -2744,6 +2797,12 @@ function declareAttacks(d: GameState, p: PlayerId, ids: string[], pw: Record<str
     log(d, { k: 'attackPlaneswalker', card: findPermanent(d, aid)!.card.name, pw: findPermanent(d, pwIid)!.card.name });
   }
   for (const a of attackers) fireObject(d, 'attacks', a);
+  // "Whenever you attack".
+  if (attackers.length) {
+    for (const x of d.battlefield) {
+      if (x.controller === p) for (const t of triggersOf(x.card)) if (t.event.on === 'youAttack') queueTrigger(d, x, p, t.ability);
+    }
+  }
   // The next head of the team with creatures able to attack.
   const declared = [...(d.declared ?? []), p];
   const next = teamPlayers(d, d.active).find((q) => !declared.includes(q) && creaturesOf(d, q).some(canAttack));
@@ -2887,7 +2946,10 @@ export function apply(state: GameState, action: Action): GameState {
       validateAnswer(pending.choice, action.answer);
       d.pending = null;
       if (pending.resume === 'cleanup' && action.answer.kind === 'cards') finishCleanup(d, pending.choice.player, action.answer.iids);
-      else if (pending.resume === 'trigger' && action.answer.kind === 'targets') {
+      else if (pending.resume === 'triggerMode' && action.answer.kind === 'mode') {
+        const t = pending.trigger!;
+        stackTrigger(d, { ...t, ability: chosenModes(t.ability, action.answer.modes) });
+      } else if (pending.resume === 'trigger' && action.answer.kind === 'targets') {
         const t = pending.trigger!;
         pushAbility(d, t, checkTargets(d, t.controller, t.source.card, t.ability, action.answer.targets));
       } else if (pending.resume === 'legend' && action.answer.kind === 'cards') {

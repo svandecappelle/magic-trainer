@@ -1,7 +1,7 @@
 import {
   abilityMaxX, activatable, activationProblem, canPayAbility, actor, channelCost, crewOptions, firstOpponent, mulliganBottom, isActivePlayer, opponentsOf, teamOf, canAttack, castCost, castOptions, castSources, findInGraveyard, landFaces, manaSources, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
   legalTargets, matching, maxX, powerOf, toughnessOf, xCount,
-  type Action, type Answer, type CastOption, type CardInst, type Choice, type GameState, type Permanent, type PlayerId, type StackItem, type Target,
+  type Action, type Answer, type CastOption, type CardInst, type Choice, type GameState, type Permanent, type PlayerId, type StackItem, type Target, type Triggered,
 } from './engine';
 import {
   activatedOf, auraTarget, castInfo, castSpec, creatureValue, modeSets, faceCard, findPayment, hasInstantSpeed, isAdventure, isPlaneswalker, isSaga, isToken, staticsOf, hasKeyword, isCreature, isInstantOrSorcery, isLandCard, manaColors,
@@ -346,6 +346,29 @@ function crewVehicles(s: GameState, me: PlayerId): Action | null {
     if (power >= n && powerOf(v) > lost) return { type: 'activate', iid: v.iid, index };
   }
   return null;
+}
+
+/** The reflexive ability resolving now ("When you do, …") has a legal target for each of its slots. */
+function reflexiveUseful(s: GameState, me: PlayerId): boolean {
+  const item = s.resolving?.item;
+  const e = item?.ability?.effects.find((x) => x.kind === 'reflexive');
+  if (!item || e?.kind !== 'reflexive') return false;
+  return e.then.targets.every((slot) => legalTargets(s, me, slot, undefined, item.card).length >= Math.max(1, slot.min));
+}
+
+/**
+ * The modes of a modal trigger: those that would be played as a spell (with a good target), targeted ones first; then
+ * any allowed one if some must be chosen.
+ */
+function triggerModes(s: GameState, me: PlayerId, t: Triggered): number[] {
+  const modal = t.ability.modal!;
+  const disabled = s.pending?.choice.kind === 'mode' ? s.pending.choice.disabled ?? [] : [];
+  const allowed = modal.specs.map((_, i) => i).filter((i) => !disabled.includes(i));
+  const good = (i: number) => playWithGoodTarget(s, me, { spec: modal.specs[i], source: t.source.card, hasX: false, maxX: 0, act: () => ({ type: 'pass' }) }) !== null;
+  const ranked = [...allowed.filter((i) => good(i) && modal.specs[i].targets.length), ...allowed.filter((i) => good(i) && !modal.specs[i].targets.length)];
+  const picked = ranked.slice(0, modal.max);
+  for (const i of allowed) if (picked.length < modal.min && !picked.includes(i)) picked.push(i);
+  return picked.sort((a, b) => a - b);
 }
 
 /**
@@ -858,6 +881,12 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
         options.sort((a, b) => cardWorth(b.card) - cardWorth(a.card));
         return { kind: 'cards', iids: options.slice(0, choice.max).map((c) => c.iid) };
       }
+      if (!safe && choice.purpose === 'reflexiveCost') {
+        // Inti: a spare land, when the "When you do" part has something to target.
+        const hand = s.players[choice.player].hand;
+        const spareLand = hand.filter((c) => isLandCard(c.card)).length >= 2 ? options.find((c) => isLandCard(c.card)) : undefined;
+        return { kind: 'cards', iids: spareLand && reflexiveUseful(s, choice.player) ? [spareLand.iid] : [] };
+      }
       if (!safe && choice.purpose === 'tradeForCard') {
         // Chandra's +2: a spare land from the hand, or an artifact token; otherwise nothing.
         const hand = s.players[choice.player].hand;
@@ -923,6 +952,7 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
       };
     }
     case 'mode':
+      if (choice.purpose === 'triggerMode' && s.pending?.trigger?.ability.modal) return { kind: 'mode', modes: triggerModes(s, choice.player, s.pending.trigger) };
       return { kind: 'mode', modes: Array.from({ length: choice.min }, (_, i) => i) };
     case 'yesNo':
       // Paying to keep our spell is worth it; our own "you may" abilities are used.
@@ -933,6 +963,7 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
         const life = String(choice.params?.no).startsWith('life:');
         return { kind: 'yesNo', yes: safe || !life || s.players[choice.player].life <= 10 };
       }
+      if (choice.purpose === 'reflexivePay') return { kind: 'yesNo', yes: !safe && reflexiveUseful(s, choice.player) && s.players[choice.player].life > Number(choice.params?.life ?? 0) + 5 };
       return { kind: 'yesNo', yes: !safe && (choice.purpose === 'payOrCounter' || choice.purpose === 'optional') };
     case 'targets':
       return { kind: 'targets', targets: triggerTargets(s, choice.player, { targets: choice.slots, effects: triggerEffects(s, choice) }, safe, choice.source.card) };

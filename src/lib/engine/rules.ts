@@ -342,6 +342,8 @@ export interface TargetFilter {
   nonSubtypes?: string[];
   /** At least one of these subtypes ("Forest or Plains card"), lower case. */
   subtypes?: string[];
+  /** "creature token" (true), "nontoken creature" (false). */
+  token?: boolean;
 }
 
 /**
@@ -462,6 +464,13 @@ export type Effect =
   /** Chandra's −7: "You get an emblem with \"…\"" (the emblem's ability). */
   | { kind: 'emblem'; text: string }
   /**
+   * A reflexive trigger: "you may discard a card. When you do, …" (Inti), "you may pay {W}{B} and 2 life. When you
+   * do, …" (Zoraline). Paid as it resolves; then `then` triggers, its targets chosen at that time.
+   */
+  | { kind: 'reflexive'; cost: { discard?: number; mana?: string; life?: number }; then: AbilitySpec }
+  /** A modal trigger ("When … enters, choose one —"): stands for its modes (`AbilitySpec.modal`) until chosen. */
+  | { kind: 'chooseModes' }
+  /**
    * Chandra's +2: "You may sacrifice an artifact or discard a card. If you do, draw a card." (The draw is the next
    * effect; it's skipped when nothing was paid.)
    */
@@ -526,7 +535,16 @@ export interface AbilitySpec {
   condition?: { gained?: number; lost?: boolean };
   /** A Saga's chapter ability: its Saga isn't sacrificed while it waits or is on the stack. */
   chapter?: number;
+  /**
+   * A modal trigger: its modes, chosen as it goes on the stack. A mode with no effects isn't understood and can't be
+   * chosen.
+   */
+  modal?: { min: number; max: number; texts: string[]; specs: AbilitySpec[] };
 }
+
+/** The ability a modal trigger becomes with these modes. */
+export const chosenModes = (spec: AbilitySpec, modes: number[]): AbilitySpec =>
+  ({ ...combine(modes.map((i) => spec.modal!.specs[i])), ...(spec.chapter ? { chapter: spec.chapter } : {}) });
 
 const WORD_NUMBERS: Record<string, number> = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7 };
 const toNumber = (s: string) => WORD_NUMBERS[s.toLowerCase()] ?? Number(s);
@@ -617,6 +635,7 @@ export function parseTargetPhrase(phrase: string): TargetSpec | null {
     if (w === '|' || w === '') continue;
     if (NOUNS[w]) nouns.add(NOUNS[w]);
     else if (w === 'tapped' || w === 'untapped') filter.tapped = w === 'tapped';
+    else if (w === 'token' || w === 'nontoken') filter.token = w === 'token';
     else if (w === 'nonbasic' && words[words.indexOf(w) + 1] === 'land') filter.nonbasicLands = true;
     // "target Equipment you control": a permanent with that subtype.
     else if (OTHER_SUBTYPES.includes(w)) {
@@ -839,6 +858,10 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
   scan(/(?:^|[.\n] *)Proliferate\./g, () => ({ kind: 'proliferate' }));
   scan(/\b[Ee]xile all graveyards(?=\.)/g, () => ({ kind: 'exileGraveyards', to: 'each-player' }));
   scan(/\b[Ee]xile each opponent's graveyard(?=\.)/g, () => ({ kind: 'exileGraveyards', to: 'each-opponent' }));
+  scan(/\b[Ee]xile (target player)'s graveyard(?=\.)/g, (m) => {
+    const to = slotFor(m[1]);
+    return to && { kind: 'exileGraveyards', to };
+  });
   scan(new RegExp(`\\bgain control of (${TARGET})( until end of turn)?(?=\\.|,| and |$)`, 'gi'), (m) => {
     const to = slotFor(m[1], (spec) => spec.kind === 'creature' || spec.kind === 'permanent');
     return to && { kind: 'gainControl', to, untilEndOfTurn: !!m[2] };
@@ -1019,7 +1042,8 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
 
   // Edicts: "Each opponent sacrifices a creature", "Target player sacrifices two creatures of their choice".
   scan(new RegExp(`${PLAYER} sacrifices? (${AMOUNT}) ([a-z ,-]+?)(?: of (?:their|his or her) choice)?(?=\\.|,| and )`, 'gi'), (m) => {
-    const nouns = m[3].replace(/s$/, '').replace(/ies$/, 'y');
+    // "a creature token", "two creature tokens", "a nontoken creature".
+    const nouns = m[3].replace(/s$/, '').replace(/ies$/, 'y').replace(/^creature token$/, 'token creature');
     const which = selector(nouns.endsWith('creature') || nouns.endsWith('permanent') || nouns.endsWith('artifact') || nouns.endsWith('enchantment') || nouns.endsWith('land') ? nouns : '');
     const to = which && who(m[1]);
     return to && which && { kind: 'sacrifice', n: toAmount(m[2]), to, which };
@@ -1435,6 +1459,8 @@ export type TriggerEvent =
   | { on: 'cast'; filter: TargetFilter }
   /** Whenever you gain life. */
   | { on: 'gainLife' }
+  /** "Whenever you attack": once when its controller declares one or more attackers. */
+  | { on: 'youAttack' }
   /** Vexing Bauble: "Whenever a player casts a spell, if no mana was spent to cast it, …" (the ability's slot 0 is that spell). */
   | { on: 'castWithoutMana' }
   /** City of Brass: "Whenever this land becomes tapped, …" (not when it enters tapped). */
@@ -1489,6 +1515,25 @@ function triggerSubject(subject: string, underYourControl: boolean): { which: Se
 
 /** The effect text of a trigger: "you may" makes it optional; unsupported wordings give no effects. */
 function triggerAbility(text: string, name: string, self: boolean): AbilitySpec {
+  // "you may discard a card. When you do, …", "you may pay {W}{B} and 2 life. When you do, …"
+  const reflexive = text.match(/^you may (?:(discard a card)|pay ((?:\{(?:\d+|[WUBRGC])\})+)(?: and (\d+) life)?)\. When you do, (.+)$/i);
+  if (reflexive) {
+    const inner = reflexive[4];
+    // "It" in the reflexive part is its own target ("put a +1/+1 counter on target attacking creature. It gains trample").
+    const then = UNSUPPORTED.test(inner) ? NO_EFFECT : parseAbilityText(inner, self ? name : undefined);
+    if (!then.effects.length) return NO_EFFECT;
+    const cost = reflexive[1] ? { discard: 1 } : { mana: reflexive[2], ...(reflexive[3] ? { life: Number(reflexive[3]) } : {}) };
+    return { targets: [], effects: [{ kind: 'reflexive', cost, then }] };
+  }
+  // "choose one — • … • …", "choose up to one —", "choose one or both —".
+  const modal = text.match(/^choose (one|up to one|one or both|one or more|two) — (• .+)$/i);
+  if (modal) {
+    const texts = modal[2].split(/ ?• /).filter(Boolean).map((m) => m.trim());
+    const specs = texts.map((m) => triggerBody(m, name, self));
+    if (!specs.some((sp) => sp.effects.length)) return NO_EFFECT;
+    const [min, max] = ({ one: [1, 1], 'up to one': [0, 1], 'one or both': [1, 2], 'one or more': [1, texts.length], two: [2, 2] } as Record<string, number[]>)[modal[1].toLowerCase()];
+    return { targets: [], effects: [{ kind: 'chooseModes' }], modal: { min, max, texts, specs } };
+  }
   // Life this turn: "if you gained life this turn, …", "… if you've gained 3 or more life this turn."
   let condition: AbilitySpec['condition'];
   const lead = text.match(/^if you gained (and lost )?life this turn, (.+)$/i);
@@ -1575,7 +1620,8 @@ export function triggersOf(card: Card): TriggerSpec[] {
     });
   }
 
-  for (const raw of frontText(card).split('\n')) {
+  // A modal trigger's modes are on the next lines: "When … enters, choose one —\n• …\n• …" is read as one line.
+  for (const raw of frontText(card).replace(/ —((?:\n• [^\n]*)+)/g, (_, modes: string) => ` —${modes.replace(/\n/g, ' ')}`).split('\n')) {
     // A Saga's chapters: "I — …", "II, III — …".
     const chapter = sagaChapter(raw);
     if (chapter) {
@@ -1664,6 +1710,11 @@ export function triggersOf(card: Card): TriggerSpec[] {
       continue;
     }
 
+    const youAttack = line.match(/^Whenever you attack, (.+)$/i);
+    if (youAttack) {
+      out.push({ event: { on: 'youAttack' }, ability: triggerAbility(youAttack[1], name, false) });
+      continue;
+    }
     const gain = line.match(/^Whenever you gain life, (.+)$/i);
     if (gain) {
       out.push({ event: { on: 'gainLife' }, ability: triggerAbility(gain[1], name, true) });

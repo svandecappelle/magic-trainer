@@ -37,6 +37,7 @@ const stripReminder = (text: string) => text.replace(/\s*\([^)]*\)/g, '').trim()
 /** "draw+discard (1 target)", or null when nothing is simulated. */
 function effectsText(spec: AbilitySpec): string | null {
   if (!spec.effects.length) return null;
+  if (spec.modal) return `choose ${spec.modal.min}–${spec.modal.max} modes`;
   const targets = spec.targets.length ? ` (${spec.targets.length} target${spec.targets.length > 1 ? 's' : ''})` : '';
   const cond = spec.condition ? `, if ${spec.condition.lost ? 'life gained and lost' : `${spec.condition.gained}+ life gained`} this turn` : '';
   return spec.effects.map((e) => e.kind).join('+') + targets + (spec.optional ? ', optional' : '') + cond;
@@ -150,12 +151,28 @@ export function auditCard(card: Card): CardReport {
   const spell = isInstantOrSorcery(frontCard);
   const lines: LineReport[] = [];
   const body: string[] = [];
-  for (const raw of frontText(frontCard).split('\n')) {
-    const line = stripReminder(raw);
-    if (!line) continue;
+  const raws = frontText(frontCard).split('\n').map(stripReminder).filter(Boolean);
+  for (let i = 0; i < raws.length; i++) {
+    const line = raws[i];
+    // A permanent's modal trigger ("When … enters, choose one —" then "• …") is read with its modes.
+    const modes: string[] = [];
+    if (!spell && line.endsWith(' —')) while (raws[i + 1 + modes.length]?.startsWith('• ')) modes.push(raws[i + 1 + modes.length]);
+    if (modes.length) {
+      const block = [line, ...modes].join('\n');
+      const report = lineReport(frontCard, block, spell);
+      lines.push({ ...(report ?? { status: 'unread', how: 'not read by the engine' }), text: line });
+      const modal = triggersOf({ ...frontCard, oracleText: block })[0]?.ability.modal;
+      modes.forEach((m, k) => {
+        const ok = !!modal?.specs[k]?.effects.length;
+        lines.push(modal
+          ? { text: m, status: ok ? 'ok' : 'notSimulated', how: ok ? `mode → ${effectsText(modal.specs[k])}` : 'mode not simulated (can\'t be chosen)' }
+          : { text: m, status: lines.at(-1)!.status, how: 'mode of the ability above' });
+      });
+      i += modes.length;
+      continue;
+    }
     // Modes ("• …") and the "Choose one —" line belong to the spell's text.
     const report = spell && (line.startsWith('• ') || /^Choose /.test(line)) ? null : lineReport(frontCard, line, spell);
-    // A permanent's modes ("When … enters, choose one —" then "• …") belong to the ability above.
     const above = lines.at(-1);
     if (!spell && line.startsWith('• ') && above) lines.push({ text: line, status: above.status, how: 'mode of the ability above' });
     else if (report) lines.push(report);

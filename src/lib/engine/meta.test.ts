@@ -1115,3 +1115,110 @@ describe('manlands', () => {
     expect(perm(s, 'Dáin\'s Company')!.statics?.keywords).toContain('lifelink');
   });
 });
+
+describe('modal triggers', () => {
+  const flanker = creature('Kutzil\'s Flanker', 3, 1, {
+    typeLine: 'Creature — Cat Warrior', manaCost: '{2}{W}', cmc: 3, keywords: ['Flash'],
+    oracleText: 'Flash\nWhen this creature enters, choose one —\n• Put a +1/+1 counter on this creature for each creature that left the battlefield under your control this turn.\n• You gain 2 life and scry 2.\n• Exile target player\'s graveyard.',
+  });
+  const gaius = creature('Gaius van Baelsar', 3, 2, {
+    typeLine: 'Legendary Creature — Human Soldier', manaCost: '{2}{B}{B}', cmc: 4,
+    oracleText: 'When Gaius van Baelsar enters, choose one —\n• Each player sacrifices a creature token of their choice.\n• Each player sacrifices a nontoken creature of their choice.\n• Each player sacrifices an enchantment of their choice.',
+  });
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 10 && (s.stack.length || s.triggered?.length) && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  const choose = (s: GameState, answer: Parameters<typeof apply>[1] & { type: 'choose' } extends { answer: infer A } ? A : never) => resolve(apply(s, { type: 'choose', answer }));
+
+  it('reads the modes; the one it does not understand can\'t be chosen', () => {
+    const [t] = triggersOf(flanker);
+    expect(t.ability.modal).toMatchObject({ min: 1, max: 1 });
+    expect(t.ability.modal!.specs.map((sp) => sp.effects.map((e) => e.kind))).toEqual([[], ['gainLife', 'scry'], ['exileGraveyards']]);
+    let s = board({ mana: 2, mine: [card({ name: 'Plains', typeLine: 'Basic Land — Plains' })], hand: [flanker] });
+    s.players[1].graveyard = [{ iid: 'og', card: island }];
+    s = resolve(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    expect(s.pending?.choice).toMatchObject({ kind: 'mode', purpose: 'triggerMode', disabled: [0] });
+    expect(errorOf(() => apply(s, { type: 'choose', answer: { kind: 'mode', modes: [0] } }))).toBe('badChoice');
+    s = choose(s, { kind: 'mode', modes: [2] });
+    expect(s.pending?.choice).toMatchObject({ kind: 'targets', purpose: 'triggerTargets' });
+    s = choose(s, { kind: 'targets', targets: [[{ kind: 'player', player: 1 }]] });
+    expect([s.players[1].graveyard.length, s.players[1].exile.length]).toEqual([0, 1]);
+  });
+
+  it('Gaius: each player sacrifices a nontoken creature', () => {
+    const goblin = card({ id: 'token:goblin', name: 'Goblin', typeLine: 'Token Creature — Goblin', power: '1', toughness: '1' });
+    let s = board({ mana: 4, hand: [gaius], theirs: [goblin, creature('Ogre', 4, 4)] });
+    s = resolve(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    s = choose(s, { kind: 'mode', modes: [1] });
+    for (let i = 0; i < 5 && s.pending; i++) s = choose(s, botAnswerFor(s));
+    expect(s.battlefield.map((p) => p.card.name).filter((n) => n !== 'Swamp')).toEqual(['Goblin']);
+  });
+
+  it('the bot picks a mode that does something', () => {
+    let s = board({ mana: 4, hand: [gaius], theirs: [creature('Ogre', 4, 4)] });
+    s = resolve(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    // No creature token, no enchantment: only the nontoken edict hits the opponent.
+    expect(botAction(s)).toEqual({ type: 'choose', answer: { kind: 'mode', modes: [1] } });
+  });
+});
+
+function botAnswerFor(s: GameState) {
+  const a = botAction(s);
+  if (a.type !== 'choose') throw new Error(`expected a choice, got ${a.type}`);
+  return a.answer;
+}
+
+describe('reflexive triggers ("When you do")', () => {
+  const inti = creature('Inti, Seneschal of the Sun', 2, 2, {
+    typeLine: 'Legendary Creature — Human Knight', manaCost: '{1}{R}', cmc: 2,
+    oracleText: 'Whenever you attack, you may discard a card. When you do, put a +1/+1 counter on target attacking creature. It gains trample until end of turn.\nWhenever you discard one or more cards, exile the top card of your library. You may play that card until your next end step.',
+  });
+  const sentry = creature('Icewrought Sentry', 2, 3, {
+    typeLine: 'Creature — Elemental Soldier', manaCost: '{2}{U}', cmc: 3, keywords: ['Vigilance'],
+    oracleText: 'Vigilance\nWhenever this creature attacks, you may pay {1}{U}. When you do, tap target creature an opponent controls.\nWhenever you tap an untapped creature an opponent controls, you gain 2 life.',
+  });
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 10 && (s.stack.length || s.triggered?.length) && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  const choose = (s: GameState, answer: Parameters<typeof apply>[1] & { type: 'choose' } extends { answer: infer A } ? A : never) => resolve(apply(s, { type: 'choose', answer }));
+  const attack = (s: GameState, ...names: string[]) => resolve(apply(settle(apply(s, { type: 'pass' })), { type: 'declareAttackers', attackers: names.map((n) => iidOf(s, n)) }));
+
+  it('Inti: discard a card, then a +1/+1 counter and trample on the target chosen then', () => {
+    expect(triggersOf(inti)[0]).toMatchObject({ event: { on: 'youAttack' }, ability: { effects: [{ kind: 'reflexive', cost: { discard: 1 } }] } });
+    let s = attack(board({ mine: [inti, creature('Bear', 2, 2)], hand: [swamp] }), 'Bear');
+    expect(s.pending?.choice).toMatchObject({ kind: 'cards', purpose: 'reflexiveCost', min: 0, max: 1 });
+    s = choose(s, { kind: 'cards', iids: ['h0'] });
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toEqual(['Swamp']);
+    expect(s.pending?.choice).toMatchObject({ kind: 'targets', purpose: 'triggerTargets' });
+    s = choose(s, { kind: 'targets', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] });
+    const bear = perm(s, 'Bear')!;
+    expect([bear.counters['+1/+1'], powerOf(bear)]).toEqual([1, 3]);
+    expect(bear.boosts.flatMap((b) => b.keywords)).toContain('trample');
+    // Nothing discarded: no counter.
+    let t = attack(board({ mine: [inti, creature('Bear', 2, 2)], hand: [swamp] }), 'Bear');
+    t = choose(t, { kind: 'cards', iids: [] });
+    expect([t.pending, t.players[0].hand.length, perm(t, 'Bear')!.counters['+1/+1']]).toEqual([null, 1, undefined]);
+  });
+
+  it('Icewrought Sentry: pay {1}{U} to tap a creature; asked only when it can be paid', () => {
+    let s = board({ mine: [sentry], theirs: [creature('Ogre', 4, 4)] });
+    s.battlefield.push({ ...s.battlefield[0], iid: 'isl', card: island, controller: 0 }, { ...s.battlefield[0], iid: 'isl2', card: island, controller: 0 });
+    s = attack(s, 'Icewrought Sentry');
+    expect(s.pending?.choice).toMatchObject({ kind: 'yesNo', purpose: 'reflexivePay', params: { cost: '{1}{U}' } });
+    s = choose(s, { kind: 'yesNo', yes: true });
+    s = choose(s, { kind: 'targets', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Ogre') }]] });
+    expect([perm(s, 'Ogre')!.tapped, s.battlefield.filter((p) => p.card.name === 'Island' && p.tapped).length]).toEqual([true, 2]);
+    // No mana: no question.
+    const t = attack(board({ mine: [sentry], theirs: [creature('Ogre', 4, 4)] }), 'Icewrought Sentry');
+    expect(t.pending).toBeNull();
+  });
+
+  it('the bot discards a spare land for Inti', () => {
+    let s = attack(board({ mine: [inti, creature('Bear', 2, 2)], hand: [swamp, swamp, moonshadow] }), 'Bear');
+    expect(botAction(s)).toEqual({ type: 'choose', answer: { kind: 'cards', iids: ['h0'] } });
+    s = choose(s, { kind: 'cards', iids: ['h0'] });
+    expect(botAction(s)).toEqual({ type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] } });
+  });
+});

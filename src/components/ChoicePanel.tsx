@@ -31,6 +31,9 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
     case 'crewCost': return t.game.choice.crewCost({ card: card(String(p.card)), n });
     case 'dig': return t.game.choice.dig({ n });
     case 'tradeForCard': return t.game.choice.tradeForCard({ card: card(String(p.card)) });
+    case 'triggerMode': return t.game.choice.triggerMode({ card: card(String(p.card)) });
+    case 'reflexiveCost': return t.game.choice.reflexiveCost({ card: card(String(p.card)) });
+    case 'reflexivePay': return t.game.choice.reflexivePay({ card: card(String(p.card)), cost: String(p.cost), life: Number(p.life) });
     case 'triggerTargets':
       if (choice.kind === 'targets') {
         return t.game.choice.triggerTargets({ card: card(String(p.card)), kind: t.game.targetKinds[choice.slots[0].kind] });
@@ -121,8 +124,9 @@ export function ChoicePanel({ choice, onAnswer, onPreview, title }: Props) {
     return (
       <div className="choice-panel">
         {choice.modes.map((label, i) => (
-          <label key={i} className="choice-mode">
-            <input type="checkbox" checked={picked.includes(ids[i])} onChange={() => toggle(ids[i])} /> {label}
+          <label key={i} className={`choice-mode${choice.disabled?.includes(i) ? ' disabled' : ''}`}>
+            <input type="checkbox" checked={picked.includes(ids[i])} disabled={choice.disabled?.includes(i)} onChange={() => toggle(ids[i])} /> {label}
+            {choice.disabled?.includes(i) && <small> — {t.game.modeUnavailable}</small>}
           </label>
         ))}
         <button
