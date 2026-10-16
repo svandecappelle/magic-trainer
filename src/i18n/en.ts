@@ -49,6 +49,8 @@ const log: LogMessages = {
   exiledInstead: (e, c) => `${c.card(e.card)} would enter without being cast: it is exiled instead`,
   cantEnter: (e, c) => `${c.card(e.card)} can't enter the battlefield from there`,
   paidTax: (e, c) => `${c.isMe(e.p) ? 'You pay' : `${c.name(e.p)} pays`} {${e.n}} for ${c.card(e.card)}`,
+  losesAbilities: (e, c) => `${c.card(e.card)} loses all abilities`,
+  tucked: (e, c) => `${c.card(e.card)} is put on the ${e.top ? 'top' : 'bottom'} of its owner's library`,
   sorceryFlash: (e, c) => `${c.isMe(e.p) ? 'You' : c.name(e.p)} may cast sorceries as though they had flash until ${c.isMe(e.p) ? 'your' : 'their'} next turn`,
   paidLife: (e, c) => `${c.isMe(e.p) ? 'You pay' : `${c.name(e.p)} pays`} ${e.n} life: ${c.card(e.card)} is not countered`,
   countered: (e, c) => `${c.card(e.card)} is countered`,
@@ -579,7 +581,7 @@ export const en = {
     chooseX: (card: string) => `${card}: choose X.`,
     xValue: (x: number) => `X = ${x}`,
     turnLabel: (n: number, step: string) => `Turn ${n} · ${step}`,
-    targetKinds: { any: 'a creature or player', creature: 'a creature', player: 'a player', spell: 'a spell on the stack', permanent: 'a permanent', card: 'a card in a graveyard' },
+    targetKinds: { any: 'a creature or player', creature: 'a creature', player: 'a player', spell: 'a spell on the stack', permanent: 'a permanent', card: 'a card in a graveyard', spellOrPermanent: 'a spell or a permanent' },
     /** Targets picked so far, while choosing several. */
     targetsPicked: (n: number, min: number, max: number) =>
       min === max ? `${n}/${max} chosen` : `${n} chosen (${min === 0 ? 'up to' : `${min} to`} ${max})`,
@@ -590,6 +592,7 @@ export const en = {
       payOrCounter: (p: { card: string; n: number }) => `Pay {${p.n}}, or ${p.card} is countered?`,
       payLifeOrCounter: (p: { card: string; n: number }) => `Ward: pay ${p.n} life, or ${p.card} is countered?`,
       payOrDraw: (p: { card: string; n: number }) => `${p.card}: pay {${p.n}}, or its controller draws a card?`,
+      tuckTop: (p: { card: string }) => `${p.card}: put it on the top of your library? (No: the bottom)`,
       cumulativeUpkeep: (p: { card: string; cost: string; n: number }) => `${p.card}: cumulative upkeep (${p.n} age counters). Pay ${p.cost}, or sacrifice it?`,
       discard: (p: { n: number }) => `Discard ${plural(p.n, 'card', 'cards')}.`,
       discardChosen: (p: { n: number; who: string }) => `${p.who} reveals their hand: choose ${plural(p.n, 'card', 'cards')} for them to discard.`,

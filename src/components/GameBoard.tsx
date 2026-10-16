@@ -304,7 +304,9 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     ? (g.players[me].hand.find((c) => c.iid === targeting.iid)?.card ?? findPermanent(g, targeting.iid)?.card ??
       (g.pending?.choice.kind === 'targets' ? g.pending.choice.source.card : undefined))
     : undefined;
-  const canTarget = (tg: Target) => !!slotSpec && isLegalTarget(g, me, slotSpec, tg, undefined, targetingSource);
+  // A trigger's own source can't be an "other target".
+  const targetingSelf = targeting?.choice && targeting.from?.startsWith('perm:') ? targeting.from.slice(5) : undefined;
+  const canTarget = (tg: Target) => !!slotSpec && isLegalTarget(g, me, slotSpec, tg, targetingSelf, targetingSource);
   const isPicked = (tg: Target) => !!targeting && targeting.picked.flat().some((x) => sameTarget(x, tg));
 
   /** Move on to the next target slot, casting the spell after the last one. */
@@ -848,7 +850,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
               <p className="sheet-title">{prompt}</p>
               <div className="choice-panel">
                 <div className="choice-cards">
-                  {legalTargets(g, me, slotSpec, undefined, targetingSource).map((tg) => {
+                  {legalTargets(g, me, slotSpec, targetingSelf, targetingSource).map((tg) => {
                     const found = tg.kind === 'card' ? findInGraveyard(g, tg.iid) : undefined;
                     if (!found) return null;
                     return (

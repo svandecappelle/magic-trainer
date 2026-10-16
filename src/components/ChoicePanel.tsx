@@ -13,6 +13,7 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
     case 'cleanupDiscard': return t.game.choice.cleanupDiscard({ n });
     case 'payOrCounter': return t.game.choice.payOrCounter({ card: card(String(p.card)), n });
     case 'cumulativeUpkeep': return t.game.choice.cumulativeUpkeep({ card: card(String(p.card)), cost: String(p.cost), n });
+    case 'tuckTop': return t.game.choice.tuckTop({ card: card(String(p.card)) });
     case 'payOrDraw': return t.game.choice.payOrDraw({ card: card(String(p.card)), n });
     case 'payLifeOrCounter': return t.game.choice.payLifeOrCounter({ card: card(String(p.card)), n });
     case 'discard': return t.game.choice.discard({ n });

@@ -40,9 +40,6 @@ NONE     Malcolm, Alluring Scoundrel {1}{U} — Legendary Creature — Siren Pir
       keyword
   ✗ Whenever Malcolm deals combat damage to a player, put a chorus counte…
       trigger (combatDamage), effect not simulated
-NONE     Memory Lapse {1}{U} — Instant
-  ✗ Counter target spell. If that spell is countered this way, put it on …
-      spell not simulated
 NONE     Mother of Runes {W} — Creature — Human Cleric
   ✗ {T}: Target creature you control gains protection from the color of y…
       activated ability, effect not simulated
@@ -63,23 +60,10 @@ NONE     Ponder {U} — Sorcery
       spell not simulated
   ✗ Draw a card.
       spell not simulated
-NONE     Remand {1}{U} — Instant
-  ✗ Counter target spell. If that spell is countered this way, put it int…
-      spell not simulated
-  ✗ Draw a card.
-      spell not simulated
-NONE     Reprieve {1}{W} — Instant
-  ✗ Return target spell to its owner's hand.
-      spell not simulated
-  ✗ Draw a card.
-      spell not simulated
 NONE     Reverent Mantra {3}{W} — Instant
   ✗ You may exile a white card from your hand rather than pay this spell'…
       spell not simulated
   ✗ Choose a color. All creatures gain protection from the chosen color u…
-      spell not simulated
-NONE     Sink into Stupor // Soporific Springs {1}{U}{U} — Instant // Land (other faces not audited)
-  ✗ Return target spell or nonland permanent an opponent controls to its …
       spell not simulated
 NONE     Skycoach Conductor // All Aboard {2}{U} // {U} — Creature — Bird Pilot // Instant (other faces not audited)
   ✓ Flash
@@ -93,37 +77,11 @@ NONE     Snapcaster Mage {1}{U} — Creature — Human Wizard
       keyword
   ✗ When this creature enters, target instant or sorcery card in your gra…
       trigger (enters), effect not simulated
-NONE     Solitude {3}{W}{W} — Creature — Elemental Incarnation
-  ✓ Flash
-      keyword
-  ✓ Lifelink
-      keyword
-  ✗ When this creature enters, exile up to one other target creature. Tha…
-      trigger (enters), effect not simulated
-  ✗ Evoke—Exile a white card from your hand.
-      keyword not simulated: evoke
-NONE     Spider-Sense {1}{U} — Instant
-  ✗ Web-slinging {U}
-      keyword not simulated: web-slinging
-  ✗ Counter target instant spell, sorcery spell, or triggered ability.
-      spell not simulated
 NONE     Step Through {3}{U}{U} — Sorcery
   ✗ Wizardcycling {2}
       keyword not simulated: wizardcycling
   ✗ Return two target creatures to their owners' hands.
       spell not simulated
-NONE     Stern Scolding {U} — Instant
-  ✗ Counter target creature spell with power or toughness 2 or less.
-      spell not simulated
-NONE     Subtlety {2}{U}{U} — Creature — Elemental Incarnation
-  ✓ Flash
-      keyword
-  ✓ Flying
-      keyword
-  ✗ When this creature enters, choose up to one target creature spell or …
-      trigger (enters), effect not simulated
-  ✗ Evoke—Exile a blue card from your hand.
-      keyword not simulated: evoke
 NONE     Swift Reconfiguration {W} — Enchantment — Aura
   ✓ Flash
       keyword
@@ -131,14 +89,6 @@ NONE     Swift Reconfiguration {W} — Enchantment — Aura
       keyword
   ? Enchanted permanent is a Vehicle artifact with crew 5 and it loses al…
       not read by the engine
-NONE     Tale's End {1}{U} — Instant
-  ✗ Counter target activated ability, triggered ability, or legendary spe…
-      spell not simulated
-NONE     Tishana's Tidebinder {2}{U} — Creature — Merfolk Wizard
-  ✓ Flash
-      keyword
-  ✗ When this creature enters, counter up to one target activated or trig…
-      trigger (enters), effect not simulated
 NONE     Wash Away {U} — Instant
   ✗ Cleave {1}{U}{U}
       keyword not simulated: cleave
@@ -153,17 +103,6 @@ PARTIAL  Aven Interrupter {1}{W}{W} — Creature — Bird Rogue
       trigger (enters), effect not simulated
   ✓ Spells your opponents cast from graveyards or from exile cost {2} mor…
       rule for the game: opponentsGraveyardExileSpellsCost2
-PARTIAL  Cryptic Command {1}{U}{U}{U} — Instant
-  ✓ Choose two —
-      modal: choose 2–2
-  ✓ • Counter target spell.
-      mode
-  ✓ • Return target permanent to its owner's hand.
-      mode
-  ✗ • Tap all creatures your opponents control.
-      mode not simulated (can't be chosen)
-  ✓ • Draw a card.
-      mode
 PARTIAL  Ghost Vacuum {1} — Artifact
   ✓ {T}: Exile target card from a graveyard.
       activated → destroy (1 target)
@@ -202,11 +141,34 @@ PARTIAL  Quantum Riddler {3}{U}{U} — Creature — Sphinx
       draws one more card with one or fewer in hand
   ✗ Warp {1}{U}
       keyword not simulated: warp
+PARTIAL  Solitude {3}{W}{W} — Creature — Elemental Incarnation
+  ✓ Flash
+      keyword
+  ✓ Lifelink
+      keyword
+  ✓ When this creature enters, exile up to one other target creature. Tha…
+      trigger (enters) → destroy+controllerGainsPower (1 target)
+  ✗ Evoke—Exile a white card from your hand.
+      keyword not simulated: evoke
+PARTIAL  Spider-Sense {1}{U} — Instant
+  ✗ Web-slinging {U}
+      keyword not simulated: web-slinging
+  ✓ Counter target instant spell, sorcery spell, or triggered ability.
+      spell → counter (1 target)
 PARTIAL  Stoneforge Mystic {1}{W} — Creature — Kor Artificer
   ✓ When this creature enters, you may search your library for an Equipme…
       trigger (enters) → search, optional
   ✗ {1}{W}, {T}: You may put an Equipment card from your hand onto the ba…
       activated ability, effect not simulated
+PARTIAL  Subtlety {2}{U}{U} — Creature — Elemental Incarnation
+  ✓ Flash
+      keyword
+  ✓ Flying
+      keyword
+  ✓ When this creature enters, choose up to one target creature spell or …
+      trigger (enters) → tuckSpell (1 target)
+  ✗ Evoke—Exile a blue card from your hand.
+      keyword not simulated: evoke
 OK       Adarkar Wastes  — Land
   ✓ {T}: Add {C}.
       mana: C
@@ -259,6 +221,17 @@ OK       Command Tower  — Land
 OK       Counterspell {U}{U} — Instant
   ✓ Counter target spell.
       spell → counter (1 target)
+OK       Cryptic Command {1}{U}{U}{U} — Instant
+  ✓ Choose two —
+      modal: choose 2–2
+  ✓ • Counter target spell.
+      mode
+  ✓ • Return target permanent to its owner's hand.
+      mode
+  ✓ • Tap all creatures your opponents control.
+      mode
+  ✓ • Draw a card.
+      mode
 OK       Deserted Beach  — Land
   ✓ This land enters tapped unless you control two or more other lands.
       enters tapped (unlessOtherLands)
@@ -308,6 +281,9 @@ OK       Lórien Revealed {3}{U}{U} — Sorcery
 OK       Marsh Flats  — Land
   ✓ {T}, Pay 1 life, Sacrifice this land: Search your library for a Plain…
       activated → search
+OK       Memory Lapse {1}{U} — Instant
+  ✓ Counter target spell. If that spell is countered this way, put it on …
+      spell → counter (1 target)
 OK       Mental Misstep {U/P} — Instant
   ✓ Counter target spell with mana value 1.
       spell → counter (1 target)
@@ -358,6 +334,16 @@ OK       Preordain {U} — Sorcery
 OK       Prismatic Vista  — Land
   ✓ {T}, Pay 1 life, Sacrifice this land: Search your library for a basic…
       activated → search
+OK       Remand {1}{U} — Instant
+  ✓ Counter target spell. If that spell is countered this way, put it int…
+      spell → counter+draw (1 target)
+  ✓ Draw a card.
+      spell → counter+draw (1 target)
+OK       Reprieve {1}{W} — Instant
+  ✓ Return target spell to its owner's hand.
+      spell → bounce+draw (1 target)
+  ✓ Draw a card.
+      spell → bounce+draw (1 target)
 OK       Scalding Tarn  — Land
   ✓ {T}, Pay 1 life, Sacrifice this land: Search your library for an Isla…
       activated → search
@@ -369,6 +355,9 @@ OK       Seachrome Coast  — Land
 OK       Seam Rip {W} — Enchantment
   ✓ When this enchantment enters, exile target nonland permanent an oppon…
       trigger (enters) → destroy (1 target)
+OK       Sink into Stupor // Soporific Springs {1}{U}{U} — Instant // Land (other faces not audited)
+  ✓ Return target spell or nonland permanent an opponent controls to its …
+      spell → bounce (1 target)
 OK       Skullclamp {1} — Artifact — Equipment
   ✓ Equipped creature gets +1/-1.
       static ability
@@ -393,9 +382,15 @@ OK       Spectacular Spider-Man {1}{W} — Legendary Creature — Spider Human H
 OK       Spell Snare {U} — Instant
   ✓ Counter target spell with mana value 2.
       spell → counter (1 target)
+OK       Stern Scolding {U} — Instant
+  ✓ Counter target creature spell with power or toughness 2 or less.
+      spell → counter (1 target)
 OK       Swords to Plowshares {W} — Instant
   ✓ Exile target creature. Its controller gains life equal to its power.
-      spell → destroy (1 target)
+      spell → destroy+controllerGainsPower (1 target)
+OK       Tale's End {1}{U} — Instant
+  ✓ Counter target activated ability, triggered ability, or legendary spe…
+      spell → counter (1 target)
 OK       Teferi, Time Raveler {1}{W}{U} — Legendary Planeswalker — Teferi
   ✓ Each opponent can cast spells only any time they could cast a sorcery.
       rule for the game: opponentsSorcerySpeed
@@ -409,6 +404,11 @@ OK       The Queen of Dale {1}{W} — Legendary Creature — Human Noble
 OK       Thraben Inspector {W} — Creature — Human Soldier
   ✓ When this creature enters, investigate.
       trigger (enters) → token
+OK       Tishana's Tidebinder {2}{U} — Creature — Merfolk Wizard
+  ✓ Flash
+      keyword
+  ✓ When this creature enters, counter up to one target activated or trig…
+      trigger (enters) → counter (1 target)
 OK       True-Name Nemesis {1}{U}{U} — Creature — Merfolk Rogue
   ✓ As this creature enters, choose a player.
       protection from a player chosen as it enters
@@ -434,5 +434,5 @@ OK       Witch Enchanter // Witch-Blessed Meadow {3}{W} — Creature — Human W
   ✓ When this creature enters, destroy target artifact or enchantment an …
       trigger (enters) → destroy (1 target)
 
-91 cards: 54 ok, 9 partial, 28 not simulated, 0 can't be cast
+91 cards: 62 ok, 11 partial, 18 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

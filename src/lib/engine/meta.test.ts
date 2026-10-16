@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
 import { activationProblem, actor, apply, canBlock, canCastNow, castCost, canTapForMana, type Answer, castOptions, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
 import { botAction } from './bot';
-import { activatedOf, castInfo, castSpec, finalChapter, hasKeyword, manaUnits, parseAbilityText, spellSpec, triggersOf } from './rules';
+import { activatedOf, castInfo, castSpec, finalChapter, hasKeyword, type TargetSpec, manaUnits, parseAbilityText, spellSpec, triggersOf } from './rules';
 
 // Cards from Standard decks on mtgtop8 (Oct 2026), with their Oracle text.
 let n = 0;
@@ -69,8 +69,10 @@ describe('partly understood texts are not simulated', () => {
   it('leaves out abilities with a sentence it does not understand', () => {
     // Daydream used to exile your creature for good: the return wasn't understood.
     expect(parseAbilityText('Exile target creature you control, then return that card to the battlefield under its owner\'s control with a +1/+1 counter on it.').effects).toEqual([]);
-    // Jeskai Revelation: the bounce of a spell isn't simulated, so nothing is.
-    expect(parseAbilityText('Return target spell or permanent to its owner\'s hand. Jeskai Revelation deals 4 damage to any target. You gain 4 life.').effects).toEqual([]);
+    // Jeskai Revelation: a spell or a permanent goes back; the damage and the life too.
+    expect(parseAbilityText('Return target spell or permanent to its owner\'s hand. Jeskai Revelation deals 4 damage to any target. You gain 4 life.').effects.map((e) => e.kind)).toEqual(['bounce', 'damage', 'gainLife']);
+    // A sentence it doesn't understand: nothing is simulated.
+    expect(parseAbilityText('Return target creature to its owner\'s hand. Its controller reveals their hand.').effects).toEqual([]);
     // An emblem with an ability the engine can't do isn't created.
     expect(parseAbilityText('You get an emblem with "Creatures you control get +1/+1 and have trample as long as you control a Dragon."').effects).toEqual([]);
     // Spree modes have their own costs: not all modes for the base cost.
@@ -2045,5 +2047,148 @@ describe('Commander deck (Aang, Swift Savior)', () => {
     s = run(settle(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['g0'] } })));
     expect(s.players[0].exile.map((c) => c.card.name)).toEqual(['Bear']);
     expect(s.battlefield.some((p) => p.card.name === 'Spirit')).toBe(true);
+  });
+});
+
+describe('Aang deck, batch 1: counterspells and spell targets', () => {
+  const lapse = spell('Memory Lapse', '{1}{U}', 'Counter target spell. If that spell is countered this way, put it on top of its owner\'s library instead of into that player\'s graveyard.');
+  const remand = spell('Remand', '{1}{U}', 'Counter target spell. If that spell is countered this way, put it into its owner\'s hand instead of into that player\'s graveyard.\nDraw a card.');
+  const reprieve = spell('Reprieve', '{1}{W}', 'Return target spell to its owner\'s hand.\nDraw a card.');
+  const scolding = spell('Stern Scolding', '{U}', 'Counter target creature spell with power or toughness 2 or less.');
+  const talesEnd = spell('Tale\'s End', '{1}{U}', 'Counter target activated ability, triggered ability, or legendary spell.');
+  const stupor = spell('Sink into Stupor', '{1}{U}{U}', 'Return target spell or nonland permanent an opponent controls to its owner\'s hand.');
+  const cryptic = spell('Cryptic Command', '{1}{U}{U}{U}', 'Choose two —\n• Counter target spell.\n• Return target permanent to its owner\'s hand.\n• Tap all creatures your opponents control.\n• Draw a card.');
+  const tidebinder = creature('Tishana\'s Tidebinder', 3, 2, {
+    typeLine: 'Creature — Merfolk Wizard', manaCost: '{2}{U}', cmc: 3, keywords: ['Flash'],
+    oracleText: 'Flash\nWhen this creature enters, counter up to one target activated or triggered ability. If an ability of an artifact, creature, or planeswalker is countered this way, that permanent loses all abilities for as long as this creature remains on the battlefield. (Mana abilities can\'t be targeted.)',
+  });
+  const subtlety = creature('Subtlety', 3, 3, {
+    typeLine: 'Creature — Elemental Incarnation', manaCost: '{2}{U}{U}', cmc: 4, keywords: ['Flash', 'Flying'],
+    oracleText: 'Flash\nFlying\nWhen this creature enters, choose up to one target creature spell or planeswalker spell. Its owner puts it on their choice of the top or bottom of their library.\nEvoke—Exile a blue card from your hand.',
+  });
+  const swords = spell('Swords to Plowshares', '{W}', 'Exile target creature. Its controller gains life equal to its power.');
+  const solitude = creature('Solitude', 3, 2, {
+    typeLine: 'Creature — Elemental Incarnation', manaCost: '{3}{W}{W}', cmc: 5, keywords: ['Flash', 'Lifelink'],
+    oracleText: 'Flash\nLifelink\nWhen this creature enters, exile up to one other target creature. That creature\'s controller gains life equal to its power.\nEvoke—Exile a white card from your hand.',
+  });
+  const bear = creature('Bear', 2, 2, { manaCost: '{B}', cmc: 1 });
+  const ogre = creature('Ogre', 3, 3, { manaCost: '{B}', cmc: 1 });
+  const legend = creature('Legend', 2, 2, { typeLine: 'Legendary Creature — Elf', manaCost: '{B}', cmc: 1 });
+  const islands = (n: number) => Array.from({ length: n }, () => card({ name: 'Island', typeLine: 'Basic Land — Island' }));
+  const plains = (n: number) => Array.from({ length: n }, () => card({ name: 'Plains', typeLine: 'Basic Land — Plains' }));
+  const run = (s: GameState) => {
+    for (let i = 0; i < 12 && !s.pending && (s.stack.length || s.triggered?.length); i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  /** Player 0 casts `mine` (h0); player 1 answers with o0 aimed at it; everything resolves. */
+  const respond = (mine: Card, theirs: Card, theirLands: Card[], extra: Partial<Parameters<typeof board>[0]> = {}) => {
+    let s = board({ mana: 1, hand: [mine], oppHand: [theirs], theirs: theirLands, ...extra });
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    s = apply(s, { type: 'cast', iid: 'o0', targets: [[{ kind: 'spell', iid: s.stack[0].iid }]] });
+    return run(settle(s));
+  };
+
+  it('Memory Lapse puts the spell on top of its owner\'s library; Remand into their hand', () => {
+    let s = respond(bear, lapse, islands(2));
+    expect(s.players[0].library[0].card.name).toBe('Bear');
+    expect(perm(s, 'Bear')).toBeUndefined();
+    s = respond(bear, remand, islands(2));
+    expect(s.players[0].hand.map((c) => c.card.name)).toEqual(['Bear']);
+    expect(s.players[1].graveyard.map((c) => c.card.name)).toEqual(['Remand']);
+  });
+
+  it('Reprieve returns a spell to its owner\'s hand; Sink into Stupor a spell or a permanent', () => {
+    let s = respond(bear, reprieve, plains(2));
+    expect(s.players[0].hand.map((c) => c.card.name)).toEqual(['Bear']);
+    s = respond(bear, stupor, islands(3));
+    expect(s.players[0].hand.map((c) => c.card.name)).toEqual(['Bear']);
+    s = board({ mine: [ogre], oppHand: [stupor], oppMana: 3 });
+    expect(isLegalTarget(s, 1, spellSpec(stupor).targets[0], { kind: 'permanent', iid: iidOf(s, 'Ogre') })).toBe(true);
+  });
+
+  it('Stern Scolding: only a creature spell with power or toughness 2 or less', () => {
+    let s = respond(bear, scolding, islands(1));
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toEqual(['Bear']);
+    const target = spellSpec(scolding).targets[0];
+    s = board({ mana: 2, hand: [ogre, bear] });
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    s.stack = [{ iid: 'x0', card: ogre, controller: 0, targets: [] }, { iid: 'x1', card: bear, controller: 0, targets: [] }];
+    expect(isLegalTarget(s, 1, target, { kind: 'spell', iid: 'x0' })).toBe(false);
+    expect(isLegalTarget(s, 1, target, { kind: 'spell', iid: 'x1' })).toBe(true);
+  });
+
+  it('Tale\'s End: an activated or triggered ability, or a legendary spell (not another spell)', () => {
+    let s = respond(legend, talesEnd, islands(2));
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toEqual(['Legend']);
+    const target = spellSpec(talesEnd).targets[0];
+    s = board({});
+    s.stack = [
+      { iid: 'x0', card: bear, controller: 0, targets: [] },
+      { iid: 'x1', card: bear, controller: 0, targets: [], ability: { targets: [], effects: [] }, triggered: true },
+      { iid: 'x2', card: bear, controller: 0, targets: [], ability: { targets: [], effects: [] } },
+    ];
+    expect(['x0', 'x1', 'x2'].map((iid) => isLegalTarget(s, 1, target, { kind: 'spell', iid }))).toEqual([false, true, true]);
+  });
+
+  it('Cryptic Command taps all creatures the opponents control', () => {
+    let s = board({ mine: [...islands(4)], hand: [cryptic], theirs: [bear, ogre] });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0', modes: [2, 3] })));
+    expect(s.battlefield.filter((p) => p.controller === 1).map((p) => p.tapped)).toEqual([true, true]);
+  });
+
+  /** Passes until the stack holds an ability (a trigger waiting to resolve), player 1 to act. */
+  const toTrigger = (s: GameState) => {
+    for (let i = 0; i < 10 && !(s.stack.some((x) => x.ability) && actor(s) === 1); i++) {
+      if (s.pending) break;
+      s = apply(s, { type: 'pass' });
+    }
+    return s;
+  };
+
+  it('Tishana\'s Tidebinder counters a trigger and its creature loses all abilities while it stays', () => {
+    const healer = creature('Healer', 1, 1, { manaCost: '{B}', cmc: 1, keywords: ['Flying'], oracleText: 'Flying\nWhen this creature enters, you gain 3 life.' });
+    let s = board({ mana: 1, hand: [healer], oppHand: [tidebinder], theirs: islands(3), oppMana: 0 });
+    s.fullControl = [false, true];
+    s = toTrigger(apply(s, { type: 'cast', iid: 'h0' }));
+    const trigger = s.stack.find((x) => x.ability)!;
+    expect(trigger).toBeDefined();
+    s = apply(s, { type: 'cast', iid: 'o0' });
+    // Tidebinder resolves (both pass), then its trigger asks for a target.
+    for (let i = 0; i < 6 && !s.pending; i++) s = apply(s, { type: 'pass' });
+    expect(s.pending?.choice).toMatchObject({ kind: 'targets', player: 1 });
+    s = apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'spell', iid: trigger.iid }]] } });
+    s = run(settle(s));
+    expect(s.players[0].life).toBe(20);
+    expect(hasKeyword(perm(s, 'Healer')!.card, 'flying')).toBe(false);
+  });
+
+  it('Subtlety: the owner puts the creature spell on top or bottom of their library', () => {
+    let s = board({ mana: 1, hand: [bear], oppHand: [subtlety], theirs: islands(4) });
+    s.fullControl = [false, true];
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    s = apply(s, { type: 'cast', iid: 'o0' });
+    for (let i = 0; i < 6 && !s.pending; i++) s = apply(s, { type: 'pass' });
+    expect(s.pending?.choice).toMatchObject({ kind: 'targets', player: 1 });
+    s = apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'spell', iid: 'h0' }]] } });
+    for (let i = 0; i < 6 && !s.pending; i++) s = apply(s, { type: 'pass' });
+    expect(s.pending?.choice).toMatchObject({ kind: 'yesNo', player: 0, purpose: 'tuckTop' });
+    s = run(apply(s, { type: 'choose', answer: { kind: 'yesNo', yes: false } }));
+    expect(s.players[0].library.at(-1)!.card.name).toBe('Bear');
+    expect(perm(s, 'Bear')).toBeUndefined();
+  });
+
+  it('Swords to Plowshares and Solitude: the creature\'s controller gains life equal to its power', () => {
+    let s = board({ mine: plains(1), hand: [swords], theirs: [ogre] });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Ogre') }]] })));
+    expect(s.players[1].life).toBe(23);
+    s = board({ mine: plains(5), hand: [solitude], theirs: [ogre] });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    // "other target creature": Solitude itself isn't offered.
+    expect(s.pending?.choice.kind).toBe('targets');
+    const choice = s.pending!.choice as { slots: TargetSpec[] };
+    expect(isLegalTarget(s, 0, choice.slots[0], { kind: 'permanent', iid: iidOf(s, 'Solitude') }, iidOf(s, 'Solitude'))).toBe(false);
+    s = run(apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Ogre') }]] } }));
+    expect(perm(s, 'Ogre')).toBeUndefined();
+    expect(s.players[1].life).toBe(23);
   });
 });

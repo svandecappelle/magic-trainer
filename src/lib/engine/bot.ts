@@ -1008,6 +1008,8 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
       }
       if (choice.purpose === 'reflexivePay') return { kind: 'yesNo', yes: !safe && reflexiveUseful(s, choice.player) && s.players[choice.player].life > Number(choice.params?.life ?? 0) + 5 };
       // Ward—Pay N life: while life stays comfortable.
+      // Subtlety: our spell goes back on top, to be drawn again.
+      if (choice.purpose === 'tuckTop') return { kind: 'yesNo', yes: true };
       // Cumulative upkeep: kept while it costs at most {2}.
       if (choice.purpose === 'cumulativeUpkeep') return { kind: 'yesNo', yes: !safe && Number(choice.params?.n ?? 0) <= 2 };
       // Rhystic Study: pay the tax when the mana isn't needed for anything else in hand.
@@ -1015,7 +1017,7 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
       if (choice.purpose === 'payLifeOrCounter') return { kind: 'yesNo', yes: !safe && s.players[choice.player].life > Number(choice.params?.n ?? 0) + 5 };
       return { kind: 'yesNo', yes: !safe && (choice.purpose === 'payOrCounter' || choice.purpose === 'optional') };
     case 'targets':
-      return { kind: 'targets', targets: triggerTargets(s, choice.player, { targets: choice.slots, effects: triggerEffects(s, choice) }, safe, choice.source.card) };
+      return { kind: 'targets', targets: triggerTargets(s, choice.player, { targets: choice.slots, effects: triggerEffects(s, choice) }, safe, choice.source.card, choice.source.iid) };
   }
 }
 
@@ -1028,13 +1030,13 @@ function triggerEffects(s: GameState, choice: Choice): Effect[] {
  * Targets for a triggered ability. Unlike a spell, it can't be kept for later: when the only
  * legal targets are bad ones, the least bad are chosen.
  */
-function triggerTargets(s: GameState, me: PlayerId, spec: AbilitySpec, safe: boolean, source?: Card): Target[][] {
+function triggerTargets(s: GameState, me: PlayerId, spec: AbilitySpec, safe: boolean, source?: Card, sourceIid?: string): Target[][] {
   const fight = spec.effects.find((e) => e.kind === 'fight');
   const pair = !safe && fight?.kind === 'fight' ? chooseFight(s, me, spec, fight, source) : null;
   if (pair) return pair;
   return spec.targets.map((slot, i) => {
     // With the source, for protection and hexproof from monocolored.
-    const legal = legalTargets(s, me, slot, undefined, source);
+    const legal = legalTargets(s, me, slot, sourceIid, source);
     if (safe) return legal.slice(0, slot.min);
     const onSlot = spec.effects.filter((e) => 'to' in e && typeof e.to === 'object' && e.to.slot === i);
     const harm = onSlot.some((e) => intentOf(e) === 'harm');

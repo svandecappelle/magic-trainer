@@ -349,6 +349,16 @@ export interface TargetFilter {
   inCombat?: boolean;
   /** For spell targets: abilities on the stack may be chosen too (ward counters abilities). */
   abilities?: boolean;
+  /** Tale's End, Tidebinder: activated and/or triggered abilities on the stack may be chosen. */
+  abilityKinds?: ('activated' | 'triggered')[];
+  /** Solitude, Phelia: "other target …": not the ability's source. */
+  other?: boolean;
+  /** Only abilities, no spell ("target activated or triggered ability"). */
+  noSpells?: boolean;
+  /** Stern Scolding: "with power or toughness 2 or less". */
+  maxPowerOrToughness?: number;
+  /** Wash Away: "that wasn't cast from its owner's hand". */
+  notCastFromHand?: boolean;
   maxManaValue?: number;
   minManaValue?: number;
   /** "with mana cost {0} or {1}" (Urza's Saga): exactly one of these mana costs. */
@@ -376,7 +386,7 @@ export interface TargetFilter {
  * permanent matching the filter's types; "card" is a card in a graveyard (whose owner is
  * `filter.controller`: "your graveyard" / "an opponent's graveyard").
  */
-export type TargetKind = 'any' | 'creature' | 'player' | 'spell' | 'permanent' | 'card';
+export type TargetKind = 'any' | 'creature' | 'player' | 'spell' | 'permanent' | 'card' | 'spellOrPermanent';
 
 export interface TargetSpec {
   kind: TargetKind;
@@ -414,7 +424,17 @@ export type DiscardMode = 'choose' | 'random' | 'casterChooses';
 export type Effect =
   | { kind: 'damage'; amount: Amount; to: Affected }
   /** "Counter target spell unless its controller pays {N}" when `unlessPays` is set. */
-  | { kind: 'counter'; to: Affected; unlessPays?: number; unlessPaysLife?: number }
+  /**
+   * `dest`: Memory Lapse (top of the library), Remand (hand), Force of Negation (exile) instead of the graveyard;
+   * `stripsSource`: Tishana's Tidebinder (the countered ability's permanent loses all abilities while it stays).
+   */
+  | { kind: 'counter'; to: Affected; unlessPays?: number; unlessPaysLife?: number; dest?: 'top' | 'hand' | 'exile'; stripsSource?: boolean }
+  /** Swords to Plowshares, Solitude: "Its controller gains life equal to its power." (the permanent removed in `of`). */
+  | { kind: 'controllerGainsPower'; of: { slot: number } }
+  /** Cryptic Command: "Tap all creatures your opponents control." */
+  | { kind: 'tapAll'; which: Selector }
+  /** Subtlety: "Its owner puts it on their choice of the top or bottom of their library." */
+  | { kind: 'tuckSpell'; to: Affected }
   /** "gets +N/+N (and gains …) until end of turn". Negative values shrink. */
   | { kind: 'pump'; power: number; toughness: number; keywords: Keyword[]; to: Affected }
   /** `untilLeaves`: exiled until the ability's source leaves the battlefield (Seam Rip). */
@@ -617,12 +637,13 @@ const NOUNS: Record<string, string> = {
 export function parseTargetPhrase(phrase: string): TargetSpec | null {
   let text = phrase.trim().toLowerCase();
   if (text === 'any target') return { kind: 'any', min: 1, max: 1, filter: {} };
-  const head = text.match(new RegExp(`^(?:(up to) (${NUMBER}) |(${NUMBER}) )?targets? (.+)$`));
+  const head = text.match(new RegExp(`^(?:(up to) (${NUMBER}) |(${NUMBER}) )?(other )?targets? (.+)$`));
   if (!head) return null;
   const count = toNumber(head[2] ?? head[3] ?? '1');
   const [min, max] = head[1] ? [0, count] : [count, count];
-  text = head[4];
-  const filter: TargetFilter = {};
+  text = head[5];
+  // Solitude: "up to one other target creature": not the ability's own source.
+  const filter: TargetFilter = head[4] ? { other: true } : {};
 
   // "target creature card from your graveyard", "target card from a graveyard"
   const grave = text.match(/^(.*?)\bcards? (with [a-z0-9 ]+ )?(?:from|in) (your|a|an opponent's) graveyard$/);
@@ -656,6 +677,8 @@ export function parseTargetPhrase(phrase: string): TargetSpec | null {
       filter.colors = m[1].split(/,? or /).map((w) => COLOR_WORDS[w]);
       return true;
     }],
+    [/ with power or toughness (\d+) or less$/, (m) => ((filter.maxPowerOrToughness = Number(m[1])), true)],
+    [/ that wasn't cast from its owner's hand$/, () => !!(filter.notCastFromHand = true)],
     [/ with power (\d+) or greater$/, (m) => ((filter.minPower = Number(m[1])), true)],
     [/ with power (\d+) or less$/, (m) => ((filter.maxPower = Number(m[1])), true)],
     [/ without ([a-z ]+)$/, (m) => isKeyword(m[1]) && !!(filter.withoutKeyword = m[1])],
@@ -675,6 +698,22 @@ export function parseTargetPhrase(phrase: string): TargetSpec | null {
   if (text.startsWith('attacking or blocking ')) {
     filter.inCombat = true;
     text = text.slice('attacking or blocking '.length);
+  }
+  // Abilities on the stack, maybe with spells: "target activated or triggered ability", "target instant spell, sorcery
+  // spell, or triggered ability", "target activated ability, triggered ability, or legendary spell".
+  const parts = text.split(/,? or |, /);
+  if (parts.some((p) => /^(?:activated|triggered)(?: ability)?$/.test(p)) && parts.some((p) => / ability$/.test(p))) {
+    for (const p of parts) {
+      const ability = p.match(/^(activated|triggered)(?: ability)?$/);
+      const spell = p.match(/^(?:([a-z]+) )?spell$/);
+      if (ability) (filter.abilityKinds ??= []).push(ability[1] as 'activated' | 'triggered');
+      else if (spell && !spell[1]) continue;
+      else if (spell && spell[1] === 'legendary') filter.legendary = true;
+      else if (spell && CARD_TYPES.includes(spell[1] as CardType)) (filter.types ??= []).push(spell[1] as CardType);
+      else return null;
+    }
+    if (!parts.some((p) => /spell$/.test(p))) filter.noSpells = true;
+    return { kind: 'spell', min, max, filter };
   }
   // "creature or planeswalker", "artifact, enchantment, or land", "instant or sorcery spell"
   const words = text.replace(/,? or |, /g, ' | ').split(' ');
@@ -707,6 +746,15 @@ export function parseTargetPhrase(phrase: string): TargetSpec | null {
     for (const t of adjectiveTypes) nouns.add(t);
   }
 
+  // Sink into Stupor: "target spell or nonland permanent an opponent controls"; Fatehold Charm: "target spell or
+  // creature" (a bare "spell" in the list: any spell, or such a permanent; the type words are the permanent's).
+  const listed = text.split(/,? or |, /);
+  if (listed.includes('spell') && listed.length > 1 && listed.every((p) => p === 'spell' || !/\bspells?\b/.test(p))) {
+    const kinds = [...nouns].filter((n) => n !== 'spell');
+    if (!kinds.every((k) => k === 'permanent' || CARD_TYPES.includes(k as CardType)) || adjectiveTypes.length) return null;
+    if (!kinds.includes('permanent')) filter.types = kinds as CardType[];
+    return { kind: 'spellOrPermanent', min, max, filter };
+  }
   if (nouns.has('spell')) {
     // "creature spell", "instant or sorcery spell": the other words are the spell's types.
     const types = [...new Set([...[...nouns].filter((n) => n !== 'spell'), ...adjectiveTypes])];
@@ -733,7 +781,7 @@ export function parseTargetPhrase(phrase: string): TargetSpec | null {
 }
 
 // "target …" up to a clause boundary; parsed by parseTargetPhrase.
-const TARGET = `(?:any target|(?:up to ${NUMBER} )?(?:${NUMBER} )?targets? [a-z0-9 ,'-]+?)`;
+const TARGET = `(?:any target|(?:up to ${NUMBER} )?(?:${NUMBER} )?(?:other )?targets? [a-z0-9 ,'-]+?)`;
 /** Where a target phrase ends when nothing specific follows it. */
 const END = '(?=\\.|\\n|$|,? then |,? and )';
 const KEYWORD_LIST = `((?:${KEYWORDS.join('|')})(?:(?:,? and |, )(?:${KEYWORDS.join('|')}))*)`;
@@ -863,7 +911,32 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     const players = m[3] ? (m[3].toLowerCase() === 'player' ? 'each-player' : 'each-opponent') : undefined;
     return which && { kind: 'damageAll', amount: toAmount(m[1]), which, ...(players ? { players } : {}) };
   });
-  scan(new RegExp(`\\bcounter (${TARGET})(?:\\.|,| unless its controller pays \\{(\\d+)\\}\\.)`, 'gi'), (m) => {
+  // Memory Lapse, Remand, Force of Negation: "If that spell is countered this way, put it on top of its owner's library
+  // / into its owner's hand / exile it instead of …"
+  scan(new RegExp(`\\bcounter (${TARGET})\\. ${COUNTER_DEST.source}`, 'gi'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'spell');
+    const dest = /top of/i.test(m[2]) ? 'top' : /hand/i.test(m[2]) ? 'hand' : 'exile';
+    return to && { kind: 'counter', to, dest };
+  });
+  // Tishana's Tidebinder: "counter up to one target activated or triggered ability. If an ability of an artifact,
+  // creature, or planeswalker is countered this way, that permanent loses all abilities for as long as this creature
+  // remains on the battlefield."
+  scan(new RegExp(`\\bcounter (${TARGET})\\. ${TIDEBINDER.source}`, 'gi'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'spell');
+    return to && { kind: 'counter', to, stripsSource: true };
+  });
+  scan(/\btap all ([a-z ,'-]+?)(?=\.|$)/gi, (m) => {
+    const which = selector(m[1]);
+    return which && { kind: 'tapAll', which };
+  });
+  // Subtlety: "choose up to one target creature spell or planeswalker spell. Its owner puts it on their choice of the
+  // top or bottom of their library."
+  scan(new RegExp(`\\bchoose (${TARGET})\\. Its owner puts it on their choice of the top or bottom of their library(?=\\.|$)`, 'gi'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'spell');
+    return to && { kind: 'tuckSpell', to };
+  });
+  // A comma inside a list of targets ("target instant spell, sorcery spell, or triggered ability") isn't its end.
+  scan(new RegExp(`\\bcounter (${TARGET})(?:\\.(?! ${COUNTER_DEST.source.slice(0, 20)}| ${TIDEBINDER.source.slice(0, 20)})|,(?! (?:or )?(?:activated|triggered|[a-z]+ spell))| unless its controller pays \\{(\\d+)\\}\\.)`, 'gi'), (m) => {
     const to = slotFor(m[1], (spec) => spec.kind === 'spell');
     return to && { kind: 'counter', to, ...(m[2] ? { unlessPays: Number(m[2]) } : {}) };
   });
@@ -1005,6 +1078,11 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
   scan(new RegExp(TRADE_FOR_CARD.source, 'g'), (m) => ({
     kind: 'tradeForCard', sacrifice: { kind: m[1] === 'creature' ? 'creature' : 'permanent', filter: { types: [m[1] as CardType], controller: 'you' } },
   }));
+  // Swords to Plowshares: "Exile target creature. Its controller gains life equal to its power."
+  scan(new RegExp(`(?:^|[.] *)${POWER_LIFE.source}`, 'g'), () => {
+    if (targets.length !== 1 || targets[0].kind !== 'creature') return null;
+    return { kind: 'controllerGainsPower', of: { slot: 0 } };
+  });
   scan(new RegExp(CONTROLLER_SEARCH.source, 'gi'), (m) => {
     if (targets.length !== 1 || (targets[0].kind !== 'creature' && targets[0].kind !== 'permanent')) return null;
     const filter: TargetFilter = /basic land type/i.test(m[1])
@@ -1070,7 +1148,8 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
   });
   // Bounce.
   scan(new RegExp(`\\breturn (${TARGET}) to (?:its|their) (?:owner's|owners') hands?`, 'gi'), (m) => {
-    const to = slotFor(m[1], (spec) => spec.kind === 'creature' || spec.kind === 'permanent');
+    // Reprieve: "Return target spell to its owner's hand"; Sink into Stupor: "target spell or nonland permanent".
+    const to = slotFor(m[1], (spec) => spec.kind === 'creature' || spec.kind === 'permanent' || spec.kind === 'spell' || spec.kind === 'spellOrPermanent');
     return to && { kind: 'bounce', to };
   });
   // From a graveyard: "Return target creature card from your graveyard to your hand / to the battlefield".
@@ -1199,6 +1278,14 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
   return { targets, effects };
 }
 
+/** Swords to Plowshares, Solitude: the removed creature's controller gains life equal to its power. */
+const POWER_LIFE = /(?:Its|That creature's) controller gains life equal to its power(?=\.)/;
+
+/** Memory Lapse, Remand, Force of Negation: where the countered spell goes instead. */
+const COUNTER_DEST = /If that spell is countered this way, (put it on top of its owner's library|put it into its owner's hand|exile it) instead of (?:into that player's graveyard|putting it into its owner's graveyard)(?=\.)/;
+/** Tishana's Tidebinder: the countered ability's permanent loses all abilities. */
+const TIDEBINDER = /If an ability of an artifact, creature, or planeswalker is countered this way, that permanent loses all abilities for as long as this creature remains on the battlefield(?=\.)/;
+
 /** Verbs of an effect: a "subject" containing one is a clause of its own, not understood. */
 const OTHER_CLAUSE = /\b(?:loses?|gains?|draws?|discards?|mills?|sacrifices?|creates?|destroys?|exiles?|returns?|puts?|searche?s?|counters?|taps?|untaps?|scry|surveil)\b/i;
 
@@ -1233,9 +1320,7 @@ const IGNORED = new RegExp([
   /(?:It|They|That creature) can't be regenerated\./,
   /You may choose new targets for the copy\./,
   /If that spell is countered this way, exile it instead of putting it into its owner's graveyard\./,
-  // Small upsides for the opponent of a removal spell, not simulated (listed in TODO.md): Swords to Plowshares' life,
-  // Get Lost's Map tokens.
-  /Its controller gains life equal to its power\./,
+  // Small upsides for the opponent of a removal spell, not simulated (listed in TODO.md): Get Lost's Map tokens.
   /Its controller creates two Map tokens\./,
   // Loyalty for a Jace you control (Countersculpt, Fatehold Charm): not simulated, listed in TODO.md.
   /Empower Jace \d+\./,
@@ -1562,7 +1647,7 @@ const UNSUPPORTED_WORDS = /\b(?:if|unless|for each|where|instead|that (?:creatur
 const UNSUPPORTED = {
   test: (text: string) => {
     let rest = text;
-    for (const handled of [CONTROLLER_SEARCH, SURVEIL_TO_HAND, THORIN_ATTACH, BECOMES_CREATURE, LAND_BECOMES, TRADE_FOR_CARD]) rest = rest.replace(handled, '');
+    for (const handled of [CONTROLLER_SEARCH, SURVEIL_TO_HAND, THORIN_ATTACH, BECOMES_CREATURE, LAND_BECOMES, TRADE_FOR_CARD, COUNTER_DEST, TIDEBINDER, POWER_LIFE]) rest = rest.replace(handled, '');
     return UNSUPPORTED_WORDS.test(rest.replace(/"[^"]*"/g, '""'));
   },
 };

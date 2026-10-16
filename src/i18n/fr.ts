@@ -16,7 +16,7 @@ const keywordNames: Record<Keyword, string> = {
 };
 
 const targetKinds = {
-  any: 'une créature ou un joueur', creature: 'une créature', player: 'un joueur', spell: 'un sort sur la pile', permanent: 'un permanent', card: 'une carte dans un cimetière',
+  any: 'une créature ou un joueur', creature: 'une créature', player: 'un joueur', spell: 'un sort sur la pile', permanent: 'un permanent', card: 'une carte dans un cimetière', spellOrPermanent: 'un sort ou un permanent',
 };
 const kindName = (kind: string | number) => targetKinds[kind as keyof typeof targetKinds] ?? String(kind);
 
@@ -63,6 +63,8 @@ const log: LogMessages = {
   exiledInstead: (e, c) => `${c.card(e.card)} arriverait sans avoir été lancé : il est exilé à la place`,
   cantEnter: (e, c) => `${c.card(e.card)} ne peut pas arriver sur le champ de bataille depuis là`,
   paidTax: (e, c) => `${c.isMe(e.p) ? 'Vous payez' : `${c.name(e.p)} paie`} {${e.n}} pour ${c.card(e.card)}`,
+  losesAbilities: (e, c) => `${c.card(e.card)} perd toutes ses capacités`,
+  tucked: (e, c) => `${c.card(e.card)} est mis ${e.top ? 'au-dessus' : 'au-dessous'} de la bibliothèque de son propriétaire`,
   sorceryFlash: (e, c) => `${c.isMe(e.p) ? 'Vous pouvez' : `${c.name(e.p)} peut`} lancer des rituels comme s'ils avaient le flash jusqu'au prochain tour`,
   paidLife: (e, c) => `${c.isMe(e.p) ? 'Vous payez' : `${c.name(e.p)} paie`} ${e.n} points de vie : ${c.card(e.card)} n'est pas contrecarré`,
   countered: (e, c) => `${c.card(e.card)} est contrecarré`,
@@ -598,6 +600,7 @@ export const fr: Messages = {
       payOrCounter: (p) => `Payer {${p.n}}, ou ${p.card} est contrecarré ?`,
       payLifeOrCounter: (p) => `Défense talismanique : payer ${p.n} points de vie, ou ${p.card} est contrecarré ?`,
       payOrDraw: (p) => `${p.card} : payer {${p.n}}, ou son contrôleur pioche une carte ?`,
+      tuckTop: (p) => `${p.card} : le mettre au-dessus de votre bibliothèque ? (Non : au-dessous)`,
       cumulativeUpkeep: (p) => `${p.card} : entretien cumulatif (${p.n} marqueurs d'âge). Payer ${p.cost}, ou le sacrifier ?`,
       discard: (p) => `Défaussez ${plural(p.n, 'carte', 'cartes')}.`,
       discardChosen: (p) => `${p.who} révèle sa main : choisissez ${plural(p.n, 'carte', 'cartes')} à défausser.`,

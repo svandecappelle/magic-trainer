@@ -74,6 +74,8 @@ export interface StackItem extends CardInst {
   x?: number;
   /** For an ability: the permanent it comes from ("this creature gets +1/+1"). */
   source?: string;
+  /** A triggered ability (otherwise an activated one). */
+  triggered?: boolean;
   /** A copy of a spell: it ceases to exist when it leaves the stack. */
   copy?: boolean;
   /** How the spell was cast: which face, modes, kicked, and from which zone. */
@@ -201,6 +203,7 @@ export type ChoicePurpose =
   | 'payOrCounter' // "counter target spell unless its controller pays {N}"
   | 'payLifeOrCounter' // Ward—Pay N life: pay, or the spell or ability is countered
   | 'payOrDraw' // Rhystic Study: pay {N}, or its controller draws
+  | 'tuckTop' // Subtlety: put your spell on top of your library (or the bottom)?
   | 'cumulativeUpkeep' // pay the cumulative upkeep, or sacrifice the permanent
   | 'discard' // "discard a card": the discarding player chooses
   | 'discardChosen' // Duress: the spell's controller chooses from a revealed hand
@@ -288,6 +291,8 @@ export interface Resolving {
   accepted?: boolean;
   /** Controllers of the permanents this resolution removed (Path to Exile: "Its controller may search …"). */
   removed?: Record<string, PlayerId>;
+  /** Their power as they left (Swords to Plowshares: "Its controller gains life equal to its power"). */
+  removedPower?: Record<string, number>;
   /** "If you do, …" wasn't done (Chandra's +2): the remaining effects are skipped. */
   stopped?: boolean;
   reason: WindowReason;
@@ -329,6 +334,8 @@ export type LogEntry =
   | { k: 'paidLife'; p: PlayerId; n: number; card: string }
   | { k: 'sorceryFlash'; p: PlayerId }
   | { k: 'exiledInstead'; card: string }
+  | { k: 'losesAbilities'; card: string }
+  | { k: 'tucked'; card: string; top: boolean }
   | { k: 'paidTax'; p: PlayerId; n: number; card: string }
   | { k: 'cantEnter'; card: string }
   | { k: 'paid'; p: PlayerId; n: number; card: string }
@@ -395,6 +402,8 @@ export interface GameState {
   mode?: GameMode;
   /** In a team's main phases and declare steps, the head acting now (its teammate goes next). */
   turnHead?: PlayerId;
+  /** Tishana's Tidebinder: permanents that lost all abilities while it (`by`) stays, with their card before. */
+  abilityLoss?: { iid: string; by: string; card: Card }[];
   /** Heads of the active team done with the current main phase. */
   headsDone?: PlayerId[];
   /** Who declares attackers or blockers now, when a team declares head by head. */
@@ -1238,6 +1247,10 @@ function matchesFilter(s: GameState, f: TargetFilter, caster: PlayerId, x: CardI
   const pow = perm ? powerOf(perm) : power(x.card);
   if (f.minPower !== undefined && pow < f.minPower) return false;
   if (f.maxPower !== undefined && pow > f.maxPower) return false;
+  // Stern Scolding: "with power or toughness 2 or less".
+  if (f.maxPowerOrToughness !== undefined && pow > f.maxPowerOrToughness && (perm ? toughnessOf(perm) : toughness(x.card)) > f.maxPowerOrToughness) return false;
+  // Wash Away: "that wasn't cast from its owner's hand" (a spell; `from` is set for other zones).
+  if (f.notCastFromHand && !(x as StackItem).from) return false;
   // Battlefield-only conditions.
   if (f.tapped !== undefined && perm?.tapped !== f.tapped) return false;
   if (f.token !== undefined && (!perm || isToken(printedCard(perm)) !== f.token)) return false;
@@ -1268,6 +1281,8 @@ export function isLegalTarget(s: GameState, caster: PlayerId, spec: TargetSpec, 
 
 /** Does `t` match the slot's kind and restrictions (without targeting rules: also used for "all …" effects)? */
 function fitsSpec(s: GameState, caster: PlayerId, spec: TargetSpec, t: Target, selfIid?: string): boolean {
+  // "other target …": `selfIid` is the source permanent, or its ability on the stack.
+  if (spec.filter.other && selfIid && t.kind === 'permanent' && (t.iid === selfIid || s.stack.find((i) => i.iid === selfIid)?.source === t.iid)) return false;
   if (t.kind === 'player') {
     if (spec.kind !== 'player' && spec.kind !== 'any') return false;
     if (spec.filter.controller === 'you') return t.player === caster;
@@ -1280,8 +1295,13 @@ function fitsSpec(s: GameState, caster: PlayerId, spec: TargetSpec, t: Target, s
   }
   if (t.kind === 'spell') {
     const item = s.stack.find((x) => x.iid === t.iid);
-    if (spec.kind !== 'spell' || !item || item.iid === selfIid || (item.ability && !spec.filter.abilities)) return false;
-    return matchesFilter(s, spec.filter, caster, item, item.controller);
+    if ((spec.kind !== 'spell' && spec.kind !== 'spellOrPermanent') || !item || item.iid === selfIid) return false;
+    // An ability: ward counters any; Tale's End and Tidebinder name activated and/or triggered ones.
+    if (item.ability) return !!spec.filter.abilities || !!spec.filter.abilityKinds?.includes(item.triggered ? 'triggered' : 'activated');
+    if (spec.filter.noSpells) return false;
+    // "target spell or creature": the type words are the permanent's, any spell will do.
+    const f = spec.kind === 'spellOrPermanent' ? { ...spec.filter, types: undefined, nonTypes: undefined } : spec.filter;
+    return matchesFilter(s, f, caster, item, item.controller);
   }
   const perm = findPermanent(s, t.iid);
   if (!perm || spec.kind === 'card') return false;
@@ -1289,7 +1309,7 @@ function fitsSpec(s: GameState, caster: PlayerId, spec: TargetSpec, t: Target, s
   const kindOk =
     spec.kind === 'creature' ? types.includes('creature')
     : spec.kind === 'any' ? types.includes('creature') || types.includes('planeswalker')
-    : spec.kind === 'permanent';
+    : spec.kind === 'permanent' || spec.kind === 'spellOrPermanent';
   return kindOk && matchesFilter(s, spec.filter, caster, perm, perm.controller);
 }
 
@@ -1333,7 +1353,7 @@ function targetName(s: GameState, t: Target): LogTarget {
 }
 
 /** Checks chosen targets against the spell's slots; returns them with one list per slot. */
-function checkTargets(s: GameState, caster: PlayerId, card: Card, spec: AbilitySpec, chosen: Target[][]): Target[][] {
+function checkTargets(s: GameState, caster: PlayerId, card: Card, spec: AbilitySpec, chosen: Target[][], selfIid?: string): Target[][] {
   if (chosen.length > spec.targets.length) throw new IllegalAction('tooManyTargets', { card: card.name });
   return spec.targets.map((slot, i) => {
     const ts = chosen[i] ?? [];
@@ -1341,7 +1361,7 @@ function checkTargets(s: GameState, caster: PlayerId, card: Card, spec: AbilityS
     if (ts.length > slot.max) throw new IllegalAction('tooManyTargets', { card: card.name });
     ts.forEach((t, j) => {
       if (ts.slice(0, j).some((u) => sameTarget(t, u))) throw new IllegalAction('tooManyTargets', { card: card.name });
-      if (!isLegalTarget(s, caster, slot, t, undefined, card)) {
+      if (!isLegalTarget(s, caster, slot, t, selfIid, card)) {
         const kindOk =
           (t.kind === 'player' && (slot.kind === 'player' || slot.kind === 'any')) ||
           (t.kind === 'spell' && slot.kind === 'spell') ||
@@ -1647,6 +1667,12 @@ function removePermanent(d: GameState, perm: Permanent, zone: 'graveyard' | 'exi
   if (zone === 'graveyard' && graveyardExiled(d, perm.owner ?? perm.controller)) zone = 'exile';
   d.battlefield = d.battlefield.filter((x) => x.iid !== perm.iid);
   returnExiledUntil(d, perm);
+  // Tishana's Tidebinder leaves: the permanents it took the abilities of get them back.
+  for (const loss of (d.abilityLoss ?? []).filter((x) => x.by === perm.iid)) {
+    const back = findPermanent(d, loss.iid);
+    if (back) back.card = loss.card;
+  }
+  if (d.abilityLoss) d.abilityLoss = d.abilityLoss.filter((x) => x.by !== perm.iid && x.iid !== perm.iid);
   // Skyclave Apparition leaves: the exiled card's owner creates an X/X blue Illusion.
   if (illusionWhenLeaving(perm.card) && perm.exiledCard) {
     const { cmc, owner } = perm.exiledCard;
@@ -2163,7 +2189,7 @@ function fireWard(d: GameState, item: StackItem) {
 function pushAbility(d: GameState, t: Triggered, targets: Target[][]) {
   d.abilities = (d.abilities ?? 0) + 1;
   d.stack.push({
-    iid: `${t.source.iid}-ability-${d.abilities}`, card: t.source.card, controller: t.controller, targets, ability: t.ability, source: t.source.iid,
+    iid: `${t.source.iid}-ability-${d.abilities}`, card: t.source.card, controller: t.controller, targets, ability: t.ability, source: t.source.iid, triggered: true,
   });
   const named = targets.flat().map((tg) => targetName(d, tg));
   log(d, { k: 'triggers', card: t.source.card.name, ...(named.length ? { targets: named } : {}) });
@@ -2190,7 +2216,7 @@ function flushTrigger(d: GameState): boolean {
   if (modal) {
     // "choose one —": modes that aren't understood, or have no legal target, can't be chosen.
     const disabled = modal.specs.flatMap((sp, k) =>
-      !sp.effects.length || sp.targets.some((slot) => legalTargets(d, t.controller, slot, undefined, t.source.card).length < slot.min) ? [k] : []);
+      !sp.effects.length || sp.targets.some((slot) => legalTargets(d, t.controller, slot, t.source.iid, t.source.card).length < slot.min) ? [k] : []);
     if (modal.min > modal.specs.length - disabled.length) {
       log(d, { k: 'noTarget', card: t.source.card.name });
       return true;
@@ -2216,7 +2242,7 @@ function stackTrigger(d: GameState, t: Triggered): boolean {
     pushAbility(d, t, t.targets);
     return true;
   }
-  if (slots.some((slot) => legalTargets(d, t.controller, slot, undefined, t.source.card).length < slot.min)) {
+  if (slots.some((slot) => legalTargets(d, t.controller, slot, t.source.iid, t.source.card).length < slot.min)) {
     log(d, { k: 'noTarget', card: t.source.card.name });
     return true;
   }
@@ -2570,9 +2596,23 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
           }
         }
         d.stack = d.stack.filter((x) => x !== target);
-        // A countered ability just leaves the stack; a spell goes to the graveyard.
-        if (!target.ability) putAwaySpell(d, target, false);
+        // A countered ability just leaves the stack; a spell goes to the graveyard (Memory Lapse: on top of its
+        // owner's library; Remand: into their hand; Force of Negation: exiled).
+        if (!target.ability && e.dest && !target.copy) {
+          const inst: CardInst = { iid: target.iid, card: target.card, ...(target.commander ? { commander: true } : {}) };
+          const ps = d.players[target.controller];
+          if (e.dest === 'top') ps.library.unshift(inst);
+          else putInZone(d, target.controller, inst, e.dest === 'hand' ? 'hand' : 'exile');
+        } else if (!target.ability) putAwaySpell(d, target, false);
         log(d, { k: 'countered', card: target.card.name });
+        // Tishana's Tidebinder: an ability of an artifact, creature or planeswalker: that permanent loses all abilities.
+        const from = target.ability && target.source ? findPermanent(d, target.source) : undefined;
+        if (e.stripsSource && from && item.source && cardTypes(from.card).some((t) => t === 'artifact' || t === 'creature' || t === 'planeswalker')) {
+          (d.abilityLoss ??= []).push({ iid: from.iid, by: item.source, card: from.card });
+          from.printed ??= from.card;
+          from.card = { ...from.card, oracleText: '', keywords: [] };
+          log(d, { k: 'losesAbilities', card: from.card.name });
+        }
       }
       break;
     case 'pump':
@@ -2594,6 +2634,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         if (!e.exile && hasKw(perm, 'indestructible')) continue;
         removePermanent(d, perm, e.exile ? 'exile' : 'graveyard');
         (r.removed ??= {})[perm.iid] = perm.controller;
+        (r.removedPower ??= {})[perm.iid] = powerOf(perm);
         log(d, { k: e.exile ? 'exiled' : 'destroyed', card: perm.card.name });
         if (e.untilLeaves) (d.exiledUntil ??= []).push({ source: item.source!, iid: perm.iid, owner: perm.owner ?? perm.controller });
         // Skyclave Apparition: remembers the card it exiled (a token is no card: nothing to remember).
@@ -2772,8 +2813,48 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         log(d, { k: 'tapped', card: perm.card.name, untap: e.untap });
       }
       break;
+    case 'controllerGainsPower': {
+      // Swords to Plowshares: the creature's controller, its power as it left (nothing if it wasn't removed).
+      const t = r.legal[e.of.slot]?.[0];
+      const iid = t && t.kind === 'permanent' ? t.iid : undefined;
+      const who = iid === undefined ? undefined : r.removed?.[iid];
+      const n = iid === undefined ? 0 : (r.removedPower?.[iid] ?? 0);
+      if (who === undefined || n <= 0) break;
+      changeLife(d, who, n);
+      log(d, { k: 'gainLife', p: who, n });
+      break;
+    }
+    case 'tapAll':
+      for (const perm of matching(d, caster, e.which)) {
+        tapPermanent(d, perm);
+        log(d, { k: 'tapped', card: perm.card.name, untap: false });
+      }
+      break;
+    case 'tuckSpell':
+      // Subtlety: the spell's owner puts it on the top or the bottom of their library (it isn't countered).
+      for (const target of spells) {
+        if (target.ability || !d.stack.includes(target)) continue;
+        if (answer?.kind !== 'yesNo') return { kind: 'yesNo', player: target.controller, purpose: 'tuckTop', params: { card: target.card.name } };
+        d.stack = d.stack.filter((x) => x !== target);
+        if (!target.copy) {
+          const inst: CardInst = { iid: target.iid, card: target.card };
+          if (answer.yes) d.players[target.controller].library.unshift(inst);
+          else d.players[target.controller].library.push(inst);
+        }
+        log(d, { k: 'tucked', card: target.card.name, top: answer.yes });
+      }
+      break;
     case 'bounce':
     case 'bounceAll':
+      // Reprieve, Sink into Stupor: a spell goes back to its owner's hand (it isn't countered).
+      if (e.kind === 'bounce') {
+        for (const target of spells) {
+          if (target.ability || !d.stack.includes(target)) continue;
+          d.stack = d.stack.filter((x) => x !== target);
+          if (!target.copy) putInZone(d, target.controller, { iid: target.iid, card: target.card, ...(target.commander ? { commander: true } : {}) }, 'hand');
+          log(d, { k: 'bounced', card: target.card.name });
+        }
+      }
       for (const perm of e.kind === 'bounceAll' ? matching(d, caster, e.which) : perms) {
         d.battlefield = d.battlefield.filter((x) => x.iid !== perm.iid);
         returnExiledUntil(d, perm);
@@ -3567,7 +3648,7 @@ export function apply(state: GameState, action: Action): GameState {
         stackTrigger(d, { ...t, ability: chosenModes(t.ability, action.answer.modes) });
       } else if (pending.resume === 'trigger' && action.answer.kind === 'targets') {
         const t = pending.trigger!;
-        pushAbility(d, t, checkTargets(d, t.controller, t.source.card, t.ability, action.answer.targets));
+        pushAbility(d, t, checkTargets(d, t.controller, t.source.card, t.ability, action.answer.targets, t.source.iid));
       } else if (pending.resume === 'legend' && action.answer.kind === 'cards') {
         const keep = action.answer.iids[0];
         for (const opt of (pending.choice as { options: CardInst[] }).options) {

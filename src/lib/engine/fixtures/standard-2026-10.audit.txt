@@ -118,9 +118,6 @@ NONE     Jace's Machinations {2}{U} — Instant
       keyword not simulated: empower jace
   ✗ Until end of turn, you may activate loyalty abilities of Jace planesw…
       spell not simulated
-NONE     Jeskai Revelation {4}{U}{R}{W} — Instant
-  ✗ Return target spell or permanent to its owner's hand. Jeskai Revelati…
-      spell not simulated
 NONE     M.O.D.O.K. {3}{B}{B} — Legendary Artifact Creature — Villain
   ✓ Flying, lifelink
       keyword
@@ -227,11 +224,6 @@ NONE     Shoot the Sheriff {1}{B} — Instant
       spell not simulated
 NONE     Sleight of Hand {U} — Sorcery
   ✗ Look at the top two cards of your library. Put one of them into your …
-      spell not simulated
-NONE     Spider-Sense {1}{U} — Instant
-  ✗ Web-slinging {U}
-      keyword not simulated: web-slinging
-  ✗ Counter target instant spell, sorcery spell, or triggered ability.
       spell not simulated
 NONE     Starfield Shepherd {3}{W}{W} — Creature — Angel
   ✓ Flying
@@ -443,15 +435,6 @@ PARTIAL  Essence Channeler {1}{W} — Creature — Bat Cleric
       trigger (gainLife) → addCounters
   ✗ When this creature dies, put its counters on target creature you cont…
       trigger (dies), effect not simulated
-PARTIAL  Fatehold Charm {W}{U} — Instant
-  ✓ Choose one —
-      modal: choose 1–1
-  ✓ • Draw a card. Empower Jace 2.
-      mode
-  ✗ • Return target spell or creature to its owner's hand.
-      mode not simulated (can't be chosen)
-  ✓ • Creatures you control get +1/+2 until end of turn.
-      mode
 PARTIAL  Get Out {U}{U} — Instant
   ✓ Choose one —
       modal: choose 1–1
@@ -592,6 +575,11 @@ PARTIAL  Slickshot Show-Off {1}{R} — Creature — Bird Wizard
       trigger (cast) → pump
   ✗ Plot {1}{R}
       keyword not simulated: plot
+PARTIAL  Spider-Sense {1}{U} — Instant
+  ✗ Web-slinging {U}
+      keyword not simulated: web-slinging
+  ✓ Counter target instant spell, sorcery spell, or triggered ability.
+      spell → counter (1 target)
 PARTIAL  Starscape Cleric {1}{B} — Creature — Bat Cleric
   ✗ Offspring {2}{B}
       keyword not simulated: offspring
@@ -755,6 +743,15 @@ OK       Enlightened Confidant {1}{W} — Creature — Kor Cleric
 OK       Erode {W} — Instant
   ✓ Destroy target creature or planeswalker. Its controller may search th…
       spell → destroy+search (1 target)
+OK       Fatehold Charm {W}{U} — Instant
+  ✓ Choose one —
+      modal: choose 1–1
+  ✓ • Draw a card. Empower Jace 2.
+      mode
+  ✓ • Return target spell or creature to its owner's hand.
+      mode
+  ✓ • Creatures you control get +1/+2 until end of turn.
+      mode
 OK       Firebending Lesson {R} — Instant — Lesson
   ✓ Kicker {4}
       keyword
@@ -796,6 +793,9 @@ OK       Hinterland Sanctifier {W} — Creature — Rabbit Cleric
 OK       Impractical Joke {R} — Sorcery
   ✓ Damage can't be prevented this turn. Impractical Joke deals 3 damage …
       spell → damage (1 target)
+OK       Jeskai Revelation {4}{U}{R}{W} — Instant
+  ✓ Return target spell or permanent to its owner's hand. Jeskai Revelati…
+      spell → bounce+damage+token+draw+gainLife (2 targets)
 OK       Leyline of the Void {2}{B}{B} — Enchantment
   ✓ If this card is in your opening hand, you may begin the game with it …
       begins the game on the battlefield (always)
@@ -961,5 +961,5 @@ OK       Watery Grave  — Land — Island Swamp
   ✓ As this land enters, you may pay 2 life. If you don't, it enters tapp…
       enters tapped (payLife)
 
-178 cards: 72 ok, 43 partial, 63 not simulated, 0 can't be cast
+178 cards: 74 ok, 43 partial, 61 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

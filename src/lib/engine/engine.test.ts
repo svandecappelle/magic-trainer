@@ -57,7 +57,7 @@ describe('rules', () => {
       effects: [{ kind: 'damage', amount: 3, to: { slot: 0 } }],
     });
     const stp = card({ name: 'StP', typeLine: 'Instant', oracleText: 'Exile target creature. Its controller gains life equal to its power.' });
-    expect(parseEffects(stp)).toEqual([{ kind: 'destroy', exile: true, to: { slot: 0 } }]);
+    expect(parseEffects(stp)).toEqual([{ kind: 'destroy', exile: true, to: { slot: 0 } }, { kind: 'controllerGainsPower', of: { slot: 0 } }]);
     const divination = card({ name: 'Div', typeLine: 'Sorcery', oracleText: 'Draw two cards.' });
     expect(parseEffects(divination)).toEqual([{ kind: 'draw', n: 2, to: 'you' }]);
   });
