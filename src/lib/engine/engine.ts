@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -116,6 +116,8 @@ export interface PoolMana {
 
 export interface PlayerState {
   name: string;
+  /** Cards drawn this turn (Faerie Mastermind: "their second card each turn"). */
+  drawnThisTurn?: number;
   /** Teferi, Time Raveler's +1: may cast sorceries as though they had flash until their next turn. */
   sorceryFlash?: boolean;
   /** Gemstone Caverns in the opening hand: already asked. */
@@ -312,6 +314,8 @@ export type LogEntry =
   | { k: 'countered'; card: string }
   | { k: 'paidLife'; p: PlayerId; n: number; card: string }
   | { k: 'sorceryFlash'; p: PlayerId }
+  | { k: 'exiledInstead'; card: string }
+  | { k: 'cantEnter'; card: string }
   | { k: 'paid'; p: PlayerId; n: number; card: string }
   | { k: 'fizzles'; card: string }
   | { k: 'notSimulated'; card: string }
@@ -672,6 +676,13 @@ function castTimingOk(s: GameState, p: PlayerId, card: Card): boolean {
   return hasInstantSpeed(card) || (!!s.players[p].sorceryFlash && /\bSorcery\b/.test(card.typeLine.split('//')[0]));
 }
 
+/** Containment Priest: a nontoken creature card entering without being cast is exiled instead. */
+const uncastExiled = (s: GameState, card: Card) =>
+  isCreature(card) && !isToken(card) && withRule(s, 'uncastCreaturesExiled').length > 0;
+
+/** Grafdigger's Cage: creature cards in graveyards and libraries can't enter the battlefield. */
+const caged = (s: GameState, card: Card) => isCreature(card) && withRule(s, 'noCreaturesFromGraveyardsLibraries').length > 0;
+
 /** Teferi, Time Raveler: an opponent of `p` controls it, so `p` casts spells only at sorcery speed. */
 const sorceryOnly = (s: GameState, p: PlayerId) =>
   withRule(s, 'opponentsSorcerySpeed').some((x) => teamOf(s, x.controller) !== teamOf(s, p));
@@ -852,7 +863,8 @@ export function castSource(s: GameState, p: PlayerId, iid: string): { inst: Card
   const inHand = ps.hand.find((c) => c.iid === iid);
   if (inHand) return { inst: inHand, from: 'hand' };
   const inGrave = ps.graveyard.find((c) => c.iid === iid);
-  if (inGrave && castInfo(inGrave.card).flashback) return { inst: inGrave, from: 'graveyard' };
+  // Grafdigger's Cage: "Players can't cast spells from graveyards or libraries."
+  if (inGrave && castInfo(inGrave.card).flashback && !withRule(s, 'noCastingFromGraveyardsLibraries').length) return { inst: inGrave, from: 'graveyard' };
   const inExile = ps.exile.find((c) => c.iid === iid && c.adventure);
   if (inExile) return { inst: inExile, from: 'exile' };
   const inCommand = ps.command?.find((c) => c.iid === iid);
@@ -1285,15 +1297,35 @@ function log(d: GameState, entry: LogEntry) {
   if (d.log.length > 200) d.log.splice(0, d.log.length - 200);
 }
 
-function draw(d: GameState, p: PlayerId, n: number) {
+/** `p` draws `n` cards (`drawStep`: the draw of their draw step). */
+function draw(d: GameState, p: PlayerId, n: number, drawStep = false) {
+  const ps = d.players[p];
+  // Quantum Riddler: with one or fewer cards in hand, one more (each one applies).
+  if (n > 0 && ps.hand.length <= 1) n += d.battlefield.filter((x) => x.controller === p && drawsOneMore(x.card)).length;
   for (let i = 0; i < n; i++) {
-    const card = d.players[p].library.shift();
+    const card = ps.library.shift();
     if (!card) {
       log(d, { k: 'emptyLibrary', p });
       teamLoses(d, p);
       return;
     }
-    d.players[p].hand.push(card);
+    ps.hand.push(card);
+    ps.drawnThisTurn = (ps.drawnThisTurn ?? 0) + 1;
+    fireDraw(d, p, drawStep && i === 0);
+  }
+}
+
+/** A card `p` drew: "whenever an opponent draws" (Orcish Bowmasters, Faerie Mastermind). */
+function fireDraw(d: GameState, p: PlayerId, firstInDrawStep: boolean) {
+  const nth = d.players[p].drawnThisTurn ?? 0;
+  for (const x of d.battlefield) {
+    if (teamOf(d, x.controller) === teamOf(d, p)) continue;
+    for (const t of triggersOf(x.card)) {
+      if (t.event.on !== 'opponentDraws') continue;
+      if (t.event.nth !== undefined && t.event.nth !== nth) continue;
+      if (t.event.notFirstInDrawStep && firstInDrawStep) continue;
+      queueTrigger(d, x, x.controller, t.ability);
+    }
   }
 }
 
@@ -1311,6 +1343,7 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
     d.players[q].turns = (d.players[q].turns ?? 0) + 1;
   }
   for (const ps of d.players) {
+    delete ps.drawnThisTurn;
     delete ps.gainedThisTurn;
     delete ps.lostThisTurn;
     delete ps.equipsThisTurn;
@@ -1338,7 +1371,7 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
 /** Draw for the turn (each head of the team), then the opponents may act before the first main phase. */
 function drawStep(d: GameState, skipDraw: boolean) {
   d.step = 'main1';
-  if (!skipDraw) for (const q of teamPlayers(d, d.active)) draw(d, q, 1);
+  if (!skipDraw) for (const q of teamPlayers(d, d.active)) draw(d, q, 1, true);
   // Mana Vault: "At the beginning of your draw step, …" (put on the stack with the opponents' priority below).
   fireStep(d, 'draw');
   // After the draw step, each Saga of the active player gets a lore counter (CR 714.3b).
@@ -1423,6 +1456,11 @@ function returnExiledUntil(d: GameState, source: Permanent) {
     const ps = d.players[l.owner];
     const inst = ps.exile.find((c) => c.iid === l.iid);
     if (!inst) continue; // a token, or the card moved on
+    // Containment Priest: a creature coming back this way is exiled instead (it stays in exile).
+    if (uncastExiled(d, inst.card)) {
+      log(d, { k: 'exiledInstead', card: inst.card.name });
+      continue;
+    }
     ps.exile = ps.exile.filter((c) => c !== inst);
     log(d, { k: 'returned', card: inst.card.name, dest: 'battlefield' });
     enterBattlefield(d, inst, l.owner);
@@ -1525,6 +1563,12 @@ function sacrifice(d: GameState, perm: Permanent) {
  * of their hand (no choice asked in the middle of the effect), or it goes to the graveyard.
  */
 function putOntoBattlefield(d: GameState, inst: CardInst, controller: PlayerId, opts: { tapped?: boolean } = {}) {
+  // Containment Priest: a creature card put onto the battlefield (not cast) is exiled instead.
+  if (uncastExiled(d, inst.card)) {
+    putInZone(d, controller, inst, 'exile');
+    log(d, { k: 'exiledInstead', card: inst.card.name });
+    return;
+  }
   if (discardsLandInstead(inst.card)) {
     const land = d.players[controller].hand.find((c) => isLand(c.card));
     if (!land) {
@@ -2302,6 +2346,11 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       break;
     case 'returnCard':
       for (const g of graveCards) {
+        // Grafdigger's Cage: a creature card stays in the graveyard.
+        if (e.dest === 'battlefield' && caged(d, g.grave.card)) {
+          log(d, { k: 'cantEnter', card: g.grave.card.name });
+          continue;
+        }
         unbury(g);
         log(d, { k: 'returned', card: g.grave.card.name, dest: e.dest });
         if (e.dest === 'hand') d.players[g.owner].hand.push(g.grave);
@@ -2333,7 +2382,11 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       if (found.length && (!answer || answer.kind !== 'cards')) {
         return { kind: 'cards', player: searcher, purpose: 'search', min: 0, max: Math.min(e.n, found.length), options: found, params: { n: e.n } };
       }
-      const chosen = answer?.kind === 'cards' ? answer.iids.map((iid) => found.find((c) => c.iid === iid)!) : [];
+      const picked = answer?.kind === 'cards' ? answer.iids.map((iid) => found.find((c) => c.iid === iid)!) : [];
+      // Grafdigger's Cage: a creature card found to be put onto the battlefield stays in the library.
+      const stuck = e.dest === 'hand' ? [] : picked.filter((c) => caged(d, c.card));
+      for (const c of stuck) log(d, { k: 'cantEnter', card: c.card.name });
+      const chosen = picked.filter((c) => !stuck.includes(c));
       ps.library = ps.library.filter((c) => !chosen.includes(c));
       log(d, { k: 'search', p: searcher, n: chosen.length, dest: e.dest });
       for (const inst of chosen) {
@@ -2598,6 +2651,19 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         src.card = { ...src.card, oracleText: `${src.card.oracleText}\n${e.text}` };
         log(d, { k: 'gainsAbility', card: src.card.name, text: e.text });
       }
+      break;
+    }
+    case 'amass': {
+      // Amass: an Army (a new 0/0 one if none), then +1/+1 counters on it.
+      let army = d.battlefield.find((x) => x.controller === caster && isCreature(x.card) && hasSubtype(x.card, 'army'));
+      if (!army) {
+        d.abilities = (d.abilities ?? 0) + 1;
+        const token = { name: `${e.subtype} Army`, typeLine: `Token Creature — ${e.subtype} Army`, colors: ['B'] as Color[], power: 0, toughness: 0, keywords: [], oracleText: '' };
+        army = enterBattlefield(d, { iid: `token-${d.abilities}`, card: tokenCard(token) }, caster);
+        log(d, { k: 'token', p: caster, card: token.name, n: 1 });
+      }
+      army.counters = { ...army.counters, '+1/+1': (army.counters['+1/+1'] ?? 0) + e.n };
+      log(d, { k: 'counters', card: army.card.name, counter: '+1/+1', n: e.n });
       break;
     }
     case 'sorceryFlash':

@@ -259,6 +259,11 @@ Teferi, Time Raveler (opponents cast spells only at sorcery speed; +1: sorceries
 next turn), Pithing Needle (names a card as it enters; its activated abilities other than mana abilities, channel
 included, can't be activated).
 
+Then: Orcish Bowmasters and Faerie Mastermind ("whenever an opponent draws": each card but the first of their draw
+step, or their second card each turn; amass), Quantum Riddler (one more card with one or fewer in hand), Containment
+Priest (a creature entering without being cast is exiled instead), Grafdigger's Cage (creature cards in graveyards and
+libraries can't enter; no casting from graveyards).
+
 Left "not simulated" or found on the way:
 - [ ] Pithing Needle can only name a card seen in the game (battlefield, graveyards, exile, the chooser's hand), not
   any card name; the bot names the first opposing card with activated abilities
@@ -273,10 +278,8 @@ Left "not simulated" or found on the way:
 - [ ] Pain lands' "This land deals 1 damage to you." (Karplusan Forest) is still ignored
 
 Still open, most played first:
-- [ ] Quantum Riddler (6): draw replacement, Warp; Gene Pollinator (6) and Springleaf Drum (5): "tap an untapped
-  permanent/creature you control" as a mana cost
-- [ ] Containment Priest (6), Grafdigger's Cage (5): replacement and casting restrictions
-- [ ] Orcish Bowmasters (6), Faerie Mastermind (6): "whenever an opponent draws" triggers
+- [ ] Quantum Riddler (6): Warp (cast for its warp cost, exiled at the end step, cast again later from exile)
+- [ ] Gene Pollinator (6) and Springleaf Drum (5): "tap an untapped permanent/creature you control" as a mana cost
 - [ ] Talon Gates of Madara (6), City of Traitors (6), Multiversal Passage (6), Elvish / Simian Spirit Guide (6):
   mana with other costs, "when you play another land", chosen basic land type, mana from exiling a card in hand
 - [ ] Defense Grid (5): cost increase off-turn

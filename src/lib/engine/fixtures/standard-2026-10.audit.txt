@@ -562,8 +562,8 @@ PARTIAL  Quantum Riddler {3}{U}{U} — Creature — Sphinx
       keyword
   ✓ When this creature enters, draw a card.
       trigger (enters) → draw
-  ? As long as you have one or fewer cards in hand, if you would draw one…
-      not read by the engine
+  ✓ As long as you have one or fewer cards in hand, if you would draw one…
+      draws one more card with one or fewer in hand
   ✗ Warp {1}{U}
       keyword not simulated: warp
 PARTIAL  Ral Zarek, Guest Lecturer {1}{B}{B} — Legendary Planeswalker — Ral

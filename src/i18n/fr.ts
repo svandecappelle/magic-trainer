@@ -60,6 +60,8 @@ const log: LogMessages = {
     return `${c.card(e.card)} reçoit ${e.n === 1 ? `un marqueur ${kind}` : `${e.n} marqueurs ${kind}`}`;
   },
   paid: (e, c) => `${c.isMe(e.p) ? 'Vous payez' : `${c.name(e.p)} paie`} {${e.n}} : ${c.card(e.card)} n'est pas contrecarré`,
+  exiledInstead: (e, c) => `${c.card(e.card)} arriverait sans avoir été lancé : il est exilé à la place`,
+  cantEnter: (e, c) => `${c.card(e.card)} ne peut pas arriver sur le champ de bataille depuis là`,
   sorceryFlash: (e, c) => `${c.isMe(e.p) ? 'Vous pouvez' : `${c.name(e.p)} peut`} lancer des rituels comme s'ils avaient le flash jusqu'au prochain tour`,
   paidLife: (e, c) => `${c.isMe(e.p) ? 'Vous payez' : `${c.name(e.p)} paie`} ${e.n} points de vie : ${c.card(e.card)} n'est pas contrecarré`,
   countered: (e, c) => `${c.card(e.card)} est contrecarré`,

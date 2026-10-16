@@ -1,7 +1,7 @@
 import type { Card } from '../../types';
 import {
   activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, entersCounters, entersTappedRule, beginsWithLuck, discardsLandInstead, manaConditions, stateMana, doesntUntap, frontText, gameRulesOf, isInstantOrSorcery,
-  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, type AbilitySpec,
+  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, type AbilitySpec,
 } from './rules';
 
 /**
@@ -138,6 +138,7 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   if (discardsLandInstead(one)) return { text: line, status: 'ok', how: 'enters only by discarding a land card' };
   // Pithing Needle: its two lines are read together.
   if (namesCardToStop(card) && /choose a card name|sources with the chosen name/.test(line)) return { text: line, status: 'ok', how: 'names a card: its activated abilities (not mana) are stopped' };
+  if (drawsOneMore(one)) return { text: line, status: 'ok', how: 'draws one more card with one or fewer in hand' };
   if (protectsSpells(one)) return { text: line, status: 'ok', how: 'your spells can\'t be countered' };
   if (doesntUntap(one)) return { text: line, status: 'ok', how: 'doesn\'t untap during its controller\'s untap step' };
   if (beginsWithLuck(one)) return { text: line, status: 'ok', how: 'may begin the game on the battlefield (not the starting player)' };

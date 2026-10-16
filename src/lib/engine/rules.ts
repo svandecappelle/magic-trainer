@@ -450,6 +450,11 @@ export type Effect =
   | { kind: 'attach'; to: Affected }
   /** Chrome Mox: "you may exile a nonartifact, nonland card from your hand" (remembered by the source: imprint). */
   | { kind: 'exileFromHand'; filter: TargetFilter }
+  /**
+   * "Amass Orcs 1": if you don't control an Army, create a 0/0 black Orc Army token; then put N +1/+1 counters on an
+   * Army you control.
+   */
+  | { kind: 'amass'; subtype: string; n: number }
   /** Teferi, Time Raveler's +1: "Until your next turn, you may cast sorcery spells as though they had flash." */
   | { kind: 'sorceryFlash' }
   /**
@@ -1028,6 +1033,8 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
   });
   scan(new RegExp(`(?:^|[.,] *|then )mill (${AMOUNT}) cards?`, 'gi'), (m) => ({ kind: 'mill', n: toAmount(m[1]), to: 'you' }));
   scan(/\bscry (\d+|X)\b/gi, (m) => ({ kind: 'scry', n: toAmount(m[1]) }));
+  // "Then amass Orcs 1." (the type in the plural: Orcs, Zombies).
+  scan(/(?:^|[.] *)(?:Then )?amass ([A-Z][a-z]+?)(?:e?s)? (\d+)(?=\.|$)/g, (m) => ({ kind: 'amass', subtype: m[1], n: Number(m[2]) }));
   scan(new RegExp(`\\bsurveil (\\d+|X)\\b(?!\\. ${SURVEIL_TO_HAND.source})`, 'gi'), (m) => ({ kind: 'surveil', n: toAmount(m[1]) }));
   scan(new RegExp(`\\bsurveil (\\d+|X)\\. ${SURVEIL_TO_HAND.source}`, 'gi'), (m) => ({ kind: 'surveil', n: toAmount(m[1]), toHand: 'mvAtMostLifeGained' }));
   // Tap / untap.
@@ -1494,7 +1501,12 @@ export type TriggerEvent =
   /** Vexing Bauble: "Whenever a player casts a spell, if no mana was spent to cast it, …" (the ability's slot 0 is that spell). */
   | { on: 'castWithoutMana' }
   /** City of Brass: "Whenever this land becomes tapped, …" (not when it enters tapped). */
-  | { on: 'becomesTapped' };
+  | { on: 'becomesTapped' }
+  /**
+   * Each card an opponent draws (Orcish Bowmasters: `notFirstInDrawStep`, "except the first one they draw in each of
+   * their draw steps"); Faerie Mastermind: only their `nth` (second) card each turn.
+   */
+  | { on: 'opponentDraws'; nth?: number; notFirstInDrawStep?: boolean };
 
 export interface TriggerSpec {
   event: TriggerEvent;
@@ -1695,6 +1707,21 @@ export function triggersOf(card: Card): TriggerSpec[] {
       const singular = batch[2].replace(/^(\w+?)s\b/, '$1');
       const watched = triggerSubject(`${batch[1] ? 'another' : 'a'} ${singular}`, false);
       if (watched) out.push({ event: { on: 'enters', self: false, ...watched }, ability: triggerAbility(batch[3], name, false), oncePerTurn: true });
+      continue;
+    }
+
+    // Orcish Bowmasters: "When this creature enters and whenever an opponent draws a card except the first one they
+    // draw in each of their draw steps, …"
+    const bowmasters = line.match(/^When (.+?) enters and whenever an opponent draws a card except the first one they draw in each of their draw steps, (.+)$/i);
+    if (bowmasters && selves.includes(bowmasters[1].toLowerCase())) {
+      const ability = triggerAbility(bowmasters[2], name, true);
+      out.push({ event: { on: 'enters', self: true }, ability }, { event: { on: 'opponentDraws', notFirstInDrawStep: true }, ability });
+      continue;
+    }
+    // Faerie Mastermind: "Whenever an opponent draws their second card each turn, you draw a card."
+    const draws = line.match(/^Whenever an opponent draws (a card|their second card each turn), (.+)$/i);
+    if (draws) {
+      out.push({ event: { on: 'opponentDraws', ...(draws[1].startsWith('their') ? { nth: 2 } : {}) }, ability: triggerAbility(draws[2], name, true) });
       continue;
     }
 
@@ -2155,6 +2182,13 @@ export function namesCardToStop(card: Card): boolean {
     && /^Activated abilities of sources with the chosen name can't be activated unless they're mana abilities\.$/m.test(text);
 }
 
+/**
+ * Quantum Riddler: "As long as you have one or fewer cards in hand, if you would draw one or more cards, you draw that
+ * many cards plus one instead."
+ */
+export const drawsOneMore = (card: Card) =>
+  /^As long as you have one or fewer cards in hand, if you would draw one or more cards, you draw that many cards plus one instead\.$/m.test(frontText(card));
+
 /** Hexing Squelcher: "Spells you control can't be countered." */
 export const protectsSpells = (card: Card) => /^Spells you control can't be countered\.$/m.test(frontText(card));
 
@@ -2213,7 +2247,13 @@ export type GameRule =
   /** Leyline of the Void: "If a card would be put into an opponent's graveyard from anywhere, exile it instead." */
   | 'opponentGraveyardsExiled'
   /** Teferi, Time Raveler: "Each opponent can cast spells only any time they could cast a sorcery." */
-  | 'opponentsSorcerySpeed';
+  | 'opponentsSorcerySpeed'
+  /** Containment Priest: "If a nontoken creature would enter and it wasn't cast, exile it instead." */
+  | 'uncastCreaturesExiled'
+  /** Grafdigger's Cage: "Creature cards in graveyards and libraries can't enter the battlefield." */
+  | 'noCreaturesFromGraveyardsLibraries'
+  /** Grafdigger's Cage: "Players can't cast spells from graveyards or libraries." */
+  | 'noCastingFromGraveyardsLibraries';
 
 const GAME_RULES: [RegExp, GameRule][] = [
   [/^Your opponents can't cast spells during your turn\.$/m, 'opponentsCantCastOnYourTurn'],
@@ -2221,6 +2261,9 @@ const GAME_RULES: [RegExp, GameRule][] = [
   [/^If a card or token would be put into a graveyard from anywhere, exile it instead\.$/m, 'graveyardsExiled'],
   [/^If a card would be put into an opponent's graveyard from anywhere, exile it instead\.$/m, 'opponentGraveyardsExiled'],
   [/^Each opponent can cast spells only any time they could cast a sorcery\.$/m, 'opponentsSorcerySpeed'],
+  [/^If a nontoken creature would enter(?: the battlefield)? and it wasn't cast, exile it instead\.$/m, 'uncastCreaturesExiled'],
+  [/^Creature cards in graveyards and libraries can't enter the battlefield\.$/m, 'noCreaturesFromGraveyardsLibraries'],
+  [/^Players can't cast spells from graveyards or libraries\.$/m, 'noCastingFromGraveyardsLibraries'],
 ];
 
 export const gameRulesOf = (card: Card): GameRule[] => GAME_RULES.filter(([re]) => re.test(frontText(card))).map(([, rule]) => rule);

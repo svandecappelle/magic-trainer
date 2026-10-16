@@ -1463,3 +1463,101 @@ describe('Hexing Squelcher, Teferi, Time Raveler, Pithing Needle', () => {
     expect(perm(s, 'Pithing Needle')!.chosenName).toBe('');
   });
 });
+
+describe('Orcish Bowmasters, Faerie Mastermind, Quantum Riddler, Containment Priest, Grafdigger\'s Cage', () => {
+  const bowmasters = creature('Orcish Bowmasters', 1, 1, {
+    typeLine: 'Creature — Orc Archer', manaCost: '{1}{B}', cmc: 2, colors: ['B'], keywords: ['Flash'],
+    oracleText: 'Flash\nWhen this creature enters and whenever an opponent draws a card except the first one they draw in each of their draw steps, this creature deals 1 damage to any target. Then amass Orcs 1.',
+  });
+  const mastermind = creature('Faerie Mastermind', 2, 1, {
+    typeLine: 'Creature — Faerie Rogue', manaCost: '{1}{U}', cmc: 2, colors: ['U'], keywords: ['Flash', 'Flying'],
+    oracleText: 'Flash\nFlying\nWhenever an opponent draws their second card each turn, you draw a card.\n{3}{U}: Each player draws a card.',
+  });
+  const riddler = creature('Quantum Riddler', 4, 6, {
+    typeLine: 'Creature — Sphinx', manaCost: '{3}{U}{U}', cmc: 5, colors: ['U'], keywords: ['Flying', 'Warp'],
+    oracleText: 'Flying\nWhen this creature enters, draw a card.\nAs long as you have one or fewer cards in hand, if you would draw one or more cards, you draw that many cards plus one instead.\nWarp {1}{U}',
+  });
+  const priest = creature('Containment Priest', 2, 2, {
+    typeLine: 'Creature — Human Cleric', manaCost: '{1}{W}', cmc: 2, colors: ['W'], keywords: ['Flash'],
+    oracleText: 'Flash\nIf a nontoken creature would enter and it wasn\'t cast, exile it instead.',
+  });
+  const cage = card({
+    name: 'Grafdigger\'s Cage', typeLine: 'Artifact', manaCost: '{1}', cmc: 1,
+    oracleText: 'Creature cards in graveyards and libraries can\'t enter the battlefield.\nPlayers can\'t cast spells from graveyards or libraries.',
+  });
+  const wheel = spell('Wheel', '{B}', 'Each player draws two cards.', 'Sorcery');
+  const divination = spell('Peek', '{B}', 'Draw a card.', 'Sorcery');
+  const reanimate = spell('Reanimate', '{B}', 'Return target creature card from your graveyard to the battlefield.', 'Sorcery');
+  const souls = spell('Lingering Souls', '{2}{W}', 'Create two 1/1 white Spirit creature tokens with flying.\nFlashback {1}{B}', 'Sorcery');
+  const bear = creature('Bear', 2, 2);
+  /** Resolves everything: triggers aimed at player 1, other choices with their defaults. */
+  const run = (s: GameState) => {
+    for (let i = 0; i < 30; i++) {
+      const c = s.pending?.choice;
+      if (c && c.player === 0) {
+        s = apply(s, { type: 'choose', answer: c.kind === 'targets' ? { kind: 'targets', targets: [[{ kind: 'player', player: 1 }]] } : c.kind === 'yesNo' ? { kind: 'yesNo', yes: true } : { kind: 'cards', iids: [] } });
+        continue;
+      }
+      if (!s.stack.length && !s.triggered?.length) break;
+      s = settle(apply(s, { type: 'pass' }));
+    }
+    return s;
+  };
+  const army = (s: GameState) => s.battlefield.find((p) => p.card.name === 'Orc Army');
+
+  it('Orcish Bowmasters: 1 damage and amass when it enters and for each extra card an opponent draws', () => {
+    let s = board({ mana: 3, hand: [bowmasters, wheel] });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    expect(s.players[1].life).toBe(19);
+    expect(army(s)?.counters['+1/+1']).toBe(1);
+    // The opponent draws two cards: two triggers, two damage, the same Army grows.
+    s = run(settle(apply(s, { type: 'cast', iid: 'h1' })));
+    expect(s.players[1].life).toBe(17);
+    expect(army(s)?.counters['+1/+1']).toBe(3);
+    expect(s.battlefield.filter((p) => p.card.name === 'Orc Army')).toHaveLength(1);
+  });
+
+  it('Orcish Bowmasters: not for the first card of the opponent\'s draw step', () => {
+    let s = board({ mine: [bowmasters] });
+    for (let i = 0; i < 40 && s.turn === 1; i++) s = s.pending ? apply(s, { type: 'choose', answer: { kind: 'cards', iids: [] } }) : !s.priority && s.step === 'attack' ? apply(s, { type: 'declareAttackers', attackers: [] }) : apply(s, { type: 'pass' });
+    expect(s.turn).toBe(2);
+    expect(s.players[1].drawnThisTurn).toBe(1);
+    expect(s.triggered ?? []).toEqual([]);
+    expect(s.stack).toEqual([]);
+  });
+
+  it('Faerie Mastermind draws when an opponent draws their second card in a turn', () => {
+    let s = board({ mana: 1, hand: [wheel], mine: [mastermind] });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    // Two from Wheel, one from Faerie Mastermind.
+    expect(s.players[0].hand).toHaveLength(3);
+    expect(s.players[1].hand).toHaveLength(2);
+  });
+
+  it('Quantum Riddler: one more card with one or fewer cards in hand', () => {
+    let s = board({ mana: 1, hand: [divination], mine: [riddler] });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    expect(s.players[0].hand).toHaveLength(2);
+    s = board({ mana: 1, hand: [divination, bear, bear], mine: [riddler] });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    expect(s.players[0].hand).toHaveLength(3);
+  });
+
+  it('Containment Priest exiles a creature put onto the battlefield without being cast', () => {
+    let s = board({ mana: 1, hand: [reanimate], grave: [bear], mine: [priest] });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'card', iid: 'g0' }]] })));
+    expect(perm(s, 'Bear')).toBeUndefined();
+    expect(s.players[0].exile.map((c) => c.card.name)).toEqual(['Bear']);
+  });
+
+  it('Grafdigger\'s Cage: creature cards stay in the graveyard; no flashback', () => {
+    let s = board({ mana: 1, hand: [reanimate], grave: [bear], theirs: [cage] });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'card', iid: 'g0' }]] })));
+    expect(perm(s, 'Bear')).toBeUndefined();
+    expect(s.players[0].graveyard.map((c) => c.card.name).sort()).toEqual(['Bear', 'Reanimate']);
+    s = board({ mana: 3, grave: [souls], theirs: [cage] });
+    expect(castOptions(s, 0, 'g0')).toEqual([]);
+    s = board({ mana: 3, grave: [souls] });
+    expect(castOptions(s, 0, 'g0').length).toBeGreaterThan(0);
+  });
+});

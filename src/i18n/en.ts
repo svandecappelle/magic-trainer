@@ -46,6 +46,8 @@ const log: LogMessages = {
   },
   counters: (e, c) => `${c.card(e.card)} gets ${e.n === 1 ? `a ${e.counter} counter` : `${e.n} ${e.counter} counters`}`,
   paid: (e, c) => `${c.isMe(e.p) ? 'You pay' : `${c.name(e.p)} pays`} {${e.n}}: ${c.card(e.card)} is not countered`,
+  exiledInstead: (e, c) => `${c.card(e.card)} would enter without being cast: it is exiled instead`,
+  cantEnter: (e, c) => `${c.card(e.card)} can't enter the battlefield from there`,
   sorceryFlash: (e, c) => `${c.isMe(e.p) ? 'You' : c.name(e.p)} may cast sorceries as though they had flash until ${c.isMe(e.p) ? 'your' : 'their'} next turn`,
   paidLife: (e, c) => `${c.isMe(e.p) ? 'You pay' : `${c.name(e.p)} pays`} ${e.n} life: ${c.card(e.card)} is not countered`,
   countered: (e, c) => `${c.card(e.card)} is countered`,
