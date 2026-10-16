@@ -1,9 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useT } from '../i18n';
-import { engineStatus } from '../lib/engineStatus';
-import { countCards } from '../lib/stats';
+import { Curve, deckSummary, Pips } from '../components/DeckBits';
 import { useApp } from '../store/useApp';
-import type { Deck } from '../types';
 
 const FEATURES = [
   { to: '/decks', key: 'decks' },
@@ -13,40 +11,6 @@ const FEATURES = [
   { to: '/online', key: 'online' },
   { to: '/life', key: 'life' },
 ];
-
-const COLORS = ['W', 'U', 'B', 'R', 'G'] as const;
-
-/** What a deck tile shows: its colors, mana curve (non-land cards, 0 to 6+) and how much the rules engine simulates. */
-function deckSummary(deck: Deck) {
-  const main = deck.entries.filter((e) => e.board === 'main');
-  const identity = new Set(main.flatMap((e) => e.card.colorIdentity));
-  const curve = Array.from({ length: 7 }, () => 0);
-  let simulated = 0;
-  let total = 0;
-  for (const e of main) {
-    if (!/\bLand\b/.test(e.card.typeLine)) curve[Math.min(6, Math.floor(e.card.cmc))] += e.qty;
-    total += e.qty;
-    if (engineStatus(e.card) === 'ok') simulated += e.qty;
-  }
-  return { colors: COLORS.filter((c) => identity.has(c)), curve, simulated, total, side: countCards(deck.entries.filter((e) => e.board === 'side')) };
-}
-
-function Pips({ colors }: { colors: readonly string[] }) {
-  return (
-    <span className="pips">
-      {colors.map((c) => <span key={c} className={`pip pip-${c}`}>{c}</span>)}
-    </span>
-  );
-}
-
-function Curve({ counts, label }: { counts: number[]; label: string }) {
-  const max = Math.max(1, ...counts);
-  return (
-    <span className="mini-curve" role="img" aria-label={`${label}: ${counts.join(', ')}`}>
-      {counts.map((n, i) => <span key={i} style={{ height: `${Math.max(4, (n / max) * 100)}%` }} />)}
-    </span>
-  );
-}
 
 export function Home() {
   const t = useT();

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { BetweenGames } from '../components/BetweenGames';
 import { Link, useSearchParams } from 'react-router-dom';
 import { DeckOptions } from '../components/DeckOptions';
+import { deckBand, deckSummary, Pips, presetColors } from '../components/DeckBits';
+import { PRESET_DECKS } from '../lib/engine/presets';
 import { GameBoard } from '../components/GameBoard';
 import { botAction, fallbackAction } from '../lib/engine/bot';
 import { actor, apply, IllegalAction, newGame, teamOf, teamsOf, type GameState, type PlayerId } from '../lib/engine/engine';
@@ -116,44 +118,56 @@ export function Play() {
   }
 
   if (!game) {
+    const mode = twoHeaded ? 'twoHeaded' : 'duel';
     return (
-      <div className="page">
+      <div className="page setup">
         <h1>{t.play.title}</h1>
-        <div className="panel setup-panel">
-          <label>
-            {t.play.gameType}{' '}
-            <select value={twoHeaded ? '2hg' : 'duel'} onChange={(e) => setTwoHeaded(e.target.value === '2hg')}>
-              <option value="duel">{t.play.duel}</option>
-              <option value="2hg">{t.play.twoHeaded}</option>
-            </select>
-          </label>
-          <label className="check" title={t.play.commanderHint}>
-            <input type="checkbox" checked={commander} onChange={(e) => setCommander(e.target.checked)} /> {t.play.commander}
-          </label>
-          <label>{t.play.yourDeck} <select value={myDeck} onChange={(e) => setMyDeck(e.target.value)}><DeckOptions decks={decks} /></select></label>
-          {twoHeaded && <label>{t.play.allyDeck} <select value={allyDeck} onChange={(e) => setAllyDeck(e.target.value)}><DeckOptions decks={decks} /></select></label>}
-          <label>{twoHeaded ? t.play.botDeck1 : t.play.botDeck} <select value={botDeck} onChange={(e) => setBotDeck(e.target.value)}><DeckOptions decks={decks} /></select></label>
-          {twoHeaded && <label>{t.play.botDeck2} <select value={botDeck2} onChange={(e) => setBotDeck2(e.target.value)}><DeckOptions decks={decks} /></select></label>}
-          <label>
-            {t.match.format}{' '}
-            <select value={bestOf} onChange={(e) => setBestOf(Number(e.target.value) as 1 | 3)}>
-              <option value={1}>{t.match.single}</option>
-              <option value={3}>{t.match.bo3}</option>
-            </select>
-          </label>
-          <label>
-            {t.play.first}{' '}
-            <select value={first} onChange={(e) => setFirst(e.target.value as typeof first)}>
-              <option value="random">{t.play.firstOptions.random}</option>
-              <option value="me">{t.play.firstOptions.me}</option>
-              <option value="bot">{t.play.firstOptions.bot}</option>
-            </select>
-          </label>
-          <button onClick={start} disabled={loading}>{loading ? t.common.loadingCards : t.play.start}</button>
-          {missingCommander && <div className="error small">{t.game.noCommanderInDeck(chosen!.name)}</div>}
-          {error && <div className="error small">{errorText(t, error)}</div>}
-        </div>
-        <RulesNote />
+
+        <section className="setup-section">
+          <h4>{t.play.gameType}</h4>
+          <div className="mode-tiles">
+            {(['duel', 'twoHeaded'] as const).map((m) => (
+              <ModeTile key={m} mode={m} on={mode === m} onClick={() => setTwoHeaded(m === 'twoHeaded')} />
+            ))}
+            <ModeTile mode="commander" on={commander} onClick={() => setCommander(!commander)} />
+          </div>
+        </section>
+
+        <section className="deck-pickers">
+          <DeckPicker label={t.play.yourDeck} value={myDeck} onChange={setMyDeck} />
+          {twoHeaded && <DeckPicker label={t.play.allyDeck} value={allyDeck} onChange={setAllyDeck} />}
+          <DeckPicker label={twoHeaded ? t.play.botDeck1 : t.play.botDeck} value={botDeck} onChange={setBotDeck} />
+          {twoHeaded && <DeckPicker label={t.play.botDeck2} value={botDeck2} onChange={setBotDeck2} />}
+        </section>
+
+        <section className="setup-options">
+          <Segmented
+            label={t.match.format}
+            value={bestOf}
+            options={[[1, t.match.single], [3, t.match.bo3]]}
+            onChange={setBestOf}
+          />
+          <Segmented
+            label={t.play.first}
+            value={first}
+            options={[['random', t.play.firstOptions.random], ['me', t.play.firstOptions.me], ['bot', t.play.firstOptions.bot]]}
+            onChange={setFirst}
+          />
+          <button className="start-button" onClick={start} disabled={loading}>{loading ? t.common.loadingCards : t.play.start}</button>
+        </section>
+        {missingCommander && <div className="error small">{t.game.noCommanderInDeck(chosen!.name)}</div>}
+        {error && <div className="error small">{errorText(t, error)}</div>}
+
+        <section className="panel engine-summary">
+          <div>
+            <strong>{t.play.engineTitle}</strong>
+            <p className="small muted">{t.play.rules}</p>
+          </div>
+          <div className="engine-links">
+            {chosen && <Link to={`/decks/${chosen.id}`}>{t.play.deckInEngine} →</Link>}
+            <Link to="/decks">{t.play.buildDeck} →</Link>
+          </div>
+        </section>
       </div>
     );
   }
@@ -208,6 +222,74 @@ export function Play() {
           </>
         }
       />
+    </div>
+  );
+}
+
+const MODE_ICONS = {
+  duel: 'M6 22L20 8M8 6l14 14M5 18l5 5M18 5l5 5',
+  twoHeaded: 'M9 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM19 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 24c0-4 3-7 7-7s7 3 7 7M14 24c0-4 2-7 5-7s7 3 7 7',
+  commander: 'M4 21h20M6 21l-2-11 6 4 4-7 4 7 6-4-2 11',
+};
+
+/** A game mode as a tile: duel or Two-Headed Giant (one of them), Commander rules (on or off, with either). */
+function ModeTile({ mode, on, onClick }: { mode: keyof typeof MODE_ICONS; on: boolean; onClick: () => void }) {
+  const t = useT();
+  const [title, text] = t.play.modes[mode];
+  return (
+    <button type="button" className={`mode-tile ${on ? 'on' : ''}`} aria-pressed={on} onClick={onClick}>
+      <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true">
+        <path d={MODE_ICONS[mode]} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      <span className="mode-title">{title}</span>
+      <span className="small muted">{text}</span>
+    </button>
+  );
+}
+
+/** A deck as a tile (color band, name, what the engine simulates, colors); the select over it picks another one. */
+function DeckPicker({ label, value, onChange }: { label: string; value: string; onChange: (id: string) => void }) {
+  const t = useT();
+  const decks = useApp((s) => s.decks);
+  const deck = decks.find((d) => d.id === value);
+  const summary = deck ? deckSummary(deck) : null;
+  const colors = summary ? summary.colors : presetColors(value);
+  const preset = PRESET_DECKS.find((p) => p.id === value);
+  const name = deck?.name ?? (preset ? (t.presets[preset.id] ?? preset.name) : value);
+  const line = summary
+    ? `${t.formats[deck!.format as keyof typeof t.formats] ?? deck!.format} · ${t.home.simulated(summary.simulated, summary.total)}`
+    : t.play.preset;
+  return (
+    <label className="deck-picker">
+      <h4>{label}</h4>
+      <span className="deck-picker-card">
+        <span className="deck-band" style={{ background: deckBand(colors) }} />
+        <span className="deck-picker-text">
+          <span className="deck-picker-name">{name}</span>
+          <span className={`small ${summary && summary.simulated === summary.total ? 'ok' : 'muted'}`}>{line}</span>
+        </span>
+        <Pips colors={colors} />
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M5 7l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
+        <select value={value} onChange={(e) => onChange(e.target.value)} aria-label={label}>
+          <DeckOptions decks={decks} />
+        </select>
+      </span>
+    </label>
+  );
+}
+
+/** A choice between a few options, as a row of toggle buttons. */
+function Segmented<V extends string | number>({ label, value, options, onChange }: { label: string; value: V; options: [V, string][]; onChange: (v: V) => void }) {
+  return (
+    <div className="segmented-field">
+      <h4 id={`seg-${label}`}>{label}</h4>
+      <div className="segmented" role="radiogroup" aria-labelledby={`seg-${label}`}>
+        {options.map(([v, text]) => (
+          <button key={String(v)} type="button" role="radio" aria-checked={v === value} className={v === value ? 'on' : ''} onClick={() => onChange(v)}>
+            {text}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

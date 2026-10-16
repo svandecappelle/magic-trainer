@@ -454,6 +454,14 @@ export const en = {
     bringYourOwn: 'to bring your own.',
     yourDecks: 'Your decks',
     presets: 'Presets',
+    modes: {
+      duel: ['Duel', 'You against one bot. 20 life, London mulligan.'],
+      twoHeaded: ['Two-Headed Giant', 'You and a bot ally against two bots. Shared life; you see your ally\'s hand.'],
+      commander: ['Commander', 'Commander rules: 40 life, the command zone, 21 commander damage. With either game.'],
+    } as Record<'duel' | 'twoHeaded' | 'commander', [string, string]>,
+    preset: 'Preset',
+    engineTitle: 'What the engine plays',
+    deckInEngine: 'See what your deck\'s cards do in the engine',
   },
 
   match: {

@@ -463,6 +463,14 @@ export const fr: Messages = {
     bringYourOwn: 'pour jouer avec le vôtre.',
     yourDecks: 'Vos decks',
     presets: 'Prédéfinis',
+    modes: {
+      duel: ['Duel', 'Vous contre un bot. 20 points de vie, mulligan London.'],
+      twoHeaded: ['Géant bicéphale', 'Vous et un bot allié contre deux bots. Points de vie partagés ; vous voyez la main de votre allié.'],
+      commander: ['Commander', 'Règles Commander : 40 points de vie, la zone de commandement, 21 blessures de commandant. Dans les deux parties.'],
+    },
+    preset: 'Prédéfini',
+    engineTitle: 'Ce que joue le moteur',
+    deckInEngine: 'Voir ce que font les cartes de votre deck dans le moteur',
   },
 
   match: {
