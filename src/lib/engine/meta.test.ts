@@ -1910,3 +1910,140 @@ describe('Metagame audit 2026-10-16: rule-changing permanents', () => {
     expect(s.players[1].hand).toHaveLength(theirHand + 1);
   });
 });
+
+describe('Commander deck (Aang, Swift Savior)', () => {
+  const harbinger = creature('Harbinger of the Seas', 2, 2, { typeLine: 'Creature — Merfolk Wizard', manaCost: '{1}{U}{U}', cmc: 3, oracleText: 'Nonbasic lands are Islands.' });
+  const tnn = creature('True-Name Nemesis', 3, 1, { typeLine: 'Creature — Merfolk Rogue', manaCost: '{1}{U}{U}', cmc: 3, oracleText: 'As this creature enters, choose a player.\nThis creature has protection from the chosen player.' });
+  const clamp = card({ name: 'Skullclamp', typeLine: 'Artifact — Equipment', manaCost: '{1}', cmc: 1, oracleText: 'Equipped creature gets +1/-1.\nWhenever equipped creature dies, draw two cards.\nEquip {1}' });
+  const apparition = creature('Skyclave Apparition', 2, 2, {
+    typeLine: 'Creature — Kor Spirit', manaCost: '{1}{W}{W}', cmc: 3,
+    oracleText: 'When this creature enters, exile up to one target nonland, nontoken permanent you don\'t control with mana value 4 or less.\nWhen this creature leaves the battlefield, the exiled card\'s owner creates an X/X blue Illusion creature token, where X is the mana value of the exiled card.',
+  });
+  const interrupter = creature('Aven Interrupter', 2, 2, {
+    typeLine: 'Creature — Bird Rogue', manaCost: '{1}{W}{W}', cmc: 3, keywords: ['Flash', 'Flying'],
+    oracleText: 'Flash\nFlying\nWhen this creature enters, exile target spell. It becomes plotted. (Its owner may cast it as a sorcery on a later turn without paying its mana cost.)\nSpells your opponents cast from graveyards or from exile cost {2} more to cast.',
+  });
+  const queen = creature('The Queen of Dale', 1, 3, { typeLine: 'Legendary Creature — Human Noble', manaCost: '{1}{W}', cmc: 2, oracleText: 'Whenever an opponent casts their first noncreature spell each turn, you recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)' });
+  const tchalla = creature('King T\'Challa', 2, 3, { typeLine: 'Legendary Creature — Human Noble Hero', manaCost: '{1}{W}{U}', cmc: 3, keywords: ['Flash'], oracleText: 'Flash\nWhenever a player draws their second card each turn, you draw a card.\n{4}{W}{U}: Transform King T\'Challa. Activate only as a sorcery.' });
+  const thinIce = card({ name: 'On Thin Ice', typeLine: 'Snow Enchantment — Aura', manaCost: '{W}', cmc: 1, oracleText: 'Enchant snow land you control\nWhen this Aura enters, exile target creature an opponent controls until this Aura leaves the battlefield.' });
+  const wave = card({
+    name: 'Parallax Wave', typeLine: 'Enchantment', manaCost: '{2}{W}{W}', cmc: 4,
+    oracleText: 'Fading 5 (This enchantment enters with five fade counters on it. At the beginning of your upkeep, remove a fade counter from it. If you can\'t, sacrifice it.)\nRemove a fade counter from this enchantment: Exile target creature.\nWhen this enchantment leaves the battlefield, each player returns to the battlefield all cards they own exiled with it.',
+  });
+  const haunt = card({ name: 'Moorland Haunt', typeLine: 'Land', oracleText: '{T}: Add {C}.\n{W}{U}, {T}, Exile a creature card from your graveyard: Create a 1/1 white Spirit creature token with flying.' });
+  const tundra = card({ name: 'Tundra', typeLine: 'Land — Plains Island', oracleText: '({T}: Add {W} or {U}.)' });
+  const snowPlains = card({ name: 'Snow-Covered Plains', typeLine: 'Basic Snow Land — Plains' });
+  const shock = spell('Shock', '{B}', 'Shock deals 2 damage to any target.');
+  const bear = creature('Bear', 2, 2, { manaCost: '{1}{G}', cmc: 2 });
+  const run = (s: GameState) => {
+    for (let i = 0; i < 12 && !s.pending && (s.stack.length || s.triggered?.length); i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+
+  it('Harbinger of the Seas: nonbasic lands are Islands', () => {
+    const s = board({ mine: [tundra], theirs: [harbinger] });
+    expect(unitsOf(s, perm(s, 'Tundra')!)).toEqual([['U']]);
+  });
+
+  it('True-Name Nemesis: protection from the chosen player', () => {
+    // The opponent's, with protection from player 0: no target, no block.
+    let s = board({ mana: 1, hand: [shock], mine: [bear], theirs: [tnn] });
+    perm(s, 'True-Name Nemesis')!.chosenPlayer = 0;
+    expect(errorOf(() => apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'permanent', iid: iidOf(s, 'True-Name Nemesis') }]] }))).not.toBeNull();
+    expect(canBlock(perm(s, 'Bear')!, perm(s, 'True-Name Nemesis')!)).toBe(false);
+    // Cast: the only opponent is chosen.
+    s = board({ mine: [card({ name: 'Island', typeLine: 'Basic Land — Island' }), card({ name: 'Island', typeLine: 'Basic Land — Island' }), card({ name: 'Island', typeLine: 'Basic Land — Island' })], hand: [tnn] });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    expect(perm(s, 'True-Name Nemesis')!.chosenPlayer).toBe(1);
+  });
+
+  it('Skullclamp draws two when the equipped creature dies', () => {
+    let s = board({ mana: 1, mine: [clamp, creature('Elf', 1, 1)] });
+    const hand = s.players[0].hand.length;
+    const equip = activatedOf(clamp).findIndex((a) => a.equip);
+    s = run(settle(apply(s, { type: 'activate', iid: iidOf(s, 'Skullclamp'), index: equip, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Elf') }]] })));
+    expect(perm(s, 'Elf')).toBeUndefined();
+    expect(s.players[0].hand).toHaveLength(hand + 2);
+  });
+
+  it('Skyclave Apparition: the exiled card\'s owner gets an X/X Illusion when it leaves', () => {
+    const plains = card({ name: 'Plains', typeLine: 'Basic Land — Plains' });
+    let s = board({ mine: [plains, plains, plains], hand: [apparition, spell('Murder', '{B}', 'Destroy target creature.')], theirs: [bear] });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    if (s.pending?.choice.kind === 'targets') s = run(apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] } }));
+    expect(perm(s, 'Bear')).toBeUndefined();
+    expect(perm(s, 'Skyclave Apparition')!.exiledCard).toEqual({ cmc: 2, owner: 1 });
+    s.battlefield.push({ iid: 'sw', card: swamp, controller: 0, tapped: false, sick: false, damage: 0, deathtouched: false, counters: {}, boosts: [] });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h1', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Skyclave Apparition') }]] })));
+    const illusion = s.battlefield.find((p) => p.card.name === 'Illusion')!;
+    expect([illusion.controller, powerOf(illusion), toughnessOf(illusion)]).toEqual([1, 2, 2]);
+  });
+
+  it('Aven Interrupter: an opponent\'s spells from graveyards or exile cost {2} more', () => {
+    const souls = spell('Lingering Souls', '{2}{W}', 'Create two 1/1 white Spirit creature tokens with flying.\nFlashback {1}{B}', 'Sorcery');
+    const s = board({ theirs: [interrupter] });
+    expect(castCost(s, 0, souls, { from: 'graveyard' })).toEqual({ generic: 3, colored: [['B']] });
+    expect(castCost(s, 1, souls, { from: 'graveyard' })).toEqual({ generic: 1, colored: [['B']] });
+  });
+
+  it('The Queen of Dale recruits; King T\'Challa draws on any second card', () => {
+    let s = board({ mana: 1, hand: [shock], theirs: [queen] });
+    const theirHand = s.players[1].hand.length;
+    s = settle(apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'player', player: 1 }]] }));
+    for (let i = 0; i < 6 && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    // Player 1 drew, and discards (its own choice): a land (Island) makes no token.
+    expect(s.pending?.choice).toMatchObject({ kind: 'cards', player: 1, purpose: 'discard' });
+    const options = (s.pending!.choice as { options: { iid: string }[] }).options;
+    s = run(apply(s, { type: 'choose', answer: { kind: 'cards', iids: [options[0].iid] } }));
+    expect(s.players[1].hand).toHaveLength(theirHand);
+    expect(s.battlefield.some((p) => p.card.name === 'Human Soldier')).toBe(false);
+
+    const wheel = spell('Wheel', '{B}', 'Each player draws two cards.', 'Sorcery');
+    s = board({ mana: 1, hand: [wheel], mine: [tchalla] });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    // Two players reach their second card: two triggers, 2 + 2 cards for player 0.
+    expect(s.players[0].hand).toHaveLength(4);
+  });
+
+  it('On Thin Ice enchants a snow land you control', () => {
+    const s = board({ mine: [snowPlains, card({ name: 'Plains', typeLine: 'Basic Land — Plains' })], hand: [thinIce], theirs: [bear] });
+    const opts = castOptions(s, 0, 'h0');
+    expect(opts.length).toBeGreaterThan(0);
+    expect(errorOf(() => apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Plains') }]] }))).not.toBeNull();
+    expect(errorOf(() => apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Snow-Covered Plains') }]] }))).toBeNull();
+  });
+
+  it('Parallax Wave: fade counters exile creatures until it leaves', () => {
+    let s = board({ mine: [wave], theirs: [bear] });
+    perm(s, 'Parallax Wave')!.counters.fade = 5;
+    s = run(settle(apply(s, { type: 'activate', iid: iidOf(s, 'Parallax Wave'), index: 0, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] })));
+    expect(perm(s, 'Bear')).toBeUndefined();
+    expect(perm(s, 'Parallax Wave')!.counters.fade).toBe(4);
+    // With its last counter used, destroying it brings the Bear back.
+    const naturalize = spell('Shatter', '{B}', 'Destroy target enchantment.');
+    s = board({ mana: 1, mine: [wave], theirs: [bear], hand: [naturalize] });
+    perm(s, 'Parallax Wave')!.counters.fade = 1;
+    s = run(settle(apply(s, { type: 'activate', iid: iidOf(s, 'Parallax Wave'), index: 0, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] })));
+    expect(errorOf(() => apply(s, { type: 'activate', iid: iidOf(s, 'Parallax Wave'), index: 0, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Parallax Wave') }]] }))).toBe('noCounterToRemove');
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Parallax Wave') }]] })));
+    expect(perm(s, 'Bear')).toBeDefined();
+  });
+
+  it('Thraben Inspector investigates: a Clue token', () => {
+    const inspector = creature('Thraben Inspector', 1, 2, { typeLine: 'Creature — Human Soldier', manaCost: '{W}', oracleText: 'When this creature enters, investigate. (Create a Clue token. It\'s an artifact with "{2}, Sacrifice this token: Draw a card.")' });
+    let s = board({ mine: [card({ name: 'Plains', typeLine: 'Basic Land — Plains' })], hand: [inspector] });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    expect(s.battlefield.some((p) => p.card.name === 'Clue')).toBe(true);
+  });
+
+  it('Moorland Haunt exiles a creature card from the graveyard to make a Spirit', () => {
+    const plains = card({ name: 'Plains', typeLine: 'Basic Land — Plains' });
+    let s = board({ mine: [haunt, plains, card({ name: 'Island', typeLine: 'Basic Land — Island' })], grave: [bear] });
+    const index = activatedOf(haunt).findIndex((a) => a.cost.exileFromGraveyard);
+    s = apply(s, { type: 'activate', iid: iidOf(s, 'Moorland Haunt'), index });
+    expect(s.pending?.choice).toMatchObject({ kind: 'cards', purpose: 'exileCost' });
+    s = run(settle(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['g0'] } })));
+    expect(s.players[0].exile.map((c) => c.card.name)).toEqual(['Bear']);
+    expect(s.battlefield.some((p) => p.card.name === 'Spirit')).toBe(true);
+  });
+});

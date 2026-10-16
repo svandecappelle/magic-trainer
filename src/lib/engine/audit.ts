@@ -1,7 +1,7 @@
 import type { Card } from '../../types';
 import {
   activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, entersCounters, entersTappedRule, beginsWithLuck, discardsLandInstead, manaConditions, stateMana, doesntUntap, frontText, gameRulesOf, isInstantOrSorcery,
-  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, type AbilitySpec,
+  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, returnsExiledWhenLeaving, fadingOf, type AbilitySpec,
 } from './rules';
 
 /**
@@ -71,6 +71,7 @@ function keywordLine(card: Card, line: string, one: Card): LineReport | null {
     if (k === 'mobilize') return triggersOf(one).length > 0;
     if (k === 'storied') return isStoried(one);
     if (k === 'crew') return activatedOf(one).some((a) => a.cost.crew !== undefined);
+    if (k === 'fading') return fadingOf(one) > 0;
     if (k === 'cumulative upkeep') return triggersOf(one).some((tr) => tr.ability.effects.some((x) => x.kind === 'cumulativeUpkeep'));
     if (k === 'devoid') return true; // the card's colors are already none
     if (k === 'metalcraft') return manaConditions(one).some((c) => 'artifacts' in c);
@@ -148,6 +149,11 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   if (doublesEquippedTriggers(one)) return { text: line, status: 'ok', how: 'triggers an additional time while equipped' };
   if (choosesCreatureType(one)) return { text: line, status: 'ok', how: 'chooses a creature type as it enters' };
   if (discardsLandInstead(one)) return { text: line, status: 'ok', how: 'enters only by discarding a land card' };
+  if (illusionWhenLeaving(one)) return { text: line, status: 'ok', how: 'leaves: the exiled card\'s owner gets an X/X Illusion' };
+  if (returnsExiledWhenLeaving(one)) return { text: line, status: 'ok', how: 'what it exiled returns when it leaves' };
+  if (fadingOf(one)) return { text: line, status: 'ok', how: `fading ${fadingOf(one)}` };
+  // True-Name Nemesis: its two lines are read together.
+  if (protectionFromChosenPlayer(card) && /choose a player|protection from the chosen player/.test(line)) return { text: line, status: 'ok', how: 'protection from a player chosen as it enters' };
   // Meddling Mage: its two lines are read together.
   if (namesSpellToStop(card) && /choose a nonland card name|Spells with the chosen name/.test(line)) return { text: line, status: 'ok', how: 'names a nonland card (one seen in the game): it can\'t be cast' };
   // Pithing Needle: its two lines are read together.

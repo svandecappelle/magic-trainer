@@ -325,6 +325,26 @@ Delighted Halfling makes the legendary spell uncounterable whichever of its two 
 Yavimaya's {G} replaces nothing for a land with several mana per tap (City of Traitors); Mockingbird counts the mana
 spent as its mana cost with X.
 
+## Commander: Aang, Swift Savior (a user's deck, `deck.txt`)
+
+Fixtures: `commander-aang-2026-10`. Fixed (they played wrongly): Harbinger of the Seas (nonbasic lands are Islands),
+True-Name Nemesis (protection from a chosen player: no targets, no blocks, no damage from them), Skullclamp
+("Whenever equipped creature dies"), Skyclave Apparition (the exiled card's owner gets an X/X Illusion when it leaves),
+Aven Interrupter's tax on spells from graveyards and exile, King T'Challa (any player's second card), The Queen of Dale
+(recruit), On Thin Ice ("Enchant snow land you control"), Parallax Wave (fading, "Remove a fade counter" as a cost,
+exiled until it leaves), Moorland Haunt ("Exile a creature card from your graveyard" as a cost), investigate (Thraben
+and Novice Inspector). Decklist import: names of other printings ("Ademi of the Silkchutes" is Spectacular
+Spider-Man) and flavor names ("Mayor Tong of Chin Village" is Drannith Magistrate) are found.
+
+Still not simulated, by mechanic:
+- [ ] Alternative costs: Daze (return an Island), Force of Negation, Reverent Mantra, Solitude and Subtlety (evoke)
+- [ ] Counterspells with a twist: Memory Lapse and Remand (the spell goes back), Reprieve, Tale's End and Tishana's
+  Tidebinder (abilities on the stack), Stern Scolding (power or toughness 2 or less), Wash Away (cleave), Spider-Sense
+- [ ] Library manipulation: Brainstorm, Ponder, Consult the Star Charts; tutors: Enlightened Tutor, Stoneforge Mystic
+- [ ] Aang (airbend, waterbend, transform), King T'Challa's transform, Skycoach Conductor ("prepared"), Swift
+  Reconfiguration (a creature becomes a Vehicle), Mystic Gate (mana paid with mana), Mother of Runes (protection
+  from a chosen color), Ocelot Pride (ascend, copying tokens), Snapcaster Mage (flashback granted)
+
 ## Standard: Boros Dwarves (mtgtop8 deck 899948)
 
 Fixed: granted ward and "hexproof from monocolored" (Lavaspur Boots, Sheltered by Ghosts, Dragonfire Blade), equip

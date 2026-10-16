@@ -361,6 +361,8 @@ export interface TargetFilter {
   nonbasicLands?: boolean;
   /** Legendary only (Mjölnir's "worthy": a legendary non-Villain that's red and/or white). */
   legendary?: boolean;
+  /** Snow only (On Thin Ice: "Enchant snow land you control"). */
+  snow?: boolean;
   /** None of these subtypes, lower case ("non-Villain"). */
   nonSubtypes?: string[];
   /** At least one of these subtypes ("Forest or Plains card"), lower case. */
@@ -387,7 +389,7 @@ export interface TargetSpec {
 // ---------- Effects ----------
 
 /** Counter kinds placed on permanents. */
-export type CounterKind = '+1/+1' | '-1/-1' | 'loyalty' | 'lore' | 'rev' | 'luck' | 'mining' | 'age';
+export type CounterKind = '+1/+1' | '-1/-1' | 'loyalty' | 'lore' | 'rev' | 'luck' | 'mining' | 'age' | 'fade';
 
 /**
  * Who an effect applies to: the targets chosen for a slot, the controller, everyone / each opponent,
@@ -472,6 +474,10 @@ export type Effect =
   | { kind: 'cumulativeUpkeep'; mana: string }
   /** Rhystic Study: "you may draw a card unless that player pays {1}" (that player: the ability's slot 0). */
   | { kind: 'drawUnlessPays'; n: number; mana: number | 'power' }
+  /** Fading: remove a fade counter from it; if you can't, sacrifice it. */
+  | { kind: 'fade' }
+  /** "Recruit": draw a card, then discard a card; a nonland card discarded makes a 1/1 white Human Soldier. */
+  | { kind: 'recruit' }
   /** Teferi, Time Raveler's +1: "Until your next turn, you may cast sorcery spells as though they had flash." */
   | { kind: 'sorceryFlash' }
   /**
@@ -680,6 +686,7 @@ export function parseTargetPhrase(phrase: string): TargetSpec | null {
     else if (w === 'tapped' || w === 'untapped') filter.tapped = w === 'tapped';
     else if (w === 'token' || w === 'nontoken') filter.token = w === 'token';
     else if (w === 'nonbasic' && words[words.indexOf(w) + 1] === 'land') filter.nonbasicLands = true;
+    else if (w === 'snow') filter.snow = true;
     // "target Equipment you control": a permanent with that subtype.
     else if (OTHER_SUBTYPES.includes(w)) {
       (filter.subtypes ??= []).push(w);
@@ -1050,6 +1057,8 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
   });
   scan(new RegExp(`(?:^|[.,] *|then )mill (${AMOUNT}) cards?`, 'gi'), (m) => ({ kind: 'mill', n: toAmount(m[1]), to: 'you' }));
   scan(/\bscry (\d+|X)\b/gi, (m) => ({ kind: 'scry', n: toAmount(m[1]) }));
+  // "Investigate" (Thraben Inspector): create a Clue token.
+  scan(/(?:^|[.,] *|then )investigate(?= *\.|$)/gi, () => ({ kind: 'token', n: 1, token: PREDEFINED_TOKENS.clue }));
   // "Then amass Orcs 1." (the type in the plural: Orcs, Zombies).
   scan(/(?:^|[.] *)(?:Then )?amass ([A-Z][a-z]+?)(?:e?s)? (\d+)(?=\.|$)/g, (m) => ({ kind: 'amass', subtype: m[1], n: Number(m[2]) }));
   scan(new RegExp(`\\bsurveil (\\d+|X)\\b(?!\\. ${SURVEIL_TO_HAND.source})`, 'gi'), (m) => ({ kind: 'surveil', n: toAmount(m[1]) }));
@@ -1523,7 +1532,9 @@ export type TriggerEvent =
    * Each card an opponent draws (Orcish Bowmasters: `notFirstInDrawStep`, "except the first one they draw in each of
    * their draw steps"); Faerie Mastermind: only their `nth` (second) card each turn.
    */
-  | { on: 'opponentDraws'; nth?: number; notFirstInDrawStep?: boolean }
+  | { on: 'opponentDraws'; nth?: number; notFirstInDrawStep?: boolean; anyPlayer?: boolean }
+  /** Skullclamp: "Whenever equipped creature dies, …" */
+  | { on: 'equippedDies' }
   /** City of Traitors: "When you play another land, …" */
   | { on: 'youPlayLand' }
   /** Sowing Mycospawn: "When you cast this spell, …" (`kicked`: "if it was kicked"). */
@@ -1711,6 +1722,11 @@ export function triggersOf(card: Card): TriggerSpec[] {
     // Drop reminder text and ability words ("Landfall — Whenever…").
     const line = raw.replace(/\s*\([^)]*\)/g, '').replace(/^[A-Z][A-Za-z' ]+ — /, '').trim();
 
+    // Fading N: "At the beginning of your upkeep, remove a fade counter from it. If you can't, sacrifice it."
+    if (/^Fading \d+$/i.test(line)) {
+      out.push({ event: { on: 'upkeep', whose: 'you' }, ability: { targets: [], effects: [{ kind: 'fade' }] } });
+      continue;
+    }
     // Cumulative upkeep {1}: "At the beginning of your upkeep, put an age counter on this permanent, then sacrifice it
     // unless you pay its upkeep cost for each age counter on it."
     const cumulative = line.match(/^Cumulative upkeep ((?:\{(?:\d+|[WUBRGC])\})+)$/i);
@@ -1748,6 +1764,11 @@ export function triggersOf(card: Card): TriggerSpec[] {
       out.push({ event: { on: 'enters', self: true }, ability }, { event: { on: 'opponentDraws', notFirstInDrawStep: true }, ability });
       continue;
     }
+    // The Queen of Dale: "Whenever an opponent casts their first noncreature spell each turn, you recruit."
+    if (/^Whenever an opponent casts their first noncreature spell each turn, you recruit\.$/i.test(line)) {
+      out.push({ event: { on: 'opponentCasts', filter: { nonTypes: ['creature'] }, firstNoncreature: true }, ability: { targets: [], effects: [{ kind: 'recruit' }] } });
+      continue;
+    }
     // Esper Sentinel: "Whenever an opponent casts their first noncreature spell each turn, draw a card unless that player
     // pays {X}, where X is this creature's power."
     if (/^Whenever an opponent casts their first noncreature spell each turn, draw a card unless that player pays \{X\}, where X is this creature's power\.$/i.test(line)) {
@@ -1779,10 +1800,22 @@ export function triggersOf(card: Card): TriggerSpec[] {
       out.push({ event: { on: 'dies', self: true }, ability: triggerAbility(toGrave[2], name, true) });
       continue;
     }
+    // Skullclamp: "Whenever equipped creature dies, draw two cards."
+    const equippedDies = line.match(/^Whenever equipped creature dies, (.+)$/i);
+    if (equippedDies) {
+      out.push({ event: { on: 'equippedDies' }, ability: triggerAbility(equippedDies[1], name, true) });
+      continue;
+    }
     // City of Traitors: "When you play another land, sacrifice this land."
     const playLand = line.match(/^When(?:ever)? you play another land, (.+)$/i);
     if (playLand) {
       out.push({ event: { on: 'youPlayLand' }, ability: triggerAbility(playLand[1], name, true) });
+      continue;
+    }
+    // King T'Challa: "Whenever a player draws their second card each turn, you draw a card."
+    const anyDraw = line.match(/^Whenever a player draws their second card each turn, (.+)$/i);
+    if (anyDraw) {
+      out.push({ event: { on: 'opponentDraws', nth: 2, anyPlayer: true }, ability: triggerAbility(anyDraw[1], name, true) });
       continue;
     }
     // Faerie Mastermind: "Whenever an opponent draws their second card each turn, you draw a card."
@@ -1887,6 +1920,10 @@ export interface ActivationCost {
   loyalty?: number;
   /** Crew N: tap untapped creatures you control with total power N or more (chosen when activating). */
   crew?: number;
+  /** Parallax Wave: "Remove a fade counter from this enchantment". */
+  removeCounter?: CounterKind;
+  /** Moorland Haunt: "Exile a creature card from your graveyard" (chosen when activating). */
+  exileFromGraveyard?: TargetFilter;
 }
 
 export interface ActivatedSpec {
@@ -1970,6 +2007,14 @@ export function activatedOf(card: Card): ActivatedSpec[] {
         else ok = false;
       }
       else if (/^pay (\d+) life$/i.test(p)) cost.life = Number(p.match(/\d+/)![0]);
+      else if (/^exile an? ([a-z ]+?) card from your graveyard$/i.test(p)) {
+        const filter = cardWordsFilter(p.match(/^exile an? ([a-z ]+?) card from your graveyard$/i)![1]);
+        if (filter) cost.exileFromGraveyard = filter;
+        else ok = false;
+      }
+      else if (/^remove an? (fade|age|lore) counter from /i.test(p) && selves.includes(p.replace(/^remove an? \w+ counter from /i, '').toLowerCase())) {
+        cost.removeCounter = p.match(/^remove an? (\w+)/i)![1].toLowerCase() as CounterKind;
+      }
       else ok = false;
     }
     if (!ok) continue;
@@ -1990,7 +2035,10 @@ export function activatedOf(card: Card): ActivatedSpec[] {
     const optional = /^you may /i.test(text);
     const body = optional ? `you ${text.slice('you may '.length)}` : text;
     // {S} must be paid with mana from a snow source, which the engine doesn't track (Faceless Haven).
-    const ability = UNSUPPORTED.test(body) || cost.mana.includes('{S}') ? NO_EFFECT : parseAbilityText(body, name);
+    let ability = UNSUPPORTED.test(body) || cost.mana.includes('{S}') ? NO_EFFECT : parseAbilityText(body, name);
+    // Parallax Wave: "When this enchantment leaves the battlefield, each player returns to the battlefield all cards
+    // they own exiled with it." → its exile lasts until it leaves.
+    if (returnsExiledWhenLeaving(card)) ability = { ...ability, effects: ability.effects.map((x) => (x.kind === 'destroy' && x.exile ? { ...x, untilLeaves: true } : x)) };
     out.push({ text: line, cost, ability: optional && ability.effects.length ? { ...ability, optional } : ability, sorcery, once, ...(discountPer ? { discountPer } : {}) });
   }
   activatedCache.set(key, out);
@@ -2308,6 +2356,27 @@ export const choosesBasicType = (card: Card) =>
 export const namesSpellToStop = (card: Card) =>
   /^As this creature enters, choose a nonland card name\.$/m.test(frontText(card)) && /^Spells with the chosen name can't be cast\.$/m.test(frontText(card));
 
+/**
+ * Skyclave Apparition: "When this creature leaves the battlefield, the exiled card's owner creates an X/X blue Illusion
+ * creature token, where X is the mana value of the exiled card."
+ */
+export const illusionWhenLeaving = (card: Card) =>
+  /^When this creature leaves the battlefield, the exiled card's owner creates an X\/X blue Illusion creature token, where X is the mana value of the exiled card\.$/m.test(frontText(card));
+
+/** Parallax Wave: "When this enchantment leaves the battlefield, each player returns to the battlefield all cards they own exiled with it." */
+export const returnsExiledWhenLeaving = (card: Card) =>
+  /^When this (?:enchantment|artifact|creature|permanent) leaves the battlefield, each player returns to the battlefield all cards they own exiled with it\.$/m.test(frontText(card));
+
+/** Fading N: "This enchantment enters with N fade counters on it. At the beginning of your upkeep, remove a fade counter from it. If you can't, sacrifice it." */
+export function fadingOf(card: Card): number {
+  const m = frontText(card).match(/^Fading (\d+)$/m);
+  return m ? Number(m[1]) : 0;
+}
+
+/** True-Name Nemesis: "As this creature enters, choose a player." and "This creature has protection from the chosen player." */
+export const protectionFromChosenPlayer = (card: Card) =>
+  /^As this creature enters, choose a player\.$/m.test(frontText(card)) && /^This creature has protection from the chosen player\.$/m.test(frontText(card));
+
 /** Hexing Squelcher: "Spells you control can't be countered." */
 export const protectsSpells = (card: Card) => /^Spells you control can't be countered\.$/m.test(frontText(card));
 
@@ -2397,7 +2466,11 @@ export type GameRule =
   /** Drannith Magistrate: "Your opponents can't cast spells from anywhere other than their hands." */
   | 'opponentsCastFromHandOnly'
   /** Magus of the Moon: "Nonbasic lands are Mountains." */
-  | 'nonbasicLandsAreMountains';
+  | 'nonbasicLandsAreMountains'
+  /** Harbinger of the Seas: "Nonbasic lands are Islands." */
+  | 'nonbasicLandsAreIslands'
+  /** Aven Interrupter: "Spells your opponents cast from graveyards or from exile cost {2} more to cast." */
+  | 'opponentsGraveyardExileSpellsCost2';
 
 const GAME_RULES: [RegExp, GameRule][] = [
   [/^Your opponents can't cast spells during your turn\.$/m, 'opponentsCantCastOnYourTurn'],
@@ -2420,6 +2493,8 @@ const GAME_RULES: [RegExp, GameRule][] = [
   [/^Activated abilities of artifacts can't be activated\.$/m, 'noArtifactAbilities'],
   [/^Your opponents can't cast spells from anywhere other than their hands\.$/m, 'opponentsCastFromHandOnly'],
   [/^Nonbasic lands are Mountains\.$/m, 'nonbasicLandsAreMountains'],
+  [/^Nonbasic lands are Islands\.$/m, 'nonbasicLandsAreIslands'],
+  [/^Spells your opponents cast from graveyards or from exile cost \{2\} more to cast\.$/m, 'opponentsGraveyardExileSpellsCost2'],
 ];
 
 const rulesCache = new Map<string, GameRule[]>();

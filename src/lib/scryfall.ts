@@ -119,7 +119,7 @@ export async function fetchCardsByName(names: string[]): Promise<{ found: Card[]
     await throttle();
     const res = await fetch(`${API}/cards/collection`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'User-Agent': 'MagicTrainer/1.0' },
       body: JSON.stringify({ identifiers: batch.map((name) => ({ name })) }),
     });
     if (!res.ok) throw new Error(`Scryfall error ${res.status}`);
@@ -157,7 +157,8 @@ async function searchAll(query: string, multilingual: boolean): Promise<Scryfall
   let url: string | null = `${API}/cards/search?q=${encodeURIComponent(query)}${multilingual ? '&include_multilingual=true' : ''}`;
   while (url) {
     await throttle();
-    const res: Response = await fetch(url, { headers: { Accept: 'application/json' } });
+    // Scryfall refuses requests without a User-Agent (Node scripts; browsers send their own).
+    const res: Response = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': 'MagicTrainer/1.0' } });
     if (res.status === 404) break;
     if (!res.ok) throw new Error(`Scryfall error ${res.status}`);
     const body = await res.json();
@@ -183,12 +184,27 @@ export async function fetchPrintings(names: string[], lang: string): Promise<Map
 }
 
 /** Look up cards by their printed name in any language ("Foudre"), keyed by that lowercased name. */
+/**
+ * One card per name with Scryfall's exact lookup, which also knows flavor names (crossover printings: "Mayor Tong of
+ * Chin Village" is Drannith Magistrate). Keyed by the name asked, lower case. For the few names nothing else found.
+ */
+export async function fetchByExactNames(names: string[]): Promise<Map<string, Card>> {
+  const found = new Map<string, Card>();
+  for (const name of names) {
+    await throttle();
+    const res = await fetch(`${API}/cards/named?exact=${encodeURIComponent(name)}`, { headers: { Accept: 'application/json', 'User-Agent': 'MagicTrainer/1.0' } });
+    if (res.ok) found.set(name.toLowerCase(), toCard(await res.json()));
+  }
+  return found;
+}
+
 export async function fetchByPrintedNames(names: string[]): Promise<Map<string, Card>> {
   const found = new Map<string, Card>();
   for (let i = 0; i < names.length; i += 20) {
     for (const c of await searchAll(exactNames(names.slice(i, i + 20)), true)) {
       const card = toCard(c);
-      for (const n of [card.printedName, card.printedName?.split(' // ')[0], card.name]) {
+      // English printings may have another name too ("Ademi of the Silkchutes" is Spectacular Spider-Man).
+      for (const n of [card.printedName, card.printedName?.split(' // ')[0], c.printed_name, card.name]) {
         if (n && !found.has(n.toLowerCase())) found.set(n.toLowerCase(), card);
       }
     }

@@ -32,6 +32,7 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
     case 'sacrificeCost': return t.game.choice.sacrificeCost({ card: card(String(p.card)) });
     case 'creatureType': return t.game.choice.creatureType({ card: card(String(p.card)) });
     case 'basicType': return t.game.choice.basicType({ card: card(String(p.card)) });
+    case 'chosenPlayer': return t.game.choice.chosenPlayer({ card: card(String(p.card)) });
     case 'spellName': return t.game.choice.spellName({ card: card(String(p.card)) });
     case 'cardName': return t.game.choice.cardName({ card: card(String(p.card)) });
     case 'crewCost': return t.game.choice.crewCost({ card: card(String(p.card)), n });

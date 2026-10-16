@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -50,6 +50,10 @@ export interface Permanent extends CardInst {
   attachedTo?: string;
   /** Cavern of Souls: the creature type chosen as it entered. */
   chosenType?: string;
+  /** Skyclave Apparition: the card it exiled (its mana value and owner), for its leaves trigger. */
+  exiledCard?: { cmc: number; owner: PlayerId };
+  /** True-Name Nemesis: the player chosen as it entered (it has protection from them). */
+  chosenPlayer?: PlayerId;
   /** Pithing Needle: the card name chosen as it entered ('' when there was nothing to name). */
   chosenName?: string;
   /** Chrome Mox: the card exiled with it (imprint). */
@@ -218,6 +222,7 @@ export type ChoicePurpose =
   | 'cardName' // Pithing Needle: "choose a card name"
   | 'spellName' // Meddling Mage: "choose a nonland card name"
   | 'basicType' // Multiversal Passage: "choose a basic land type"
+  | 'chosenPlayer' // True-Name Nemesis: "choose a player"
   | 'crewCost' // Crew N: which creatures to tap
   | 'dig' // "look at the top N cards …": which to put into the hand
   | 'tradeForCard' // Chandra's +2: sacrifice an artifact or discard a card (or neither)
@@ -260,7 +265,7 @@ export interface Pending {
    * What continues once answered: the end of turn, the spell or ability being resolved, or a
    * triggered ability waiting for targets (`trigger`).
    */
-  resume: 'cleanup' | 'effect' | 'trigger' | 'activation' | 'legend' | 'payLife' | 'castCost' | 'clone' | 'discardLandInstead' | 'gemstoneCaverns' | 'damageOrder' | 'creatureType' | 'cardName' | 'basicType' | 'crew' | 'triggerMode';
+  resume: 'cleanup' | 'effect' | 'trigger' | 'activation' | 'legend' | 'payLife' | 'castCost' | 'clone' | 'discardLandInstead' | 'gemstoneCaverns' | 'damageOrder' | 'creatureType' | 'cardName' | 'basicType' | 'chosenPlayer' | 'crew' | 'triggerMode';
   /** For clone: the window the resolving spell belongs to. */
   reason?: WindowReason;
   /** For payLife: the land that entered. */
@@ -344,6 +349,7 @@ export type LogEntry =
   | { k: 'beginsOnBattlefield'; p: PlayerId; card: string }
   | { k: 'chosenType'; card: string; type: string }
   | { k: 'chosenName'; card: string; name: string }
+  | { k: 'chosenPlayer'; card: string; p: PlayerId }
   | { k: 'emblem'; p: PlayerId; card: string }
   | { k: 'becomesCreature'; card: string }
   | { k: 'crewed'; card: string }
@@ -487,7 +493,7 @@ export type Action =
 /** Why an action was refused. Rendered in the player's language (src/i18n). */
 export type GameErrorCode =
   | 'gameOver' | 'keepFirst' | 'notMulliganTime' | 'noMoreMulligans' | 'chooseBottom' | 'notInHand'
-  | 'landTiming' | 'landAlreadyPlayed' | 'notALand' | 'notASpell' | 'sorcerySpeed' | 'castTiming' | 'sorceryOnly' | 'nameStopped' | 'mustAttack'
+  | 'landTiming' | 'landAlreadyPlayed' | 'notALand' | 'notASpell' | 'sorcerySpeed' | 'castTiming' | 'sorceryOnly' | 'nameStopped' | 'mustAttack' | 'noCounterToRemove' | 'nothingToExile'
   | 'needsTarget' | 'tooManyTargets' | 'targetMustBe' | 'illegalTarget' | 'notEnoughMana' | 'declareBlockersFirst'
   | 'notAttackStep' | 'cannotAttack' | 'notBlockStep' | 'notAttacking' | 'menace' | 'cannotBlock'
   | 'makeChoiceFirst' | 'nothingToChoose' | 'badChoice' | 'badX'
@@ -590,6 +596,9 @@ const counterBonus = (perm: Permanent) => (perm.counters['+1/+1'] ?? 0) - (perm.
 export const powerOf = (perm: Permanent) => power(perm.card) + sum(perm, 'power') + counterBonus(perm) + (perm.statics?.power ?? 0);
 export const toughnessOf = (perm: Permanent) => toughness(perm.card) + sum(perm, 'toughness') + counterBonus(perm) + (perm.statics?.toughness ?? 0);
 
+/** True-Name Nemesis: protection from the chosen player (their spells, abilities, creatures and damage). */
+const protectedFromPlayer = (perm: Permanent, p: PlayerId) => perm.chosenPlayer === p && protectionFromChosenPlayer(perm.card);
+
 /** Does `perm` have protection from a source of these colors? */
 const protectedFrom = (perm: Permanent, source: Card) => protectionsOf(perm.card).some((c) => cardColors(source).includes(c));
 
@@ -600,7 +609,7 @@ const protectedFrom = (perm: Permanent, source: Card) => protectionsOf(perm.card
 export function unitsOf(s: GameState, perm: Permanent, spell?: Card): Color[][] {
   const identity = s.players[perm.controller]?.identity;
   // Magus of the Moon: a nonbasic land only makes {R} (Yavimaya and Urborg still add their types).
-  if (mooned(s, perm.card)) return landTypeMana(s, [['R']]);
+  if (mooned(s, perm.card)) return landTypeMana(s, [[moonType(s, perm.card) === 'island' ? 'U' : 'R']]);
   let units = manaUnits(perm.card, identity);
   if (isLandCard(perm.card)) units = landTypeMana(s, units);
   // Springleaf Drum, Gene Pollinator: any color, with another untapped permanent to tap.
@@ -660,7 +669,7 @@ export function unitsOf(s: GameState, perm: Permanent, spell?: Card): Color[][] 
 
 /** A subtype, counting Yavimaya, Cradle of Growth: "Each land is a Forest in addition to its other land types." */
 const landHasType = (s: GameState, card: Card, type: string) =>
-  (mooned(s, card) ? type === 'mountain' : hasSubtype(card, type))
+  (mooned(s, card) ? type === moonType(s, card) : hasSubtype(card, type))
   || (type === 'forest' && isLandCard(card) && withRule(s, 'landsAreForests').length > 0)
   || (type === 'swamp' && isLandCard(card) && withRule(s, 'landsAreSwamps').length > 0);
 
@@ -733,7 +742,8 @@ const painfulMana = (perm: Permanent) =>
 /** Permanents on the battlefield with a rule-changing static ability. */
 const withRule = (s: GameState, rule: GameRule) => {
   // Magus of the Moon: nonbasic lands lose their abilities (Yavimaya, Urborg).
-  const moon = rule !== 'nonbasicLandsAreMountains' && s.battlefield.some((x) => gameRulesOf(x.card).includes('nonbasicLandsAreMountains'));
+  const moon = rule !== 'nonbasicLandsAreMountains' && rule !== 'nonbasicLandsAreIslands'
+    && s.battlefield.some((x) => gameRulesOf(x.card).some((g) => g === 'nonbasicLandsAreMountains' || g === 'nonbasicLandsAreIslands'));
   return s.battlefield.filter((x) => gameRulesOf(x.card).includes(rule) && !(moon && isNonbasicLand(x.card)))
     // Trinisphere only works untapped.
     .filter((x) => rule !== 'spellsCostAtLeast3' || !x.tapped);
@@ -742,7 +752,14 @@ const withRule = (s: GameState, rule: GameRule) => {
 const isNonbasicLand = (card: Card) => isLandCard(card) && !/\bBasic\b/.test(card.typeLine.split('//')[0]);
 
 /** Magus of the Moon: this permanent is a nonbasic land, so a Mountain with no other ability. */
-const mooned = (s: GameState, card: Card) => isNonbasicLand(card) && withRule(s, 'nonbasicLandsAreMountains').length > 0;
+const mooned = (s: GameState, card: Card) => moonType(s, card) !== null;
+
+/** Magus of the Moon (Mountain), Harbinger of the Seas (Island): the basic type a nonbasic land becomes. */
+function moonType(s: GameState, card: Card): 'mountain' | 'island' | null {
+  if (!isNonbasicLand(card)) return null;
+  if (withRule(s, 'nonbasicLandsAreMountains').length) return 'mountain';
+  return withRule(s, 'nonbasicLandsAreIslands').length ? 'island' : null;
+}
 
 /** Meddling Mage: spells with the name it chose can't be cast. */
 export const spellNameStopped = (s: GameState, name: string) =>
@@ -924,7 +941,9 @@ export function castCost(s: GameState, p: PlayerId, card: Card, opt: { face?: nu
   const tax = (opt.from === 'command' && opt.iid ? 2 * (s.players[p].commanderCasts?.[opt.iid] ?? 0) : 0)
     + (isActivePlayer(s, p) ? 0 : 3 * withRule(s, 'offTurnSpellsCost3').length)
     + (isCreature(c) ? 0 : withRule(s, 'noncreatureSpellsCost1').length)
-    + (s.players[p].spellsThisTurn ?? 0) * withRule(s, 'spellsCostMorePerSpell').length;
+    + (s.players[p].spellsThisTurn ?? 0) * withRule(s, 'spellsCostMorePerSpell').length
+    // Aven Interrupter: {2} more for an opponent's spell cast from a graveyard or from exile.
+    + (opt.from === 'graveyard' || opt.from === 'exile' ? 2 * withRule(s, 'opponentsGraveyardExileSpellsCost2').filter((x) => teamOf(s, x.controller) !== teamOf(s, p)).length : 0);
   const cost = { generic: Math.max(0, base.generic + kicker.generic + tax - discount), colored: [...base.colored, ...kicker.colored] };
   // Trinisphere: less than three mana costs three.
   const total = cost.generic + cost.colored.length;
@@ -967,7 +986,7 @@ export function canAttack(perm: Permanent): boolean {
 
 export function canBlock(blocker: Permanent, attacker: Permanent): boolean {
   if (!isCreature(blocker.card) || blocker.tapped || blocker.statics?.cantBlock) return false;
-  if (protectedFrom(attacker, blocker.card)) return false;
+  if (protectedFrom(attacker, blocker.card) || protectedFromPlayer(attacker, blocker.controller)) return false;
   // Brazen Borrower: "can block only creatures with flying".
   if (blocksOnlyFlyers(blocker.card) && !hasKw(attacker, 'flying')) return false;
   if (hasKw(attacker, 'flying')) return hasKw(blocker, 'flying') || hasKw(blocker, 'reach');
@@ -1098,6 +1117,8 @@ export function activationProblem(s: GameState, p: PlayerId, perm: Permanent, in
     if ((perm.counters.loyalty ?? 0) + spec.cost.loyalty < 0) return 'notEnoughLoyalty';
   }
   if (spec.cost.life && s.players[p].life < spec.cost.life) return 'notEnoughLife';
+  if (spec.cost.removeCounter && !perm.counters[spec.cost.removeCounter]) return 'noCounterToRemove';
+  if (spec.cost.exileFromGraveyard && !s.players[p].graveyard.some((c) => cardMatches(c.card, spec.cost.exileFromGraveyard!))) return 'nothingToExile';
   if (spec.cost.sacrifice && !sacrificeOptions(s, perm, spec).length) return 'nothingToSacrifice';
   if (spec.cost.crew !== undefined && crewOptions(s, perm).reduce((n, x) => n + powerOf(x), 0) < spec.cost.crew) return 'notEnoughCrew';
   if (!findPayment(sourcesFor(s, perm, spec), abilityCost(s, perm, spec, x))) return 'notEnoughMana';
@@ -1182,6 +1203,7 @@ function fitsTypeLine(card: Card, f: TargetFilter): boolean {
   if (f.basic && !types.includes('basic')) return false;
   if (f.nonbasicLands && types.includes('land') && types.includes('basic')) return false;
   if (f.legendary && !types.includes('legendary')) return false;
+  if (f.snow && !types.includes('snow')) return false;
   if (f.nonSubtypes?.some((t) => hasSubtype(card, t))) return false;
   if (f.subtypes && !f.subtypes.some((t) => hasSubtype(card, t))) return false;
   return true;
@@ -1238,6 +1260,7 @@ export function isLegalTarget(s: GameState, caster: PlayerId, spec: TargetSpec, 
   const perm = findPermanent(s, t.iid)!;
   if (hasKw(perm, 'shroud')) return false;
   if (hasKw(perm, 'hexproof') && perm.controller !== caster) return false;
+  if (protectedFromPlayer(perm, caster)) return false;
   // Dragonfire Blade: "hexproof from monocolored" (an opponent's spell or ability from a one-color source).
   if (perm.statics?.hexproofFromMonocolored && perm.controller !== caster && source && cardColors(source).length === 1) return false;
   return !(source && protectedFrom(perm, source));
@@ -1458,9 +1481,9 @@ function draw(d: GameState, p: PlayerId, n: number, drawStep = false) {
 function fireDraw(d: GameState, p: PlayerId, firstInDrawStep: boolean) {
   const nth = d.players[p].drawnThisTurn ?? 0;
   for (const x of d.battlefield) {
-    if (teamOf(d, x.controller) === teamOf(d, p)) continue;
     for (const t of triggersOf(x.card)) {
       if (t.event.on !== 'opponentDraws') continue;
+      if (!t.event.anyPlayer && teamOf(d, x.controller) === teamOf(d, p)) continue;
       if (t.event.nth !== undefined && t.event.nth !== nth) continue;
       if (t.event.notFirstInDrawStep && firstInDrawStep) continue;
       queueTrigger(d, x, x.controller, t.ability);
@@ -1624,10 +1647,22 @@ function removePermanent(d: GameState, perm: Permanent, zone: 'graveyard' | 'exi
   if (zone === 'graveyard' && graveyardExiled(d, perm.owner ?? perm.controller)) zone = 'exile';
   d.battlefield = d.battlefield.filter((x) => x.iid !== perm.iid);
   returnExiledUntil(d, perm);
+  // Skyclave Apparition leaves: the exiled card's owner creates an X/X blue Illusion.
+  if (illusionWhenLeaving(perm.card) && perm.exiledCard) {
+    const { cmc, owner } = perm.exiledCard;
+    const illusion = { name: 'Illusion', typeLine: 'Token Creature — Illusion', colors: ['U'] as Color[], power: cmc, toughness: cmc, keywords: [], oracleText: '' };
+    queueTrigger(d, perm, owner, { targets: [], effects: [{ kind: 'token', n: 1, token: illusion }] });
+  }
   // A token that leaves the battlefield ceases to exist (it still "dies").
   if (!isToken(printedCard(perm))) putInZone(d, perm.owner ?? perm.controller, { iid: perm.iid, card: printedCard(perm), ...(perm.commander ? { commander: true } : {}) }, zone);
   // A creature dies; an artifact's "When this artifact is put into a graveyard from the battlefield" too.
   if (zone === 'graveyard' && (isCreature(perm.card) || triggersOf(perm.card).some((t) => t.event.on === 'dies' && t.event.self))) fireObject(d, 'dies', perm);
+  // Skullclamp: "Whenever equipped creature dies" (its Equipment is still attached).
+  if (zone === 'graveyard' && isCreature(perm.card)) {
+    for (const eq of d.battlefield.filter((x) => x.attachedTo === perm.iid)) {
+      for (const t of triggersOf(eq.card)) if (t.event.on === 'equippedDies') queueTrigger(d, eq, eq.controller, t.ability);
+    }
+  }
 }
 
 /**
@@ -1758,6 +1793,9 @@ function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, op
     perm.tapped = true;
     (d.lifeChoices ??= []).push({ iid: perm.iid, n: rule.n });
   }
+  // Fading N: enters with N fade counters.
+  const fading = fadingOf(inst.card);
+  if (fading) perm.counters = { ...perm.counters, fade: fading };
   const counters = entersCounters(inst.card);
   if (counters) {
     const n = typeof counters.n === 'number' ? counters.n : (opts.x ?? 0);
@@ -1916,6 +1954,23 @@ function askCardName(d: GameState): boolean {
   return true;
 }
 
+/** True-Name Nemesis: "As this creature enters, choose a player." (the only opponent is chosen without asking). */
+function askChosenPlayer(d: GameState): boolean {
+  const perm = d.battlefield.find((x) => protectionFromChosenPlayer(x.card) && x.chosenPlayer === undefined);
+  if (!perm) return false;
+  const options = opponentsOf(d, perm.controller);
+  if (options.length === 1) {
+    perm.chosenPlayer = options[0];
+    log(d, { k: 'chosenPlayer', card: perm.card.name, p: options[0] });
+    return false;
+  }
+  d.pending = {
+    choice: { kind: 'mode', player: perm.controller, purpose: 'chosenPlayer', min: 1, max: 1, modes: options.map((q) => d.players[q].name || String(q)), params: { card: perm.card.name, players: options.join(',') } },
+    resume: 'chosenPlayer', iid: perm.iid,
+  };
+  return true;
+}
+
 /** Cavern of Souls: "As this land enters, choose a creature type." (asked once nothing else is going on). */
 function askCreatureType(d: GameState): boolean {
   const perm = d.battlefield.find((x) => choosesCreatureType(x.card) && !x.chosenType);
@@ -2055,7 +2110,8 @@ function fireCast(d: GameState, p: PlayerId, card: Card) {
     if (teamOf(d, x.controller) === teamOf(d, p)) continue;
     for (const t of triggersOf(x.card)) {
       if (t.event.on === 'opponentCasts' && cardMatches(card, t.event.filter) && (!t.event.firstNoncreature || d.players[p].noncreatureThisTurn === 1)) {
-        (d.triggered ??= []).push({ source: { iid: x.iid, card: x.card }, controller: x.controller, ability: t.ability, targets: [[{ kind: 'player', player: p }]] });
+        // Its slot 0 (if any) is the player who cast it ("unless that player pays").
+        (d.triggered ??= []).push({ source: { iid: x.iid, card: x.card }, controller: x.controller, ability: t.ability, targets: t.ability.targets.length ? [[{ kind: 'player', player: p }]] : [] });
       }
     }
   }
@@ -2270,7 +2326,7 @@ function dealDamage(d: GameState, source: CardInst, controller: PlayerId, target
   // Mjölnir: "Double all damage equipped creature would deal." (the creature, or its own ability.)
   const dealer = findPermanent(d, source.iid) ?? ((source as StackItem).source ? findPermanent(d, (source as StackItem).source!) : undefined);
   if (dealer?.statics?.doubleDamage) amount *= 2;
-  if (typeof target !== 'number' && protectedFrom(target, source.card)) return; // protection prevents it
+  if (typeof target !== 'number' && (protectedFrom(target, source.card) || protectedFromPlayer(target, controller))) return; // protection prevents it
   // "Prevent the next N damage" shields.
   const key = typeof target === 'number' ? `player:${target}` : target.iid;
   for (const sh of d.shields ?? []) {
@@ -2540,6 +2596,9 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         (r.removed ??= {})[perm.iid] = perm.controller;
         log(d, { k: e.exile ? 'exiled' : 'destroyed', card: perm.card.name });
         if (e.untilLeaves) (d.exiledUntil ??= []).push({ source: item.source!, iid: perm.iid, owner: perm.owner ?? perm.controller });
+        // Skyclave Apparition: remembers the card it exiled (a token is no card: nothing to remember).
+        const exiler = item.source ? findPermanent(d, item.source) : undefined;
+        if (e.exile && exiler && illusionWhenLeaving(exiler.card) && !isToken(printedCard(perm))) exiler.exiledCard = { cmc: printedCard(perm).cmc, owner: perm.owner ?? perm.controller };
       }
       for (const g of graveCards) {
         unbury(g);
@@ -2869,6 +2928,35 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       log(d, { k: 'counters', card: army.card.name, counter: '+1/+1', n: e.n });
       break;
     }
+    case 'fade': {
+      // Fading: a fade counter removed, or sacrificed when there's none left.
+      const src = item.source ? findPermanent(d, item.source) : undefined;
+      if (!src) break;
+      if (src.counters.fade) src.counters = { ...src.counters, fade: src.counters.fade - 1 };
+      else sacrifice(d, src);
+      break;
+    }
+    case 'recruit': {
+      // Draw, then discard a card: a nonland one makes a 1/1 white Human Soldier.
+      const ps = d.players[caster];
+      if (answer?.kind !== 'cards') {
+        draw(d, caster, 1);
+        if (!ps.hand.length) break;
+        return { kind: 'cards', player: caster, purpose: 'discard', min: 1, max: 1, options: [...ps.hand], params: { n: 1 } };
+      }
+      const picked = answer.iids[0];
+      const inst = ps.hand.find((c) => c.iid === picked);
+      if (!inst) break;
+      moveToGraveyard(d, caster, inst, 'hand');
+      log(d, { k: 'discard', p: caster, card: inst.card.name });
+      if (!isLandCard(inst.card)) {
+        const soldier = { name: 'Human Soldier', typeLine: 'Token Creature — Human Soldier', colors: ['W'] as Color[], power: 1, toughness: 1, keywords: [], oracleText: '' };
+        d.abilities = (d.abilities ?? 0) + 1;
+        enterBattlefield(d, { iid: `token-${d.abilities}`, card: tokenCard(soldier) }, caster);
+        log(d, { k: 'token', p: caster, card: soldier.name, n: 1 });
+      }
+      break;
+    }
     case 'cumulativeUpkeep': {
       // An age counter, then pay the cost for each one, or sacrifice it.
       const src = item.source ? findPermanent(d, item.source) : undefined;
@@ -3184,7 +3272,7 @@ function settle(d: GameState) {
   for (;;) {
     checkStateBased(d);
     if (d.winner !== null || d.pending || d.mulligan) return;
-    if (askLegendRule(d) || askBasicType(d) || askLifeChoice(d) || askCreatureType(d) || askCardName(d)) return;
+    if (askLegendRule(d) || askBasicType(d) || askLifeChoice(d) || askCreatureType(d) || askCardName(d) || askChosenPlayer(d)) return;
     if (d.triggered?.length) {
       if (!flushTrigger(d)) return;
       continue;
@@ -3489,6 +3577,13 @@ export function apply(state: GameState, action: Action): GameState {
             log(d, { k: 'legendRule', card: perm.card.name });
           }
         }
+      } else if (pending.resume === 'chosenPlayer' && action.answer.kind === 'mode') {
+        const perm = findPermanent(d, pending.iid!);
+        const chosen = String(pending.choice.params?.players ?? '').split(',').map(Number)[action.answer.modes[0]];
+        if (perm && chosen !== undefined) {
+          perm.chosenPlayer = chosen as PlayerId;
+          log(d, { k: 'chosenPlayer', card: perm.card.name, p: chosen as PlayerId });
+        }
       } else if (pending.resume === 'basicType' && action.answer.kind === 'mode') {
         const perm = findPermanent(d, pending.iid!);
         const type = BASIC_LAND_TYPES[action.answer.modes[0]];
@@ -3597,6 +3692,14 @@ export function apply(state: GameState, action: Action): GameState {
           }
         } else sacrifice(d, findPermanent(d, action.answer.iids[0])!);
         finishCast(d, pending.activation!.item, pending.activation!.named);
+      } else if (pending.resume === 'activation' && action.answer.kind === 'cards' && pending.choice.purpose === 'exileCost') {
+        // Moorland Haunt: the card exiled from the graveyard as a cost.
+        const picked = action.answer.iids[0];
+        const inst = me.graveyard.find((c) => c.iid === picked)!;
+        me.graveyard = me.graveyard.filter((c) => c !== inst);
+        me.exile.push(inst);
+        log(d, { k: 'exiledCard', card: inst.card.name });
+        finishActivation(d, pending.activation!.item, pending.activation!.named);
       } else if (pending.resume === 'activation' && action.answer.kind === 'cards') {
         sacrifice(d, findPermanent(d, action.answer.iids[0])!);
         finishActivation(d, pending.activation!.item, pending.activation!.named);
@@ -3771,6 +3874,19 @@ export function apply(state: GameState, action: Action): GameState {
         d.pending = {
           choice: { kind: 'cards', player: p, purpose: 'crewCost', min: 1, max: options.length, options, params: { card: perm.card.name, n: spec.cost.crew } },
           resume: 'crew',
+          activation: { item, named },
+        };
+        break;
+      }
+      // Parallax Wave: "Remove a fade counter from this enchantment".
+      const removed = spec.cost.removeCounter;
+      if (removed) perm.counters = { ...perm.counters, [removed]: (perm.counters[removed] ?? 1) - 1 };
+      if (spec.cost.exileFromGraveyard) {
+        // Moorland Haunt: the rest of the cost is paid; the player now picks the card to exile.
+        const options = me.graveyard.filter((c) => cardMatches(c.card, spec.cost.exileFromGraveyard!));
+        d.pending = {
+          choice: { kind: 'cards', player: p, purpose: 'exileCost', min: 1, max: 1, options, params: { card: perm.card.name, n: 1 } },
+          resume: 'activation',
           activation: { item, named },
         };
         break;

@@ -3,7 +3,7 @@
  * Both sites are asked politely: one request at a time, with a pause, and a User-Agent naming the tool.
  */
 import { parseDecklist, type ParsedLine } from '../../src/lib/deckText';
-import { toCard, type ScryfallCard } from '../../src/lib/scryfall';
+import { fetchByExactNames, fetchByPrintedNames, toCard, type ScryfallCard } from '../../src/lib/scryfall';
 import type { Card } from '../../src/types';
 
 const USER_AGENT = 'magic-trainer-audit/1.0 (+https://github.com/svandecappelle/magic-trainer)';
@@ -100,6 +100,18 @@ export async function scryfallCards(names: string[], missing: string[] = []): Pr
     cards.push(...body.data.map(toCard));
     missing.push(...(body.not_found ?? []).map((m) => m.name));
     await sleep(150);
+  }
+  // Other English names of a printing ("Ademi of the Silkchutes" is Spectacular Spider-Man) and flavor names
+  // ("Mayor Tong of Chin Village" is Drannith Magistrate): the app's lookups for names a decklist import misses.
+  if (missing.length) {
+    const printed = await fetchByPrintedNames(missing);
+    const exact = await fetchByExactNames(missing.filter((n) => !printed.has(n.toLowerCase())));
+    for (const name of [...missing]) {
+      const card = printed.get(name.toLowerCase()) ?? exact.get(name.toLowerCase());
+      if (!card) continue;
+      cards.push(card);
+      missing.splice(missing.indexOf(name), 1);
+    }
   }
   return cards;
 }

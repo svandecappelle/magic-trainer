@@ -1,6 +1,6 @@
 import type { DeckEntry } from '../types';
 import type { ParsedLine } from './deckText';
-import { fetchByPrintedNames, fetchCardsByName } from './scryfall';
+import { fetchByExactNames, fetchByPrintedNames, fetchCardsByName } from './scryfall';
 
 /** Look up parsed decklist lines on Scryfall and turn them into deck entries. */
 export async function resolveDecklist(lines: ParsedLine[]): Promise<{ entries: DeckEntry[]; notFound: string[] }> {
@@ -17,6 +17,12 @@ export async function resolveDecklist(lines: ParsedLine[]): Promise<{ entries: D
     const printed = await fetchByPrintedNames(unknown);
     for (const [name, card] of printed) if (!byName.has(name)) byName.set(name, card);
     notFound = unknown.filter((n) => !byName.has(n.toLowerCase()));
+  }
+  // Flavor names of crossover printings ("Mayor Tong of Chin Village"): one exact lookup each.
+  if (notFound.length) {
+    const flavored = await fetchByExactNames(notFound);
+    for (const [name, card] of flavored) byName.set(name, card);
+    notFound = notFound.filter((n) => !byName.has(n.toLowerCase()));
   }
 
   const entries: DeckEntry[] = [];

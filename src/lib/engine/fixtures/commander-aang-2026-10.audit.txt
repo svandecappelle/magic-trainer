@@ -1,0 +1,438 @@
+NONE     Aang, Swift Savior // Aang and La, Ocean's Fury {1}{W}{U} — Legendary Creature — Human Avatar Ally // Legendary Creature — Avatar Spirit Ally (other faces not audited)
+  ✓ Flash
+      keyword
+  ✓ Flying
+      keyword
+  ✗ When Aang enters, airbend up to one other target creature or spell.
+      trigger (enters), effect not simulated
+  ✗ Waterbend {8}: Transform Aang.
+      keyword not simulated: waterbend
+NONE     Brainstorm {U} — Instant
+  ✗ Draw three cards, then put two cards from your hand on top of your li…
+      spell not simulated
+NONE     Consult the Star Charts {1}{U} — Instant
+  ✓ Kicker {1}{U}
+      keyword
+  ✗ Look at the top X cards of your library, where X is the number of lan…
+      spell not simulated
+NONE     Daze {1}{U} — Instant
+  ✗ You may return an Island you control to its owner's hand rather than …
+      spell not simulated
+  ✗ Counter target spell unless its controller pays {1}.
+      spell not simulated
+NONE     Enlightened Tutor {W} — Instant
+  ✗ Search your library for an artifact or enchantment card, reveal it, t…
+      spell not simulated
+NONE     Force of Negation {1}{U}{U} — Instant
+  ✗ If it's not your turn, you may exile a blue card from your hand rathe…
+      spell not simulated
+  ✗ Counter target noncreature spell. If that spell is countered this way…
+      spell not simulated
+NONE     Gitaxian Probe {U/P} — Sorcery
+  ✗ Look at target player's hand.
+      spell not simulated
+  ✗ Draw a card.
+      spell not simulated
+NONE     Malcolm, Alluring Scoundrel {1}{U} — Legendary Creature — Siren Pirate
+  ✓ Flash
+      keyword
+  ✓ Flying
+      keyword
+  ✗ Whenever Malcolm deals combat damage to a player, put a chorus counte…
+      trigger (combatDamage), effect not simulated
+NONE     Memory Lapse {1}{U} — Instant
+  ✗ Counter target spell. If that spell is countered this way, put it on …
+      spell not simulated
+NONE     Mother of Runes {W} — Creature — Human Cleric
+  ✗ {T}: Target creature you control gains protection from the color of y…
+      activated ability, effect not simulated
+NONE     Ocelot Pride {W} — Creature — Cat
+  ✓ First strike, lifelink
+      keyword
+  ✗ Ascend
+      keyword not simulated: ascend
+  ✗ At the beginning of your end step, if you gained life this turn, crea…
+      trigger (endStep), effect not simulated
+NONE     Phelia, Exuberant Shepherd {1}{W} — Legendary Creature — Dog
+  ✓ Flash
+      keyword
+  ✗ Whenever Phelia attacks, exile up to one other target nonland permane…
+      trigger (attacks), effect not simulated
+NONE     Ponder {U} — Sorcery
+  ✗ Look at the top three cards of your library, then put them back in an…
+      spell not simulated
+  ✗ Draw a card.
+      spell not simulated
+NONE     Remand {1}{U} — Instant
+  ✗ Counter target spell. If that spell is countered this way, put it int…
+      spell not simulated
+  ✗ Draw a card.
+      spell not simulated
+NONE     Reprieve {1}{W} — Instant
+  ✗ Return target spell to its owner's hand.
+      spell not simulated
+  ✗ Draw a card.
+      spell not simulated
+NONE     Reverent Mantra {3}{W} — Instant
+  ✗ You may exile a white card from your hand rather than pay this spell'…
+      spell not simulated
+  ✗ Choose a color. All creatures gain protection from the chosen color u…
+      spell not simulated
+NONE     Sink into Stupor // Soporific Springs {1}{U}{U} — Instant // Land (other faces not audited)
+  ✗ Return target spell or nonland permanent an opponent controls to its …
+      spell not simulated
+NONE     Skycoach Conductor // All Aboard {2}{U} // {U} — Creature — Bird Pilot // Instant (other faces not audited)
+  ✓ Flash
+      keyword
+  ✓ Flying, vigilance
+      keyword
+  ? This creature enters prepared.
+      not read by the engine
+NONE     Snapcaster Mage {1}{U} — Creature — Human Wizard
+  ✓ Flash
+      keyword
+  ✗ When this creature enters, target instant or sorcery card in your gra…
+      trigger (enters), effect not simulated
+NONE     Solitude {3}{W}{W} — Creature — Elemental Incarnation
+  ✓ Flash
+      keyword
+  ✓ Lifelink
+      keyword
+  ✗ When this creature enters, exile up to one other target creature. Tha…
+      trigger (enters), effect not simulated
+  ✗ Evoke—Exile a white card from your hand.
+      keyword not simulated: evoke
+NONE     Spider-Sense {1}{U} — Instant
+  ✗ Web-slinging {U}
+      keyword not simulated: web-slinging
+  ✗ Counter target instant spell, sorcery spell, or triggered ability.
+      spell not simulated
+NONE     Step Through {3}{U}{U} — Sorcery
+  ✗ Wizardcycling {2}
+      keyword not simulated: wizardcycling
+  ✗ Return two target creatures to their owners' hands.
+      spell not simulated
+NONE     Stern Scolding {U} — Instant
+  ✗ Counter target creature spell with power or toughness 2 or less.
+      spell not simulated
+NONE     Subtlety {2}{U}{U} — Creature — Elemental Incarnation
+  ✓ Flash
+      keyword
+  ✓ Flying
+      keyword
+  ✗ When this creature enters, choose up to one target creature spell or …
+      trigger (enters), effect not simulated
+  ✗ Evoke—Exile a blue card from your hand.
+      keyword not simulated: evoke
+NONE     Swift Reconfiguration {W} — Enchantment — Aura
+  ✓ Flash
+      keyword
+  ✓ Enchant creature or Vehicle
+      keyword
+  ? Enchanted permanent is a Vehicle artifact with crew 5 and it loses al…
+      not read by the engine
+NONE     Tale's End {1}{U} — Instant
+  ✗ Counter target activated ability, triggered ability, or legendary spe…
+      spell not simulated
+NONE     Tishana's Tidebinder {2}{U} — Creature — Merfolk Wizard
+  ✓ Flash
+      keyword
+  ✗ When this creature enters, counter up to one target activated or trig…
+      trigger (enters), effect not simulated
+NONE     Wash Away {U} — Instant
+  ✗ Cleave {1}{U}{U}
+      keyword not simulated: cleave
+  ✗ Counter target spell [that wasn't cast from its owner's hand].
+      spell not simulated
+PARTIAL  Aven Interrupter {1}{W}{W} — Creature — Bird Rogue
+  ✓ Flash
+      keyword
+  ✓ Flying
+      keyword
+  ✗ When this creature enters, exile target spell. It becomes plotted.
+      trigger (enters), effect not simulated
+  ✓ Spells your opponents cast from graveyards or from exile cost {2} mor…
+      rule for the game: opponentsGraveyardExileSpellsCost2
+PARTIAL  Cryptic Command {1}{U}{U}{U} — Instant
+  ✓ Choose two —
+      modal: choose 2–2
+  ✓ • Counter target spell.
+      mode
+  ✓ • Return target permanent to its owner's hand.
+      mode
+  ✗ • Tap all creatures your opponents control.
+      mode not simulated (can't be chosen)
+  ✓ • Draw a card.
+      mode
+PARTIAL  Ghost Vacuum {1} — Artifact
+  ✓ {T}: Exile target card from a graveyard.
+      activated → destroy (1 target)
+  ✗ {6}, {T}, Sacrifice this artifact: Put each creature card exiled with…
+      activated ability, effect not simulated
+PARTIAL  King T'Challa // Black Panther, Hope Enduring {1}{W}{U} — Legendary Creature — Human Noble Hero // Legendary Creature — Human Warrior Hero (other faces not audited)
+  ✓ Flash
+      keyword
+  ✓ Whenever a player draws their second card each turn, you draw a card.
+      trigger (opponentDraws) → draw
+  ✗ {4}{W}{U}: Transform King T'Challa. Activate only as a sorcery.
+      activated ability, effect not simulated
+PARTIAL  March of Otherworldly Light {X}{W} — Instant
+  ✓ As an additional cost to cast this spell, you may exile any number of…
+      optional cost, never paid
+  ✗ Exile target artifact, creature, or enchantment with mana value X or …
+      spell not simulated
+PARTIAL  Mystic Gate  — Land
+  ✓ {T}: Add {C}.
+      mana: C
+  ? {W/U}, {T}: Add {W}{W}, {W}{U}, or {U}{U}.
+      mana ability not understood
+PARTIAL  Pre-War Formalwear {2}{W} — Artifact — Equipment
+  ✗ When this Equipment enters, return target creature card with mana val…
+      trigger (enters), effect not simulated
+  ✓ Equipped creature gets +2/+2 and has vigilance.
+      static ability
+  ✓ Equip {3}
+      keyword
+PARTIAL  Quantum Riddler {3}{U}{U} — Creature — Sphinx
+  ✓ Flying
+      keyword
+  ✓ When this creature enters, draw a card.
+      trigger (enters) → draw
+  ✓ As long as you have one or fewer cards in hand, if you would draw one…
+      draws one more card with one or fewer in hand
+  ✗ Warp {1}{U}
+      keyword not simulated: warp
+PARTIAL  Stoneforge Mystic {1}{W} — Creature — Kor Artificer
+  ✓ When this creature enters, you may search your library for an Equipme…
+      trigger (enters) → search, optional
+  ✗ {1}{W}, {T}: You may put an Equipment card from your hand onto the ba…
+      activated ability, effect not simulated
+OK       Adarkar Wastes  — Land
+  ✓ {T}: Add {C}.
+      mana: C
+  ✓ {T}: Add {W} or {U}. This land deals 1 damage to you.
+      mana: W/U
+OK       Agna Qel'a  — Land
+  ✓ This land enters tapped unless you control a basic land.
+      enters tapped (unlessBasic)
+  ✓ {T}: Add {U}.
+      mana: U
+  ✓ {2}{U}, {T}: Draw a card, then discard a card.
+      activated → draw+discard
+OK       Arid Mesa  — Land
+  ✓ {T}, Pay 1 life, Sacrifice this land: Search your library for a Mount…
+      activated → search
+OK       Brazen Borrower // Petty Theft {1}{U}{U} // {1}{U} — Creature — Faerie Rogue // Instant — Adventure (other faces not audited)
+  ✓ Flash
+      keyword
+  ✓ Flying
+      keyword
+  ✓ This creature can block only creatures with flying.
+      blocks only creatures with flying
+OK       Castle Ardenvale  — Land
+  ✓ This land enters tapped unless you control a Plains.
+      enters tapped (unlessSubtypes)
+  ✓ {T}: Add {W}.
+      mana: W
+  ✓ {2}{W}{W}, {T}: Create a 1/1 white Human creature token.
+      activated → token
+OK       Cathar Commando {1}{W} — Creature — Human Soldier
+  ✓ Flash
+      keyword
+  ✓ {1}, Sacrifice this creature: Destroy target artifact or enchantment.
+      activated → destroy (1 target)
+OK       Change the Equation {1}{U} — Instant
+  ✓ Choose one —
+      modal: choose 1–1
+  ✓ • Counter target spell with mana value 2 or less.
+      mode
+  ✓ • Counter target red or green spell with mana value 6 or less.
+      mode
+OK       Cloud, Midgar Mercenary {W}{W} — Legendary Creature — Human Soldier Mercenary
+  ✓ When Cloud enters, search your library for an Equipment card, reveal …
+      trigger (enters) → search
+  ✓ As long as Cloud is equipped, if a triggered ability of Cloud or an E…
+      triggers an additional time while equipped
+OK       Command Tower  — Land
+  ✓ {T}: Add one mana of any color in your commander's color identity.
+      mana: W/U/B/R/G
+OK       Counterspell {U}{U} — Instant
+  ✓ Counter target spell.
+      spell → counter (1 target)
+OK       Deserted Beach  — Land
+  ✓ This land enters tapped unless you control two or more other lands.
+      enters tapped (unlessOtherLands)
+  ✓ {T}: Add {W} or {U}.
+      mana: W/U
+OK       Drannith Magistrate {1}{W} — Creature — Human Wizard
+  ✓ Your opponents can't cast spells from anywhere other than their hands.
+      rule for the game: opponentsCastFromHandOnly
+OK       Eiganjo, Seat of the Empire  — Legendary Land
+  ✓ {T}: Add {W}.
+      mana: W
+  ✓ Channel — {2}{W}, Discard this card: It deals 4 damage to target atta…
+      channel (from hand) → damage (1 target), {1} less per legendary creature
+OK       Erode {W} — Instant
+  ✓ Destroy target creature or planeswalker. Its controller may search th…
+      spell → destroy+search (1 target)
+OK       Flooded Strand  — Land
+  ✓ {T}, Pay 1 life, Sacrifice this land: Search your library for a Plain…
+      activated → search
+OK       Floodfarm Verge  — Land
+  ✓ {T}: Add {W}.
+      mana: W
+  ✓ {T}: Add {U}. Activate only if you control a Plains or an Island.
+      mana: U
+OK       Get Lost {1}{W} — Instant
+  ✓ Destroy target creature, enchantment, or planeswalker. Its controller…
+      spell → destroy (1 target)
+OK       Glacial Fortress  — Land
+  ✓ This land enters tapped unless you control a Plains or an Island.
+      enters tapped (unlessSubtypes)
+  ✓ {T}: Add {W} or {U}.
+      mana: W/U
+OK       Hallowed Fountain  — Land — Plains Island
+  ✓ As this land enters, you may pay 2 life. If you don't, it enters tapp…
+      enters tapped (payLife)
+OK       Harbinger of the Seas {1}{U}{U} — Creature — Merfolk Wizard
+  ✓ Nonbasic lands are Islands.
+      rule for the game: nonbasicLandsAreIslands
+OK       Hengegate Pathway // Mistgate Pathway  — Land // Land (other faces not audited)
+  ✓ {T}: Add {W}.
+      mana: W
+OK       Lórien Revealed {3}{U}{U} — Sorcery
+  ✓ Islandcycling {1}
+      keyword
+  ✓ Draw three cards.
+      spell → draw
+OK       Marsh Flats  — Land
+  ✓ {T}, Pay 1 life, Sacrifice this land: Search your library for a Plain…
+      activated → search
+OK       Mental Misstep {U/P} — Instant
+  ✓ Counter target spell with mana value 1.
+      spell → counter (1 target)
+OK       Meticulous Archive  — Land — Plains Island
+  ✓ This land enters tapped.
+      enters tapped (always)
+  ✓ When this land enters, surveil 1.
+      trigger (enters) → surveil
+OK       Misty Rainforest  — Land
+  ✓ {T}, Pay 1 life, Sacrifice this land: Search your library for a Fores…
+      activated → search
+OK       Moorland Haunt  — Land
+  ✓ {T}: Add {C}.
+      mana: C
+  ✓ {W}{U}, {T}, Exile a creature card from your graveyard: Create a 1/1 …
+      activated → token
+OK       Multiversal Passage  — Land
+  ✓ As this land enters, choose a basic land type. Then you may pay 2 lif…
+      chooses a basic land type (its mana); pay 2 life or it enters tapped
+  ✓ This land is the chosen type.
+      chooses a basic land type (its mana); pay 2 life or it enters tapped
+OK       Novice Inspector {W} — Creature — Human Detective
+  ✓ When this creature enters, investigate.
+      trigger (enters) → token
+OK       On Thin Ice {W} — Snow Enchantment — Aura
+  ✓ Enchant snow land you control
+      keyword
+  ✓ When this Aura enters, exile target creature an opponent controls unt…
+      trigger (enters) → destroy (1 target)
+OK       Otawara, Soaring City  — Legendary Land
+  ✓ {T}: Add {U}.
+      mana: U
+  ✓ Channel — {3}{U}, Discard this card: Return target artifact, creature…
+      channel (from hand) → bounce (1 target), {1} less per legendary creature
+OK       Parallax Wave {2}{W}{W} — Enchantment
+  ✓ Fading 5
+      keyword
+  ✓ Remove a fade counter from this enchantment: Exile target creature.
+      activated → destroy (1 target)
+  ✓ When this enchantment leaves the battlefield, each player returns to …
+      what it exiled returns when it leaves
+OK       Polluted Delta  — Land
+  ✓ {T}, Pay 1 life, Sacrifice this land: Search your library for an Isla…
+      activated → search
+OK       Preordain {U} — Sorcery
+  ✓ Scry 2, then draw a card.
+      spell → scry+draw
+OK       Prismatic Vista  — Land
+  ✓ {T}, Pay 1 life, Sacrifice this land: Search your library for a basic…
+      activated → search
+OK       Scalding Tarn  — Land
+  ✓ {T}, Pay 1 life, Sacrifice this land: Search your library for an Isla…
+      activated → search
+OK       Seachrome Coast  — Land
+  ✓ This land enters tapped unless you control two or fewer other lands.
+      enters tapped (unlessOtherLands)
+  ✓ {T}: Add {W} or {U}.
+      mana: W/U
+OK       Seam Rip {W} — Enchantment
+  ✓ When this enchantment enters, exile target nonland permanent an oppon…
+      trigger (enters) → destroy (1 target)
+OK       Skullclamp {1} — Artifact — Equipment
+  ✓ Equipped creature gets +1/-1.
+      static ability
+  ✓ Whenever equipped creature dies, draw two cards.
+      trigger (equippedDies) → draw
+  ✓ Equip {1}
+      keyword
+OK       Skyclave Apparition {1}{W}{W} — Creature — Kor Spirit
+  ✓ When this creature enters, exile up to one target nonland, nontoken p…
+      trigger (enters) → destroy (1 target)
+  ✓ When this creature leaves the battlefield, the exiled card's owner cr…
+      leaves: the exiled card's owner gets an X/X Illusion
+OK       Snow-Covered Island  — Basic Snow Land — Island
+OK       Snow-Covered Plains  — Basic Snow Land — Plains
+OK       Spectacular Spider-Man {1}{W} — Legendary Creature — Spider Human Hero
+  ✓ Flash
+      keyword
+  ✓ {1}: Spectacular Spider-Man gains flying until end of turn.
+      activated → pump
+  ✓ {1}, Sacrifice Spectacular Spider-Man: Creatures you control gain hex…
+      activated → pumpAll
+OK       Spell Snare {U} — Instant
+  ✓ Counter target spell with mana value 2.
+      spell → counter (1 target)
+OK       Swords to Plowshares {W} — Instant
+  ✓ Exile target creature. Its controller gains life equal to its power.
+      spell → destroy (1 target)
+OK       Teferi, Time Raveler {1}{W}{U} — Legendary Planeswalker — Teferi
+  ✓ Each opponent can cast spells only any time they could cast a sorcery.
+      rule for the game: opponentsSorcerySpeed
+  ✓ +1: Until your next turn, you may cast sorcery spells as though they …
+      loyalty ability → sorceryFlash
+  ✓ −3: Return up to one target artifact, creature, or enchantment to its…
+      loyalty ability → bounce+draw (1 target)
+OK       The Queen of Dale {1}{W} — Legendary Creature — Human Noble
+  ✓ Whenever an opponent casts their first noncreature spell each turn, y…
+      trigger (opponentCasts) → recruit
+OK       Thraben Inspector {W} — Creature — Human Soldier
+  ✓ When this creature enters, investigate.
+      trigger (enters) → token
+OK       True-Name Nemesis {1}{U}{U} — Creature — Merfolk Rogue
+  ✓ As this creature enters, choose a player.
+      protection from a player chosen as it enters
+  ✓ This creature has protection from the chosen player.
+      protection from a player chosen as it enters
+OK       Tundra  — Land — Plains Island
+OK       Urza's Saga  — Enchantment Land — Urza's Saga
+  ✓ I — This Saga gains "{T}: Add {C}."
+      trigger (chapter) → gainAbility
+  ✓ II — This Saga gains "{2}, {T}: Create a 0/0 colorless Construct arti…
+      trigger (chapter) → gainAbility
+  ✓ III — Search your library for an artifact card with mana cost {0} or …
+      trigger (chapter) → search
+OK       Voice of Victory {1}{W} — Creature — Human Bard
+  ✓ Mobilize 2
+      keyword
+  ✓ Your opponents can't cast spells during your turn.
+      rule for the game: opponentsCantCastOnYourTurn
+OK       Windswept Heath  — Land
+  ✓ {T}, Pay 1 life, Sacrifice this land: Search your library for a Fores…
+      activated → search
+OK       Witch Enchanter // Witch-Blessed Meadow {3}{W} — Creature — Human Warlock // Land (other faces not audited)
+  ✓ When this creature enters, destroy target artifact or enchantment an …
+      trigger (enters) → destroy (1 target)
+
+91 cards: 54 ok, 9 partial, 28 not simulated, 0 can't be cast
+✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)
