@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
-import { activationProblem, actor, apply, canBlock, canCastNow, castCost, castSource, canTapForMana, type Answer, castOptions, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
+import { activationProblem, actor, apply, hasKw, canBlock, canCastNow, castCost, castSource, canTapForMana, type Answer, castOptions, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
 import { botAction } from './bot';
 import { activatedOf, castInfo, castSpec, finalChapter, hasKeyword, type TargetSpec, manaUnits, parseAbilityText, spellSpec, triggersOf } from './rules';
 
@@ -2416,5 +2416,279 @@ describe('Aang deck, batch 3: library mechanics', () => {
     s = run(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['l1'] } }));
     expect(names(s.players[0].hand)).toEqual(['Wizard']);
     expect(names(s.players[0].graveyard)).toEqual(['Step Through']);
+  });
+});
+
+describe('Aang deck, batch 4: permanents with more to do', () => {
+  const mother = creature('Mother of Runes', 1, 1, {
+    typeLine: 'Creature — Human Cleric', manaCost: '{W}', colors: ['W'],
+    oracleText: '{T}: Target creature you control gains protection from the color of your choice until end of turn.',
+  });
+  const mantra = spell('Reverent Mantra', '{3}{W}', 'You may exile a white card from your hand rather than pay this spell\'s mana cost.\nChoose a color. All creatures gain protection from the chosen color until end of turn.');
+  const bolt = card({ name: 'Bolt', typeLine: 'Instant', manaCost: '{R}', cmc: 1, colors: ['R'], oracleText: 'Bolt deals 3 damage to any target.' });
+  const bear = creature('Bear', 2, 2);
+  const run = (s: GameState) => {
+    for (let i = 0; i < 12 && !s.pending && (s.stack.length || s.triggered?.length); i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+
+  it('Mother of Runes: protection from the chosen color, the spell targeting the creature is countered', () => {
+    let s = board({ mine: [mother, bear] });
+    s.stack = [{ iid: 'x0', card: bolt, controller: 1, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] }];
+    s.priority = { player: 0, passes: 0, reason: 'main' };
+    s = apply(s, { type: 'activate', iid: iidOf(s, 'Mother of Runes'), index: 0, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] });
+    // The opponent passes: the ability resolves.
+    expect(s.pending?.choice).toMatchObject({ kind: 'mode', purpose: 'color', modes: ['W', 'U', 'B', 'R', 'G'] });
+    s = run(apply(s, { type: 'choose', answer: { kind: 'mode', modes: [3] } }));
+    expect(perm(s, 'Bear')?.damage).toBe(0);
+    expect(s.log.some((e) => e.k === 'gainsProtection' && e.color === 'R')).toBe(true);
+  });
+
+  it('Mother of Runes: the bot protects its creature from the removal spell\'s color', () => {
+    let s = board({ theirs: [mother, bear] });
+    s.stack = [{ iid: 'x0', card: bolt, controller: 0, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] }];
+    s.priority = { player: 1, passes: 0, reason: 'main' };
+    const action = botAction(s);
+    expect(action).toMatchObject({ type: 'activate', iid: iidOf(s, 'Mother of Runes') });
+    s = apply(s, action);
+    for (let i = 0; i < 20 && s.stack.length; i++) s = apply(s, s.pending || actor(s) === 1 ? botAction(s) : { type: 'pass' });
+    expect(perm(s, 'Bear')?.damage).toBe(0);
+  });
+
+  it('Snapcaster Mage: an instant or sorcery in the graveyard gains flashback for its mana cost this turn', () => {
+    const snap = creature('Snapcaster Mage', 2, 1, {
+      typeLine: 'Creature — Human Wizard', manaCost: '{1}{U}', cmc: 2, colors: ['U'], keywords: ['Flash'],
+      oracleText: 'Flash\nWhen this creature enters, target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost.',
+    });
+    const divination = spell('Divination', '{2}{U}', 'Draw two cards.', 'Sorcery');
+    const islands = Array.from({ length: 5 }, () => card({ name: 'Island', typeLine: 'Basic Land — Island' }));
+    let s = board({ mine: islands, hand: [snap], grave: [divination, bear] });
+    expect(castOptions(s, 0, 'g0')).toEqual([]);
+    s = settle(apply(s, { type: 'cast', iid: 'h0' }));
+    for (let i = 0; i < 6 && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    expect(s.pending?.choice).toMatchObject({ kind: 'targets' });
+    s = run(apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'card', iid: 'g0' }]] } }));
+    expect(s.players[0].graveyard.find((c) => c.iid === 'g0')?.flashbackOnTurn).toBe(s.turn);
+    // Cast from the graveyard for {2}{U}, then exiled.
+    expect(castOptions(s, 0, 'g0').map((o) => o.from)).toEqual(['graveyard']);
+    expect(castCost(s, 0, divination, { from: 'graveyard' }).generic).toBe(2);
+    s = run(settle(apply(s, { type: 'cast', iid: 'g0' })));
+    expect(s.players[0].hand).toHaveLength(2);
+    expect(s.players[0].exile.map((c) => c.card.name)).toEqual(['Divination']);
+    // A creature card can't be targeted.
+    expect(isLegalTarget(s, 0, triggersOf(snap)[0].ability.targets[0], { kind: 'card', iid: 'g1' })).toBe(false);
+  });
+
+  it('Phelia: the exiled permanent comes back at the end step under its owner\'s control; a counter if it\'s yours', () => {
+    const phelia = creature('Phelia, Exuberant Shepherd', 2, 2, {
+      typeLine: 'Legendary Creature — Dog', manaCost: '{1}{W}', cmc: 2, colors: ['W'], keywords: ['Flash'],
+      oracleText: 'Flash\nWhenever Phelia attacks, exile up to one other target nonland permanent. At the beginning of the next end step, return that card to the battlefield under its owner\'s control. If it entered under your control, put a +1/+1 counter on Phelia.',
+    });
+    const toEnd = (s: GameState, target: string) => {
+      s = apply(s, { type: 'pass' }); // to combat
+      for (let i = 0; i < 5 && (s.priority || s.step !== 'attack'); i++) s = apply(s, { type: 'pass' });
+      s = apply(s, { type: 'declareAttackers', attackers: [iidOf(s, 'Phelia, Exuberant Shepherd')] });
+      expect(s.pending?.choice).toMatchObject({ kind: 'targets' });
+      s = settle(apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'permanent', iid: iidOf(s, target) }]] } }));
+      for (let i = 0; i < 20 && s.step !== 'main2'; i++) s = !s.priority && s.step === 'block' ? apply(s, { type: 'declareBlockers', blocks: {} }) : apply(s, { type: 'pass' });
+      expect(perm(s, target)).toBeUndefined();
+      return apply(s, { type: 'pass' }); // end step
+    };
+    // The opponent's creature: back under their control, no counter.
+    let s = toEnd(board({ mine: [phelia], theirs: [bear] }), 'Bear');
+    expect(perm(s, 'Bear')?.controller).toBe(1);
+    expect(perm(s, 'Phelia, Exuberant Shepherd')!.counters['+1/+1']).toBeUndefined();
+    // Our own creature: back under our control, and a +1/+1 counter on Phelia.
+    s = toEnd(board({ mine: [phelia, bear] }), 'Bear');
+    expect(perm(s, 'Bear')?.controller).toBe(0);
+    expect(perm(s, 'Phelia, Exuberant Shepherd')!.counters['+1/+1']).toBe(1);
+  });
+
+  it('Ocelot Pride: a Cat if you gained life; with the city\'s blessing, a copy of each token that entered this turn', () => {
+    const ocelot = creature('Ocelot Pride', 1, 1, {
+      typeLine: 'Creature — Cat', manaCost: '{W}', colors: ['W'], keywords: ['Lifelink', 'Ascend', 'First strike'],
+      oracleText: 'First strike, lifelink\nAscend (If you control ten or more permanents, you get the city\'s blessing for the rest of the game.)\nAt the beginning of your end step, if you gained life this turn, create a 1/1 white Cat creature token. Then if you have the city\'s blessing, for each token you control that entered this turn, create a token that\'s a copy of it.',
+    });
+    const endStep = (s: GameState) => {
+      for (let i = 0; i < 20 && s.step !== 'main2'; i++) s = !s.priority && s.step === 'attack' ? apply(s, { type: 'declareAttackers', attackers: [] }) : apply(s, { type: 'pass' });
+      return settle(apply(s, { type: 'pass' }));
+    };
+    const cats = (s: GameState) => s.battlefield.filter((x) => x.card.name === 'Cat').length;
+    // No life gained: nothing.
+    let s = endStep(board({ mana: 2, mine: [ocelot] }));
+    expect(cats(s)).toBe(0);
+    // Life gained, three permanents: one Cat, no blessing.
+    s = board({ mana: 2, mine: [ocelot] });
+    s.players[0].gainedThisTurn = 1;
+    s = endStep(s);
+    expect(cats(s)).toBe(1);
+    expect(s.players[0].citysBlessing).toBeUndefined();
+    // Ten permanents: the blessing; the new Cat is copied.
+    s = board({ mana: 9, mine: [ocelot] });
+    s.players[0].gainedThisTurn = 1;
+    s = endStep(s);
+    expect(s.players[0].citysBlessing).toBe(true);
+    expect(cats(s)).toBe(2);
+  });
+
+  it('Pre-War Formalwear returns a creature card with mana value 3 or less and is attached to it', () => {
+    const formalwear = card({
+      name: 'Pre-War Formalwear', typeLine: 'Artifact — Equipment', manaCost: '{2}{W}', cmc: 3, keywords: ['Equip'],
+      oracleText: 'When this Equipment enters, return target creature card with mana value 3 or less from your graveyard to the battlefield and attach this Equipment to it.\nEquipped creature gets +2/+2 and has vigilance.\nEquip {3}',
+    });
+    const ogre = creature('Ogre', 3, 3, { manaCost: '{3}{W}', cmc: 4 });
+    const plains = Array.from({ length: 3 }, () => card({ name: 'Plains', typeLine: 'Basic Land — Plains' }));
+    let s = board({ mine: plains, hand: [formalwear], grave: [bear, ogre] });
+    s = settle(apply(s, { type: 'cast', iid: 'h0' }));
+    for (let i = 0; i < 6 && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    const slot = triggersOf(formalwear)[0].ability.targets[0];
+    expect(isLegalTarget(s, 0, slot, { kind: 'card', iid: 'g1' })).toBe(false);
+    s = run(apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'card', iid: 'g0' }]] } }));
+    expect(perm(s, 'Pre-War Formalwear')!.attachedTo).toBe(iidOf(s, 'Bear'));
+    expect(powerOf(perm(s, 'Bear')!)).toBe(4);
+  });
+
+  it('Ghost Vacuum: the creature cards it exiled come back as 1/1 Spirits with a flying counter', () => {
+    const vacuum = card({
+      name: 'Ghost Vacuum', typeLine: 'Artifact', manaCost: '{1}', cmc: 1,
+      oracleText: '{T}: Exile target card from a graveyard.\n{6}, {T}, Sacrifice this artifact: Put each creature card exiled with this artifact onto the battlefield under your control with a flying counter on it. Each of them is a 1/1 Spirit in addition to its other types. Activate only as a sorcery.',
+    });
+    const ogre = creature('Ogre', 4, 4, { typeLine: 'Creature — Ogre' });
+    let s = board({ mana: 6, mine: [vacuum] });
+    s.players[1].graveyard = [{ iid: 'og', card: ogre }];
+    // The bot doesn't sacrifice it with nothing exiled.
+    expect(botAction(s)).not.toMatchObject({ type: 'activate', index: 1 });
+    s = run(settle(apply(s, { type: 'activate', iid: iidOf(s, 'Ghost Vacuum'), index: 0, targets: [[{ kind: 'card', iid: 'og' }]] })));
+    expect(s.players[1].exile.map((c) => c.card.name)).toEqual(['Ogre']);
+    perm(s, 'Ghost Vacuum')!.tapped = false;
+    s = run(settle(apply(s, { type: 'activate', iid: iidOf(s, 'Ghost Vacuum'), index: 1 })));
+    const spirit = perm(s, 'Ogre')!;
+    expect(spirit.controller).toBe(0);
+    expect([powerOf(spirit), toughnessOf(spirit)]).toEqual([1, 1]);
+    expect(spirit.card.typeLine).toBe('Creature — Ogre Spirit');
+    expect(spirit.counters.flying).toBe(1);
+    expect(hasKw(spirit, 'flying')).toBe(true);
+  });
+
+  const land = (type: string, n: number) => Array.from({ length: n }, () => card({ name: type, typeLine: `Basic Land — ${type}` }));
+
+  it('Aang airbends a creature or a spell: exiled, its owner may cast it for {2}', () => {
+    const aang = creature('Aang, Swift Savior', 2, 3, {
+      typeLine: 'Legendary Creature — Human Avatar Ally', manaCost: '{1}{W}{U}', cmc: 3, colors: ['W', 'U'], keywords: ['Flash', 'Flying', 'Airbend', 'Waterbend'],
+      oracleText: 'Flash\nFlying\nWhen Aang enters, airbend up to one other target creature or spell. (Exile it. While it\'s exiled, its owner may cast it for {2} rather than its mana cost.)\nWaterbend {8}: Transform Aang.',
+    });
+    const ogre = creature('Ogre', 4, 4, { manaCost: '{3}{B}{B}', cmc: 5 });
+    let s = board({ mine: [...land('Plains', 1), ...land('Island', 2)], hand: [aang], theirs: [ogre] });
+    s = settle(apply(s, { type: 'cast', iid: 'h0' }));
+    for (let i = 0; i < 6 && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    s = run(apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Ogre') }]] } }));
+    const exiled = s.players[1].exile.find((c) => c.card.name === 'Ogre')!;
+    expect(exiled.castFor).toEqual({ cost: '{2}' });
+    expect(castSource(s, 1, exiled.iid)?.from).toBe('exile');
+    expect(castCost(s, 1, ogre, { from: 'exile', iid: exiled.iid })).toEqual({ generic: 2, colored: [] });
+    // A spell: the opponent's Bolt is exiled, not resolved.
+    s = board({ mine: [...land('Plains', 1), ...land('Island', 2), bear], hand: [aang] });
+    s.stack = [{ iid: 'x0', card: bolt, controller: 1, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] }];
+    s.priority = { player: 0, passes: 0, reason: 'main' };
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    for (let i = 0; i < 6 && !s.pending; i++) s = apply(s, { type: 'pass' });
+    s = run(apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'spell', iid: 'x0' }]] } }));
+    expect(perm(s, 'Bear')?.damage).toBe(0);
+    expect(s.players[1].exile.find((c) => c.card.name === 'Bolt')?.castFor).toEqual({ cost: '{2}' });
+  });
+
+  it('Aven Interrupter plots a spell: free as a sorcery on a later turn ({2} more while it stays)', () => {
+    const aven = creature('Aven Interrupter', 2, 2, {
+      typeLine: 'Creature — Bird Rogue', manaCost: '{1}{W}{W}', cmc: 3, colors: ['W'], keywords: ['Flying', 'Plot', 'Flash'],
+      oracleText: 'Flash\nFlying\nWhen this creature enters, exile target spell. It becomes plotted. (Its owner may cast it as a sorcery on a later turn without paying its mana cost.)\nSpells your opponents cast from graveyards or from exile cost {2} more to cast.',
+    });
+    let s = board({ mine: [...land('Plains', 3), bear], hand: [aven] });
+    s.stack = [{ iid: 'x0', card: bolt, controller: 1, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] }];
+    s.priority = { player: 0, passes: 0, reason: 'main' };
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    for (let i = 0; i < 6 && !s.pending; i++) s = apply(s, { type: 'pass' });
+    s = run(apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'spell', iid: 'x0' }]] } }));
+    const plotted = s.players[1].exile.find((c) => c.card.name === 'Bolt')!;
+    expect(plotted.castFor).toEqual({ cost: '', afterTurn: s.turn, sorcery: true });
+    expect(castSource(s, 1, plotted.iid)).toBeNull();
+    s.turn += 1;
+    expect(castSource(s, 1, plotted.iid)?.from).toBe('exile');
+    // Free, but Aven Interrupter's tax applies to its owner's opponent.
+    expect(castCost(s, 1, bolt, { from: 'exile', iid: plotted.iid })).toEqual({ generic: 2, colored: [] });
+  });
+
+  it('Malcolm: a chorus counter and a loot; with four, the discarded card is cast for free', () => {
+    const malcolm = creature('Malcolm, Alluring Scoundrel', 2, 1, {
+      typeLine: 'Legendary Creature — Siren Pirate', manaCost: '{1}{U}', cmc: 2, colors: ['U'], keywords: ['Flying', 'Flash'],
+      oracleText: 'Flash\nFlying\nWhenever Malcolm deals combat damage to a player, put a chorus counter on it. Draw a card, then discard a card. If there are four or more chorus counters on Malcolm, you may cast the discarded card without paying its mana cost.',
+    });
+    const divination = spell('Divination', '{2}{U}', 'Draw two cards.', 'Sorcery');
+    let s = board({ mine: [malcolm], hand: [divination] });
+    perm(s, 'Malcolm, Alluring Scoundrel')!.counters = { chorus: 3 };
+    s = apply(s, { type: 'pass' }); // to combat
+    for (let i = 0; i < 5 && (s.priority || s.step !== 'attack'); i++) s = apply(s, { type: 'pass' });
+    s = settle(apply(s, { type: 'declareAttackers', attackers: [iidOf(s, 'Malcolm, Alluring Scoundrel')] }));
+    for (let i = 0; i < 20 && !s.pending; i++) s = !s.priority && s.step === 'block' ? apply(s, { type: 'declareBlockers', blocks: {} }) : apply(s, { type: 'pass' });
+    expect(s.pending?.choice).toMatchObject({ kind: 'cards', purpose: 'discard' });
+    s = apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['h0'] } });
+    expect(perm(s, 'Malcolm, Alluring Scoundrel')!.counters.chorus).toBe(4);
+    expect(s.castNow).toEqual({ player: 0, iid: 'h0' });
+    expect(castOptions(s, 0, 'h0')).toHaveLength(1);
+    expect(castCost(s, 0, divination, { from: 'graveyard', iid: 'h0' })).toEqual({ generic: 0, colored: [] });
+    const hand = s.players[0].hand.length;
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    expect(s.players[0].hand.length).toBe(hand + 2);
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toEqual(['Divination']);
+    // Passing instead: the chance is gone.
+    expect(s.castNow).toBeUndefined();
+  });
+
+  it('Mystic Gate: with another land paying {W/U}, two mana in white and blue', () => {
+    const gate = card({ name: 'Mystic Gate', typeLine: 'Land', oracleText: '{T}: Add {C}.\n{W/U}, {T}: Add {W}{W}, {W}{U}, or {U}{U}.' });
+    const sphinx = creature('Sphinx', 3, 3, { manaCost: '{W}{U}{U}', cmc: 3 });
+    // Gate + Plains: {W}{U}, or {U}{U}; with an Island: {W}{U}{U}.
+    let s = board({ mine: [gate, ...land('Plains', 1), ...land('Island', 1)], hand: [sphinx] });
+    expect(castOptions(s, 0, 'h0')).toHaveLength(1);
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    expect(s.battlefield.filter((x) => x.controller === 0 && x.tapped).map((x) => x.card.name).sort()).toEqual(['Island', 'Mystic Gate', 'Plains']);
+    expect(s.players[0].pool ?? []).toEqual([]);
+    // Alone, it makes {C}.
+    s = board({ mine: [gate], hand: [sphinx] });
+    expect(unitsOf(s, perm(s, 'Mystic Gate')!)).toEqual([['C']]);
+    s = board({ mine: [gate, ...land('Swamp', 1)] });
+    expect(unitsOf(s, perm(s, 'Mystic Gate')!)).toEqual([['C']]);
+  });
+
+  it('Swift Reconfiguration: the enchanted creature is a Vehicle with crew 5 until the Aura leaves', () => {
+    const swift = card({
+      name: 'Swift Reconfiguration', typeLine: 'Enchantment — Aura', manaCost: '{W}', cmc: 1, colors: ['W'], keywords: ['Enchant', 'Flash'],
+      oracleText: 'Flash\nEnchant creature or Vehicle\nEnchanted permanent is a Vehicle artifact with crew 5 and it loses all other card types. (It\'s not a creature unless it\'s crewed.)',
+    });
+    const ogre = creature('Ogre', 4, 4, { typeLine: 'Creature — Ogre' });
+    let s = board({ mine: land('Plains', 1), hand: [swift], theirs: [ogre] });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Ogre') }]] })));
+    const vehicle = perm(s, 'Ogre')!;
+    expect(perm(s, 'Swift Reconfiguration')!.attachedTo).toBe(vehicle.iid);
+    expect(vehicle.card.typeLine).toBe('Artifact — Vehicle');
+    expect(activatedOf(vehicle.card).some((a) => a.cost.crew === 5)).toBe(true);
+    // The Aura leaves: a creature again, and the card that leaves is the Ogre as printed.
+    s.battlefield = s.battlefield.filter((x) => x.card.name !== 'Swift Reconfiguration');
+    s = apply(s, { type: 'pass' });
+    expect(perm(s, 'Ogre')!.card.typeLine).toBe('Creature — Ogre');
+    expect(perm(s, 'Ogre')!.reconfigured).toBeUndefined();
+  });
+
+  it('Reverent Mantra: a white card exiled instead; all creatures gain protection from the chosen color', () => {
+    expect(castInfo(mantra).alts).toEqual([{ kind: 'exileCard', color: 'W' }]);
+    const blackOgre = creature('Ogre', 3, 3, { colors: ['B'] });
+    let s = board({ mine: [bear], theirs: [blackOgre], hand: [mantra, creature('Cat', 1, 1, { colors: ['W'] })] });
+    s = settle(apply(s, { type: 'cast', iid: 'h0', alt: 0 }));
+    s = apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['h1'] } });
+    s = run(s);
+    s = run(apply(s, { type: 'choose', answer: { kind: 'mode', modes: [2] } }));
+    expect(perm(s, 'Bear')!.boosts.flatMap((b) => b.protection ?? [])).toEqual(['B']);
+    expect(perm(s, 'Ogre')!.boosts.flatMap((b) => b.protection ?? [])).toEqual(['B']);
+    // The black Ogre can't block a creature with protection from black.
+    expect(canBlock(perm(s, 'Ogre')!, perm(s, 'Bear')!)).toBe(false);
   });
 });

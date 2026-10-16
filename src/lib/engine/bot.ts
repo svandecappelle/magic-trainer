@@ -5,7 +5,7 @@ import {
 } from './engine';
 import {
   activatedOf, auraTarget, castInfo, castSpec, creatureValue, modeSets, faceCard, findPayment, hasInstantSpeed, isAdventure, isPlaneswalker, isSaga, isToken, staticsOf, hasKeyword, isCreature, isInstantOrSorcery, isLandCard, manaColors,
-  choosesBasicType, discardsLandInstead, parseCost, spellSpec, stateMana, type AbilitySpec, type Amount, type Effect,
+  cardColors, reconfiguresEnchanted, choosesBasicType, discardsLandInstead, parseCost, spellSpec, stateMana, type AbilitySpec, type Amount, type Color, type Effect,
 } from './rules';
 import type { Card } from '../../types';
 
@@ -23,6 +23,12 @@ export function botAction(s: GameState): Action {
   if (me === null) throw new Error('No one is to act');
   if (s.mulligan) return mulliganDecision(s, me);
   if (s.pending) return { type: 'choose', answer: answerChoice(s, s.pending.choice) };
+  // Malcolm: a free spell, now or never.
+  const free = s.castNow?.player === me ? s.players[me].graveyard.find((c) => c.iid === s.castNow!.iid) : undefined;
+  if (free && castOptions(s, me, free.iid).length) {
+    const action = isInstantOrSorcery(free.card) ? castWithGoodTarget(s, me, free) : { type: 'cast' as const, iid: free.iid };
+    if (action) return action;
+  }
   if (s.priority) return respond(s, me) ?? { type: 'pass' };
   if (s.step === 'block') return { type: 'declareBlockers', blocks: chooseBlocks(s, me) };
   if (s.step === 'attack') {
@@ -459,7 +465,7 @@ const num = (a: Amount) => (typeof a === 'number' ? a : 0);
 function intentOf(e: Effect): Intent {
   switch (e.kind) {
     case 'damage': case 'destroy': case 'counter': case 'loseLife': case 'mill': case 'discard': case 'bounce': case 'bounceAll': case 'sacrifice':
-    case 'poison': case 'gainControl':
+    case 'poison': case 'gainControl': case 'flickerAtEnd': case 'airbend': case 'plot':
       return 'harm';
     case 'tap':
       return e.untap ? 'neutral' : 'harm';
@@ -467,7 +473,7 @@ function intentOf(e: Effect): Intent {
       return e.power < 0 || e.toughness < 0 ? 'harm' : 'help';
     case 'addCounters':
       return e.counter === '-1/-1' ? 'harm' : 'help';
-    case 'draw': case 'gainLife': case 'returnCard': case 'search': case 'tokenCopy': case 'preventDamage': case 'extraTurn':
+    case 'draw': case 'gainLife': case 'returnCard': case 'grantFlashback': case 'search': case 'tokenCopy': case 'preventDamage': case 'extraTurn':
       return 'help';
     default:
       return 'neutral';
@@ -522,6 +528,13 @@ const asTarget = (x: Permanent | PlayerId): Target =>
  * ("can't attack or block", "-2/-2") on their best creature.
  */
 function chooseAuraHost(s: GameState, me: PlayerId, card: Card): Permanent | null {
+  // Swift Reconfiguration: their best creature stops being one.
+  if (reconfiguresEnchanted(card) !== null) {
+    return legalTargets(s, me, auraTarget(card)!, undefined, card)
+      .flatMap((t) => (t.kind === 'permanent' ? [findPermanent(s, t.iid)!] : []))
+      .filter((x) => !friend(s, me, x.controller) && isCreature(x.card))
+      .sort((a, b) => creatureValue(b.card) - creatureValue(a.card))[0] ?? null;
+  }
   const statics = staticsOf(card).filter((st) => st.who === 'enchanted');
   if (!statics.length) return null;
   const score = statics.reduce((n, st) => n + st.power + st.toughness + st.keywords.length * 1.5 - (st.cantAttack ? 4 : 0) - (st.cantBlock ? 2 : 0), 0);
@@ -570,7 +583,7 @@ function playWithGoodTarget(s: GameState, me: PlayerId, play: Play, among?: Perm
   if (effects.some((e) => e.kind === 'gainControl' && e.untilEndOfTurn) && !(isActivePlayer(s, me) && s.step === 'main1' && !s.priority)) return null;
   // An edict needs something to hit.
   if (effects.some((e) => e.kind === 'sacrifice' && !opponentsOf(s, me).some((o) => matching(s, o, e.which).some((x) => x.controller === o)))) return null;
-  if (effects.some((e) => e.kind === 'counter' || (e.kind === 'pump' && intentOf(e) === 'help'))) return null; // used in response only
+  if (effects.some((e) => e.kind === 'counter' || e.kind === 'gainProtection' || e.kind === 'gainProtectionAll' || (e.kind === 'pump' && intentOf(e) === 'help'))) return null; // used in response only
   if (effects.some((e) => e.kind === 'tap' && e.untap)) return null;
 
   const mass = effects.some((e) => e.kind === 'destroyAll' || e.kind === 'damageAll' || e.kind === 'pumpAll' || e.kind === 'bounceAll');
@@ -696,6 +709,9 @@ function abilityPlays(s: GameState, me: PlayerId): (Play & { perm: Permanent; in
     .filter(({ spec }) => (spec.cost.tap || spec.cost.mana || spec.cost.sacrificeSelf) && spec.cost.loyalty === undefined)
     // Becoming a creature until end of turn (Iron Man Armor) isn't planned by the bot; Vehicles are crewed by crewVehicles.
     .filter(({ spec }) => !spec.ability.effects.some((e) => e.kind === 'animate'))
+    // Ghost Vacuum: only with creature cards exiled with it.
+    .filter(({ perm, spec }) => !spec.ability.effects.some((e) => e.kind === 'returnExiledSpirits')
+      || (s.exiledWith?.[perm.iid] ?? []).some((x) => s.players[x.owner].exile.some((c) => c.iid === x.iid && isCreature(c.card))))
     // Equipment already on a creature stays there.
     .filter(({ perm, spec }) => !(spec.ability.effects.some((e) => e.kind === 'attach') && perm.attachedTo && findPermanent(s, perm.attachedTo)))
     .map(({ perm, index, spec }) => ({
@@ -785,6 +801,9 @@ function respond(s: GameState, me: PlayerId): Action | null {
         if (isLegalTarget(s, me, c.spec.targets[0], target)) return { type: 'cast', iid: c.iid, targets: [[target]] };
       }
     }
+    // Mother of Runes, Reverent Mantra: protection from the color of what targets our creature.
+    const shielded = protectFrom(s, me, top, spells);
+    if (shielded) return shielded;
     // Save a creature from a burn spell with a pump spell.
     const saved = saveFromBurn(s, me, top, withEffect('pump', 'help'));
     if (saved) return saved;
@@ -825,6 +844,23 @@ function respond(s: GameState, me: PlayerId): Action | null {
     return useAbility(s, me) ?? chooseCycle(s, me);
   }
   return null;
+}
+
+/** Protection from the color of the opponent's spell or ability targeting one of our creatures. */
+function protectFrom(s: GameState, me: PlayerId, top: StackItem, spells: CardInst[]): Action | null {
+  if (!cardColors(top.card).length) return null;
+  const mine = top.targets.flat().flatMap((t) => {
+    const perm = t.kind === 'permanent' ? findPermanent(s, t.iid) : undefined;
+    return perm && friend(s, me, perm.controller) && isCreature(perm.card) ? [perm] : [];
+  });
+  if (!mine.length) return null;
+  for (const play of abilityPlays(s, me)) {
+    if (!play.spec.effects.some((e) => e.kind === 'gainProtection')) continue;
+    const target = mine.map((x): Target => ({ kind: 'permanent', iid: x.iid })).find((t) => isLegalTarget(s, me, play.spec.targets[0], t));
+    if (target) return play.act([[target]], 0);
+  }
+  const mantra = spells.find((c) => spellSpec(c.card).effects.some((e) => e.kind === 'gainProtectionAll'));
+  return mantra ? { type: 'cast', iid: mantra.iid } : null;
 }
 
 type PumpSpell = CardInst & { effects: Effect[]; spec: AbilitySpec };
@@ -994,6 +1030,15 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
         const need = (color: string) => [...ps.hand, ...ps.library].reduce((n, c) => n + (c.card.manaCost.match(new RegExp(`\\{${color}\\}`, 'g'))?.length ?? 0), 0);
         const order = ['W', 'U', 'B', 'R', 'G'];
         const best = order.reduce((a, b) => (need(b) > need(a) ? b : a));
+        return { kind: 'mode', modes: [order.indexOf(best)] };
+      }
+      // Protection: from the color of the opponent's spell on the stack, or the color they play most.
+      if (choice.purpose === 'color') {
+        const top = s.stack.at(-1);
+        const theirs = top && !friend(s, choice.player, top.controller) ? cardColors(top.card) : [];
+        const order: Color[] = ['W', 'U', 'B', 'R', 'G'];
+        const seen = (color: Color) => s.battlefield.filter((x) => !friend(s, choice.player, x.controller) && cardColors(x.card).includes(color)).length;
+        const best = theirs[0] ?? order.reduce((a, b) => (seen(b) > seen(a) ? b : a));
         return { kind: 'mode', modes: [order.indexOf(best)] };
       }
       if (choice.purpose === 'triggerMode' && s.pending?.trigger?.ability.modal) return { kind: 'mode', modes: triggerModes(s, choice.player, s.pending.trigger) };

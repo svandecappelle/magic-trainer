@@ -1,39 +1,3 @@
-NONE     Aang, Swift Savior // Aang and La, Ocean's Fury {1}{W}{U} — Legendary Creature — Human Avatar Ally // Legendary Creature — Avatar Spirit Ally (other faces not audited)
-  ✓ Flash
-      keyword
-  ✓ Flying
-      keyword
-  ✗ When Aang enters, airbend up to one other target creature or spell.
-      trigger (enters), effect not simulated
-  ✗ Waterbend {8}: Transform Aang.
-      keyword not simulated: waterbend
-NONE     Malcolm, Alluring Scoundrel {1}{U} — Legendary Creature — Siren Pirate
-  ✓ Flash
-      keyword
-  ✓ Flying
-      keyword
-  ✗ Whenever Malcolm deals combat damage to a player, put a chorus counte…
-      trigger (combatDamage), effect not simulated
-NONE     Mother of Runes {W} — Creature — Human Cleric
-  ✗ {T}: Target creature you control gains protection from the color of y…
-      activated ability, effect not simulated
-NONE     Ocelot Pride {W} — Creature — Cat
-  ✓ First strike, lifelink
-      keyword
-  ✗ Ascend
-      keyword not simulated: ascend
-  ✗ At the beginning of your end step, if you gained life this turn, crea…
-      trigger (endStep), effect not simulated
-NONE     Phelia, Exuberant Shepherd {1}{W} — Legendary Creature — Dog
-  ✓ Flash
-      keyword
-  ✗ Whenever Phelia attacks, exile up to one other target nonland permane…
-      trigger (attacks), effect not simulated
-NONE     Reverent Mantra {3}{W} — Instant
-  ✗ You may exile a white card from your hand rather than pay this spell'…
-      spell not simulated
-  ✗ Choose a color. All creatures gain protection from the chosen color u…
-      spell not simulated
 NONE     Skycoach Conductor // All Aboard {2}{U} // {U} — Creature — Bird Pilot // Instant (other faces not audited)
   ✓ Flash
       keyword
@@ -41,32 +5,15 @@ NONE     Skycoach Conductor // All Aboard {2}{U} // {U} — Creature — Bird Pi
       keyword
   ? This creature enters prepared.
       not read by the engine
-NONE     Snapcaster Mage {1}{U} — Creature — Human Wizard
-  ✓ Flash
-      keyword
-  ✗ When this creature enters, target instant or sorcery card in your gra…
-      trigger (enters), effect not simulated
-NONE     Swift Reconfiguration {W} — Enchantment — Aura
-  ✓ Flash
-      keyword
-  ✓ Enchant creature or Vehicle
-      keyword
-  ? Enchanted permanent is a Vehicle artifact with crew 5 and it loses al…
-      not read by the engine
-PARTIAL  Aven Interrupter {1}{W}{W} — Creature — Bird Rogue
+PARTIAL  Aang, Swift Savior // Aang and La, Ocean's Fury {1}{W}{U} — Legendary Creature — Human Avatar Ally // Legendary Creature — Avatar Spirit Ally (other faces not audited)
   ✓ Flash
       keyword
   ✓ Flying
       keyword
-  ✗ When this creature enters, exile target spell. It becomes plotted.
-      trigger (enters), effect not simulated
-  ✓ Spells your opponents cast from graveyards or from exile cost {2} mor…
-      rule for the game: opponentsGraveyardExileSpellsCost2
-PARTIAL  Ghost Vacuum {1} — Artifact
-  ✓ {T}: Exile target card from a graveyard.
-      activated → destroy (1 target)
-  ✗ {6}, {T}, Sacrifice this artifact: Put each creature card exiled with…
-      activated ability, effect not simulated
+  ✓ When Aang enters, airbend up to one other target creature or spell.
+      trigger (enters) → airbend (1 target)
+  ✗ Waterbend {8}: Transform Aang.
+      keyword not simulated: waterbend
 PARTIAL  King T'Challa // Black Panther, Hope Enduring {1}{W}{U} — Legendary Creature — Human Noble Hero // Legendary Creature — Human Warrior Hero (other faces not audited)
   ✓ Flash
       keyword
@@ -74,18 +21,6 @@ PARTIAL  King T'Challa // Black Panther, Hope Enduring {1}{W}{U} — Legendary C
       trigger (opponentDraws) → draw
   ✗ {4}{W}{U}: Transform King T'Challa. Activate only as a sorcery.
       activated ability, effect not simulated
-PARTIAL  Mystic Gate  — Land
-  ✓ {T}: Add {C}.
-      mana: C
-  ? {W/U}, {T}: Add {W}{W}, {W}{U}, or {U}{U}.
-      mana ability not understood
-PARTIAL  Pre-War Formalwear {2}{W} — Artifact — Equipment
-  ✗ When this Equipment enters, return target creature card with mana val…
-      trigger (enters), effect not simulated
-  ✓ Equipped creature gets +2/+2 and has vigilance.
-      static ability
-  ✓ Equip {3}
-      keyword
 OK       Adarkar Wastes  — Land
   ✓ {T}: Add {C}.
       mana: C
@@ -101,6 +36,15 @@ OK       Agna Qel'a  — Land
 OK       Arid Mesa  — Land
   ✓ {T}, Pay 1 life, Sacrifice this land: Search your library for a Mount…
       activated → search
+OK       Aven Interrupter {1}{W}{W} — Creature — Bird Rogue
+  ✓ Flash
+      keyword
+  ✓ Flying
+      keyword
+  ✓ When this creature enters, exile target spell. It becomes plotted.
+      trigger (enters) → plot (1 target)
+  ✓ Spells your opponents cast from graveyards or from exile cost {2} mor…
+      rule for the game: opponentsGraveyardExileSpellsCost2
 OK       Brainstorm {U} — Instant
   ✓ Draw three cards, then put two cards from your hand on top of your li…
       spell → draw+putBack
@@ -197,6 +141,11 @@ OK       Force of Negation {1}{U}{U} — Instant
 OK       Get Lost {1}{W} — Instant
   ✓ Destroy target creature, enchantment, or planeswalker. Its controller…
       spell → destroy (1 target)
+OK       Ghost Vacuum {1} — Artifact
+  ✓ {T}: Exile target card from a graveyard.
+      activated → destroy (1 target)
+  ✓ {6}, {T}, Sacrifice this artifact: Put each creature card exiled with…
+      activated → returnExiledSpirits
 OK       Gitaxian Probe {U/P} — Sorcery
   ✓ Look at target player's hand.
       spell → lookAtHand+draw (1 target)
@@ -221,6 +170,13 @@ OK       Lórien Revealed {3}{U}{U} — Sorcery
       keyword
   ✓ Draw three cards.
       spell → draw
+OK       Malcolm, Alluring Scoundrel {1}{U} — Legendary Creature — Siren Pirate
+  ✓ Flash
+      keyword
+  ✓ Flying
+      keyword
+  ✓ Whenever Malcolm deals combat damage to a player, put a chorus counte…
+      trigger (combatDamage) → addCounters+draw+discard+castDiscarded
 OK       March of Otherworldly Light {X}{W} — Instant
   ✓ As an additional cost to cast this spell, you may exile any number of…
       optional: exile cards from your hand, {2} less each
@@ -248,14 +204,29 @@ OK       Moorland Haunt  — Land
       mana: C
   ✓ {W}{U}, {T}, Exile a creature card from your graveyard: Create a 1/1 …
       activated → token
+OK       Mother of Runes {W} — Creature — Human Cleric
+  ✓ {T}: Target creature you control gains protection from the color of y…
+      activated → gainProtection (1 target)
 OK       Multiversal Passage  — Land
   ✓ As this land enters, choose a basic land type. Then you may pay 2 lif…
       chooses a basic land type (its mana); pay 2 life or it enters tapped
   ✓ This land is the chosen type.
       chooses a basic land type (its mana); pay 2 life or it enters tapped
+OK       Mystic Gate  — Land
+  ✓ {T}: Add {C}.
+      mana: C
+  ✓ {W/U}, {T}: Add {W}{W}, {W}{U}, or {U}{U}.
+      mana: two W/U, paying {W/U} with another untapped land (chosen automatically)
 OK       Novice Inspector {W} — Creature — Human Detective
   ✓ When this creature enters, investigate.
       trigger (enters) → token
+OK       Ocelot Pride {W} — Creature — Cat
+  ✓ First strike, lifelink
+      keyword
+  ✓ Ascend
+      keyword
+  ✓ At the beginning of your end step, if you gained life this turn, crea…
+      trigger (endStep) → token+copyNewTokens, if 1+ life gained this turn
 OK       On Thin Ice {W} — Snow Enchantment — Aura
   ✓ Enchant snow land you control
       keyword
@@ -273,6 +244,11 @@ OK       Parallax Wave {2}{W}{W} — Enchantment
       activated → destroy (1 target)
   ✓ When this enchantment leaves the battlefield, each player returns to …
       what it exiled returns when it leaves
+OK       Phelia, Exuberant Shepherd {1}{W} — Legendary Creature — Dog
+  ✓ Flash
+      keyword
+  ✓ Whenever Phelia attacks, exile up to one other target nonland permane…
+      trigger (attacks) → flickerAtEnd (1 target)
 OK       Polluted Delta  — Land
   ✓ {T}, Pay 1 life, Sacrifice this land: Search your library for an Isla…
       activated → search
@@ -281,6 +257,13 @@ OK       Ponder {U} — Sorcery
       spell → reorderTop+mayShuffle+draw
   ✓ Draw a card.
       spell → reorderTop+mayShuffle+draw
+OK       Pre-War Formalwear {2}{W} — Artifact — Equipment
+  ✓ When this Equipment enters, return target creature card with mana val…
+      trigger (enters) → returnCard (1 target)
+  ✓ Equipped creature gets +2/+2 and has vigilance.
+      static ability
+  ✓ Equip {3}
+      keyword
 OK       Preordain {U} — Sorcery
   ✓ Scry 2, then draw a card.
       spell → scry+draw
@@ -306,6 +289,11 @@ OK       Reprieve {1}{W} — Instant
       spell → bounce+draw (1 target)
   ✓ Draw a card.
       spell → bounce+draw (1 target)
+OK       Reverent Mantra {3}{W} — Instant
+  ✓ You may exile a white card from your hand rather than pay this spell'…
+      spell → gainProtectionAll
+  ✓ Choose a color. All creatures gain protection from the chosen color u…
+      spell → gainProtectionAll
 OK       Scalding Tarn  — Land
   ✓ {T}, Pay 1 life, Sacrifice this land: Search your library for an Isla…
       activated → search
@@ -332,6 +320,11 @@ OK       Skyclave Apparition {1}{W}{W} — Creature — Kor Spirit
       trigger (enters) → destroy (1 target)
   ✓ When this creature leaves the battlefield, the exiled card's owner cr…
       leaves: the exiled card's owner gets an X/X Illusion
+OK       Snapcaster Mage {1}{U} — Creature — Human Wizard
+  ✓ Flash
+      keyword
+  ✓ When this creature enters, target instant or sorcery card in your gra…
+      trigger (enters) → grantFlashback (1 target)
 OK       Snow-Covered Island  — Basic Snow Land — Island
 OK       Snow-Covered Plains  — Basic Snow Land — Plains
 OK       Solitude {3}{W}{W} — Creature — Elemental Incarnation
@@ -380,6 +373,13 @@ OK       Subtlety {2}{U}{U} — Creature — Elemental Incarnation
       trigger (enters) → tuckSpell (1 target)
   ✓ Evoke—Exile a blue card from your hand.
       keyword
+OK       Swift Reconfiguration {W} — Enchantment — Aura
+  ✓ Flash
+      keyword
+  ✓ Enchant creature or Vehicle
+      keyword
+  ✓ Enchanted permanent is a Vehicle artifact with crew 5 and it loses al…
+      the enchanted permanent is a noncreature Vehicle artifact with crew 5
 OK       Swords to Plowshares {W} — Instant
   ✓ Exile target creature. Its controller gains life equal to its power.
       spell → destroy+controllerGainsPower (1 target)
@@ -434,5 +434,5 @@ OK       Witch Enchanter // Witch-Blessed Meadow {3}{W} — Creature — Human W
   ✓ When this creature enters, destroy target artifact or enchantment an …
       trigger (enters) → destroy (1 target)
 
-91 cards: 77 ok, 5 partial, 9 not simulated, 0 can't be cast
+91 cards: 88 ok, 2 partial, 1 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

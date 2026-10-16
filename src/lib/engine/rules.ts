@@ -379,6 +379,8 @@ export interface TargetFilter {
   nonSubtypes?: string[];
   /** At least one of these subtypes ("Forest or Plains card"), lower case. */
   subtypes?: string[];
+  /** Swift Reconfiguration: "creature or Vehicle": one of `types`, or one of these subtypes instead. */
+  orSubtypes?: string[];
   /** "creature token" (true), "nontoken creature" (false). */
   token?: boolean;
 }
@@ -401,7 +403,7 @@ export interface TargetSpec {
 // ---------- Effects ----------
 
 /** Counter kinds placed on permanents. */
-export type CounterKind = '+1/+1' | '-1/-1' | 'loyalty' | 'lore' | 'rev' | 'luck' | 'mining' | 'age' | 'fade';
+export type CounterKind = '+1/+1' | '-1/-1' | 'loyalty' | 'lore' | 'rev' | 'luck' | 'mining' | 'age' | 'fade' | 'flying' | 'chorus';
 
 /**
  * Who an effect applies to: the targets chosen for a slot, the controller, everyone / each opponent,
@@ -437,6 +439,9 @@ export type Effect =
   | { kind: 'lookAtHand'; to: Affected }
   /** Cryptic Command: "Tap all creatures your opponents control." */
   | { kind: 'tapAll'; which: Selector }
+  // Mother of Runes, Reverent Mantra: protection from a color chosen as it resolves, until end of turn.
+  | { kind: 'gainProtection'; to: Affected }
+  | { kind: 'gainProtectionAll'; which: Selector }
   /** Subtlety: "Its owner puts it on their choice of the top or bottom of their library." */
   | { kind: 'tuckSpell'; to: Affected }
   /** "gets +N/+N (and gains …) until end of turn". Negative values shrink. */
@@ -475,7 +480,12 @@ export type Effect =
   /** `attacking`: "tapped and attacking"; `sacrificeAtEnd`: "Sacrifice them at the beginning of the next end step". */
   | { kind: 'token'; n: Amount; token: TokenSpec; attacking?: boolean; sacrificeAtEnd?: boolean }
   /** A card in a graveyard goes to its owner's hand, or onto the battlefield under the controller's control. */
-  | { kind: 'returnCard'; to: Affected; dest: 'hand' | 'battlefield' }
+  // Pre-War Formalwear: "… to the battlefield and attach this Equipment to it".
+  | { kind: 'returnCard'; to: Affected; dest: 'hand' | 'battlefield'; attachSource?: true }
+  // Snapcaster Mage: "gains flashback until end of turn. The flashback cost is equal to its mana cost."
+  | { kind: 'grantFlashback'; to: Affected }
+  // Phelia: exiled, back under its owner's control at the next end step (and a +1/+1 counter on the source if it's yours).
+  | { kind: 'flickerAtEnd'; to: Affected; counterIfYours: boolean }
   /** "Put a +1/+1 counter on each creature you control" (`other`: except the source). */
   | { kind: 'addCountersAll'; counter: CounterKind; n: Amount; which: Selector; other: boolean }
   /** Mana into the controller's pool (rituals: "Add {B}{B}{B}"). One entry per mana, with its possible colors. */
@@ -566,6 +576,18 @@ export type Effect =
   | { kind: 'copySpell'; to: Affected }
   /** "Create a token that's a copy of target creature". */
   | { kind: 'tokenCopy'; to: Affected }
+  // Ocelot Pride: "Then if you have the city's blessing, for each token you control that entered this turn,
+  // create a token that's a copy of it."
+  | { kind: 'copyNewTokens' }
+  // Ghost Vacuum: "Put each creature card exiled with this artifact onto the battlefield under your control with a flying
+  // counter on it. Each of them is a 1/1 Spirit in addition to its other types."
+  | { kind: 'returnExiledSpirits' }
+  // Aang: "airbend up to one other target creature or spell" (exiled; its owner may cast it for {2}).
+  | { kind: 'airbend'; to: Affected }
+  // Aven Interrupter: "exile target spell. It becomes plotted." (castable for free as a sorcery on a later turn).
+  | { kind: 'plot'; to: Affected }
+  // Malcolm: "If there are four or more chorus counters on Malcolm, you may cast the discarded card without paying its mana cost."
+  | { kind: 'castDiscarded'; minCounters: number; counter: CounterKind }
   /** Fog: no combat damage this turn. */
   | { kind: 'preventCombat' }
   /** "Prevent the next N damage that would be dealt to any target this turn." */
@@ -791,6 +813,13 @@ export function parseTargetPhrase(phrase: string): TargetSpec | null {
     return kinds.every((k) => k === 'creature' || k === 'planeswalker') ? { kind: 'any', min, max, filter } : null;
   }
   if (!kinds.length) return null;
+  // "creature or Vehicle": a creature, or a permanent with that subtype.
+  if (filter.subtypes && kinds.length > 1 && words.includes('|') && kinds.every((k) => k === 'permanent' || CARD_TYPES.includes(k as CardType))) {
+    filter.orSubtypes = filter.subtypes;
+    delete filter.subtypes;
+    filter.types = kinds.filter((k) => k !== 'permanent') as CardType[];
+    return { kind: 'permanent', min, max, filter };
+  }
   if (kinds.length === 1 && kinds[0] === 'creature') return { kind: 'creature', min, max, filter };
   if (!kinds.includes('permanent')) filter.types = kinds as CardType[];
   return { kind: 'permanent', min, max, filter };
@@ -964,6 +993,14 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     const to = slotFor(m[1], (spec) => spec.kind === 'creature');
     return to && { kind: 'pump', power: Number(m[2]), toughness: Number(m[3]), keywords: keywordList(m[4]), to };
   });
+  scan(new RegExp(`(${TARGET}) gains protection from the color of your choice until end of turn`, 'gi'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'creature');
+    return to && { kind: 'gainProtection', to };
+  });
+  scan(/\bChoose a color\. ((?:all |other )?creatures(?: you control)?) gain protection from the chosen color until end of turn/gi, (m) => {
+    const which = selector(m[1]);
+    return which && { kind: 'gainProtectionAll', which };
+  });
   scan(new RegExp(`(${TARGET}) gains? ${KEYWORD_LIST} until end of turn`, 'gi'), (m) => {
     const to = slotFor(m[1], (spec) => spec.kind === 'creature');
     return to && { kind: 'pump', power: 0, toughness: 0, keywords: keywordList(m[2]), to };
@@ -976,7 +1013,8 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     const which = selector(m[1]);
     return which && { kind: 'pumpAll', power: 0, toughness: 0, keywords: keywordList(m[2]), which };
   });
-  scan(new RegExp(`\\b(destroy|exile) (${TARGET})${END}`, 'gi'), (m) => {
+  // Not Phelia's "exile … . At the beginning of the next end step, return that card" (flickerAtEnd).
+  scan(new RegExp(`\\b(destroy|exile) (${TARGET})${END}(?!\\. At the beginning of the next end step, return that card|\\. It becomes plotted)`, 'gi'), (m) => {
     const to = slotFor(m[2], (spec) => spec.kind === 'creature' || spec.kind === 'permanent' || (spec.kind === 'card' && m[1].toLowerCase() === 'exile'));
     return to && { kind: 'destroy', exile: m[1].toLowerCase() === 'exile', to };
   });
@@ -1017,6 +1055,21 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     const to = slotFor(m[1], (spec) => spec.kind === 'creature' || spec.kind === 'permanent');
     return to && { kind: 'tokenCopy', to };
   });
+  scan(new RegExp(`\\bairbend (${TARGET})(?=\\.)`, 'gi'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'creature' || spec.kind === 'permanent' || spec.kind === 'spell' || spec.kind === 'spellOrPermanent');
+    return to && { kind: 'airbend', to };
+  });
+  scan(new RegExp(`\\bexile (${TARGET})\\. It becomes plotted(?=\\.)`, 'gi'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'spell');
+    return to && { kind: 'plot', to };
+  });
+  scan(/\bput a chorus counter on it(?=\.)/gi, () => ({ kind: 'addCounters', counter: 'chorus', n: 1, to: 'self' }));
+  scan(/\bIf there are (\w+) or more chorus counters on [^,]+, you may cast the discarded card without paying its mana cost(?=\.)/g, (m) => {
+    const n = toNumber(m[1]);
+    return n ? { kind: 'castDiscarded', minCounters: n, counter: 'chorus' } : null;
+  });
+  scan(/\bPut each creature card exiled with this artifact onto the battlefield under your control with a flying counter on it\. Each of them is a 1\/1 Spirit in addition to its other types(?=\.)/g, () => ({ kind: 'returnExiledSpirits' }));
+  scan(/\bThen if you have the city's blessing, for each token you control that entered (?:the battlefield )?this turn, create a token that's a copy of it(?=\.)/g, () => ({ kind: 'copyNewTokens' }));
   scan(/\bPrevent all combat damage that would be dealt this turn\./gi, () => ({ kind: 'preventCombat' }));
   scan(new RegExp(`\\bPrevent the next (\\d+|X) damage that would be dealt to (${TARGET}) this turn`, 'gi'), (m) => {
     const to = slotFor(m[2], (spec) => spec.kind === 'any' || spec.kind === 'creature' || spec.kind === 'player');
@@ -1188,10 +1241,19 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     const to = slotFor(m[1], (spec) => spec.kind === 'creature' || spec.kind === 'permanent' || spec.kind === 'spell' || spec.kind === 'spellOrPermanent');
     return to && { kind: 'bounce', to };
   });
-  // From a graveyard: "Return target creature card from your graveyard to your hand / to the battlefield".
-  scan(new RegExp(`\\breturn (${TARGET}) to (your hand|its owner's hand|the battlefield(?: under your control)?)(?=\\.|,| and |$)`, 'gi'), (m) => {
+  scan(new RegExp(`\\bexile (${TARGET})\\. At the beginning of the next end step, return that card to the battlefield under its owner's control(\\. If it entered under your control, put a \\+1\\/\\+1 counter on [^.]+)?(?=\\.)`, 'gi'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'creature' || spec.kind === 'permanent');
+    return to && { kind: 'flickerAtEnd', to, counterIfYours: !!m[2] };
+  });
+  scan(new RegExp(`(${TARGET}) gains flashback until end of turn\\. The flashback cost is equal to its mana cost(?=\\.)`, 'gi'), (m) => {
     const to = slotFor(m[1], (spec) => spec.kind === 'card');
-    return to && { kind: 'returnCard', to, dest: m[2].toLowerCase().includes('battlefield') ? 'battlefield' : 'hand' };
+    return to && { kind: 'grantFlashback', to };
+  });
+  // From a graveyard: "Return target creature card from your graveyard to your hand / to the battlefield".
+  scan(new RegExp(`\\breturn (${TARGET}) to (your hand|its owner's hand|the battlefield(?: under your control)?)( and attach this Equipment to it)?(?=\\.|,| and |$)`, 'gi'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'card');
+    const dest = m[2].toLowerCase().includes('battlefield') ? 'battlefield' : 'hand';
+    return to && { kind: 'returnCard', to, dest, ...(m[3] && dest === 'battlefield' ? { attachSource: true as const } : {}) };
   });
   scan(/\breturn all ([a-z0-9 ,'-]+?) to (?:its|their) (?:owner's|owners') hands?/gi, (m) => {
     const which = selector(m[1]);
@@ -1269,7 +1331,8 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     scan(new RegExp(`(?:^|[.,] *|then |and )${SELF} gains ${KEYWORD_LIST} until end of turn`, 'gi'), (m) => ({
       kind: 'pump', power: 0, toughness: 0, keywords: keywordList(m[1]), to: 'self',
     }));
-    scan(new RegExp(`\\bput (${AMOUNT}) ([+-]1\\/[+-]1|loyalty|rev) counters? on ${SELF}(?=\\.|\\n|$|,)`, 'gi'), (m) => ({
+    // Not Phelia's "If it entered under your control, put a +1/+1 counter on Phelia" (part of flickerAtEnd).
+    scan(new RegExp(`(?<!If it entered under your control, )\\bput (${AMOUNT}) ([+-]1\\/[+-]1|loyalty|rev) counters? on ${SELF}(?=\\.|\\n|$|,)`, 'gi'), (m) => ({
       kind: 'addCounters', counter: m[2] as CounterKind, n: toAmount(m[1]), to: 'self',
     }));
     scan(new RegExp(`(?:^|[.,] *|then )sacrifice ${SELF}(?=\\.|$)`, 'gi'), () => ({ kind: 'sacrificeSelf' }));
@@ -1320,6 +1383,14 @@ const POWER_LIFE = /(?:Its|That creature's) controller gains life equal to its p
 /** Memory Lapse, Remand, Force of Negation: where the countered spell goes instead. */
 const COUNTER_DEST = /If that spell is countered this way, (put it on top of its owner's library|put it into its owner's hand|exile it) instead of (?:into that player's graveyard|putting it into its owner's graveyard)(?=\.)/;
 /** Tishana's Tidebinder: the countered ability's permanent loses all abilities. */
+/** Malcolm: the discarded card may be cast for free with four chorus counters (castDiscarded). */
+const MALCOLM = /If there are (\w+) or more chorus counters on [^,]+, you may cast the discarded card without paying its mana cost\./g;
+/** Ghost Vacuum: the creature cards it exiled come back as 1/1 Spirits with flying counters (returnExiledSpirits). */
+const GHOST_VACUUM = /Put each creature card exiled with this artifact onto the battlefield under your control with a flying counter on it\. Each of them is a 1\/1 Spirit in addition to its other types\./g;
+/** Ocelot Pride: copies of the tokens that entered this turn, with the city's blessing (copyNewTokens). */
+const CITY_COPIES = /Then if you have the city's blessing, for each token you control that entered (?:the battlefield )?this turn, create a token that's a copy of it\./g;
+/** Phelia: the exiled card comes back at the next end step (flickerAtEnd). */
+const PHELIA = /At the beginning of the next end step, return that card to the battlefield under its owner's control(?:\. If it entered under your control, put a \+1\/\+1 counter on [^.]+)?\./gi;
 const TIDEBINDER = /If an ability of an artifact, creature, or planeswalker is countered this way, that permanent loses all abilities for as long as this creature remains on the battlefield(?=\.)/;
 
 /** Verbs of an effect: a "subject" containing one is a clause of its own, not understood. */
@@ -1740,7 +1811,7 @@ const UNSUPPORTED_WORDS = /\b(?:if|unless|for each|where|instead|that (?:creatur
 const UNSUPPORTED = {
   test: (text: string) => {
     let rest = text;
-    for (const handled of [CONTROLLER_SEARCH, SURVEIL_TO_HAND, THORIN_ATTACH, BECOMES_CREATURE, LAND_BECOMES, TRADE_FOR_CARD, COUNTER_DEST, TIDEBINDER, POWER_LIFE]) rest = rest.replace(handled, '');
+    for (const handled of [CONTROLLER_SEARCH, SURVEIL_TO_HAND, THORIN_ATTACH, BECOMES_CREATURE, LAND_BECOMES, TRADE_FOR_CARD, COUNTER_DEST, TIDEBINDER, POWER_LIFE, PHELIA, CITY_COPIES, GHOST_VACUUM, MALCOLM]) rest = rest.replace(handled, '');
     return UNSUPPORTED_WORDS.test(rest.replace(/"[^"]*"/g, '""'));
   },
 };
@@ -2513,6 +2584,21 @@ export const drawsOneMore = (card: Card) =>
  * Springleaf Drum: "{T}, Tap an untapped creature you control: Add one mana of any color." (creature); Gene Pollinator:
  * "{T}, Tap an untapped permanent you control: …" (permanent). Null for other cards.
  */
+/**
+ * Swift Reconfiguration: "Enchanted permanent is a Vehicle artifact with crew 5 and it loses all other card types."
+ * The crew number.
+ */
+export function reconfiguresEnchanted(card: Card): number | null {
+  const m = frontText(card).match(/^Enchanted permanent is a Vehicle artifact with crew (\d+) and it loses all other card types\.(?: \([^)]*\))?$/m);
+  return m ? Number(m[1]) : null;
+}
+
+/** Mystic Gate: "{W/U}, {T}: Add {W}{W}, {W}{U}, or {U}{U}." The two colors of the filter. */
+export function filterMana(card: Card): [Color, Color] | null {
+  const m = frontText(card).match(/^\{([WUBRG])\/([WUBRG])\}, \{T\}: Add \{\1\}\{\1\}, \{\1\}\{\2\}, or \{\2\}\{\2\}\.$/m);
+  return m ? [m[1] as Color, m[2] as Color] : null;
+}
+
 export function tapsAnotherForMana(card: Card): 'creature' | 'permanent' | null {
   const m = frontText(card).match(/^\{T\}, Tap an untapped (creature|permanent) you control: Add one mana of any color\.$/m);
   return m ? (m[1] as 'creature' | 'permanent') : null;

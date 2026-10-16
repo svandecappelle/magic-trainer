@@ -229,6 +229,8 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
       const name = opt.face ? show.name(faceCard(card, opt.face)) : show.nameOf(faceName(card));
       const info = castInfo(card, opt.face);
       const alt = opt.alt === undefined ? undefined : info.alts[opt.alt];
+      // Airbent ({2}) or plotted (free) cards in exile.
+      const exiledFor = g.players[me].exile.find((c) => c.iid === iid)?.castFor?.cost;
       const colorName = (c: string) => t.colors[c] ?? c;
       const label = opt.exiled ? t.game.castAlt(name, t.game.altCosts.exileForDiscount(opt.exiled, (info.exileDiscount?.per ?? 0) * opt.exiled))
         : alt ? t.game.castAlt(name,
@@ -236,7 +238,9 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
         : alt.kind === 'exileCard' ? (alt.evoke ? t.game.altCosts.evoke(colorName(alt.color).toLowerCase()) : t.game.altCosts.exileCard(colorName(alt.color).toLowerCase()))
         : alt.kind === 'phyrexian' ? t.game.altCosts.phyrexian(2 * alt.n)
         : t.game.altCosts[alt.name](alt.cost))
-        : opt.from === 'graveyard' ? t.game.castFlashback(name, info.flashback ?? '')
+        : g.castNow?.iid === iid ? t.game.castFree(name)
+        : opt.from === 'graveyard' ? t.game.castFlashback(name, info.flashback ?? card.manaCost)
+        : opt.from === 'exile' && exiledFor !== undefined ? (exiledFor ? t.game.castFor(name, exiledFor) : t.game.castFree(name))
         : opt.from === 'exile' ? t.game.castFromExile(name)
         : opt.kicked ? t.game.castKicked(name, info.kicker ?? '')
         : t.game.castNamed(name);

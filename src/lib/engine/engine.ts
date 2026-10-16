@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, reconfiguresEnchanted, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type AltCost, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -19,6 +19,13 @@ export interface CardInst {
   warpedOnTurn?: number;
   /** A commander: it goes back to the command zone instead of other zones. */
   commander?: boolean;
+  /** Snapcaster Mage: has flashback for its mana cost on that turn. */
+  flashbackOnTurn?: number;
+  /**
+   * In exile, its owner may cast it for this cost ('' = without paying its mana cost): Aang's airbend ({2}), Aven
+   * Interrupter's plot (free, as a sorcery, on a later turn than `afterTurn`).
+   */
+  castFor?: { cost: string; afterTurn?: number; sorcery?: boolean };
 }
 
 /** A lasting change to a permanent's power, toughness or abilities. */
@@ -27,6 +34,8 @@ export interface Boost {
   toughness: number;
   keywords: Keyword[];
   until: 'endOfTurn';
+  /** Mother of Runes: protection from these colors. */
+  protection?: Color[];
 }
 
 export interface Permanent extends CardInst {
@@ -38,6 +47,8 @@ export interface Permanent extends CardInst {
   deathtouched: boolean;
   counters: Partial<Record<CounterKind, number>>;
   boosts: Boost[];
+  /** The turn it entered the battlefield (Ocelot Pride: "each token you control that entered the battlefield this turn"). */
+  enteredOnTurn?: number;
   /** Indexes of "once each turn" abilities already activated this turn. */
   used?: number[];
   /** Triggered abilities (by index) that "trigger only once each turn" and already did this turn. */
@@ -62,6 +73,8 @@ export interface Permanent extends CardInst {
   imprinted?: Card;
   /** A noncreature permanent that is a creature until end of turn (crewed Vehicle, Iron Man Armor): its own card. */
   unanimated?: Card;
+  /** Swift Reconfiguration: its card before it became a Vehicle artifact (restored when the Aura leaves). */
+  reconfigured?: Card;
   /** What static abilities (anthems, Auras, Equipment) give it right now; recomputed by the engine. */
   statics?: { power: number; toughness: number; keywords: Keyword[]; cantAttack?: boolean; cantBlock?: boolean; mustAttack?: boolean; ward?: number[]; wardLife?: number[]; hexproofFromMonocolored?: boolean; doubleDamage?: boolean };
 }
@@ -91,6 +104,8 @@ export interface StackItem extends CardInst {
   noMana?: boolean;
   /** Cast with Cavern of Souls' mana: "that spell can't be countered". */
   uncounterable?: boolean;
+  /** Malcolm: cast from the graveyard right away for free; it goes back to the graveyard (not exiled like flashback). */
+  castNow?: boolean;
 }
 
 /** Where a spell is cast from: hand, graveyard (flashback) or exile (a creature back from its adventure). */
@@ -150,6 +165,8 @@ export interface PlayerState {
   /** Life gained and lost this turn ("if you gained life this turn"). */
   gainedThisTurn?: number;
   lostThisTurn?: number;
+  /** Ascend: controlled ten permanents with an ascend permanent; kept for the rest of the game. */
+  citysBlessing?: boolean;
   /** Mana made but not spent yet; it empties when the step or phase ends. */
   pool?: PoolMana[];
   /** Poison counters: ten or more and the player loses. */
@@ -240,6 +257,7 @@ export type ChoicePurpose =
   | 'cardName' // Pithing Needle: "choose a card name"
   | 'spellName' // Meddling Mage: "choose a nonland card name"
   | 'basicType' // Multiversal Passage: "choose a basic land type"
+  | 'color' // Mother of Runes: "protection from the color of your choice"
   | 'chosenPlayer' // True-Name Nemesis: "choose a player"
   | 'crewCost' // Crew N: which creatures to tap
   | 'dig' // "look at the top N cards …": which to put into the hand
@@ -310,6 +328,8 @@ export interface Resolving {
   removedPower?: Record<string, number>;
   /** "If you do, …" wasn't done (Chandra's +2): the remaining effects are skipped. */
   stopped?: boolean;
+  /** The cards this resolution discarded (Malcolm: "the discarded card"). */
+  discarded?: string[];
   reason: WindowReason;
 }
 
@@ -344,6 +364,11 @@ export type LogEntry =
   | { k: 'destroyed'; card: string }
   | { k: 'exiled'; card: string }
   | { k: 'pump'; card: string; power: number; toughness: number; keywords: Keyword[] }
+  | { k: 'gainsProtection'; card: string; color: Color }
+  | { k: 'gainsFlashback'; card: string }
+  | { k: 'citysBlessing'; p: PlayerId }
+  | { k: 'mayCastFree'; p: PlayerId; card: string }
+  | { k: 'becomesVehicle'; card: string }
   | { k: 'counters'; card: string; counter: CounterKind; n: number }
   | { k: 'countered'; card: string }
   | { k: 'paidLife'; p: PlayerId; n: number; card: string }
@@ -476,6 +501,12 @@ export interface GameState {
   sacrificeAtEnd?: string[];
   /** Warp: permanents exiled at the beginning of the next end step (castable from exile on a later turn). */
   warpAtEnd?: string[];
+  /** Phelia: cards exiled until the next end step, then returned under their owner's control. */
+  /** Malcolm: this card may be cast for free by this player now (the next action, else the chance is gone). */
+  castNow?: { player: PlayerId; iid: string };
+  /** Ghost Vacuum: the cards each permanent exiled from graveyards ("exiled with this artifact"), by its iid. */
+  exiledWith?: Record<string, { iid: string; owner: PlayerId }[]>;
+  returnAtEnd?: { iid: string; owner: PlayerId; source?: string; controller: PlayerId; counterIfYours: boolean }[];
   /** Counter for ability ids on the stack. */
   abilities?: number;
   /** Random generator state, so shuffles during the game are reproducible. Secret: redacted for clients. */
@@ -621,7 +652,7 @@ const isPermanent = (x: object): x is Permanent => 'boosts' in x;
 
 /** Keyword printed on the card or granted until end of turn. */
 export const hasKw = (x: CardInst, kw: Keyword) =>
-  hasKeyword(x.card, kw) || (isPermanent(x) && (x.boosts.some((b) => b.keywords.includes(kw)) || !!x.statics?.keywords.includes(kw)));
+  hasKeyword(x.card, kw) || (isPermanent(x) && (x.boosts.some((b) => b.keywords.includes(kw)) || !!x.statics?.keywords.includes(kw) || (kw === 'flying' && !!x.counters.flying)));
 
 export const firstStrikes = (x: CardInst) => hasKw(x, 'first strike') || hasKw(x, 'double strike');
 
@@ -635,7 +666,10 @@ export const toughnessOf = (perm: Permanent) => toughness(perm.card) + sum(perm,
 const protectedFromPlayer = (perm: Permanent, p: PlayerId) => perm.chosenPlayer === p && protectionFromChosenPlayer(perm.card);
 
 /** Does `perm` have protection from a source of these colors? */
-const protectedFrom = (perm: Permanent, source: Card) => protectionsOf(perm.card).some((c) => cardColors(source).includes(c));
+const COLORS: Color[] = ['W', 'U', 'B', 'R', 'G'];
+
+const protectedFrom = (perm: Permanent, source: Card) =>
+  [...protectionsOf(perm.card), ...perm.boosts.flatMap((b) => b.protection ?? [])].some((c) => cardColors(source).includes(c));
 
 /**
  * The mana one tap of `perm` makes (Command Tower: in its controller's commander's colors). Starting Town's colors
@@ -649,6 +683,9 @@ export function unitsOf(s: GameState, perm: Permanent, spell?: Card): Color[][] 
   if (isLandCard(perm.card)) units = landTypeMana(s, units);
   // Springleaf Drum, Gene Pollinator: any color, with another untapped permanent to tap.
   if (tapsAnotherForMana(perm.card)) units = manaHelpers(s, perm).length ? [['W', 'U', 'B', 'R', 'G']] : [];
+  // Mystic Gate: with another source to pay {W/U}, two mana of these colors (the other's mana is spent on the cost).
+  const filter = filterMana(perm.card);
+  if (filter && filterHelpers(s, perm).length) units = [[...filter], [...filter]];
   // Chrome Mox: the imprinted card's colors; Mox Amber: the colors of legendary creatures and planeswalkers.
   const state = stateMana(perm.card);
   if (state === 'perCreature') {
@@ -765,6 +802,21 @@ function manaHelpers(s: GameState, perm: Permanent): Permanent[] {
     .sort((a, b) => Number(isCreature(a.card)) - Number(isCreature(b.card)) || powerOf(a) - powerOf(b));
 }
 
+/**
+ * Mystic Gate: the untapped lands that can pay its {W/U} (one mana of a color, no life, no damage): the ones making
+ * fewest colors first.
+ */
+function filterHelpers(s: GameState, perm: Permanent): Permanent[] {
+  const filter = filterMana(perm.card);
+  if (!filter) return [];
+  return s.battlefield
+    .filter((x) => x.controller === perm.controller && x.iid !== perm.iid && isLandCard(x.card) && !filterMana(x.card) && canTapForMana(s, x) && !painfulMana(x) && !painOf(s, x) && !stateMana(x.card))
+    .map((x) => ({ x, units: unitsOf(s, x) }))
+    .filter(({ units }) => units.length === 1 && units[0].some((c) => filter.includes(c)))
+    .sort((a, b) => a.units[0].length - b.units[0].length)
+    .map(({ x }) => x);
+}
+
 /** Can this permanent be tapped for mana now? */
 export const canTapForMana = (s: GameState, perm: Permanent) =>
   !perm.tapped && !(isCreature(perm.card) && perm.sick && !hasKw(perm, 'haste')) && unitsOf(s, perm).length > 0 && !activationsForbidden(s, perm) &&
@@ -772,7 +824,7 @@ export const canTapForMana = (s: GameState, perm: Permanent) =>
 
 /** Tapping it for mana costs life (Mana Confluence) or deals damage (City of Brass): tapped last, and can't be undone. */
 const painfulMana = (perm: Permanent) =>
-  manaLifeCost(perm.card) > 0 || !!tapsAnotherForMana(perm.card) || triggersOf(perm.card).some((t) => t.event.on === 'becomesTapped');
+  manaLifeCost(perm.card) > 0 || !!tapsAnotherForMana(perm.card) || !!filterMana(perm.card) || triggersOf(perm.card).some((t) => t.event.on === 'becomesTapped');
 
 /** Permanents on the battlefield with a rule-changing static ability. */
 const withRule = (s: GameState, rule: GameRule) => {
@@ -818,6 +870,13 @@ function activationsForbidden(s: GameState, perm: Permanent): boolean {
  * When `p` may cast `card`: in a priority window, an instant or flash (or a sorcery after Teferi's +1) unless an
  * opponent's Teferi limits them to sorcery speed; otherwise in their own main phase.
  */
+/** When a card may be cast from where it is: Malcolm's free cast right away; a plotted card only as a sorcery. */
+function castTimingFor(s: GameState, p: PlayerId, inst: CardInst, card: Card): boolean {
+  if (s.castNow?.player === p && s.castNow.iid === inst.iid) return true;
+  if (inst.castFor?.sorcery) return !s.priority && isMainStep(s) && isActivePlayer(s, p);
+  return castTimingOk(s, p, card);
+}
+
 function castTimingOk(s: GameState, p: PlayerId, card: Card): boolean {
   if (!s.priority) return isMainStep(s) && isActivePlayer(s, p);
   if (sorceryOnly(s, p)) return false;
@@ -866,9 +925,21 @@ export function manaSources(s: GameState, p: PlayerId, spell?: Card): ManaSource
         iid: x.iid, colors: [...new Set(units.flat())], ...(units.length > 1 ? { units } : {}), ...(painfulMana(x) ? { last: true } : {}), ...(pain ? { pain } : {}),
       };
     });
+  // Mystic Gate: its helper's mana is part of its own (the helper isn't a source by itself); alone it makes {C}.
+  const filtering = new Set<string>();
+  for (const src of perms) {
+    const perm = s.battlefield.find((x) => x.iid === src.iid);
+    if (!perm || !filterMana(perm.card)) continue;
+    const helper = filterHelpers(s, perm).find((h) => !filtering.has(h.iid));
+    if (helper) filtering.add(helper.iid);
+    else {
+      src.colors = ['C'];
+      delete src.units;
+    }
+  }
   // Springleaf Drum, Gene Pollinator: each one needs its own permanent to tap.
   const helpersUsed = new Set<string>();
-  const usable = perms.filter((src) => {
+  const usable = perms.filter((src) => !filtering.has(src.iid)).filter((src) => {
     const perm = s.battlefield.find((x) => x.iid === src.iid);
     if (!perm || !tapsAnotherForMana(perm.card)) return true;
     const helper = manaHelpers(s, perm).find((h) => !helpersUsed.has(h.iid));
@@ -1019,7 +1090,11 @@ export function castCost(s: GameState, p: PlayerId, card: Card, opt: { face?: nu
   // An alternative cost: no mana (Daze, evoke…), its own mana (cleave, warp, web-slinging), or the mana cost without
   // its Phyrexian symbols (paid with life).
   const alt = opt.alt === undefined ? undefined : info.alts[opt.alt];
+  // Malcolm: free; airbend: {2}; plot: free.
+  const exiled = opt.from === 'exile' && opt.iid ? s.players[p].exile.find((x) => x.iid === opt.iid) : undefined;
+  const fixed = opt.from === 'graveyard' && opt.iid && s.castNow?.iid === opt.iid ? '' : exiled?.castFor?.cost;
   const base = alt ? altMana(c, alt, x)
+    : fixed !== undefined ? parseCost(fixed)
     : opt.from === 'graveyard' && info.flashback ? parseCost(info.flashback) : costWithX(c, x);
   const kicker = opt.kicked && info.kicker ? parseCost(info.kicker) : { generic: 0, colored: [] };
   if (info.additional?.kind === 'mana') {
@@ -1104,9 +1179,11 @@ export function castSource(s: GameState, p: PlayerId, iid: string): { inst: Card
   if (withRule(s, 'opponentsCastFromHandOnly').some((x) => teamOf(s, x.controller) !== teamOf(s, p))) return null;
   const inGrave = ps.graveyard.find((c) => c.iid === iid);
   // Grafdigger's Cage: "Players can't cast spells from graveyards or libraries."
-  if (inGrave && castInfo(inGrave.card).flashback && !withRule(s, 'noCastingFromGraveyardsLibraries').length) return { inst: inGrave, from: 'graveyard' };
+  const now = s.castNow?.player === p && s.castNow.iid === iid;
+  if (inGrave && (castInfo(inGrave.card).flashback || inGrave.flashbackOnTurn === s.turn || now) && !withRule(s, 'noCastingFromGraveyardsLibraries').length) return { inst: inGrave, from: 'graveyard' };
   // An adventurer, or a warped card on a later turn.
-  const inExile = ps.exile.find((c) => c.iid === iid && (c.adventure || (c.warpedOnTurn !== undefined && s.turn > c.warpedOnTurn)));
+  const inExile = ps.exile.find((c) => c.iid === iid && (c.adventure || (c.warpedOnTurn !== undefined && s.turn > c.warpedOnTurn)
+    || (c.castFor && (c.castFor.afterTurn === undefined || s.turn > c.castFor.afterTurn))));
   if (inExile) return { inst: inExile, from: 'exile' };
   const inCommand = ps.command?.find((c) => c.iid === iid);
   if (inCommand) return { inst: inCommand, from: 'command' };
@@ -1132,7 +1209,7 @@ export function castOptions(s: GameState, p: PlayerId, iid: string): CastOption[
   for (const face of faces) {
     const c = faceCard(inst.card, face);
     if (isLand(c)) continue;
-    if (!castTimingOk(s, p, c)) continue;
+    if (!castTimingFor(s, p, inst, c)) continue;
     const info = castInfo(inst.card, face);
     // Additional costs: understood (for a permanent) and payable.
     if (info.unknownCost && !isInstantOrSorcery(c)) continue;
@@ -1154,6 +1231,7 @@ export function castOptions(s: GameState, p: PlayerId, iid: string): CastOption[
       }
     }
     // Alternative costs (not with kicker): Daze, Force of Negation, evoke, cleave, warp, web-slinging, Phyrexian mana.
+    if (inst.castFor || s.castNow?.iid === iid) continue; // its cost is already set
     info.alts.forEach((alt, i) => {
       if (altCostProblem(s, p, alt, iid, from)) return;
       const cost = castCost(s, p, inst.card, { face, from, iid, alt: i });
@@ -1335,7 +1413,7 @@ function matchesFilter(s: GameState, f: TargetFilter, caster: PlayerId, x: CardI
   const perm = isPermanent(x) ? x : undefined;
   const types = cardTypes(x.card);
   const colors = x.card.colors;
-  if (f.types && !f.types.some((t) => types.includes(t))) return false;
+  if (f.types && !f.types.some((t) => types.includes(t)) && !f.orSubtypes?.some((t) => hasSubtype(x.card, t))) return false;
   if (f.nonTypes?.some((t) => types.includes(t))) return false;
   // "you control": the caster; "an opponent controls": the other team (a teammate is neither).
   if (f.controller === 'you' && controller !== caster) return false;
@@ -1425,7 +1503,7 @@ export function matching(s: GameState, caster: PlayerId, which: Selector): Perma
 /** Does the card match a filter of card words ("nonland", "creature")? Used for cards in hand. */
 export const cardMatches = (card: Card, f: TargetFilter) => {
   const types = cardTypes(card);
-  return (!f.types || f.types.some((t) => types.includes(t))) && !f.nonTypes?.some((t) => types.includes(t)) &&
+  return (!f.types || f.types.some((t) => types.includes(t)) || !!f.orSubtypes?.some((t) => hasSubtype(card, t))) && !f.nonTypes?.some((t) => types.includes(t)) &&
     (f.maxManaValue === undefined || card.cmc <= f.maxManaValue) && fitsTypeLine(card, f) &&
     (!f.manaCosts || f.manaCosts.includes(card.manaCost.split(' // ')[0]));
 };
@@ -1725,8 +1803,9 @@ function finishTurn(d: GameState) {
   beginTurn(d, nextTeamLead(d, d.active), false);
 }
 
-const newPermanent = (inst: CardInst, controller: PlayerId): Permanent => ({
+const newPermanent = (inst: CardInst, controller: PlayerId, turn?: number): Permanent => ({
   iid: inst.iid, card: inst.card, controller, tapped: false, sick: true, damage: 0, deathtouched: false, counters: {}, boosts: [],
+  ...(turn !== undefined ? { enteredOnTurn: turn } : {}),
   ...(inst.commander ? { commander: true } : {}),
 });
 
@@ -1803,7 +1882,13 @@ function payMana(d: GameState, p: PlayerId, plan: ManaPick[]) {
   const pool = ps.pool ?? [];
   const spentPool = new Set(plan.filter((m) => m.iid.startsWith('pool:')).map((m) => Number(m.iid.slice(5))));
   const next = pool.filter((_, i) => !spentPool.has(i));
-  for (const iid of new Set(plan.filter((m) => !m.iid.startsWith('pool:')).map((m) => m.iid))) {
+  // Mystic Gate last: the land it taps along is one the plan left out.
+  const gateLast = (iid: string) => {
+    const perm = findPermanent(d, iid);
+    return perm && filterMana(perm.card) ? 1 : 0;
+  };
+  const iids = [...new Set(plan.filter((m) => !m.iid.startsWith('pool:')).map((m) => m.iid))].sort((a, b) => gateLast(a) - gateLast(b));
+  for (const iid of iids) {
     if (iid.startsWith('convoke:')) {
       tapPermanent(d, findPermanent(d, iid.slice(8))!);
       continue;
@@ -1848,6 +1933,9 @@ function tapForManaOnly(d: GameState, perm: Permanent) {
   // Springleaf Drum: "Tap an untapped creature you control" too.
   const helper = manaHelpers(d, perm)[0];
   if (helper) tapPermanent(d, helper);
+  // Mystic Gate: the land paying {W/U} (when it makes two mana).
+  const filtered = filterMana(perm.card) && unitsOf(d, perm).length === 2 ? filterHelpers(d, perm)[0] : undefined;
+  if (filtered) tapPermanent(d, filtered);
   tapPermanent(d, perm);
   // Gemstone Mine: a mining counter removed; sacrificed when none is left.
   if (stateMana(perm.card) === 'mining') {
@@ -1903,7 +1991,7 @@ function putOntoBattlefield(d: GameState, inst: CardInst, controller: PlayerId, 
 }
 
 function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, opts: { x?: number; tapped?: boolean } = {}): Permanent {
-  const perm = newPermanent(inst, controller);
+  const perm = newPermanent(inst, controller, d.turn);
   // Magus of the Moon: a nonbasic land enters without its abilities ("enters tapped" ones included).
   const rule = mooned(d, inst.card) ? null : entersTappedRule(inst.card);
   const otherLands = d.battlefield.filter((x) => x.controller === controller && isLandCard(x.card));
@@ -2002,7 +2090,7 @@ function animate(d: GameState, perm: Permanent, e: Extract<Effect, { kind: 'anim
 }
 
 /** The card a permanent leaves the battlefield as: its printed card, not a face, an animation or gained abilities. */
-const printedCard = (perm: Permanent) => perm.printed ?? perm.unanimated ?? perm.card;
+const printedCard = (perm: Permanent) => perm.printed ?? perm.reconfigured ?? perm.unanimated ?? perm.card;
 
 /** Cavern of Souls: creature types of `p`'s cards, the most frequent first. */
 function creatureTypeOptions(d: GameState, p: PlayerId): string[] {
@@ -2228,6 +2316,24 @@ function fireStep(d: GameState, on: StepEvent) {
     }
     delete d.warpAtEnd;
   }
+  // Phelia: "At the beginning of the next end step, return that card to the battlefield under its owner's control."
+  if (on === 'endStep' && d.returnAtEnd?.length) {
+    for (const x of d.returnAtEnd) {
+      const ps = d.players[x.owner];
+      const inst = ps.exile.find((c) => c.iid === x.iid);
+      if (!inst) continue; // a token, or the card moved on
+      ps.exile = ps.exile.filter((c) => c !== inst);
+      log(d, { k: 'returned', card: inst.card.name, dest: 'battlefield' });
+      putOntoBattlefield(d, inst, x.owner);
+      // "If it entered under your control, put a +1/+1 counter on Phelia."
+      const source = x.source ? findPermanent(d, x.source) : undefined;
+      if (x.counterIfYours && x.owner === x.controller && source && findPermanent(d, x.iid)) {
+        source.counters = { ...source.counters, '+1/+1': (source.counters['+1/+1'] ?? 0) + 1 };
+        log(d, { k: 'counters', card: source.card.name, counter: '+1/+1', n: 1 });
+      }
+    }
+    delete d.returnAtEnd;
+  }
   if (on === 'endStep' && d.sacrificeAtEnd?.length) {
     for (const iid of d.sacrificeAtEnd) {
       const token = findPermanent(d, iid);
@@ -2372,6 +2478,14 @@ function stackTrigger(d: GameState, t: Triggered): boolean {
 /** State-based actions: +1/+1 and -1/-1 counters cancel out, 0 toughness, lethal damage, 0 life. */
 function checkStateBased(d: GameState) {
   refreshStatics(d);
+  // Ascend: "If you control ten or more permanents, you get the city's blessing for the rest of the game."
+  for (const p of playersOf(d)) {
+    const mine = d.battlefield.filter((x) => x.controller === p);
+    if (!d.players[p].citysBlessing && mine.length >= 10 && mine.some((x) => x.card.keywords?.includes('Ascend'))) {
+      d.players[p].citysBlessing = true;
+      log(d, { k: 'citysBlessing', p });
+    }
+  }
   for (const perm of [...d.battlefield]) {
     const plus = perm.counters['+1/+1'] ?? 0;
     const minus = perm.counters['-1/-1'] ?? 0;
@@ -2427,7 +2541,30 @@ function checkStateBased(d: GameState) {
 }
 
 /** Recomputes what static abilities give each creature (anthems, Auras, Equipment). */
+/**
+ * Swift Reconfiguration: the enchanted permanent is a noncreature Vehicle artifact with crew 5 (crewed, a creature
+ * with its own power and toughness); it is itself again once the Aura is gone.
+ */
+function refreshReconfigured(d: GameState) {
+  for (const perm of d.battlefield) {
+    const aura = d.battlefield.find((x) => x.attachedTo === perm.iid && reconfiguresEnchanted(x.card) !== null);
+    if (aura && !perm.reconfigured) {
+      const own = perm.unanimated ?? perm.card;
+      const legendary = /\bLegendary\b/.test(own.typeLine.split(' // ')[0]);
+      perm.reconfigured = own;
+      delete perm.unanimated;
+      perm.card = { ...own, typeLine: `${legendary ? 'Legendary ' : ''}Artifact — Vehicle`, oracleText: `${own.oracleText}\nCrew ${reconfiguresEnchanted(aura.card)}` };
+      log(d, { k: 'becomesVehicle', card: own.name });
+    } else if (!aura && perm.reconfigured) {
+      perm.card = perm.reconfigured;
+      delete perm.reconfigured;
+      delete perm.unanimated;
+    }
+  }
+}
+
 function refreshStatics(d: GameState) {
+  refreshReconfigured(d);
   for (const perm of d.battlefield) delete perm.statics;
   for (const src of d.battlefield) {
     for (const st of staticsOf(src.card)) {
@@ -2616,7 +2753,7 @@ function putAwaySpell(d: GameState, item: StackItem, resolved: boolean) {
   if (item.copy) return; // a copy ceases to exist
   const ps = d.players[item.controller];
   const inst: CardInst = { iid: item.iid, card: item.card, ...(item.commander ? { commander: true } : {}) };
-  if (item.from === 'graveyard') putInZone(d, item.controller, inst, 'exile');
+  if (item.from === 'graveyard' && !item.castNow) putInZone(d, item.controller, inst, 'exile');
   else if (resolved && item.face && isAdventure(item.card)) ps.exile.push({ ...inst, adventure: true });
   else putInZone(d, item.controller, inst, 'graveyard');
 }
@@ -2736,6 +2873,16 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         log(d, { k: 'pump', card: perm.card.name, power: e.power, toughness: e.toughness, keywords: e.keywords });
       }
       break;
+    case 'gainProtection':
+    case 'gainProtectionAll': {
+      if (answer?.kind !== 'mode') return { kind: 'mode', player: caster, purpose: 'color', min: 1, max: 1, modes: [...COLORS], params: { card: item.card.name } };
+      const color = COLORS[answer.modes[0]];
+      for (const perm of e.kind === 'gainProtectionAll' ? matching(d, caster, e.which) : perms) {
+        perm.boosts.push({ power: 0, toughness: 0, keywords: [], until: 'endOfTurn', protection: [color] });
+        log(d, { k: 'gainsProtection', card: perm.card.name, color });
+      }
+      break;
+    }
     case 'pumpAll':
       for (const perm of matching(d, caster, e.which)) {
         perm.boosts.push({ power: e.power, toughness: e.toughness, keywords: e.keywords, until: 'endOfTurn' });
@@ -2760,6 +2907,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         unbury(g);
         d.players[g.owner].exile.push(g.grave);
         log(d, { k: 'exiledCard', card: g.grave.card.name });
+        if (item.source) ((d.exiledWith ??= {})[item.source] ??= []).push({ iid: g.grave.iid, owner: g.owner });
       }
       break;
     case 'returnCard':
@@ -2773,6 +2921,27 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         log(d, { k: 'returned', card: g.grave.card.name, dest: e.dest });
         if (e.dest === 'hand') d.players[g.owner].hand.push(g.grave);
         else putOntoBattlefield(d, g.grave, caster);
+        // Pre-War Formalwear: "and attach this Equipment to it".
+        const src = e.attachSource && item.source ? findPermanent(d, item.source) : undefined;
+        const host = findPermanent(d, g.grave.iid);
+        if (src && host && host.controller === src.controller) {
+          src.attachedTo = host.iid;
+          log(d, { k: 'attached', card: src.card.name, to: host.card.name });
+        }
+      }
+      break;
+    case 'flickerAtEnd':
+      for (const perm of perms) {
+        const owner = perm.owner ?? perm.controller;
+        removePermanent(d, perm, 'exile');
+        log(d, { k: 'exiled', card: perm.card.name });
+        (d.returnAtEnd ??= []).push({ iid: perm.iid, owner, ...(item.source ? { source: item.source } : {}), controller: caster, counterIfYours: e.counterIfYours });
+      }
+      break;
+    case 'grantFlashback':
+      for (const g of graveCards) {
+        g.grave.flashbackOnTurn = d.turn;
+        log(d, { k: 'gainsFlashback', card: g.grave.card.name });
       }
       break;
     case 'addCountersAll': {
@@ -2885,6 +3054,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
           const inst = hand.find((c) => c.iid === iid)!;
           moveToGraveyard(d, p, inst, 'hand');
           log(d, { k: 'discard', p, card: inst.card.name });
+          (r.discarded ??= []).push(inst.iid);
         }
         answer = undefined;
       }
@@ -3328,6 +3498,69 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         log(d, { k: 'token', p: caster, card: model.name, n: 1 });
       }
       break;
+    case 'airbend':
+    case 'plot': {
+      // Aang: "Exile it. While it's exiled, its owner may cast it for {2} rather than its mana cost."
+      // Aven Interrupter: "Its owner may cast it as a sorcery on a later turn without paying its mana cost."
+      const castFor: CardInst['castFor'] = e.kind === 'airbend' ? { cost: '{2}' } : { cost: '', afterTurn: d.turn, sorcery: true };
+      for (const perm of perms) {
+        const owner = perm.owner ?? perm.controller;
+        const token = isToken(printedCard(perm));
+        removePermanent(d, perm, 'exile');
+        log(d, { k: 'exiled', card: perm.card.name });
+        const inst = token ? undefined : d.players[owner].exile.find((c) => c.iid === perm.iid);
+        if (inst) inst.castFor = castFor;
+      }
+      for (const target of spells) {
+        if (target.ability || !d.stack.includes(target)) continue;
+        d.stack = d.stack.filter((x) => x !== target);
+        log(d, { k: 'exiled', card: target.card.name });
+        if (target.copy) continue;
+        putInZone(d, target.controller, { iid: target.iid, card: target.card, ...(target.commander ? { commander: true } : {}) }, 'exile');
+        const inst = d.players[target.controller].exile.find((c) => c.iid === target.iid);
+        if (inst) inst.castFor = castFor;
+      }
+      break;
+    }
+    case 'castDiscarded': {
+      // Malcolm: with enough chorus counters, the card just discarded may be cast right away for free.
+      const src = item.source ? findPermanent(d, item.source) : undefined;
+      const iid = r.discarded?.at(-1);
+      if (!src || (src.counters[e.counter] ?? 0) < e.minCounters || !iid) break;
+      if (!d.players[caster].graveyard.some((c) => c.iid === iid)) break;
+      d.castNow = { player: caster, iid };
+      log(d, { k: 'mayCastFree', p: caster, card: d.players[caster].graveyard.find((c) => c.iid === iid)!.card.name });
+      break;
+    }
+    case 'returnExiledSpirits': {
+      // The source was sacrificed to pay the cost: what it exiled is remembered by its iid.
+      for (const x of (item.source && d.exiledWith?.[item.source]) || []) {
+        const ps = d.players[x.owner];
+        const inst = ps.exile.find((c) => c.iid === x.iid);
+        if (!inst || !isCreature(inst.card) || uncastExiled(d, inst.card)) continue;
+        ps.exile = ps.exile.filter((c) => c !== inst);
+        const [types, subtypes] = inst.card.typeLine.split(' // ')[0].split(' — ');
+        const spirit: Card = { ...inst.card, power: '1', toughness: '1', typeLine: `${types} — ${subtypes ? `${subtypes} ` : ''}Spirit` };
+        const perm = enterBattlefield(d, { ...inst, card: spirit }, caster);
+        perm.printed = inst.card;
+        if (x.owner !== caster) perm.owner = x.owner;
+        perm.counters = { ...perm.counters, flying: 1 };
+        log(d, { k: 'returned', card: inst.card.name, dest: 'battlefield' });
+      }
+      if (item.source) delete d.exiledWith?.[item.source];
+      break;
+    }
+    case 'copyNewTokens': {
+      if (!d.players[caster].citysBlessing) break;
+      const fresh = d.battlefield.filter((x) => x.controller === caster && x.enteredOnTurn === d.turn && isToken(printedCard(x)));
+      for (const perm of fresh) {
+        d.abilities = (d.abilities ?? 0) + 1;
+        const model = printedCard(perm);
+        enterBattlefield(d, { iid: `token-${d.abilities}`, card: { ...model, id: `token:copy:${model.id}` } }, caster);
+        log(d, { k: 'token', p: caster, card: model.name, n: 1 });
+      }
+      break;
+    }
     case 'preventCombat':
       d.preventCombat = true;
       break;
@@ -3749,6 +3982,8 @@ export function addAbility(state: GameState, source: CardInst, controller: Playe
 export function apply(state: GameState, action: Action): GameState {
   if (state.winner !== null) throw new IllegalAction('gameOver');
   const d = structuredClone(state);
+  // Malcolm: the free cast is now or never.
+  if (d.castNow && !(action.type === 'cast' && action.iid === d.castNow.iid)) delete d.castNow;
 
   if (action.type === 'concede') {
     // A player conceding makes their whole team lose.
@@ -4010,7 +4245,13 @@ export function apply(state: GameState, action: Action): GameState {
       if (isLandCard(card)) throw new IllegalAction('notASpell');
       if (castingForbidden(d, p)) throw new IllegalAction('castingForbidden');
       if (spellNameStopped(d, inst.card.name)) throw new IllegalAction('nameStopped');
-      if (d.priority) {
+      // Malcolm: cast right away, whatever the timing.
+      const castNow = d.castNow?.player === p && d.castNow.iid === inst.iid;
+      if (castNow) {
+        // no timing restriction
+      } else if (inst.castFor?.sorcery && !castTimingFor(d, p, inst, card)) {
+        throw new IllegalAction('castTiming');
+      } else if (d.priority) {
         if (sorceryOnly(d, p)) throw new IllegalAction('sorceryOnly');
         if (!castTimingOk(d, p, card)) throw new IllegalAction('sorcerySpeed', { card: card.name });
       } else if (!isMainStep(d) || !isActivePlayer(d, p)) {
@@ -4078,8 +4319,9 @@ export function apply(state: GameState, action: Action): GameState {
         iid: inst.iid, card: inst.card, controller: p, targets, ...(xCount(card) ? { x } : {}),
         ...(face ? { face } : {}), ...(modes ? { modes } : {}), ...(kicked ? { kicked } : {}), ...(from !== 'hand' ? { from } : {}),
         ...(inst.commander ? { commander: true } : {}), ...(noMana ? { noMana } : {}), ...(uncounterable ? { uncounterable } : {}),
-        ...(altIndex !== undefined ? { alt: altIndex } : {}),
+        ...(altIndex !== undefined ? { alt: altIndex } : {}), ...(castNow ? { castNow } : {}),
       };
+      delete d.castNow;
       if (alt && payAltCost(d, p, alt, item, named)) break;
       if (exiled) {
         const options = me.hand.filter((c) => cardColors(c.card).includes(discountColor!));

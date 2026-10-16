@@ -1,7 +1,7 @@
 import type { Card } from '../../types';
 import {
   activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, entersCounters, entersTappedRule, beginsWithLuck, discardsLandInstead, manaConditions, stateMana, doesntUntap, frontText, gameRulesOf, isInstantOrSorcery,
-  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, returnsExiledWhenLeaving, fadingOf, type AbilitySpec,
+  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, reconfiguresEnchanted, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, returnsExiledWhenLeaving, fadingOf, type AbilitySpec,
 } from './rules';
 
 /**
@@ -68,6 +68,7 @@ function keywordLine(card: Card, line: string, one: Card): LineReport | null {
     if (k === 'convoke') return info.convoke;
     if (k === 'delve') return info.delve;
     if (k === 'affinity') return !!info.affinity;
+    if (k === 'ascend') return triggersOf(card).some((tr) => tr.ability.effects.some((x) => x.kind === 'copyNewTokens'));
     if (k === 'mobilize') return triggersOf(one).length > 0;
     if (k === 'storied') return isStoried(one);
     if (k === 'crew') return activatedOf(one).some((a) => a.cost.crew !== undefined);
@@ -126,8 +127,12 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   if (choosesBasicType(card) && /^As this land enters, choose a basic land type|^This land is the chosen type/.test(line)) {
     return { text: line, status: 'ok', how: 'chooses a basic land type (its mana); pay 2 life or it enters tapped' };
   }
+  const crew = reconfiguresEnchanted(one);
+  if (crew !== null) return { text: line, status: 'ok', how: `the enchanted permanent is a noncreature Vehicle artifact with crew ${crew}` };
   if (blocksOnlyFlyers(one)) return { text: line, status: 'ok', how: 'blocks only creatures with flying' };
   if (legendaryMana(one)) return { text: line, status: 'ok', how: 'mana: any color for a legendary spell (it can\'t be countered)' };
+  const filter = filterMana(one);
+  if (filter) return { text: line, status: 'ok', how: `mana: two ${filter.join('/')}, paying {${filter.join('/')}} with another untapped land (chosen automatically)` };
   const tapsOther = tapsAnotherForMana(one);
   if (tapsOther) return { text: line, status: 'ok', how: `mana: any color, tapping another untapped ${tapsOther} that makes no mana (chosen automatically)` };
   const fromHand = handMana(one);

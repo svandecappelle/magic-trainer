@@ -86,9 +86,6 @@ NONE     Fire Magic {R} — Instant
       spell not simulated
   ✗ • Firaga — {5} — Fire Magic deals 3 damage to each creature.
       spell not simulated
-NONE     Flashback {R} — Instant
-  ✗ Target instant or sorcery card in your graveyard gains flashback unti…
-      spell not simulated
 NONE     Flow State {1}{U} — Sorcery
   ✗ Look at the top three cards of your library. Put one of them into you…
       spell not simulated
@@ -231,11 +228,6 @@ NONE     Steamcore Scholar {2}{U} — Creature — Weird Detective
   ✓ Flying, vigilance
       keyword
   ✗ When this creature enters, draw two cards. Then discard two cards unl…
-      trigger (enters), effect not simulated
-NONE     Stingcaster Mage {1}{R} — Creature — Human Wizard
-  ✓ Haste
-      keyword
-  ✗ When this creature enters, target instant or sorcery card in your gra…
       trigger (enters), effect not simulated
 NONE     Strategic Betrayal {1}{B} — Sorcery
   ✗ Target opponent exiles a creature they control and their graveyard.
@@ -437,11 +429,6 @@ PARTIAL  Get Out {U}{U} — Instant
       mode
   ✗ • Return one or two target creatures and/or enchantments you own to y…
       mode not simulated (can't be chosen)
-PARTIAL  Ghost Vacuum {1} — Artifact
-  ✓ {T}: Exile target card from a graveyard.
-      activated → destroy (1 target)
-  ✗ {6}, {T}, Sacrifice this artifact: Put each creature card exiled with…
-      activated ability, effect not simulated
 PARTIAL  Great Hall of the Biblioplex  — Land
   ✓ {T}: Add {C}.
       mana: C
@@ -736,6 +723,9 @@ OK       Firebending Lesson {R} — Instant — Lesson
       keyword
   ✓ Firebending Lesson deals 2 damage to target creature. If this spell w…
       spell → damage (1 target)
+OK       Flashback {R} — Instant
+  ✓ Target instant or sorcery card in your graveyard gains flashback unti…
+      spell → grantFlashback (1 target)
 OK       Flashfreeze {1}{U} — Instant
   ✓ Counter target red or green spell.
       spell → counter (1 target)
@@ -750,6 +740,11 @@ OK       Gandalf, Goblins' Bane // Flameshape {2}{R} // {1}{R} — Legendary Cre
 OK       Get Lost {1}{W} — Instant
   ✓ Destroy target creature, enchantment, or planeswalker. Its controller…
       spell → destroy (1 target)
+OK       Ghost Vacuum {1} — Artifact
+  ✓ {T}: Exile target card from a graveyard.
+      activated → destroy (1 target)
+  ✓ {6}, {T}, Sacrifice this artifact: Put each creature card exiled with…
+      activated → returnExiledSpirits
 OK       Gleaming Bastion  — Land
   ✓ {T}: Add {C}.
       mana: C
@@ -926,6 +921,11 @@ OK       Starting Town  — Land — Town
 OK       Steam Vents  — Land — Island Mountain
   ✓ As this land enters, you may pay 2 life. If you don't, it enters tapp…
       enters tapped (payLife)
+OK       Stingcaster Mage {1}{R} — Creature — Human Wizard
+  ✓ Haste
+      keyword
+  ✓ When this creature enters, target instant or sorcery card in your gra…
+      trigger (enters) → grantFlashback (1 target)
 OK       Stock Up {2}{U} — Sorcery
   ✓ Look at the top five cards of your library. Put two of them into your…
       spell → dig
@@ -961,5 +961,5 @@ OK       Watery Grave  — Land — Island Swamp
   ✓ As this land enters, you may pay 2 life. If you don't, it enters tapp…
       enters tapped (payLife)
 
-178 cards: 78 ok, 40 partial, 60 not simulated, 0 can't be cast
+178 cards: 81 ok, 39 partial, 58 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

@@ -336,14 +336,30 @@ exiled until it leaves), Moorland Haunt ("Exile a creature card from your gravey
 and Novice Inspector). Decklist import: names of other printings ("Ademi of the Silkchutes" is Spectacular
 Spider-Man) and flavor names ("Mayor Tong of Chin Village" is Drannith Magistrate) are found.
 
-Still not simulated, by mechanic:
-- [ ] Alternative costs: Daze (return an Island), Force of Negation, Reverent Mantra, Solitude and Subtlety (evoke)
-- [ ] Counterspells with a twist: Memory Lapse and Remand (the spell goes back), Reprieve, Tale's End and Tishana's
-  Tidebinder (abilities on the stack), Stern Scolding (power or toughness 2 or less), Wash Away (cleave), Spider-Sense
-- [ ] Library manipulation: Brainstorm, Ponder, Consult the Star Charts; tutors: Enlightened Tutor, Stoneforge Mystic
-- [ ] Aang (airbend, waterbend, transform), King T'Challa's transform, Skycoach Conductor ("prepared"), Swift
-  Reconfiguration (a creature becomes a Vehicle), Mystic Gate (mana paid with mana), Mother of Runes (protection
-  from a chosen color), Ocelot Pride (ascend, copying tokens), Snapcaster Mage (flashback granted)
+Second pass (every mechanism of the deck, tested with the Oracle texts):
+- Counterspells: Memory Lapse and Remand (the spell goes back), Reprieve, Sink into Stupor, Tale's End and Tishana's
+  Tidebinder (abilities on the stack; Tidebinder takes the abilities away), Stern Scolding, Subtlety (the owner puts
+  it on top or bottom), Cryptic Command's tap mode, Swords to Plowshares and Solitude (life equal to the power).
+- Alternative and additional costs: Daze, Force of Negation, Reverent Mantra, evoke (Solitude, Subtlety), cleave (Wash
+  Away), warp (Quantum Riddler), web-slinging (Spider-Sense), Phyrexian mana (Gitaxian Probe), March of Otherworldly
+  Light's exiled white cards.
+- Library: Brainstorm, Ponder, Preordain, Consult the Star Charts (X = lands, two when kicked), Enlightened Tutor (on
+  top), Stoneforge Mystic (an Equipment from the hand), typecycling (Step Through's Wizardcycling).
+- Permanents: Mother of Runes and Reverent Mantra (protection from a chosen color until end of turn), Snapcaster Mage
+  (flashback for the mana cost this turn), Phelia (exiled until the next end step, a counter if it came back under
+  your control), Ocelot Pride (ascend, city's blessing, copies of this turn's tokens), Pre-War Formalwear (returns a
+  creature and is attached to it), Ghost Vacuum ("exiled with this artifact", 1/1 Spirits with a flying counter),
+  Malcolm (chorus counters, the discarded card cast for free), Mystic Gate (filter mana: it and a W/U land make two),
+  Swift Reconfiguration (a noncreature Vehicle with crew 5; "creature or Vehicle" targets), Aang's airbend (castable
+  from exile for {2}), Aven Interrupter's plot (free as a sorcery on a later turn).
+
+Approximations: Malcolm's free spell is cast right after its trigger resolves (the next action), not during it;
+Mystic Gate always pays its {W/U} with the land making fewest colors.
+
+Still not simulated:
+- [ ] Transform: Aang's waterbend {8} (Aang and La, Ocean's Fury), King T'Challa's {4}{W}{U} (Black Panther)
+- [ ] Skycoach Conductor ("enters prepared": cast a copy of All Aboard)
+- [ ] Get Lost's Map tokens (explore)
 
 ## Standard: Boros Dwarves (mtgtop8 deck 899948)
 

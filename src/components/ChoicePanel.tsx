@@ -39,6 +39,7 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
     case 'payLife': return t.game.choice.payLife({ card: card(String(p.card)), n });
     case 'sacrificeCost': return t.game.choice.sacrificeCost({ card: card(String(p.card)) });
     case 'creatureType': return t.game.choice.creatureType({ card: card(String(p.card)) });
+    case 'color': return t.game.choice.color({ card: card(String(p.card)) });
     case 'basicType': return t.game.choice.basicType({ card: card(String(p.card)) });
     case 'chosenPlayer': return t.game.choice.chosenPlayer({ card: card(String(p.card)) });
     case 'spellName': return t.game.choice.spellName({ card: card(String(p.card)) });
@@ -155,7 +156,7 @@ export function ChoicePanel({ choice, onAnswer, onPreview, title }: Props) {
               disabled={choice.disabled?.includes(i)}
               onChange={() => (choice.max === 1 ? setPicked([ids[i]]) : toggle(ids[i]))}
             />{' '}
-            {label}
+            {choice.purpose === 'color' ? t.colors[label] : label}
             {choice.disabled?.includes(i) && <small> — {t.game.modeUnavailable}</small>}
           </label>
         ))}
