@@ -230,8 +230,8 @@ NONE     Starfield Shepherd {3}{W}{W} — Creature — Angel
       keyword
   ✗ When this creature enters, search your library for a basic Plains car…
       trigger (enters), effect not simulated
-  ✗ Warp {1}{W}
-      keyword not simulated: warp
+  ✓ Warp {1}{W}
+      keyword
 NONE     Steamcore Scholar {2}{U} — Creature — Weird Detective
   ✓ Flying, vigilance
       keyword
@@ -459,13 +459,6 @@ PARTIAL  Guiding Hydra {X}{W} — Creature — Hydra Horror
       enters with X +1/+1 counters
   ✗ At the beginning of combat on your turn, you may remove a +1/+1 count…
       trigger (beginCombat), effect not simulated
-PARTIAL  Haliya, Guided by Light {2}{W} — Legendary Creature — Human Soldier
-  ✓ Whenever Haliya or another creature or artifact you control enters, y…
-      trigger (enters) → gainLife
-  ✓ At the beginning of your end step, draw a card if you've gained 3 or …
-      trigger (endStep) → draw, if 3+ life gained this turn
-  ✗ Warp {W}
-      keyword not simulated: warp
 PARTIAL  Heroes' Hangout {R} — Sorcery
   ✓ Choose one —
       modal: choose 1–1
@@ -532,15 +525,6 @@ PARTIAL  Prismari Charm {U}{R} — Instant
       mode not simulated (can't be chosen)
   ✓ • Return target nonland permanent to its owner's hand.
       mode
-PARTIAL  Quantum Riddler {3}{U}{U} — Creature — Sphinx
-  ✓ Flying
-      keyword
-  ✓ When this creature enters, draw a card.
-      trigger (enters) → draw
-  ✓ As long as you have one or fewer cards in hand, if you would draw one…
-      draws one more card with one or fewer in hand
-  ✗ Warp {1}{U}
-      keyword not simulated: warp
 PARTIAL  Ral Zarek, Guest Lecturer {1}{B}{B} — Legendary Planeswalker — Ral
   ✓ +1: Surveil 2.
       loyalty ability → surveil
@@ -575,11 +559,6 @@ PARTIAL  Slickshot Show-Off {1}{R} — Creature — Bird Wizard
       trigger (cast) → pump
   ✗ Plot {1}{R}
       keyword not simulated: plot
-PARTIAL  Spider-Sense {1}{U} — Instant
-  ✗ Web-slinging {U}
-      keyword not simulated: web-slinging
-  ✓ Counter target instant spell, sorcery spell, or triggered ability.
-      spell → counter (1 target)
 PARTIAL  Starscape Cleric {1}{B} — Creature — Bat Cleric
   ✗ Offspring {2}{B}
       keyword not simulated: offspring
@@ -784,6 +763,13 @@ OK       Gloomlake Verge  — Land
 OK       Godless Shrine  — Land — Plains Swamp
   ✓ As this land enters, you may pay 2 life. If you don't, it enters tapp…
       enters tapped (payLife)
+OK       Haliya, Guided by Light {2}{W} — Legendary Creature — Human Soldier
+  ✓ Whenever Haliya or another creature or artifact you control enters, y…
+      trigger (enters) → gainLife
+  ✓ At the beginning of your end step, draw a card if you've gained 3 or …
+      trigger (endStep) → draw, if 3+ life gained this turn
+  ✓ Warp {W}
+      keyword
 OK       Hallowed Fountain  — Land — Plains Island
   ✓ As this land enters, you may pay 2 life. If you don't, it enters tapp…
       enters tapped (payLife)
@@ -842,6 +828,15 @@ OK       Pompous Battlemage // Improvised Act {R} // {R} — Creature — Goblin
 OK       Precise Redaction {1}{U} — Instant
   ✓ Counter target white or black spell.
       spell → counter (1 target)
+OK       Quantum Riddler {3}{U}{U} — Creature — Sphinx
+  ✓ Flying
+      keyword
+  ✓ When this creature enters, draw a card.
+      trigger (enters) → draw
+  ✓ As long as you have one or fewer cards in hand, if you would draw one…
+      draws one more card with one or fewer in hand
+  ✓ Warp {1}{U}
+      keyword
 OK       Requiting Hex {B} — Instant
   ✓ As an additional cost to cast this spell, you may blight 1.
       optional cost, never paid
@@ -908,6 +903,11 @@ OK       Spell Pierce {U} — Instant
 OK       Spell Snare {U} — Instant
   ✓ Counter target spell with mana value 2.
       spell → counter (1 target)
+OK       Spider-Sense {1}{U} — Instant
+  ✓ Web-slinging {U}
+      keyword
+  ✓ Counter target instant spell, sorcery spell, or triggered ability.
+      spell → counter (1 target)
 OK       Spirebluff Canal  — Land
   ✓ This land enters tapped unless you control two or fewer other lands.
       enters tapped (unlessOtherLands)
@@ -961,5 +961,5 @@ OK       Watery Grave  — Land — Island Swamp
   ✓ As this land enters, you may pay 2 life. If you don't, it enters tapp…
       enters tapped (payLife)
 
-178 cards: 74 ok, 43 partial, 61 not simulated, 0 can't be cast
+178 cards: 77 ok, 40 partial, 61 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

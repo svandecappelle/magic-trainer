@@ -4,7 +4,7 @@ import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
   activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
-  type ActivatedSpec, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
+  type ActivatedSpec, type AltCost, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
 
 /** A player: an index in GameState.players (0–1 in a duel, 0–3 in Two-Headed Giant). */
@@ -15,6 +15,8 @@ export interface CardInst {
   card: Card;
   /** In exile "on an adventure": its creature can be cast from there. */
   adventure?: boolean;
+  /** Warp: exiled at the end step after it was warped in, castable from exile on a later turn (that turn number). */
+  warpedOnTurn?: number;
   /** A commander: it goes back to the command zone instead of other zones. */
   commander?: boolean;
 }
@@ -76,6 +78,8 @@ export interface StackItem extends CardInst {
   source?: string;
   /** A triggered ability (otherwise an activated one). */
   triggered?: boolean;
+  /** The alternative cost paid (an index in CastInfo.alts): evoke, warp, cleave… */
+  alt?: number;
   /** A copy of a spell: it ceases to exist when it leaves the stack. */
   copy?: boolean;
   /** How the spell was cast: which face, modes, kicked, and from which zone. */
@@ -97,6 +101,10 @@ export interface CastOption {
   face: number;
   kicked: boolean;
   from: CastZone;
+  /** An alternative cost paid instead of the mana cost (an index in CastInfo.alts). */
+  alt?: number;
+  /** March of Otherworldly Light: cards exiled from the hand for a cheaper cost. */
+  exiled?: number;
 }
 
 /** A triggered ability waiting to be put on the stack (the next time a player would get priority). */
@@ -203,6 +211,9 @@ export type ChoicePurpose =
   | 'payOrCounter' // "counter target spell unless its controller pays {N}"
   | 'payLifeOrCounter' // Ward—Pay N life: pay, or the spell or ability is countered
   | 'payOrDraw' // Rhystic Study: pay {N}, or its controller draws
+  | 'returnLandCost' // Daze: which Island to return to its owner's hand
+  | 'exileFromHandCost' // Force of Negation, evoke: which card to exile from your hand
+  | 'returnCreatureCost' // web-slinging: which tapped creature to return to its owner's hand
   | 'tuckTop' // Subtlety: put your spell on top of your library (or the bottom)?
   | 'cumulativeUpkeep' // pay the cumulative upkeep, or sacrifice the permanent
   | 'discard' // "discard a card": the discarding player chooses
@@ -335,6 +346,7 @@ export type LogEntry =
   | { k: 'sorceryFlash'; p: PlayerId }
   | { k: 'exiledInstead'; card: string }
   | { k: 'losesAbilities'; card: string }
+  | { k: 'looksAtHand'; p: PlayerId; of: PlayerId; cards: string[] }
   | { k: 'tucked'; card: string; top: boolean }
   | { k: 'paidTax'; p: PlayerId; n: number; card: string }
   | { k: 'cantEnter'; card: string }
@@ -455,6 +467,8 @@ export interface GameState {
   exiledUntil?: { source: string; iid: string; owner: PlayerId }[];
   /** Tokens to sacrifice at the beginning of the next end step (Mobilize). */
   sacrificeAtEnd?: string[];
+  /** Warp: permanents exiled at the beginning of the next end step (castable from exile on a later turn). */
+  warpAtEnd?: string[];
   /** Counter for ability ids on the stack. */
   abilities?: number;
   /** Random generator state, so shuffles during the game are reproducible. Secret: redacted for clients. */
@@ -479,6 +493,10 @@ export type Action =
       type: 'cast'; iid: string; targets?: Target[][]; target?: Target; x?: number;
       /** Face to cast (adventure, modal double-faced, split), modes of a modal spell, kicker paid. */
       face?: number; modes?: number[]; kicked?: boolean;
+      /** An alternative cost paid instead of the mana cost (an index in CastInfo.alts). */
+      alt?: number;
+      /** March of Otherworldly Light: how many cards to exile from the hand ({2} less each). */
+      exiled?: number;
     }
   /** Cycling (or landcycling) a card in hand. */
   | { type: 'cycle'; iid: string }
@@ -503,6 +521,7 @@ export type Action =
 export type GameErrorCode =
   | 'gameOver' | 'keepFirst' | 'notMulliganTime' | 'noMoreMulligans' | 'chooseBottom' | 'notInHand'
   | 'landTiming' | 'landAlreadyPlayed' | 'notALand' | 'notASpell' | 'sorcerySpeed' | 'castTiming' | 'sorceryOnly' | 'nameStopped' | 'mustAttack' | 'noCounterToRemove' | 'nothingToExile'
+  | 'noLandToReturn' | 'onlyNotYourTurn' | 'noCardToExile' | 'noTappedCreature'
   | 'needsTarget' | 'tooManyTargets' | 'targetMustBe' | 'illegalTarget' | 'notEnoughMana' | 'declareBlockersFirst'
   | 'notAttackStep' | 'cannotAttack' | 'notBlockStep' | 'notAttacking' | 'menace' | 'cannotBlock'
   | 'makeChoiceFirst' | 'nothingToChoose' | 'badChoice' | 'badX'
@@ -897,6 +916,59 @@ function extraCostProblem(s: GameState, p: PlayerId, extra: AdditionalCost, iid:
   return null;
 }
 
+function altMana(c: Card, alt: AltCost, x: number): Cost {
+  if (alt.kind === 'mana') return parseCost(alt.cost);
+  if (alt.kind === 'phyrexian') {
+    const cost = parseCost(c.manaCost.split('//')[0].replace(/\{[WUBRG]\/P\}/g, ''));
+    return { ...cost, generic: cost.generic + x * xCount(c) };
+  }
+  return { generic: 0, colored: [] };
+}
+
+/** Why alternative cost `alt` can't be paid now (Daze needs an Island, Force of Negation a blue card…), or null. */
+function altCostProblem(s: GameState, p: PlayerId, alt: AltCost, iid: string, from: CastZone): string | null {
+  const me = s.players[p];
+  if (alt.kind === 'returnLand') return s.battlefield.some((x) => x.controller === p && hasSubtype(x.card, alt.subtype)) ? null : 'noLandToReturn';
+  if (alt.kind === 'exileCard') {
+    if (alt.notYourTurn && isActivePlayer(s, p)) return 'onlyNotYourTurn';
+    return me.hand.some((c) => c.iid !== iid && cardColors(c.card).includes(alt.color)) ? null : 'noCardToExile';
+  }
+  if (alt.kind === 'phyrexian') return me.life >= 2 * alt.n ? null : 'notEnoughLife';
+  if (alt.name === 'warp' && from !== 'hand') return 'castTiming';
+  if (alt.name === 'webSlinging' && !s.battlefield.some((x) => x.controller === p && x.tapped && isCreature(x.card))) return 'noTappedCreature';
+  return null;
+}
+
+/**
+ * Pays the non-mana part of an alternative cost: Phyrexian life now; the Island, the card to exile or the tapped
+ * creature are chosen first (true then).
+ */
+function payAltCost(d: GameState, p: PlayerId, alt: AltCost, item: StackItem, named: LogTarget[]): boolean {
+  const me = d.players[p];
+  const card = castCard(item).name;
+  const ask = (choice: Choice) => {
+    d.pending = { choice, resume: 'castCost', activation: { item, named } };
+    return true;
+  };
+  if (alt.kind === 'phyrexian') {
+    changeLife(d, p, -2 * alt.n);
+    return false;
+  }
+  if (alt.kind === 'returnLand') {
+    const options = d.battlefield.filter((x) => x.controller === p && hasSubtype(x.card, alt.subtype));
+    return ask({ kind: 'cards', player: p, purpose: 'returnLandCost', min: 1, max: 1, options, params: { card, n: 1 } });
+  }
+  if (alt.kind === 'exileCard') {
+    const options = me.hand.filter((c) => cardColors(c.card).includes(alt.color));
+    return ask({ kind: 'cards', player: p, purpose: 'exileFromHandCost', min: 1, max: 1, options, params: { card, n: 1 } });
+  }
+  if (alt.name === 'webSlinging') {
+    const options = d.battlefield.filter((x) => x.controller === p && x.tapped && isCreature(x.card));
+    return ask({ kind: 'cards', player: p, purpose: 'returnCreatureCost', min: 1, max: 1, options, params: { card, n: 1 } });
+  }
+  return false;
+}
+
 /** How a cost is shown in a "costChoice" prompt: "life:3", "discard:1"… */
 const costLabel = (c: AdditionalCost) =>
   c.kind === 'life' || c.kind === 'discard' || c.kind === 'exileGraveyard' ? `${c.kind}:${c.n}` : c.kind === 'mana' ? `mana:${c.cost}` : c.kind;
@@ -933,18 +1005,24 @@ function payExtraCost(d: GameState, p: PlayerId, extra: AdditionalCost, item: St
   return false;
 }
 
-export function castCost(s: GameState, p: PlayerId, card: Card, opt: { face?: number; kicked?: boolean; from?: CastZone; iid?: string }, x = 0): Cost {
+export function castCost(s: GameState, p: PlayerId, card: Card, opt: { face?: number; kicked?: boolean; from?: CastZone; iid?: string; alt?: number; exiled?: number }, x = 0): Cost {
   const face = opt.face ?? 0;
   const info = castInfo(card, face);
   const c = faceCard(card, face);
-  const base = opt.from === 'graveyard' && info.flashback ? parseCost(info.flashback) : costWithX(c, x);
+  // An alternative cost: no mana (Daze, evoke…), its own mana (cleave, warp, web-slinging), or the mana cost without
+  // its Phyrexian symbols (paid with life).
+  const alt = opt.alt === undefined ? undefined : info.alts[opt.alt];
+  const base = alt ? altMana(c, alt, x)
+    : opt.from === 'graveyard' && info.flashback ? parseCost(info.flashback) : costWithX(c, x);
   const kicker = opt.kicked && info.kicker ? parseCost(info.kicker) : { generic: 0, colored: [] };
   if (info.additional?.kind === 'mana') {
     const more = parseCost(info.additional.cost);
     kicker.generic += more.generic;
     kicker.colored = [...kicker.colored, ...more.colored];
   }
-  const discount = info.affinity ? s.battlefield.filter((x) => x.controller === p && cardMatches(x.card, info.affinity!)).length : 0;
+  const discount = (info.affinity ? s.battlefield.filter((x) => x.controller === p && cardMatches(x.card, info.affinity!)).length : 0)
+    // March of Otherworldly Light: {2} less for each card exiled from the hand.
+    + (info.exileDiscount && opt.exiled ? info.exileDiscount.per * opt.exiled : 0);
   // Commander tax: {2} more for each previous cast from the command zone; Defense Grid: {3} more off its caster's turn;
   // Thalia: {1} more for a noncreature spell; Damping Sphere: {1} more for each other spell cast this turn.
   const tax = (opt.from === 'command' && opt.iid ? 2 * (s.players[p].commanderCasts?.[opt.iid] ?? 0) : 0)
@@ -1020,7 +1098,8 @@ export function castSource(s: GameState, p: PlayerId, iid: string): { inst: Card
   const inGrave = ps.graveyard.find((c) => c.iid === iid);
   // Grafdigger's Cage: "Players can't cast spells from graveyards or libraries."
   if (inGrave && castInfo(inGrave.card).flashback && !withRule(s, 'noCastingFromGraveyardsLibraries').length) return { inst: inGrave, from: 'graveyard' };
-  const inExile = ps.exile.find((c) => c.iid === iid && c.adventure);
+  // An adventurer, or a warped card on a later turn.
+  const inExile = ps.exile.find((c) => c.iid === iid && (c.adventure || (c.warpedOnTurn !== undefined && s.turn > c.warpedOnTurn)));
   if (inExile) return { inst: inExile, from: 'exile' };
   const inCommand = ps.command?.find((c) => c.iid === iid);
   if (inCommand) return { inst: inCommand, from: 'command' };
@@ -1058,6 +1137,23 @@ export function castOptions(s: GameState, p: PlayerId, iid: string): CastOption[
       if (!usefulTargets(s, p, inst.card, { face, kicked })) continue;
       out.push({ face, kicked, from });
     }
+    // March of Otherworldly Light: also cast exiling 1, 2… cards of its color from the hand.
+    const discount = info.exileDiscount;
+    if (discount) {
+      const cards = s.players[p].hand.filter((c) => c.iid !== iid && cardColors(c.card).includes(discount.color)).length;
+      for (let n = 1; n <= cards; n++) {
+        if (!findPayment(castSources(s, p, inst.card, iid, face), castCost(s, p, inst.card, { face, from, iid, exiled: n }))) continue;
+        out.push({ face, kicked: false, from, exiled: n });
+      }
+    }
+    // Alternative costs (not with kicker): Daze, Force of Negation, evoke, cleave, warp, web-slinging, Phyrexian mana.
+    info.alts.forEach((alt, i) => {
+      if (altCostProblem(s, p, alt, iid, from)) return;
+      const cost = castCost(s, p, inst.card, { face, from, iid, alt: i });
+      if (!findPayment(castSources(s, p, inst.card, iid, face), cost)) return;
+      if (!usefulTargets(s, p, inst.card, { face, kicked: false, alt: i })) return;
+      out.push({ face, kicked: false, from, alt: i });
+    });
   }
   return out;
 }
@@ -2113,6 +2209,18 @@ function emblemSources(d: GameState): Permanent[] {
 /** The beginning of the active player's upkeep or end step. */
 function fireStep(d: GameState, on: StepEvent) {
   // Mobilize tokens: "Sacrifice them at the beginning of the next end step."
+  // Warp: "exile it at the beginning of the next end step"; it can be cast from exile on a later turn.
+  if (on === 'endStep' && d.warpAtEnd?.length) {
+    for (const iid of d.warpAtEnd) {
+      const perm = findPermanent(d, iid);
+      if (!perm) continue;
+      removePermanent(d, perm, 'exile');
+      const inst = d.players[perm.owner ?? perm.controller].exile.find((c) => c.iid === iid);
+      if (inst) inst.warpedOnTurn = d.turn;
+      log(d, { k: 'exiled', card: perm.card.name });
+    }
+    delete d.warpAtEnd;
+  }
   if (on === 'endStep' && d.sacrificeAtEnd?.length) {
     for (const iid of d.sacrificeAtEnd) {
       const token = findPermanent(d, iid);
@@ -2488,7 +2596,7 @@ function resolveCombat(d: GameState) {
 // ---------- Resolving spells and abilities ----------
 
 const specOf = (item: StackItem): AbilitySpec =>
-  item.ability ?? castSpec(item.card, { face: item.face, modes: item.modes, kicked: item.kicked });
+  item.ability ?? castSpec(item.card, { face: item.face, modes: item.modes, kicked: item.kicked, alt: item.alt, x: item.x });
 
 /** The card a spell on the stack is (its cast face). */
 const castCard = (item: StackItem) => faceCard(item.card, item.face ?? 0);
@@ -2824,6 +2932,9 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       log(d, { k: 'gainLife', p: who, n });
       break;
     }
+    case 'lookAtHand':
+      for (const q of players) log(d, { k: 'looksAtHand', p: caster, of: q, cards: d.players[q].hand.map((c) => c.card.name) });
+      break;
     case 'tapAll':
       for (const perm of matching(d, caster, e.which)) {
         tapPermanent(d, perm);
@@ -3273,6 +3384,10 @@ function resolvePermanentSpell(d: GameState, item: StackItem, reason: WindowReas
   log(d, { k: 'enters', card: faceName(item.card, item.face ?? 0) });
   const perm = enterBattlefield(d, { iid: item.iid, card, ...(item.commander ? { commander: true } : {}) }, item.controller, { x: item.x });
   if (card !== item.card) perm.printed = item.card;
+  // Evoke: "When it enters, if its evoke cost was paid, its controller sacrifices it." Warp: exiled at the next end step.
+  const paid = item.alt === undefined ? undefined : castInfo(item.card, item.face ?? 0).alts[item.alt];
+  if (paid?.kind === 'exileCard' && paid.evoke) queueTrigger(d, perm, perm.controller, { targets: [], effects: [{ kind: 'sacrificeSelf' }] });
+  if (paid?.kind === 'mana' && paid.name === 'warp') (d.warpAtEnd ??= []).push(perm.iid);
   if (aura && host?.kind === 'permanent') {
     perm.attachedTo = host.iid;
     log(d, { k: 'attached', card: perm.card.name, to: findPermanent(d, host.iid)!.card.name });
@@ -3757,6 +3872,26 @@ export function apply(state: GameState, action: Action): GameState {
         const extra = castInfo(item.card, item.face ?? 0).additional;
         const chosen = extra?.kind === 'either' ? extra.options[action.answer.yes ? 0 : 1] : undefined;
         if (!chosen || !payExtraCost(d, p, chosen, item, named)) finishCast(d, item, named);
+      } else if (pending.resume === 'castCost' && action.answer.kind === 'cards' && ['returnLandCost', 'exileFromHandCost', 'returnCreatureCost'].includes(pending.choice.purpose)) {
+        // An alternative cost: an Island (or a tapped creature) back to its owner's hand, or a card exiled from the hand.
+        const picked = action.answer.iids[0];
+        if (pending.choice.purpose === 'exileFromHandCost') {
+          for (const iid of action.answer.iids) {
+            const inst = d.players[p].hand.find((c) => c.iid === iid)!;
+            d.players[p].hand = d.players[p].hand.filter((c) => c !== inst);
+            d.players[p].exile.push(inst);
+            log(d, { k: 'exiledCard', card: inst.card.name, from: 'hand' });
+          }
+        } else {
+          const perm = findPermanent(d, picked)!;
+          d.battlefield = d.battlefield.filter((x) => x !== perm);
+          returnExiledUntil(d, perm);
+          if (!isToken(printedCard(perm))) putInZone(d, perm.owner ?? perm.controller, { iid: perm.iid, card: printedCard(perm) }, 'hand');
+          log(d, { k: 'bounced', card: perm.card.name });
+        }
+        const { item, named } = pending.activation!;
+        const extra = castInfo(item.card, item.face ?? 0).additional;
+        if (!extra || !payExtraCost(d, p, extra, item, named)) finishCast(d, item, named);
       } else if (pending.resume === 'castCost' && action.answer.kind === 'cards') {
         if (pending.choice.purpose === 'exileCost') {
           for (const iid of action.answer.iids) {
@@ -3826,17 +3961,23 @@ export function apply(state: GameState, action: Action): GameState {
         throw new IllegalAction('castTiming');
       }
       const info = castInfo(inst.card, face);
-      const kicked = !!action.kicked && !!info.kicker;
+      const altIndex = action.alt !== undefined && info.alts[action.alt] ? action.alt : undefined;
+      const alt = altIndex === undefined ? undefined : info.alts[altIndex];
+      if (alt) {
+        const problem = altCostProblem(d, p, alt, inst.iid, from);
+        if (problem) throw new IllegalAction(problem as GameErrorCode, { card: card.name });
+      }
+      const kicked = !!action.kicked && !!info.kicker && !alt;
       const modes = info.modal ? [...new Set(action.modes ?? [])] : undefined;
       if (modes && (modes.length < Math.max(1, info.modal!.min) || modes.length > info.modal!.max || modes.some((m) => !Number.isInteger(m) || m < 0 || m >= info.modal!.modes.length))) {
         throw new IllegalAction('badModes', { card: card.name });
       }
 
-      const spec = castSpec(inst.card, { face, modes, kicked });
-      const chosen = action.targets ?? (action.target ? [[action.target]] : []);
-      const targets = checkTargets(d, p, card, spec, chosen);
       const x = xCount(card) ? (action.x ?? 0) : 0;
       if (!Number.isInteger(x) || x < 0) throw new IllegalAction('badX');
+      const spec = castSpec(inst.card, { face, modes, kicked, alt: altIndex, x });
+      const chosen = action.targets ?? (action.target ? [[action.target]] : []);
+      const targets = checkTargets(d, p, card, spec, chosen);
       // A permanent can't skip a cost the engine doesn't understand (an instant or sorcery is cast "not simulated").
       if (info.unknownCost && !isInstantOrSorcery(card)) throw new IllegalAction('costNotSimulated', { card: card.name });
       // Additional costs that need something to pay with. "A or B": the ones that can be paid.
@@ -3850,7 +3991,11 @@ export function apply(state: GameState, action: Action): GameState {
         if (problem) throw problem;
       }
 
-      const plan = planPayment(castSources(d, p, inst.card, inst.iid, face), castCost(d, p, inst.card, { face, kicked, from, iid: inst.iid }, x));
+      // March of Otherworldly Light: cards of its color exiled from the hand, {2} less each.
+      const discountColor = info.exileDiscount?.color;
+      const exiled = discountColor && action.exiled ? action.exiled : 0;
+      if (exiled && me.hand.filter((c) => c.iid !== inst.iid && cardColors(c.card).includes(discountColor!)).length < exiled) throw new IllegalAction('noCardToExile', { card: card.name });
+      const plan = planPayment(castSources(d, p, inst.card, inst.iid, face), castCost(d, p, inst.card, { face, kicked, from, iid: inst.iid, alt: altIndex, exiled }, x));
       if (!plan) throw new IllegalAction('notEnoughMana', { card: card.name });
       // Cavern of Souls' mana spent on a creature spell of the chosen type: it can't be countered.
       // Delighted Halfling's mana spent on a legendary spell: the same (counted for any of its mana).
@@ -3877,7 +4022,14 @@ export function apply(state: GameState, action: Action): GameState {
         iid: inst.iid, card: inst.card, controller: p, targets, ...(xCount(card) ? { x } : {}),
         ...(face ? { face } : {}), ...(modes ? { modes } : {}), ...(kicked ? { kicked } : {}), ...(from !== 'hand' ? { from } : {}),
         ...(inst.commander ? { commander: true } : {}), ...(noMana ? { noMana } : {}), ...(uncounterable ? { uncounterable } : {}),
+        ...(altIndex !== undefined ? { alt: altIndex } : {}),
       };
+      if (alt && payAltCost(d, p, alt, item, named)) break;
+      if (exiled) {
+        const options = me.hand.filter((c) => cardColors(c.card).includes(discountColor!));
+        d.pending = { choice: { kind: 'cards', player: p, purpose: 'exileFromHandCost', min: exiled, max: exiled, options, params: { card: card.name, n: exiled } }, resume: 'castCost', activation: { item, named } };
+        break;
+      }
       if (extra && payExtraCost(d, p, extra, item, named)) break;
       finishCast(d, item, named);
       break;

@@ -26,13 +26,6 @@ PARTIAL  Enduring Innocence {1}{W}{W} — Enchantment Creature — Sheep Glimmer
       trigger (enters, once each turn) → draw
   ✗ When Enduring Innocence dies, if it was a creature, return it to the …
       trigger (dies), effect not simulated
-PARTIAL  Haliya, Guided by Light {2}{W} — Legendary Creature — Human Soldier
-  ✓ Whenever Haliya or another creature or artifact you control enters, y…
-      trigger (enters) → gainLife
-  ✓ At the beginning of your end step, draw a card if you've gained 3 or …
-      trigger (endStep) → draw, if 3+ life gained this turn
-  ✗ Warp {W}
-      keyword not simulated: warp
 PARTIAL  Leonardo, Cutting Edge {1}{W} — Legendary Creature — Mutant Ninja Turtle
   ✗ Sneak {W}
       keyword not simulated: sneak
@@ -76,6 +69,13 @@ OK       Germinate Recruits {2}{W} — Instant
 OK       Get Lost {1}{W} — Instant
   ✓ Destroy target creature, enchantment, or planeswalker. Its controller…
       spell → destroy (1 target)
+OK       Haliya, Guided by Light {2}{W} — Legendary Creature — Human Soldier
+  ✓ Whenever Haliya or another creature or artifact you control enters, y…
+      trigger (enters) → gainLife
+  ✓ At the beginning of your end step, draw a card if you've gained 3 or …
+      trigger (endStep) → draw, if 3+ life gained this turn
+  ✓ Warp {W}
+      keyword
 OK       Rest in Peace {1}{W} — Enchantment
   ✓ When this enchantment enters, exile all graveyards.
       trigger (enters) → exileGraveyards
@@ -90,5 +90,5 @@ OK       Voice of Victory {1}{W} — Creature — Human Bard
   ✓ Your opponents can't cast spells during your turn.
       rule for the game: opponentsCantCastOnYourTurn
 
-17 cards: 10 ok, 6 partial, 1 not simulated, 0 can't be cast
+17 cards: 11 ok, 5 partial, 1 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

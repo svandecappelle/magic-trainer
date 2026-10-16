@@ -23,6 +23,9 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
     case 'optional': return t.game.choice.optional({ card: card(String(p.card)) });
     case 'sacrifice': return t.game.choice.sacrifice({ n });
     case 'search': return t.game.choice.search({ n });
+    case 'returnLandCost': return t.game.choice.returnLandCost({ card: card(String(p.card)) });
+    case 'exileFromHandCost': return t.game.choice.exileFromHandCost({ card: card(String(p.card)) });
+    case 'returnCreatureCost': return t.game.choice.returnCreatureCost({ card: card(String(p.card)) });
     case 'discardCost': return t.game.choice.discardCost({ card: card(String(p.card)), n: n || 1 });
     case 'exileCost': return t.game.choice.exileCost({ card: card(String(p.card)), n });
     case 'costChoice': return t.game.choice.costChoice({ card: card(String(p.card)) });

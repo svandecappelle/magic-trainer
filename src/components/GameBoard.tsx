@@ -228,11 +228,19 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     for (const opt of castOptions(g, me, iid)) {
       const name = opt.face ? show.name(faceCard(card, opt.face)) : show.nameOf(faceName(card));
       const info = castInfo(card, opt.face);
-      const label = opt.from === 'graveyard' ? t.game.castFlashback(name, info.flashback ?? '')
+      const alt = opt.alt === undefined ? undefined : info.alts[opt.alt];
+      const colorName = (c: string) => t.colors[c] ?? c;
+      const label = opt.exiled ? t.game.castAlt(name, t.game.altCosts.exileForDiscount(opt.exiled, (info.exileDiscount?.per ?? 0) * opt.exiled))
+        : alt ? t.game.castAlt(name,
+        alt.kind === 'returnLand' ? t.game.altCosts.returnLand(alt.subtype[0].toUpperCase() + alt.subtype.slice(1))
+        : alt.kind === 'exileCard' ? (alt.evoke ? t.game.altCosts.evoke(colorName(alt.color).toLowerCase()) : t.game.altCosts.exileCard(colorName(alt.color).toLowerCase()))
+        : alt.kind === 'phyrexian' ? t.game.altCosts.phyrexian(2 * alt.n)
+        : t.game.altCosts[alt.name](alt.cost))
+        : opt.from === 'graveyard' ? t.game.castFlashback(name, info.flashback ?? '')
         : opt.from === 'exile' ? t.game.castFromExile(name)
         : opt.kicked ? t.game.castKicked(name, info.kicker ?? '')
         : t.game.castNamed(name);
-      items.push({ key: `cast${opt.face}${opt.kicked}`, label, run: () => beginCast(iid, card, opt) });
+      items.push({ key: `cast${opt.face}${opt.kicked}${opt.alt ?? ''}${opt.exiled ?? ''}`, label, run: () => beginCast(iid, card, opt) });
     }
     const cycling = inHand ? castInfo(card).cycling : undefined;
     const cycleTiming = !!g.priority || (isMainStep(g) && myTurn);
@@ -287,9 +295,9 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     }
     const cast: Extract<Action, { type: 'cast' }> = {
       type: 'cast', iid, ...(opt.face ? { face: opt.face } : {}), ...(opt.kicked ? { kicked: true } : {}),
-      ...(modes ? { modes } : {}), ...(x === undefined ? {} : { x }),
+      ...(modes ? { modes } : {}), ...(x === undefined ? {} : { x }), ...(opt.alt !== undefined ? { alt: opt.alt } : {}), ...(opt.exiled ? { exiled: opt.exiled } : {}),
     };
-    const spec = castSpec(card, { face: opt.face, modes, kicked: opt.kicked });
+    const spec = castSpec(card, { face: opt.face, modes, kicked: opt.kicked, alt: opt.alt, x });
     if (!spec.targets.length) return act(cast);
     if (spec.targets.some((slot) => legalTargets(g, me, slot, undefined, face).length < slot.min)) {
       return setError({ code: 'nothingToTarget', params: { card: show.name(face) } });

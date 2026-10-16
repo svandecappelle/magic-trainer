@@ -285,11 +285,12 @@ function candidateMaxX(s: GameState, me: PlayerId, c: Candidate): number {
 const castAction = (c: Candidate, targets: Target[][] = [], x?: number): Action => ({
   type: 'cast', iid: c.iid, ...(targets.length ? { targets } : {}), ...(xCount(c.face) ? { x: x ?? 0 } : {}),
   ...(c.opt.face ? { face: c.opt.face } : {}), ...(c.opt.kicked ? { kicked: true } : {}), ...(c.modes ? { modes: c.modes } : {}),
+  ...(c.opt.alt !== undefined ? { alt: c.opt.alt } : {}), ...(c.opt.exiled ? { exiled: c.opt.exiled } : {}),
 });
 
 function castCandidate(s: GameState, me: PlayerId, c: Candidate, among?: Permanent[]): Action | null {
   return playWithGoodTarget(s, me, {
-    spec: castSpec(c.card, { face: c.opt.face, modes: c.modes, kicked: c.opt.kicked }),
+    spec: castSpec(c.card, { face: c.opt.face, modes: c.modes, kicked: c.opt.kicked, alt: c.opt.alt }),
     source: c.face,
     hasX: xCount(c.face) > 0,
     maxX: candidateMaxX(s, me, c),

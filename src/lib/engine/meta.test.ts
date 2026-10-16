@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
-import { activationProblem, actor, apply, canBlock, canCastNow, castCost, canTapForMana, type Answer, castOptions, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
+import { activationProblem, actor, apply, canBlock, canCastNow, castCost, castSource, canTapForMana, type Answer, castOptions, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
 import { botAction } from './bot';
 import { activatedOf, castInfo, castSpec, finalChapter, hasKeyword, type TargetSpec, manaUnits, parseAbilityText, spellSpec, triggersOf } from './rules';
 
@@ -2190,5 +2190,133 @@ describe('Aang deck, batch 1: counterspells and spell targets', () => {
     s = run(apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Ogre') }]] } }));
     expect(perm(s, 'Ogre')).toBeUndefined();
     expect(s.players[1].life).toBe(23);
+  });
+});
+
+describe('Aang deck, batch 2: alternative and additional costs', () => {
+  const daze = spell('Daze', '{1}{U}', 'You may return an Island you control to its owner\'s hand rather than pay this spell\'s mana cost.\nCounter target spell unless its controller pays {1}.');
+  const fon = spell('Force of Negation', '{1}{U}{U}', 'If it\'s not your turn, you may exile a blue card from your hand rather than pay this spell\'s mana cost.\nCounter target noncreature spell. If that spell is countered this way, exile it instead of putting it into its owner\'s graveyard.');
+  const wash = spell('Wash Away', '{U}', 'Cleave {1}{U}{U} (You may cast this spell for its cleave cost. If you do, remove the words in square brackets.)\nCounter target spell [that wasn\'t cast from its owner\'s hand].');
+  const sense = spell('Spider-Sense', '{1}{U}', 'Web-slinging {U} (You may cast this spell for {U} if you also return a tapped creature you control to its owner\'s hand.)\nCounter target instant spell, sorcery spell, or triggered ability.');
+  const probe = spell('Gitaxian Probe', '{U/P}', '({U/P} can be paid with either {U} or 2 life.)\nLook at target player\'s hand.\nDraw a card.', 'Sorcery');
+  const march = spell('March of Otherworldly Light', '{X}{W}', 'As an additional cost to cast this spell, you may exile any number of white cards from your hand. This spell costs {2} less to cast for each card exiled this way.\nExile target artifact, creature, or enchantment with mana value X or less.');
+  const solitude = creature('Solitude', 3, 2, {
+    typeLine: 'Creature — Elemental Incarnation', manaCost: '{3}{W}{W}', cmc: 5, colors: ['W'], keywords: ['Flash', 'Lifelink', 'Evoke'],
+    oracleText: 'Flash\nLifelink\nWhen this creature enters, exile up to one other target creature. That creature\'s controller gains life equal to its power.\nEvoke—Exile a white card from your hand.',
+  });
+  const riddler = creature('Quantum Riddler', 4, 6, {
+    typeLine: 'Creature — Sphinx', manaCost: '{3}{U}{U}', cmc: 5, colors: ['U'], keywords: ['Flying', 'Warp'],
+    oracleText: 'Flying\nWhen this creature enters, draw a card.\nAs long as you have one or fewer cards in hand, if you would draw one or more cards, you draw that many cards plus one instead.\nWarp {1}{U}',
+  });
+  const island = () => card({ name: 'Island', typeLine: 'Basic Land — Island' });
+  const plains = () => card({ name: 'Plains', typeLine: 'Basic Land — Plains' });
+  const blue = (name: string) => creature(name, 1, 1, { colors: ['U'], manaCost: '{U}' });
+  const white = (name: string) => creature(name, 1, 1, { colors: ['W'], manaCost: '{W}' });
+  const bear = creature('Bear', 2, 2, { manaCost: '{B}', cmc: 1 });
+  const shock = spell('Shock', '{B}', 'Shock deals 2 damage to any target.');
+  const run = (s: GameState) => {
+    for (let i = 0; i < 12 && !s.pending && (s.stack.length || s.triggered?.length); i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  const altIndex = (c: Card, kind: string) => castInfo(c).alts.findIndex((a) => a.kind === kind || ('name' in a && a.name === kind) || (kind === 'evoke' && 'evoke' in a));
+
+  it('Daze: return an Island instead of paying; the spell is countered unless {1} is paid', () => {
+    let s = board({ mana: 1, hand: [bear], oppHand: [daze], theirs: [island()] });
+    s.fullControl = [false, true];
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    perm(s, 'Island')!.tapped = true;
+    expect(castOptions(s, 1, 'o0').map((o) => o.alt)).toEqual([altIndex(daze, 'returnLand')]);
+    s = apply(s, { type: 'cast', iid: 'o0', alt: altIndex(daze, 'returnLand'), targets: [[{ kind: 'spell', iid: 'h0' }]] });
+    expect(s.pending?.choice).toMatchObject({ kind: 'cards', player: 1, purpose: 'returnLandCost' });
+    s = apply(s, { type: 'choose', answer: { kind: 'cards', iids: [iidOf(s, 'Island')] } });
+    expect(s.players[1].hand.map((c) => c.card.name)).toEqual(['Island']);
+    s = run(s);
+    // Player 0 has no mana left to pay {1}: Bear is countered.
+    expect(perm(s, 'Bear')).toBeUndefined();
+  });
+
+  it('Force of Negation: exile a blue card on an opponent\'s turn; the countered spell is exiled', () => {
+    let s = board({ mana: 1, hand: [shock], oppHand: [fon, blue('Merfolk')] });
+    s.fullControl = [false, true];
+    s = apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'player', player: 1 }]] });
+    s = apply(s, { type: 'cast', iid: 'o0', alt: altIndex(fon, 'exileCard'), targets: [[{ kind: 'spell', iid: 'h0' }]] });
+    expect(s.pending?.choice).toMatchObject({ kind: 'cards', purpose: 'exileFromHandCost' });
+    s = run(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['o1'] } }));
+    expect(s.players[1].exile.map((c) => c.card.name)).toEqual(['Merfolk']);
+    expect(s.players[0].exile.map((c) => c.card.name)).toEqual(['Shock']);
+    expect(s.players[1].life).toBe(20);
+    // On its own turn, the alternative cost isn't offered.
+    s = board({ hand: [fon, blue('Merfolk')] });
+    expect(castOptions(s, 0, 'h0')).toEqual([]);
+  });
+
+  it('Wash Away: a spell not cast from the hand; with cleave, any spell', () => {
+    let s = board({ mana: 1, hand: [bear] });
+    s.stack = [{ iid: 'x0', card: bear, controller: 0, targets: [] }, { iid: 'x1', card: bear, controller: 0, targets: [], from: 'graveyard' }];
+    expect(['x0', 'x1'].map((iid) => isLegalTarget(s, 1, castSpec(wash, {}).targets[0], { kind: 'spell', iid }))).toEqual([false, true]);
+    const cleave = castSpec(wash, { alt: altIndex(wash, 'cleave') }).targets[0];
+    expect(['x0', 'x1'].map((iid) => isLegalTarget(s, 1, cleave, { kind: 'spell', iid }))).toEqual([true, true]);
+  });
+
+  it('Spider-Sense: web-slinging for {U}, returning a tapped creature', () => {
+    let s = board({ mine: [island(), bear], hand: [sense, shock] });
+    perm(s, 'Bear')!.tapped = true;
+    s.stack = [{ iid: 'x0', card: shock, controller: 1, targets: [[{ kind: 'player', player: 0 }]] }];
+    s.priority = { player: 0, passes: 0, reason: 'main' };
+    const web = altIndex(sense, 'webSlinging');
+    expect(castOptions(s, 0, 'h0').map((o) => o.alt)).toContain(web);
+    s = apply(s, { type: 'cast', iid: 'h0', alt: web, targets: [[{ kind: 'spell', iid: 'x0' }]] });
+    expect(s.pending?.choice).toMatchObject({ purpose: 'returnCreatureCost' });
+    s = apply(s, { type: 'choose', answer: { kind: 'cards', iids: [iidOf(s, 'Bear')] } });
+    expect(s.players[0].hand.map((c) => c.card.name).sort()).toEqual(['Bear', 'Shock']);
+  });
+
+  it('Gitaxian Probe: 2 life instead of {U}; looks at a hand and draws', () => {
+    let s = board({ hand: [probe], oppHand: [bear] });
+    const life = altIndex(probe, 'phyrexian');
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0', alt: life, targets: [[{ kind: 'player', player: 1 }]] })));
+    expect(s.players[0].life).toBe(18);
+    expect(s.players[0].hand).toHaveLength(1);
+    expect(s.log.some((e) => e.k === 'looksAtHand' && e.cards.join() === 'Bear')).toBe(true);
+  });
+
+  it('March of Otherworldly Light: X, and {2} less for each white card exiled', () => {
+    const ogre = creature('Ogre', 3, 3, { manaCost: '{2}{B}', cmc: 3 });
+    let s = board({ mine: [plains(), plains()], hand: [march, white('Cat')], theirs: [ogre] });
+    expect(castOptions(s, 0, 'h0').some((o) => o.exiled === 1)).toBe(true);
+    // X = 3, one white card exiled: {3}{W} - {2} = {1}{W}.
+    s = apply(s, { type: 'cast', iid: 'h0', x: 3, exiled: 1, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Ogre') }]] });
+    expect(s.pending?.choice).toMatchObject({ purpose: 'exileFromHandCost', min: 1 });
+    s = run(settle(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['h1'] } })));
+    expect(perm(s, 'Ogre')).toBeUndefined();
+    // X too small: the Ogre isn't a legal target.
+    expect(isLegalTarget(s, 0, castSpec(march, { x: 2 }).targets[0], { kind: 'permanent', iid: 'p0' })).toBe(false);
+  });
+
+  it('Solitude evoked: a white card exiled, its trigger resolves, then it is sacrificed', () => {
+    let s = board({ hand: [solitude, white('Cat')], theirs: [bear] });
+    s = apply(s, { type: 'cast', iid: 'h0', alt: altIndex(solitude, 'evoke') });
+    s = apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['h1'] } });
+    for (let i = 0; i < 10 && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    if (s.pending?.choice.kind === 'targets') s = apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] } });
+    s = run(s);
+    expect(perm(s, 'Bear')).toBeUndefined();
+    expect(perm(s, 'Solitude')).toBeUndefined();
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toEqual(['Solitude']);
+  });
+
+  it('Quantum Riddler warped: exiled at the end step, cast from exile on a later turn', () => {
+    let s = board({ mine: [island(), island()], hand: [riddler] });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0', alt: altIndex(riddler, 'warp') })));
+    expect(perm(s, 'Quantum Riddler')).toBeDefined();
+    const turn = s.turn;
+    for (let i = 0; i < 40 && s.turn === turn; i++) s = s.pending ? apply(s, { type: 'choose', answer: { kind: 'cards', iids: [] } }) : !s.priority && s.step === 'attack' ? apply(s, { type: 'declareAttackers', attackers: [] }) : apply(s, { type: 'pass' });
+    expect(perm(s, 'Quantum Riddler')).toBeUndefined();
+    const inExile = s.players[0].exile.find((c) => c.card.name === 'Quantum Riddler')!;
+    expect(inExile.warpedOnTurn).toBe(turn);
+    // On a later turn it can be cast from exile, not on the turn it was warped.
+    expect(castSource(s, 0, inExile.iid)?.from).toBe('exile');
+    s.turn = turn;
+    expect(castSource(s, 0, inExile.iid)).toBeNull();
   });
 });

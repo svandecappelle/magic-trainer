@@ -15,23 +15,8 @@ NONE     Consult the Star Charts {1}{U} — Instant
       keyword
   ✗ Look at the top X cards of your library, where X is the number of lan…
       spell not simulated
-NONE     Daze {1}{U} — Instant
-  ✗ You may return an Island you control to its owner's hand rather than …
-      spell not simulated
-  ✗ Counter target spell unless its controller pays {1}.
-      spell not simulated
 NONE     Enlightened Tutor {W} — Instant
   ✗ Search your library for an artifact or enchantment card, reveal it, t…
-      spell not simulated
-NONE     Force of Negation {1}{U}{U} — Instant
-  ✗ If it's not your turn, you may exile a blue card from your hand rathe…
-      spell not simulated
-  ✗ Counter target noncreature spell. If that spell is countered this way…
-      spell not simulated
-NONE     Gitaxian Probe {U/P} — Sorcery
-  ✗ Look at target player's hand.
-      spell not simulated
-  ✗ Draw a card.
       spell not simulated
 NONE     Malcolm, Alluring Scoundrel {1}{U} — Legendary Creature — Siren Pirate
   ✓ Flash
@@ -89,11 +74,6 @@ NONE     Swift Reconfiguration {W} — Enchantment — Aura
       keyword
   ? Enchanted permanent is a Vehicle artifact with crew 5 and it loses al…
       not read by the engine
-NONE     Wash Away {U} — Instant
-  ✗ Cleave {1}{U}{U}
-      keyword not simulated: cleave
-  ✗ Counter target spell [that wasn't cast from its owner's hand].
-      spell not simulated
 PARTIAL  Aven Interrupter {1}{W}{W} — Creature — Bird Rogue
   ✓ Flash
       keyword
@@ -115,11 +95,6 @@ PARTIAL  King T'Challa // Black Panther, Hope Enduring {1}{W}{U} — Legendary C
       trigger (opponentDraws) → draw
   ✗ {4}{W}{U}: Transform King T'Challa. Activate only as a sorcery.
       activated ability, effect not simulated
-PARTIAL  March of Otherworldly Light {X}{W} — Instant
-  ✓ As an additional cost to cast this spell, you may exile any number of…
-      optional cost, never paid
-  ✗ Exile target artifact, creature, or enchantment with mana value X or …
-      spell not simulated
 PARTIAL  Mystic Gate  — Land
   ✓ {T}: Add {C}.
       mana: C
@@ -132,43 +107,11 @@ PARTIAL  Pre-War Formalwear {2}{W} — Artifact — Equipment
       static ability
   ✓ Equip {3}
       keyword
-PARTIAL  Quantum Riddler {3}{U}{U} — Creature — Sphinx
-  ✓ Flying
-      keyword
-  ✓ When this creature enters, draw a card.
-      trigger (enters) → draw
-  ✓ As long as you have one or fewer cards in hand, if you would draw one…
-      draws one more card with one or fewer in hand
-  ✗ Warp {1}{U}
-      keyword not simulated: warp
-PARTIAL  Solitude {3}{W}{W} — Creature — Elemental Incarnation
-  ✓ Flash
-      keyword
-  ✓ Lifelink
-      keyword
-  ✓ When this creature enters, exile up to one other target creature. Tha…
-      trigger (enters) → destroy+controllerGainsPower (1 target)
-  ✗ Evoke—Exile a white card from your hand.
-      keyword not simulated: evoke
-PARTIAL  Spider-Sense {1}{U} — Instant
-  ✗ Web-slinging {U}
-      keyword not simulated: web-slinging
-  ✓ Counter target instant spell, sorcery spell, or triggered ability.
-      spell → counter (1 target)
 PARTIAL  Stoneforge Mystic {1}{W} — Creature — Kor Artificer
   ✓ When this creature enters, you may search your library for an Equipme…
       trigger (enters) → search, optional
   ✗ {1}{W}, {T}: You may put an Equipment card from your hand onto the ba…
       activated ability, effect not simulated
-PARTIAL  Subtlety {2}{U}{U} — Creature — Elemental Incarnation
-  ✓ Flash
-      keyword
-  ✓ Flying
-      keyword
-  ✓ When this creature enters, choose up to one target creature spell or …
-      trigger (enters) → tuckSpell (1 target)
-  ✗ Evoke—Exile a blue card from your hand.
-      keyword not simulated: evoke
 OK       Adarkar Wastes  — Land
   ✓ {T}: Add {C}.
       mana: C
@@ -232,6 +175,11 @@ OK       Cryptic Command {1}{U}{U}{U} — Instant
       mode
   ✓ • Draw a card.
       mode
+OK       Daze {1}{U} — Instant
+  ✓ You may return an Island you control to its owner's hand rather than …
+      spell → counter (1 target)
+  ✓ Counter target spell unless its controller pays {1}.
+      spell → counter (1 target)
 OK       Deserted Beach  — Land
   ✓ This land enters tapped unless you control two or more other lands.
       enters tapped (unlessOtherLands)
@@ -256,9 +204,19 @@ OK       Floodfarm Verge  — Land
       mana: W
   ✓ {T}: Add {U}. Activate only if you control a Plains or an Island.
       mana: U
+OK       Force of Negation {1}{U}{U} — Instant
+  ✓ If it's not your turn, you may exile a blue card from your hand rathe…
+      spell → counter (1 target)
+  ✓ Counter target noncreature spell. If that spell is countered this way…
+      spell → counter (1 target)
 OK       Get Lost {1}{W} — Instant
   ✓ Destroy target creature, enchantment, or planeswalker. Its controller…
       spell → destroy (1 target)
+OK       Gitaxian Probe {U/P} — Sorcery
+  ✓ Look at target player's hand.
+      spell → lookAtHand+draw (1 target)
+  ✓ Draw a card.
+      spell → lookAtHand+draw (1 target)
 OK       Glacial Fortress  — Land
   ✓ This land enters tapped unless you control a Plains or an Island.
       enters tapped (unlessSubtypes)
@@ -278,6 +236,11 @@ OK       Lórien Revealed {3}{U}{U} — Sorcery
       keyword
   ✓ Draw three cards.
       spell → draw
+OK       March of Otherworldly Light {X}{W} — Instant
+  ✓ As an additional cost to cast this spell, you may exile any number of…
+      optional: exile cards from your hand, {2} less each
+  ✓ Exile target artifact, creature, or enchantment with mana value X or …
+      spell → destroy (1 target)
 OK       Marsh Flats  — Land
   ✓ {T}, Pay 1 life, Sacrifice this land: Search your library for a Plain…
       activated → search
@@ -334,6 +297,15 @@ OK       Preordain {U} — Sorcery
 OK       Prismatic Vista  — Land
   ✓ {T}, Pay 1 life, Sacrifice this land: Search your library for a basic…
       activated → search
+OK       Quantum Riddler {3}{U}{U} — Creature — Sphinx
+  ✓ Flying
+      keyword
+  ✓ When this creature enters, draw a card.
+      trigger (enters) → draw
+  ✓ As long as you have one or fewer cards in hand, if you would draw one…
+      draws one more card with one or fewer in hand
+  ✓ Warp {1}{U}
+      keyword
 OK       Remand {1}{U} — Instant
   ✓ Counter target spell. If that spell is countered this way, put it int…
       spell → counter+draw (1 target)
@@ -372,6 +344,15 @@ OK       Skyclave Apparition {1}{W}{W} — Creature — Kor Spirit
       leaves: the exiled card's owner gets an X/X Illusion
 OK       Snow-Covered Island  — Basic Snow Land — Island
 OK       Snow-Covered Plains  — Basic Snow Land — Plains
+OK       Solitude {3}{W}{W} — Creature — Elemental Incarnation
+  ✓ Flash
+      keyword
+  ✓ Lifelink
+      keyword
+  ✓ When this creature enters, exile up to one other target creature. Tha…
+      trigger (enters) → destroy+controllerGainsPower (1 target)
+  ✓ Evoke—Exile a white card from your hand.
+      keyword
 OK       Spectacular Spider-Man {1}{W} — Legendary Creature — Spider Human Hero
   ✓ Flash
       keyword
@@ -382,9 +363,23 @@ OK       Spectacular Spider-Man {1}{W} — Legendary Creature — Spider Human H
 OK       Spell Snare {U} — Instant
   ✓ Counter target spell with mana value 2.
       spell → counter (1 target)
+OK       Spider-Sense {1}{U} — Instant
+  ✓ Web-slinging {U}
+      keyword
+  ✓ Counter target instant spell, sorcery spell, or triggered ability.
+      spell → counter (1 target)
 OK       Stern Scolding {U} — Instant
   ✓ Counter target creature spell with power or toughness 2 or less.
       spell → counter (1 target)
+OK       Subtlety {2}{U}{U} — Creature — Elemental Incarnation
+  ✓ Flash
+      keyword
+  ✓ Flying
+      keyword
+  ✓ When this creature enters, choose up to one target creature spell or …
+      trigger (enters) → tuckSpell (1 target)
+  ✓ Evoke—Exile a blue card from your hand.
+      keyword
 OK       Swords to Plowshares {W} — Instant
   ✓ Exile target creature. Its controller gains life equal to its power.
       spell → destroy+controllerGainsPower (1 target)
@@ -427,6 +422,11 @@ OK       Voice of Victory {1}{W} — Creature — Human Bard
       keyword
   ✓ Your opponents can't cast spells during your turn.
       rule for the game: opponentsCantCastOnYourTurn
+OK       Wash Away {U} — Instant
+  ✓ Cleave {1}{U}{U}
+      keyword
+  ✓ Counter target spell [that wasn't cast from its owner's hand].
+      spell → counter (1 target)
 OK       Windswept Heath  — Land
   ✓ {T}, Pay 1 life, Sacrifice this land: Search your library for a Fores…
       activated → search
@@ -434,5 +434,5 @@ OK       Witch Enchanter // Witch-Blessed Meadow {3}{W} — Creature — Human W
   ✓ When this creature enters, destroy target artifact or enchantment an …
       trigger (enters) → destroy (1 target)
 
-91 cards: 62 ok, 11 partial, 18 not simulated, 0 can't be cast
+91 cards: 71 ok, 6 partial, 14 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

@@ -351,6 +351,8 @@ export interface TargetFilter {
   abilities?: boolean;
   /** Tale's End, Tidebinder: activated and/or triggered abilities on the stack may be chosen. */
   abilityKinds?: ('activated' | 'triggered')[];
+  /** March of Otherworldly Light: "with mana value X or less": X as the spell was cast. */
+  maxManaValueX?: boolean;
   /** Solitude, Phelia: "other target …": not the ability's source. */
   other?: boolean;
   /** Only abilities, no spell ("target activated or triggered ability"). */
@@ -431,6 +433,8 @@ export type Effect =
   | { kind: 'counter'; to: Affected; unlessPays?: number; unlessPaysLife?: number; dest?: 'top' | 'hand' | 'exile'; stripsSource?: boolean }
   /** Swords to Plowshares, Solitude: "Its controller gains life equal to its power." (the permanent removed in `of`). */
   | { kind: 'controllerGainsPower'; of: { slot: number } }
+  /** Gitaxian Probe: "Look at target player's hand." (its cards are written in the log). */
+  | { kind: 'lookAtHand'; to: Affected }
   /** Cryptic Command: "Tap all creatures your opponents control." */
   | { kind: 'tapAll'; which: Selector }
   /** Subtlety: "Its owner puts it on their choice of the top or bottom of their library." */
@@ -669,6 +673,8 @@ export function parseTargetPhrase(phrase: string): TargetSpec | null {
     [/ you control$/, () => !!(filter.controller = 'you')],
     [/ (?:an opponent controls|you don't control|your opponents control)$/, () => !!(filter.controller = 'opponent')],
     [/ with mana value (\d+) or less$/, (m) => ((filter.maxManaValue = Number(m[1])), true)],
+    // March of Otherworldly Light: "with mana value X or less" (X as cast).
+    [/ with mana value x or less$/, () => !!(filter.maxManaValueX = true)],
     [/ with mana value (\d+) or greater$/, (m) => ((filter.minManaValue = Number(m[1])), true)],
     // Spell Snare: "with mana value 2".
     [/ with mana value (\d+)$/, (m) => ((filter.minManaValue = filter.maxManaValue = Number(m[1])), true)],
@@ -924,6 +930,10 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
   scan(new RegExp(`\\bcounter (${TARGET})\\. ${TIDEBINDER.source}`, 'gi'), (m) => {
     const to = slotFor(m[1], (spec) => spec.kind === 'spell');
     return to && { kind: 'counter', to, stripsSource: true };
+  });
+  scan(new RegExp(`\\blook at (target player|target opponent)'s hand(?=\\.|$)`, 'gi'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'player');
+    return to && { kind: 'lookAtHand', to };
   });
   scan(/\btap all ([a-z ,'-]+?)(?=\.|$)/gi, (m) => {
     const which = selector(m[1]);
@@ -1416,7 +1426,28 @@ function parseAdditionalCost(what: string): AdditionalCost | null {
 }
 
 /** What a card's text says about the ways to cast it. */
+/** A cost paid instead of the spell's mana cost. */
+export type AltCost =
+  /** Daze: "You may return an Island you control to its owner's hand rather than pay this spell's mana cost." */
+  | { kind: 'returnLand'; subtype: string }
+  /**
+   * Force of Negation ("If it's not your turn, …"), Reverent Mantra: "you may exile a blue card from your hand rather
+   * than pay this spell's mana cost"; evoke ("Evoke—Exile a white card from your hand"): sacrificed when it enters.
+   */
+  | { kind: 'exileCard'; color: Color; notYourTurn?: boolean; evoke?: boolean }
+  /** Cleave (the words in brackets removed), warp (exiled at the next end step), web-slinging (and a tapped creature you control returned). */
+  | { kind: 'mana'; cost: string; name: 'cleave' | 'warp' | 'webSlinging' }
+  /** Phyrexian mana ({U/P}): 2 life for each one instead of its mana. */
+  | { kind: 'phyrexian'; n: number };
+
 export interface CastInfo {
+  /** Alternative costs ("rather than pay this spell's mana cost", evoke, cleave, warp, web-slinging, Phyrexian mana). */
+  alts: AltCost[];
+  /**
+   * March of Otherworldly Light: "As an additional cost to cast this spell, you may exile any number of white cards from
+   * your hand. This spell costs {2} less to cast for each card exiled this way."
+   */
+  exileDiscount?: { color: Color; per: number };
   /** "Choose one —" / "Choose one or both —": the modes' texts, and how many to choose. */
   modal?: { min: number; max: number; modes: string[] };
   kicker?: string;
@@ -1448,11 +1479,19 @@ const stripReminder = (text: string) => text.replace(/\s*\([^)]*\)/g, '');
 export function castInfo(card: Card, face = 0): CastInfo {
   const c = faceCard(card, face);
   const text = stripReminder(frontText(c));
-  const info: CastInfo = { convoke: false, delve: false };
+  const info: CastInfo = { convoke: false, delve: false, alts: [] };
   const kw = (c.keywords ?? []).map((k) => k.toLowerCase());
   for (const line of text.split('\n').map((l) => l.trim())) {
     let m;
-    if ((m = line.match(/^Kicker ((?:\{[^}]+\})+)$/))) info.kicker = m[1];
+    if ((m = line.match(/^You may return an? (Plains|Island|Swamp|Mountain|Forest) you control to its owner's hand rather than pay this spell's mana cost\.$/i))) {
+      info.alts.push({ kind: 'returnLand', subtype: m[1].toLowerCase() });
+    } else if ((m = line.match(/^(If it's not your turn, )?you may exile an? (white|blue|black|red|green) card from your hand rather than pay this spell's mana cost\.$/i))) {
+      info.alts.push({ kind: 'exileCard', color: COLOR_WORDS[m[2].toLowerCase()], ...(m[1] ? { notYourTurn: true } : {}) });
+    } else if ((m = line.match(/^Evoke—Exile an? (white|blue|black|red|green) card from your hand\.$/i))) {
+      info.alts.push({ kind: 'exileCard', color: COLOR_WORDS[m[1].toLowerCase()], evoke: true });
+    } else if ((m = line.match(/^(Cleave|Warp|Web-slinging) ((?:\{[^}]+\})+)$/))) {
+      info.alts.push({ kind: 'mana', cost: m[2], name: m[1] === 'Cleave' ? 'cleave' : m[1] === 'Warp' ? 'warp' : 'webSlinging' });
+    } else if ((m = line.match(/^Kicker ((?:\{[^}]+\})+)$/))) info.kicker = m[1];
     else if ((m = line.match(/^Flashback ((?:\{[^}]+\})+)$/))) info.flashback = m[1];
     else if ((m = line.match(/^Cycling ((?:\{[^}]+\})+)$/))) info.cycling = { cost: m[1] };
     else if ((m = line.match(/^(Basic land|Plains|Island|Swamp|Mountain|Forest)cycling ((?:\{[^}]+\})+)$/))) {
@@ -1470,6 +1509,9 @@ export function castInfo(card: Card, face = 0): CastInfo {
       }
     }
   }
+  // Phyrexian mana: each {U/P} may be paid with 2 life.
+  const phyrexian = (c.manaCost.split('//')[0].match(/\{[WUBRG]\/P\}/g) ?? []).length;
+  if (phyrexian) info.alts.push({ kind: 'phyrexian', n: phyrexian });
   if (kw.includes('convoke')) info.convoke = true;
   if (kw.includes('delve')) info.delve = true;
   const modal = text.match(/Choose (one or both|one or more|up to one|up to two|one|two|three) —\n((?:• [^\n]+\n?)+)/);
@@ -1478,6 +1520,8 @@ export function castInfo(card: Card, face = 0): CastInfo {
     const modes = modal[2].split('\n').filter((l) => l.startsWith('• ')).map((l) => l.slice(2).trim());
     info.modal = { min, max: Math.min(max, modes.length), modes };
   }
+  const march = text.match(/As an additional cost to cast this spell, you may exile any number of (white|blue|black|red|green) cards from your hand\. This spell costs \{(\d+)\} less to cast for each card exiled this way\./);
+  if (march) info.exileDiscount = { color: COLOR_WORDS[march[1]], per: Number(march[2]) };
   const extra = text.match(/As an additional cost to cast this spell, ([^.]+)\./);
   // "you may blight 1", "you may collect evidence 6": an optional cost, never paid here (its bonus is left out too).
   if (extra && !/^you may /i.test(extra[1])) {
@@ -1535,13 +1579,17 @@ export interface CastChoice {
   face?: number;
   modes?: number[];
   kicked?: boolean;
+  /** The alternative cost paid (an index in CastInfo.alts): cleave removes the words in brackets. */
+  alt?: number;
+  /** X paid (March of Otherworldly Light: "with mana value X or less"). */
+  x?: number;
 }
 
 /**
  * The rules of a spell cast a given way. Auras target what they'll enchant; other permanents have no
  * spell effects. Modal spells need their modes; "If this spell was kicked, …" applies when kicked.
  */
-export function castSpec(card: Card, choice: CastChoice): AbilitySpec {
+function castSpecRaw(card: Card, choice: CastChoice): AbilitySpec {
   const c = faceCard(card, choice.face ?? 0);
   const aura = auraTarget(c);
   if (aura) return { targets: [aura], effects: [] };
@@ -1552,9 +1600,13 @@ export function castSpec(card: Card, choice: CastChoice): AbilitySpec {
     .split('\n')
     // Other ways to cast it that are never used here (Harmonize, Web-slinging, Paradigm), and options never taken
     // (a gift never promised, a spell never bargained).
-    .filter((l) => !/^(Kicker|Flashback|Cycling|Convoke|Delve|Affinity for|(Basic land|Plains|Island|Swamp|Mountain|Forest)cycling|Harmonize|Web-slinging|Paradigm|Bargain$|Gift an? )\b/.test(l.trim()))
+    .filter((l) => !/^(Kicker|Flashback|Cycling|Convoke|Delve|Affinity for|(Basic land|Plains|Island|Swamp|Mountain|Forest)cycling|Harmonize|Web-slinging|Cleave|Warp|Evoke|Paradigm|Bargain$|Gift an? )\b/.test(l.trim()))
+    // Alternative costs ("You may return an Island you control … rather than pay this spell's mana cost.").
+    .filter((l) => !/rather than pay this spell's mana cost\.$/.test(l.trim()))
     .join('\n')
-    .replace(/As an additional cost to cast this spell, [^.]+\.\s*/, '')
+    // Cleave: the words in brackets are removed; cast normally, they're read without the brackets.
+    .replace(/\s*\[([^\]]*)\]/g, (_, words: string) => (choice.alt !== undefined && info.alts[choice.alt]?.kind === 'mana' && (info.alts[choice.alt] as { name: string }).name === 'cleave' ? '' : ` ${words}`))
+    .replace(/As an additional cost to cast this spell, [^.]+\.\s*(?:This spell costs \{\d+\} less to cast for each card exiled this way\.\s*)?/, '')
     .replace(/If (?:the gift was promised|this spell was bargained|this spell's additional cost was paid|evidence was collected), [^.]+\.\s*/g, '');
   const kickedTexts: string[] = [];
   text = text.replace(/If this spell was kicked, ([^.]+\.)\s*/g, (_, rest: string) => {
@@ -1583,6 +1635,14 @@ export function castSpec(card: Card, choice: CastChoice): AbilitySpec {
     }
   }
   return spec;
+}
+
+export function castSpec(card: Card, choice: CastChoice): AbilitySpec {
+  const spec = castSpecRaw(card, choice);
+  // March of Otherworldly Light: "with mana value X or less" becomes the X paid.
+  if (!spec.targets.some((t) => t.filter.maxManaValueX)) return spec;
+  return { ...spec, targets: spec.targets.map((t) => (t.filter.maxManaValueX ? { ...t, filter: { ...t.filter, maxManaValue: choice.x ?? 0 } } : t)) };
+
 }
 
 /** Just the effects of an instant or sorcery. */

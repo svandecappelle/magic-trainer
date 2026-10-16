@@ -72,6 +72,8 @@ function keywordLine(card: Card, line: string, one: Card): LineReport | null {
     if (k === 'storied') return isStoried(one);
     if (k === 'crew') return activatedOf(one).some((a) => a.cost.crew !== undefined);
     if (k === 'fading') return fadingOf(one) > 0;
+    // Alternative costs: evoke, warp, web-slinging, cleave.
+    if (k === 'evoke' || k === 'warp' || k === 'web-slinging' || k === 'cleave') return castInfo(card).alts.length > 0;
     if (k === 'cumulative upkeep') return triggersOf(one).some((tr) => tr.ability.effects.some((x) => x.kind === 'cumulativeUpkeep'));
     if (k === 'devoid') return true; // the card's colors are already none
     if (k === 'metalcraft') return manaConditions(one).some((c) => 'artifacts' in c);
@@ -91,7 +93,9 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   if (kw) return kw;
   if (/^As an additional cost to cast this spell/i.test(line)) {
     const info = castInfo(one);
-    if (/^As an additional cost to cast this spell, you may /i.test(line)) return { text: line, status: 'ok', how: 'optional cost, never paid' };
+    if (/^As an additional cost to cast this spell, you may /i.test(line)) {
+      return { text: line, status: 'ok', how: info.exileDiscount ? `optional: exile cards from your hand, {${info.exileDiscount.per}} less each` : 'optional cost, never paid' };
+    }
     if (info.unknownCost) return { text: line, status: 'notSimulated', how: spell ? 'cost not understood: the spell is not simulated' : 'cost not understood: the card can\'t be cast' };
     return { text: line, status: 'ok', how: `additional cost: ${info.additional!.kind}` };
   }
