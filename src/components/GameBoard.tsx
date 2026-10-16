@@ -822,6 +822,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
           {/* Targets in a graveyard: pick them here. */}
           {targeting && slotSpec?.kind === 'card' && (
             <div className="choice-dock">
+              <p className="sheet-title">{prompt}</p>
               <div className="choice-panel">
                 <div className="choice-cards">
                   {legalTargets(g, me, slotSpec, undefined, targetingSource).map((tg) => {
@@ -847,11 +848,12 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
           {g.pending && g.pending.choice.player === me && g.pending.choice.kind !== 'targets' && g.winner === null && (() => {
             const choice = g.pending.choice;
             // One panel per choice: a choice following another one right away must not keep its picks.
+            const title = choicePrompt(t, choice, show.nameOf, names);
             const panel = (
               <ChoicePanel
                 key={choiceKey(choice)}
                 choice={choice}
-                title={choicePrompt(t, choice, show.nameOf, names)}
+                title={title}
                 onAnswer={(answer) => act({ type: 'choose', answer })}
                 onPreview={setPreview}
               />
@@ -859,7 +861,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
             // Scry, surveil and damage order open a window over the whole page (outside the table's layout).
             return choice.kind === 'arrange'
               ? createPortal(<div className="choice-dock modal">{panel}</div>, document.body)
-              : <div className="choice-dock">{panel}</div>;
+              : <div className="choice-dock"><p className="sheet-title">{title}</p>{panel}</div>;
           })()}
         </div>
 

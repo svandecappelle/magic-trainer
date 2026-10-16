@@ -129,7 +129,15 @@ export function ChoicePanel({ choice, onAnswer, onPreview, title }: Props) {
       <div className="choice-panel">
         {choice.modes.map((label, i) => (
           <label key={i} className={`choice-mode${choice.disabled?.includes(i) ? ' disabled' : ''}`}>
-            <input type="checkbox" checked={picked.includes(ids[i])} disabled={choice.disabled?.includes(i)} onChange={() => toggle(ids[i])} /> {label}
+            {/* One mode to pick: radio buttons (picking another replaces it). */}
+            <input
+              type={choice.max === 1 ? 'radio' : 'checkbox'}
+              name={choice.max === 1 ? 'choice-mode' : undefined}
+              checked={picked.includes(ids[i])}
+              disabled={choice.disabled?.includes(i)}
+              onChange={() => (choice.max === 1 ? setPicked([ids[i]]) : toggle(ids[i]))}
+            />{' '}
+            {label}
             {choice.disabled?.includes(i) && <small> — {t.game.modeUnavailable}</small>}
           </label>
         ))}
