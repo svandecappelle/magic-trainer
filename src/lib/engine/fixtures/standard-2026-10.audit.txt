@@ -617,8 +617,8 @@ PARTIAL  Tablet of Discovery {2}{R} — Artifact
   ? {T}: Add {R}{R}. Spend this mana only to cast instant and sorcery spe…
       mana ability not understood
 PARTIAL  The Theorist, Jace Beleren {2}{U}{U} — Legendary Planeswalker — Jace
-  ? At the beginning of each opponent's draw step, you draw a card.
-      not read by the engine
+  ✓ At the beginning of each opponent's draw step, you draw a card.
+      trigger (draw) → draw
   ✓ +1: Create a 1/1 blue Illusion creature token.
       loyalty ability → token
   ✗ −2: For each opponent, return up to one target artifact or creature t…
@@ -829,7 +829,7 @@ OK       No More Lies {W}{U} — Instant
       spell → counter (1 target)
 OK       Octopus Form {U} — Instant — Lesson
   ✓ Target creature you control gets +1/+1 and gains hexproof until end o…
-      spell → pump+tap (1 target)
+      spell → pump+untap (1 target)
 OK       Pinecone Strike {1}{R} — Instant
   ✓ Choose one or both —
       modal: choose 1–2

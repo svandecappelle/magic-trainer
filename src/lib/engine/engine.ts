@@ -2,9 +2,9 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
-  type ActivatedSpec, type CastChoice, type Cost, type ObjectEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
+  type ActivatedSpec, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
 
 /** A player: an index in GameState.players (0–1 in a duel, 0–3 in Two-Headed Giant). */
@@ -50,6 +50,8 @@ export interface Permanent extends CardInst {
   attachedTo?: string;
   /** Cavern of Souls: the creature type chosen as it entered. */
   chosenType?: string;
+  /** Chrome Mox: the card exiled with it (imprint). */
+  imprinted?: Card;
   /** A noncreature permanent that is a creature until end of turn (crewed Vehicle, Iron Man Armor): its own card. */
   unanimated?: Card;
   /** What static abilities (anthems, Auras, Equipment) give it right now; recomputed by the engine. */
@@ -112,6 +114,8 @@ export interface PoolMana {
 
 export interface PlayerState {
   name: string;
+  /** Gemstone Caverns in the opening hand: already asked. */
+  luckAsked?: boolean;
   life: number;
   library: CardInst[];
   hand: CardInst[];
@@ -202,6 +206,10 @@ export type ChoicePurpose =
   | 'tradeForCard' // Chandra's +2: sacrifice an artifact or discard a card (or neither)
   | 'reflexiveCost' // "you may discard a card. When you do, …": which card, or none
   | 'reflexivePay' // "you may pay {W}{B} and 2 life. When you do, …"
+  | 'gemstoneCaverns' // which card to exile to begin with Gemstone Caverns on the battlefield, or none
+  | 'exileFromHand' // Chrome Mox: which card to exile (imprint), or none
+  | 'discardLandInstead' // Mox Diamond: which land card to discard, or none (it goes to the graveyard)
+  | 'mayPay' // Mana Vault: "you may pay {4}. If you do, …"
   | 'triggerMode'; // a modal trigger ("When … enters, choose one —"): which mode
 
 /** Where "arrange" choices may put cards (scry: top/bottom, surveil: top/graveyard). */
@@ -235,7 +243,7 @@ export interface Pending {
    * What continues once answered: the end of turn, the spell or ability being resolved, or a
    * triggered ability waiting for targets (`trigger`).
    */
-  resume: 'cleanup' | 'effect' | 'trigger' | 'activation' | 'legend' | 'payLife' | 'castCost' | 'clone' | 'damageOrder' | 'creatureType' | 'crew' | 'triggerMode';
+  resume: 'cleanup' | 'effect' | 'trigger' | 'activation' | 'legend' | 'payLife' | 'castCost' | 'clone' | 'discardLandInstead' | 'gemstoneCaverns' | 'damageOrder' | 'creatureType' | 'crew' | 'triggerMode';
   /** For clone: the window the resolving spell belongs to. */
   reason?: WindowReason;
   /** For payLife: the land that entered. */
@@ -335,7 +343,7 @@ export type LogEntry =
   | { k: 'token'; p: PlayerId; card: string; n: number }
   /** A card left a graveyard: back to hand, onto the battlefield, or exiled. */
   | { k: 'returned'; card: string; dest: 'hand' | 'battlefield' }
-  | { k: 'exiledCard'; card: string }
+  | { k: 'exiledCard'; card: string; from?: 'hand' }
   /** Rest in Peace: `card` exiled these players' graveyards. */
   | { k: 'exiledGraveyards'; card: string }
   /** `dest`: hand cards are not named (hidden); found cards put onto the battlefield are logged as entering. */
@@ -564,6 +572,16 @@ const protectedFrom = (perm: Permanent, source: Card) => protectionsOf(perm.card
 export function unitsOf(s: GameState, perm: Permanent, spell?: Card): Color[][] {
   const identity = s.players[perm.controller]?.identity;
   let units = manaUnits(perm.card, identity);
+  // Chrome Mox: the imprinted card's colors; Mox Amber: the colors of legendary creatures and planeswalkers.
+  const state = stateMana(perm.card);
+  if (state === 'luck') {
+    if (perm.counters.luck) units = [['W', 'U', 'B', 'R', 'G']];
+  } else if (state) {
+    const from = state === 'imprinted' ? (perm.imprinted ? [perm.imprinted] : [])
+      : s.battlefield.filter((x) => x.controller === perm.controller && /\bLegendary\b/.test(x.card.typeLine.split('//')[0]) && (isCreature(x.card) || isPlaneswalker(x.card))).map((x) => x.card);
+    const colors = [...new Set(from.flatMap((c) => cardColors(c)))];
+    units = [...units, ...(colors.length ? [colors] : [])];
+  }
   // Cavern of Souls: its colored mana for a creature spell of the chosen type.
   const typed = chosenTypeMana(perm.card);
   if (typed && spell && perm.chosenType && ofType(spell, perm.chosenType)) units = [[...new Set([...(units[0] ?? []), ...typed])]];
@@ -571,7 +589,10 @@ export function unitsOf(s: GameState, perm: Permanent, spell?: Card): Color[][] 
   if (pain && s.players[perm.controller].life < pain.life) units = units.map((u) => u.filter((c) => !pain.colors.includes(c)));
   // Sunbillow Verge: "{T}: Add {R}. Activate only if you control a Mountain or a Plains."
   for (const cond of manaConditions(perm.card)) {
-    const met = s.battlefield.some((x) => x.controller === perm.controller && cond.subtypes.some((t) => hasSubtype(x.card, t)));
+    const mine = s.battlefield.filter((x) => x.controller === perm.controller);
+    const met = 'subtypes' in cond
+      ? mine.some((x) => cond.subtypes.some((t) => hasSubtype(x.card, t)))
+      : mine.filter((x) => /\bArtifact\b/.test(x.card.typeLine)).length >= cond.artifacts;
     if (!met) units = units.map((u) => u.filter((c) => !cond.colors.includes(c)));
   }
   return units.filter((u) => u.length);
@@ -1264,7 +1285,7 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
   emptyPools(d);
   for (const perm of d.battlefield) {
     if (isActivePlayer(d, perm.controller)) {
-      perm.tapped = false;
+      if (!doesntUntap(perm.card)) perm.tapped = false;
       perm.sick = false;
     }
     delete perm.used;
@@ -1285,6 +1306,8 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
 function drawStep(d: GameState, skipDraw: boolean) {
   d.step = 'main1';
   if (!skipDraw) for (const q of teamPlayers(d, d.active)) draw(d, q, 1);
+  // Mana Vault: "At the beginning of your draw step, …" (put on the stack with the opponents' priority below).
+  fireStep(d, 'draw');
   // After the draw step, each Saga of the active player gets a lore counter (CR 714.3b).
   for (const perm of d.battlefield.filter((x) => isActivePlayer(d, x.controller) && isSaga(x.card))) addLore(d, perm);
   if (d.winner === null) openForOpponents(d, 'begin');
@@ -1464,6 +1487,23 @@ function sacrifice(d: GameState, perm: Permanent) {
 }
 
 /** A permanent enters: put it on the battlefield and check "enters" triggers (its own, landfall…). */
+/**
+ * A card put onto the battlefield by an effect. Mox Diamond's replacement: its controller discards the first land card
+ * of their hand (no choice asked in the middle of the effect), or it goes to the graveyard.
+ */
+function putOntoBattlefield(d: GameState, inst: CardInst, controller: PlayerId, opts: { tapped?: boolean } = {}) {
+  if (discardsLandInstead(inst.card)) {
+    const land = d.players[controller].hand.find((c) => isLand(c.card));
+    if (!land) {
+      putInZone(d, controller, inst, 'graveyard');
+      return;
+    }
+    moveToGraveyard(d, controller, land, 'hand');
+    log(d, { k: 'discard', p: controller, card: land.card.name });
+  }
+  enterBattlefield(d, inst, controller, opts);
+}
+
 function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, opts: { x?: number; tapped?: boolean } = {}): Permanent {
   const perm = newPermanent(inst, controller);
   const rule = entersTappedRule(inst.card);
@@ -1509,6 +1549,29 @@ function openingHandPermanents(d: GameState) {
       enterBattlefield(d, inst, p);
     }
   }
+  askGemstoneCaverns(d);
+}
+
+/**
+ * Gemstone Caverns: each player not on the starting team, in turn order, may exile a card from their opening hand to
+ * begin with it on the battlefield with a luck counter. Then the first turn begins.
+ */
+function askGemstoneCaverns(d: GameState) {
+  const starting = teamPlayers(d, d.active);
+  for (const p of turnOrder(d)) {
+    const ps = d.players[p];
+    const caverns = ps.hand.find((c) => beginsWithLuck(c.card));
+    if (starting.includes(p) || !caverns || ps.luckAsked) continue;
+    ps.luckAsked = true;
+    const others = ps.hand.filter((c) => c !== caverns);
+    if (!others.length) continue;
+    d.pending = {
+      choice: { kind: 'cards', player: p, purpose: 'gemstoneCaverns', min: 0, max: 1, options: others, params: { card: caverns.card.name } },
+      resume: 'gemstoneCaverns', iid: caverns.iid,
+    };
+    return;
+  }
+  beginTurn(d, d.active, true);
 }
 
 /**
@@ -1592,10 +1655,11 @@ function sagaDone(d: GameState, perm: Permanent): boolean {
 
 // ---------- Triggers ----------
 
-/** "if you gained life this turn": checked when the ability triggers and again when it resolves. */
-function conditionMet(d: GameState, p: PlayerId, cond: AbilitySpec['condition']): boolean {
+/** "if you gained life this turn", "if this artifact is tapped": checked when the ability triggers and again when it resolves. */
+function conditionMet(d: GameState, p: PlayerId, cond: AbilitySpec['condition'], source?: string): boolean {
   if (!cond) return true;
   const ps = d.players[p];
+  if (cond.tapped && !(source && findPermanent(d, source)?.tapped)) return false;
   return (ps.gainedThisTurn ?? 0) >= (cond.gained ?? 0) && (!cond.lost || (ps.lostThisTurn ?? 0) > 0);
 }
 
@@ -1604,7 +1668,7 @@ function queueTrigger(d: GameState, source: CardInst, controller: PlayerId, abil
     log(d, { k: 'notSimulated', card: source.card.name });
     return;
   }
-  if (!conditionMet(d, controller, ability.condition)) return;
+  if (!conditionMet(d, controller, ability.condition, source.iid)) return;
   const n = triggersTwice(d, source.iid) ? 2 : 1;
   for (let i = 0; i < n; i++) (d.triggered ??= []).push({ source: { iid: source.iid, card: source.card }, controller, ability, ...(batch ? { batch } : {}) });
 }
@@ -1661,7 +1725,7 @@ function emblemSources(d: GameState): Permanent[] {
 }
 
 /** The beginning of the active player's upkeep or end step. */
-function fireStep(d: GameState, on: 'upkeep' | 'endStep' | 'beginCombat') {
+function fireStep(d: GameState, on: StepEvent) {
   // Mobilize tokens: "Sacrifice them at the beginning of the next end step."
   if (on === 'endStep' && d.sacrificeAtEnd?.length) {
     for (const iid of d.sacrificeAtEnd) {
@@ -2151,7 +2215,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         unbury(g);
         log(d, { k: 'returned', card: g.grave.card.name, dest: e.dest });
         if (e.dest === 'hand') d.players[g.owner].hand.push(g.grave);
-        else enterBattlefield(d, g.grave, caster);
+        else putOntoBattlefield(d, g.grave, caster);
       }
       break;
     case 'addCountersAll': {
@@ -2184,7 +2248,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       log(d, { k: 'search', p: searcher, n: chosen.length, dest: e.dest });
       for (const inst of chosen) {
         if (e.dest === 'hand') ps.hand.push(inst);
-        else enterBattlefield(d, inst, searcher, { tapped: e.tapped });
+        else putOntoBattlefield(d, inst, searcher, { tapped: e.tapped });
       }
       ps.library = shuffle(ps.library, () => random(d));
       break;
@@ -2446,6 +2510,22 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       }
       break;
     }
+    case 'exileFromHand': {
+      // Chrome Mox: which card (or none, "you may"); the source remembers it.
+      const ps = d.players[caster];
+      const options = ps.hand.filter((c) => cardMatches(c.card, e.filter));
+      if (!options.length) break;
+      if (answer?.kind !== 'cards') return { kind: 'cards', player: caster, purpose: 'exileFromHand', min: 0, max: 1, options, params: { card: item.card.name } };
+      const picked = answer.iids[0];
+      const inst = options.find((c) => c.iid === picked);
+      if (!inst) break;
+      ps.hand = ps.hand.filter((c) => c !== inst);
+      ps.exile.push(inst);
+      log(d, { k: 'exiledCard', card: inst.card.name, from: 'hand' });
+      const src = item.source ? findPermanent(d, item.source) : undefined;
+      if (src) src.imprinted = inst.card;
+      break;
+    }
     case 'attach': {
       const src = item.source ? findPermanent(d, item.source) : undefined;
       const host = perms[0];
@@ -2558,33 +2638,7 @@ function startResolving(d: GameState, reason: WindowReason) {
   const item = d.stack.pop()!;
 
   if (!item.ability && !isInstantOrSorcery(castCard(item))) {
-    // A clone asks what to copy before it enters.
-    const card = castCard(item);
-    const others = d.battlefield.filter((x) => isCreature(x.card));
-    if (entersAsCopy(card) && others.length) {
-      d.pending = {
-        choice: { kind: 'cards', player: item.controller, purpose: 'clone', min: 0, max: 1, options: others, params: { card: card.name } },
-        resume: 'clone', activation: { item, named: [] }, reason,
-      };
-      return;
-    }
-    // An Aura needs its target to still be legal; it enters attached to it.
-    const aura = auraTarget(card);
-    const host = item.targets[0]?.[0];
-    if (aura && (!host || !isLegalTarget(d, item.controller, aura, host, item.iid, card))) {
-      log(d, { k: 'fizzles', card: card.name });
-      putAwaySpell(d, item, false);
-      afterResolving(d, reason);
-      return;
-    }
-    log(d, { k: 'enters', card: faceName(item.card, item.face ?? 0) });
-    const perm = enterBattlefield(d, { iid: item.iid, card, ...(item.commander ? { commander: true } : {}) }, item.controller, { x: item.x });
-    if (card !== item.card) perm.printed = item.card;
-    if (aura && host?.kind === 'permanent') {
-      perm.attachedTo = host.iid;
-      log(d, { k: 'attached', card: perm.card.name, to: findPermanent(d, host.iid)!.card.name });
-    }
-    afterResolving(d, reason);
+    resolvePermanentSpell(d, item, reason);
     return;
   }
 
@@ -2598,7 +2652,7 @@ function startResolving(d: GameState, reason: WindowReason) {
     return;
   }
   if (!spec.effects.length) log(d, { k: 'notSimulated', card: castCard(item).name });
-  if (!conditionMet(d, item.controller, spec.condition)) {
+  if (!conditionMet(d, item.controller, spec.condition, item.source)) {
     afterResolving(d, reason);
     return;
   }
@@ -2606,16 +2660,70 @@ function startResolving(d: GameState, reason: WindowReason) {
   continueResolving(d);
 }
 
+/** A permanent spell resolves: it enters (`landDiscarded`: Mox Diamond's replacement was already applied). */
+function resolvePermanentSpell(d: GameState, item: StackItem, reason: WindowReason, landDiscarded = false) {
+  const card = castCard(item);
+  // Mox Diamond: "If this artifact would enter, you may discard a land card instead. If you do, put this artifact
+  // onto the battlefield. If you don't, put it into its owner's graveyard."
+  if (!landDiscarded && discardsLandInstead(card)) {
+    const lands = d.players[item.controller].hand.filter((c) => isLand(c.card));
+    if (lands.length) {
+      d.pending = {
+        choice: { kind: 'cards', player: item.controller, purpose: 'discardLandInstead', min: 0, max: 1, options: lands, params: { card: card.name } },
+        resume: 'discardLandInstead', activation: { item, named: [] }, reason,
+      };
+      return;
+    }
+    putAwaySpell(d, item, false);
+    log(d, { k: 'declined', card: card.name });
+    afterResolving(d, reason);
+    return;
+  }
+  // A clone asks what to copy before it enters.
+  const others = d.battlefield.filter((x) => isCreature(x.card));
+  if (entersAsCopy(card) && others.length) {
+    d.pending = {
+      choice: { kind: 'cards', player: item.controller, purpose: 'clone', min: 0, max: 1, options: others, params: { card: card.name } },
+      resume: 'clone', activation: { item, named: [] }, reason,
+    };
+    return;
+  }
+  // An Aura needs its target to still be legal; it enters attached to it.
+  const aura = auraTarget(card);
+  const host = item.targets[0]?.[0];
+  if (aura && (!host || !isLegalTarget(d, item.controller, aura, host, item.iid, card))) {
+    log(d, { k: 'fizzles', card: card.name });
+    putAwaySpell(d, item, false);
+    afterResolving(d, reason);
+    return;
+  }
+  log(d, { k: 'enters', card: faceName(item.card, item.face ?? 0) });
+  const perm = enterBattlefield(d, { iid: item.iid, card, ...(item.commander ? { commander: true } : {}) }, item.controller, { x: item.x });
+  if (card !== item.card) perm.printed = item.card;
+  if (aura && host?.kind === 'permanent') {
+    perm.attachedTo = host.iid;
+    log(d, { k: 'attached', card: perm.card.name, to: findPermanent(d, host.iid)!.card.name });
+  }
+  afterResolving(d, reason);
+}
+
 function continueResolving(d: GameState, answer?: Answer) {
   const r = d.resolving!;
   const spec = specOf(r.item);
   const effects = spec.effects;
   if (spec.optional && !r.accepted) {
-    if (answer?.kind !== 'yesNo') {
-      d.pending = { choice: { kind: 'yesNo', player: r.item.controller, purpose: 'optional', params: { card: r.item.card.name } }, resume: 'effect' };
+    // Mana Vault: "you may pay {4}. If you do, …": not offered when it can't be paid.
+    const cost = spec.mayPay ? parseCost(spec.mayPay) : undefined;
+    const payable = !cost || findPayment(manaSources(d, r.item.controller), cost);
+    if (payable && answer?.kind !== 'yesNo') {
+      const choice: Choice = spec.mayPay
+        ? { kind: 'yesNo', player: r.item.controller, purpose: 'mayPay', params: { card: r.item.card.name, cost: spec.mayPay } }
+        : { kind: 'yesNo', player: r.item.controller, purpose: 'optional', params: { card: r.item.card.name } };
+      d.pending = { choice, resume: 'effect' };
       return;
     }
-    if (!answer.yes) {
+    if (payable && answer?.kind === 'yesNo' && answer.yes && cost) pay(d, r.item.controller, manaSources(d, r.item.controller), cost);
+    if (!payable || answer?.kind !== 'yesNo' || !answer.yes) {
       log(d, { k: 'declined', card: r.item.card.name });
       r.next = effects.length;
     }
@@ -2935,7 +3043,6 @@ export function apply(state: GameState, action: Action): GameState {
       } else {
         d.mulligan = null;
         openingHandPermanents(d);
-        beginTurn(d, d.active, true);
       }
       break;
     }
@@ -2987,6 +3094,32 @@ export function apply(state: GameState, action: Action): GameState {
       } else if (pending.resume === 'damageOrder' && action.answer.kind === 'arrange') {
         d.blocks[pending.iid!] = action.answer.zones.top ?? d.blocks[pending.iid!];
         askDamageOrder(d);
+      } else if (pending.resume === 'gemstoneCaverns' && action.answer.kind === 'cards') {
+        const ps = d.players[p];
+        const picked = action.answer.iids[0];
+        const exiled = ps.hand.find((c) => c.iid === picked && c.iid !== pending.iid);
+        const caverns = ps.hand.find((c) => c.iid === pending.iid);
+        if (exiled && caverns) {
+          ps.hand = ps.hand.filter((c) => c !== exiled && c !== caverns);
+          ps.exile.push(exiled);
+          log(d, { k: 'beginsOnBattlefield', p, card: caverns.card.name });
+          log(d, { k: 'exiledCard', card: exiled.card.name, from: 'hand' });
+          enterBattlefield(d, caverns, p).counters.luck = 1;
+        }
+        askGemstoneCaverns(d);
+      } else if (pending.resume === 'discardLandInstead' && action.answer.kind === 'cards') {
+        const item = pending.activation!.item;
+        const picked = action.answer.iids[0];
+        const land = d.players[p].hand.find((c) => c.iid === picked && isLand(c.card));
+        if (land) {
+          moveToGraveyard(d, p, land, 'hand');
+          log(d, { k: 'discard', p, card: land.card.name });
+          resolvePermanentSpell(d, item, pending.reason ?? 'main', true);
+        } else {
+          putAwaySpell(d, item, false);
+          log(d, { k: 'declined', card: item.card.name });
+          afterResolving(d, pending.reason ?? 'main');
+        }
       } else if (pending.resume === 'clone' && action.answer.kind === 'cards') {
         const item = pending.activation!.item;
         const model = action.answer.iids[0] ? findPermanent(d, action.answer.iids[0]) : undefined;

@@ -1,6 +1,6 @@
 import type { Card } from '../../types';
 import {
-  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, entersCounters, entersTappedRule, frontText, gameRulesOf, isInstantOrSorcery,
+  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, entersCounters, entersTappedRule, beginsWithLuck, discardsLandInstead, manaConditions, stateMana, doesntUntap, frontText, gameRulesOf, isInstantOrSorcery,
   KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, type AbilitySpec,
 } from './rules';
 
@@ -39,8 +39,10 @@ function effectsText(spec: AbilitySpec): string | null {
   if (!spec.effects.length) return null;
   if (spec.modal) return `choose ${spec.modal.min}–${spec.modal.max} modes`;
   const targets = spec.targets.length ? ` (${spec.targets.length} target${spec.targets.length > 1 ? 's' : ''})` : '';
-  const cond = spec.condition ? `, if ${spec.condition.lost ? 'life gained and lost' : `${spec.condition.gained}+ life gained`} this turn` : '';
-  return spec.effects.map((e) => e.kind).join('+') + targets + (spec.optional ? ', optional' : '') + cond;
+  const c = spec.condition;
+  const cond = !c ? '' : c.tapped ? ', if tapped' : `, if ${c.lost ? 'life gained and lost' : `${c.gained}+ life gained`} this turn`;
+  const kinds = spec.effects.map((e) => (e.kind === 'tap' && e.untap ? 'untap' : e.kind)).join('+');
+  return kinds + targets + (spec.mayPay ? `, may pay ${spec.mayPay}` : spec.optional ? ', optional' : '') + cond;
 }
 
 /** Keywords on a line ("Flying, lifelink", "Ward {2}", "Kicker {1}{U}"), or null if it isn't a keyword line. */
@@ -69,6 +71,7 @@ function keywordLine(card: Card, line: string, one: Card): LineReport | null {
     if (k === 'mobilize') return triggersOf(one).length > 0;
     if (k === 'storied') return isStoried(one);
     if (k === 'crew') return activatedOf(one).some((a) => a.cost.crew !== undefined);
+    if (k === 'metalcraft') return manaConditions(one).some((c) => 'artifacts' in c);
     return false;
   };
   const missing = pieces.filter((p) => !supported(p)).map((p) => keywordOf(p)!);
@@ -112,6 +115,11 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
       : { text: line, status: 'notSimulated', how: 'activated ability, effect not simulated' };
   }
   if (chosenTypeMana(one)) return { text: line, status: 'ok', how: 'mana for a creature spell of the chosen type (can\'t be countered)' };
+  const state = stateMana(one);
+  if (state) {
+    const how = { imprinted: 'the colors of the exiled card', legends: 'the colors of your legendary creatures and planeswalkers', luck: 'C, any color with a luck counter' }[state];
+    return { text: line, status: 'ok', how: `mana: ${how}` };
+  }
   if (/\bAdd \{|\bAdd (?:one|two|three) mana\b/.test(line) && !spell) {
     // Command Tower: read with a five-color commander.
     const units = manaUnits({ ...one, typeLine: 'Land' }, ['W', 'U', 'B', 'R', 'G']);
@@ -127,6 +135,9 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   if (freeFirstEquip(one)) return { text: line, status: 'ok', how: 'first equip each turn for {0} (enduring story)' };
   if (doublesEquippedTriggers(one)) return { text: line, status: 'ok', how: 'triggers an additional time while equipped' };
   if (choosesCreatureType(one)) return { text: line, status: 'ok', how: 'chooses a creature type as it enters' };
+  if (discardsLandInstead(one)) return { text: line, status: 'ok', how: 'enters only by discarding a land card' };
+  if (doesntUntap(one)) return { text: line, status: 'ok', how: 'doesn\'t untap during its controller\'s untap step' };
+  if (beginsWithLuck(one)) return { text: line, status: 'ok', how: 'may begin the game on the battlefield (not the starting player)' };
   if (beginsOnBattlefield(one)) return { text: line, status: 'ok', how: 'begins the game on the battlefield (always)' };
   const rules = gameRulesOf(one);
   if (rules.length) return { text: line, status: 'ok', how: `rule for the game: ${rules.join(', ')}` };

@@ -77,7 +77,7 @@ const log: LogMessages = {
   attackPlaneswalker: (e, c) => `${c.card(e.card)} attacks ${c.card(e.pw)}`,
   loyalty: (e, c) => `${c.card(e.card)}: ${e.n > 0 ? '+' : ''}${e.n} loyalty`,
   returned: (e, c) => `${c.card(e.card)} returns from the graveyard ${e.dest === 'hand' ? "to its owner's hand" : 'to the battlefield'}`,
-  exiledCard: (e, c) => `${c.card(e.card)} is exiled from the graveyard`,
+  exiledCard: (e, c) => `${c.card(e.card)} is exiled from ${e.from === 'hand' ? 'the hand' : 'the graveyard'}`,
   exiledGraveyards: (e, c) => `${c.card(e.card)} exiles graveyards`,
   search: (e, c) => {
     const me = c.isMe(e.p);
@@ -562,6 +562,10 @@ export const en = {
       triggerMode: (p: { card: string }) => `${p.card}'s ability triggers: choose a mode.`,
       reflexiveCost: (p: { card: string }) => `${p.card}: you may discard a card to use its ability (or choose nothing).`,
       reflexivePay: (p: { card: string; cost: string; life: number }) => `${p.card}: pay ${p.cost}${p.life ? ` and ${p.life} life` : ''} to use its ability?`,
+      gemstoneCaverns: (p: { card: string }) => `${p.card}: exile a card from your hand to begin the game with it on the battlefield (or choose nothing).`,
+      exileFromHand: (p: { card: string }) => `${p.card}: you may exile a card from your hand (or choose nothing).`,
+      discardLandInstead: (p: { card: string }) => `${p.card}: discard a land card to put it onto the battlefield (otherwise it goes to the graveyard).`,
+      mayPay: (p: { card: string; cost: string }) => `${p.card}: pay ${p.cost}?`,
       arrange: 'Put each card where you want it, then confirm.',
       mode: (min: number, max: number) => (min === max ? `Choose ${plural(max, 'mode', 'modes')}.` : `Choose ${min} to ${max} modes.`),
       cards: (min: number, max: number) => (min === max ? `Choose ${plural(max, 'card', 'cards')}.` : `Choose ${min} to ${max} cards.`),

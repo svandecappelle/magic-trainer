@@ -33,6 +33,10 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
     case 'tradeForCard': return t.game.choice.tradeForCard({ card: card(String(p.card)) });
     case 'triggerMode': return t.game.choice.triggerMode({ card: card(String(p.card)) });
     case 'reflexiveCost': return t.game.choice.reflexiveCost({ card: card(String(p.card)) });
+    case 'gemstoneCaverns': return t.game.choice.gemstoneCaverns({ card: card(String(p.card)) });
+    case 'exileFromHand': return t.game.choice.exileFromHand({ card: card(String(p.card)) });
+    case 'discardLandInstead': return t.game.choice.discardLandInstead({ card: card(String(p.card)) });
+    case 'mayPay': return t.game.choice.mayPay({ card: card(String(p.card)), cost: String(p.cost) });
     case 'reflexivePay': return t.game.choice.reflexivePay({ card: card(String(p.card)), cost: String(p.cost), life: Number(p.life) });
     case 'triggerTargets':
       if (choice.kind === 'targets') {

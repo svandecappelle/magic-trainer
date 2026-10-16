@@ -88,6 +88,9 @@ export function parseManaText(text: string, identity?: Color[]): Color[][] | nul
   return null;
 }
 
+/** Mox Opal: the ability word before its mana ability. */
+const METALCRAFT = /^Metalcraft — /;
+
 /**
  * The mana a permanent makes when tapped: basic land types plus "{T}: Add …" abilities. With several
  * one-mana abilities (pain lands), one mana of any of their colors; otherwise the biggest ability.
@@ -102,7 +105,8 @@ export function manaUnits(card: Card, identity?: Color[]): Color[][] {
   for (const [type, color] of BASIC_TYPES) if (front.includes(type)) single.add(color);
   const life = manaLifeCost(card) > 0;
   for (const line of frontText(card).split('\n')) {
-    const m = line.match(/^\{T\}(?:, Sacrifice [^:]*|, Pay (\d+) life)?:\s*Add ([^.]*)\.(.*)$/);
+    // Mox Opal: "Metalcraft — {T}: Add one mana of any color. Activate only if …" (see manaConditions).
+    const m = line.replace(METALCRAFT, '').match(/^\{T\}(?:, Sacrifice [^:]*|, Pay (\d+) life)?:\s*Add ([^.]*)\.(.*)$/);
     if (!m || /\bSpend this mana only\b/i.test(m[3])) continue;
     if (life && !m[1]) continue;
     const units = parseManaText(m[2], identity);
@@ -115,20 +119,28 @@ export function manaUnits(card: Card, identity?: Color[]): Color[][] {
   return single.size ? [[...single]] : [];
 }
 
+/** A mana ability's condition: control a permanent of one of these subtypes, or this many artifacts. */
+export type ManaCondition = { colors: Color[] } & ({ subtypes: string[] } | { artifacts: number });
+
 /**
  * Sunbillow Verge: "{T}: Add {R}. Activate only if you control a Mountain or a Plains." → the colors only that
  * ability makes, and the subtypes one of which its controller must control (see unitsOf in the engine).
+ * Mox Opal: "Metalcraft — {T}: Add one mana of any color. Activate only if you control three or more artifacts."
  */
-export function manaConditions(card: Card): { colors: Color[]; subtypes: string[] }[] {
+export function manaConditions(card: Card): ManaCondition[] {
   const free = new Set<Color>();
   for (const [type, color] of BASIC_TYPES) if (card.typeLine.split('//')[0].includes(type)) free.add(color);
-  const conditional: { colors: Color[]; subtypes: string[] }[] = [];
+  const conditional: ManaCondition[] = [];
   for (const line of frontText(card).split('\n')) {
-    const m = line.match(/^\{T\}:\s*Add ([^.]*)\.(.*)$/);
+    const metalcraft = METALCRAFT.test(line);
+    const m = line.replace(METALCRAFT, '').match(/^\{T\}:\s*Add ([^.]*)\.(.*)$/);
     const units = m && parseManaText(m[1]);
     if (!m || !units || units.length !== 1) continue;
     const only = m[2].trim().match(/^Activate only if you control (an? [A-Z][a-z]+(?: or an? [A-Z][a-z]+)*)\.$/);
+    const artifacts = metalcraft && /^Activate only if you control three or more artifacts\.$/.test(m[2].trim());
     if (only) conditional.push({ colors: units[0], subtypes: only[1].split(' or ').map((w) => w.replace(/^an? /, '').toLowerCase()) });
+    else if (artifacts) conditional.push({ colors: units[0], artifacts: 3 });
+    else if (metalcraft) continue; // another metalcraft wording: no mana rather than mana without its condition
     else if (!m[2].trim()) units[0].forEach((c) => free.add(c));
   }
   return conditional.map((c) => ({ ...c, colors: c.colors.filter((x) => !free.has(x)) })).filter((c) => c.colors.length);
@@ -364,7 +376,7 @@ export interface TargetSpec {
 // ---------- Effects ----------
 
 /** Counter kinds placed on permanents. */
-export type CounterKind = '+1/+1' | '-1/-1' | 'loyalty' | 'lore' | 'rev';
+export type CounterKind = '+1/+1' | '-1/-1' | 'loyalty' | 'lore' | 'rev' | 'luck';
 
 /**
  * Who an effect applies to: the targets chosen for a slot, the controller, everyone / each opponent,
@@ -436,6 +448,8 @@ export type Effect =
   | { kind: 'search'; n: number; filter: TargetFilter; dest: 'hand' | 'battlefield'; tapped: boolean; searcher?: { slot: number } }
   /** Equip: attach the ability's source to the target. */
   | { kind: 'attach'; to: Affected }
+  /** Chrome Mox: "you may exile a nonartifact, nonland card from your hand" (remembered by the source: imprint). */
+  | { kind: 'exileFromHand'; filter: TargetFilter }
   /**
    * Thorin: "attach any number of target Equipment you control to target creature you control. When one or more
    * Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one
@@ -531,8 +545,13 @@ export interface AbilitySpec {
   effects: Effect[];
   /** "you may …": the controller decides on resolution whether it happens. */
   optional?: boolean;
-  /** "if you gained life this turn" (gained: 1), "if you've gained 3 or more life", "if you gained and lost life". */
-  condition?: { gained?: number; lost?: boolean };
+  /** Mana Vault: "you may pay {4}. If you do, …": optional, and saying yes pays this mana. */
+  mayPay?: string;
+  /**
+   * "if you gained life this turn" (gained: 1), "if you've gained 3 or more life", "if you gained and lost life";
+   * Mana Vault: "if this artifact is tapped" (tapped).
+   */
+  condition?: { gained?: number; lost?: boolean; tapped?: boolean };
   /** A Saga's chapter ability: its Saga isn't sacrificed while it waits or is on the stack. */
   chapter?: number;
   /**
@@ -1104,6 +1123,13 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
       kind: 'addCounters', counter: m[2] as CounterKind, n: toAmount(m[1]), to: 'self',
     }));
     scan(new RegExp(`(?:^|[.,] *|then )sacrifice ${SELF}(?=\\.|$)`, 'gi'), () => ({ kind: 'sacrificeSelf' }));
+    // Chrome Mox: "Imprint — When this artifact enters, you may exile a nonartifact, nonland card from your hand."
+    scan(/(?:^|[.,] *)(?:you )?exile an? ([a-z, -]+?) card from your hand(?=\.|$)/gi, (m) => {
+      const filter = cardWordsFilter(m[1]);
+      return filter && { kind: 'exileFromHand', filter };
+    });
+    // Grim Monolith: "{4}: Untap this artifact."
+    scan(new RegExp(`(?:^|[.,] *|then )untap ${SELF}(?=\\.|$)`, 'gi'), () => ({ kind: 'tap', untap: true, to: 'self' }));
     // Iron Man Armor: "When this Equipment enters, attach it to target creature you control."
     scan(new RegExp(`\\battach (?:it|${SELF}) to (${TARGET})${END}`, 'gi'), (m) => {
       const to = slotFor(m[1], (spec) => spec.kind === 'creature' && spec.filter.controller === 'you');
@@ -1444,6 +1470,7 @@ export const parseEffects = (card: Card): Effect[] => spellSpec(card).effects;
 // ---------- Triggered abilities ----------
 
 export type ObjectEvent = 'enters' | 'dies' | 'attacks' | 'combatDamage';
+export type StepEvent = 'upkeep' | 'draw' | 'endStep' | 'beginCombat';
 
 /** What makes a triggered ability trigger. */
 export type TriggerEvent =
@@ -1452,7 +1479,7 @@ export type TriggerEvent =
   /** A matching permanent does ("Whenever another creature you control enters", landfall). */
   | { on: ObjectEvent; self: false; which: Selector; another: boolean }
   /** At the beginning of an upkeep or end step: yours, each one, or each opponent's. */
-  | { on: 'upkeep' | 'endStep' | 'beginCombat'; whose: 'you' | 'each' | 'opponent' }
+  | { on: StepEvent; whose: 'you' | 'each' | 'opponent' }
   /** A Saga's chapter: lore counters reach `n` ("I — …", "II, III — …"). */
   | { on: 'chapter'; n: number }
   /** Whenever you cast a spell matching the card words ("noncreature", "instant or sorcery"). */
@@ -1525,6 +1552,18 @@ function triggerAbility(text: string, name: string, self: boolean): AbilitySpec 
     const cost = reflexive[1] ? { discard: 1 } : { mana: reflexive[2], ...(reflexive[3] ? { life: Number(reflexive[3]) } : {}) };
     return { targets: [], effects: [{ kind: 'reflexive', cost, then }] };
   }
+  // Mana Vault: "you may pay {4}. If you do, untap this artifact."
+  const mayPay = text.match(/^you may pay ((?:\{(?:\d+|[WUBRGC])\})+)\. If you do, (.+)$/i);
+  if (mayPay) {
+    const then = triggerBody(mayPay[2], name, self);
+    return then.effects.length && !then.optional ? { ...then, optional: true, mayPay: mayPay[1] } : NO_EFFECT;
+  }
+  // Mana Vault: "if this artifact is tapped, it deals 1 damage to you." (checked as it triggers and resolves)
+  const ifTapped = self && text.match(new RegExp(`^if (?:${selfWords(name).map(escapeRe).join('|')}) is tapped, (.+)$`, 'i'));
+  if (ifTapped) {
+    const then = triggerBody(ifTapped[1], name, self);
+    return then.effects.length ? { ...then, condition: { ...then.condition, tapped: true } } : NO_EFFECT;
+  }
   // "choose one — • … • …", "choose up to one —", "choose one or both —".
   const modal = text.match(/^choose (one|up to one|one or both|one or more|two) — (• .+)$/i);
   if (modal) {
@@ -1558,7 +1597,9 @@ function triggerBody(text: string, name: string, self: boolean): AbilitySpec {
   const checked = body.replace(SURVEIL_TO_HAND, '');
   if (UNSUPPORTED.test(checked) || (!self && /\bits?\b/i.test(checked))) return NO_EFFECT;
   const spec = parseAbilityText(body, self ? name : undefined);
-  return optional && spec.effects.length ? { ...spec, optional } : spec;
+  // Chrome Mox: choosing no card is the "may".
+  const choosesNone = spec.effects.length === 1 && spec.effects[0].kind === 'exileFromHand';
+  return optional && spec.effects.length && !choosesNone ? { ...spec, optional } : spec;
 }
 
 /**
@@ -1687,11 +1728,12 @@ export function triggersOf(card: Card): TriggerSpec[] {
       out.push({ event: { on: 'beginCombat', whose: 'you' }, ability: triggerAbility(combat[1], name, true) });
       continue;
     }
-    const step = line.match(/^At the beginning of (your|each|each player's|each opponent's|the) (upkeep|end step), (.+)$/i);
+    const step = line.match(/^At the beginning of (your|each|each player's|each opponent's|the) (upkeep|draw step|end step), (.+)$/i);
     if (step) {
       const w = step[1].toLowerCase();
       const whose = w === 'your' ? 'you' : w === "each opponent's" ? 'opponent' : 'each';
-      out.push({ event: { on: step[2].toLowerCase() === 'upkeep' ? 'upkeep' : 'endStep', whose }, ability: triggerAbility(step[3], name, true) });
+      const on = ({ upkeep: 'upkeep', 'draw step': 'draw', 'end step': 'endStep' } as const)[step[2].toLowerCase() as 'upkeep' | 'draw step' | 'end step'];
+      out.push({ event: { on, whose }, ability: triggerAbility(step[3], name, true) });
       continue;
     }
 
@@ -1885,6 +1927,35 @@ export function doublesEquippedTriggers(card: Card): boolean {
 }
 
 /** Leylines: "If this card is in your opening hand, you may begin the game with it on the battlefield." */
+/**
+ * Mana that depends on the game: Chrome Mox "{T}: Add one mana of any of the exiled card's colors." (imprinted), Mox
+ * Amber "{T}: Add one mana of any color among legendary creatures and planeswalkers you control." (legends),
+ * Gemstone Caverns (luck: any color with a luck counter, otherwise {C}).
+ */
+export function stateMana(card: Card): 'imprinted' | 'legends' | 'luck' | null {
+  const text = frontText(card);
+  // Gemstone Caverns: "{T}: Add {C}. If Gemstone Caverns has a luck counter on it, instead add one mana of any color."
+  if (/^\{T\}: Add \{C\}\. If (?:this land|.+) has a luck counter on it, instead add one mana of any color\.$/m.test(text)) return 'luck';
+  if (/^\{T\}: Add one mana of any of the exiled card's colors\.$/m.test(text)) return 'imprinted';
+  if (/^\{T\}: Add one mana of any color among legendary creatures and planeswalkers you control\.$/m.test(text)) return 'legends';
+  return null;
+}
+
+/** Mox Diamond: "If this artifact would enter, you may discard a land card instead. If you do, put this artifact onto the battlefield. If you don't, put it into its owner's graveyard." */
+export const discardsLandInstead = (card: Card) =>
+  /^If this (?:artifact|permanent) would enter(?: the battlefield)?, you may discard a land card instead\. If you do, put (?:this artifact|it) onto the battlefield\. If you don't, put it into its owner's graveyard\.$/m.test(frontText(card));
+
+/** Grim Monolith, Mana Vault: "This artifact doesn't untap during your untap step." */
+export const doesntUntap = (card: Card) =>
+  new RegExp(`^(?:${selfWords(card.name).map(escapeRe).join('|')}) doesn't untap during (?:your|its controller's) untap step\\.$`, 'im').test(frontText(card));
+
+/**
+ * Gemstone Caverns: "If this card is in your opening hand and you're not the starting player, you may begin the game
+ * with Gemstone Caverns on the battlefield with a luck counter on it. If you do, exile a card from your hand."
+ */
+export const beginsWithLuck = (card: Card) =>
+  /^If this card is in your opening hand and you're not the starting player, you may begin the game with (?:this land|.+) on the battlefield with a luck counter on it\. If you do, exile a card from your hand\.$/m.test(frontText(card));
+
 export const beginsOnBattlefield = (card: Card) =>
   /^If this card is in your opening hand, you may begin the game with it on the battlefield\.$/m.test(frontText(card));
 

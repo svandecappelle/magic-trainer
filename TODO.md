@@ -246,7 +246,16 @@ chapter; Urza's Saga's "This Saga gains …", its Construct tokens "+1/+1 for ea
 land), Starting Town ({C} free, a color for 1 life; untapped on its controller's first three turns), the bot channels
 to remove something.
 
+Mana rocks: Grim Monolith, Basalt Monolith and Mana Vault ("doesn't untap during your untap step", "{4}: Untap this
+artifact", "you may pay {4}. If you do, untap", draw step triggers "if this artifact is tapped"), Mox Diamond (discard
+a land card as it enters, or it goes to the graveyard), Chrome Mox (imprint, the exiled card's colors), Mox Amber
+(colors of legendary creatures and planeswalkers), Mox Opal (metalcraft), Gemstone Caverns (asked before the first
+turn to the player not starting; luck counter, any color). The bot casts Mox Diamond with a spare land, Chrome Mox
+with a colored card to exile, and never pays Mana Vault's upkeep untap.
+
 Left "not simulated" or found on the way:
+- [ ] Mox Diamond put onto the battlefield by an effect (Urza's Saga's search) discards the first land card in the
+  hand without asking which
 - [ ] Saga chapters still not simulated: transforming ("Exile this Saga, then return it … transformed": Fable of the
   Mirror-Breaker, Kumano Faces Kakkazan, The Legend of Roku), tokens with a triggered ability (Fable's Goblin
   Shaman), reflexive "When you do" (Awaken the Honored Dead III, The Last Ronin II), The Misty Mountains Cold's
@@ -256,12 +265,7 @@ Left "not simulated" or found on the way:
 - [ ] Pain lands' "This land deals 1 damage to you." (Karplusan Forest) is still ignored
 
 Still open, most played first:
-- [ ] Mana Vault (12 decks), Grim Monolith (6): "doesn't untap during your untap step", "you may pay {4}. If you do,
-  untap", draw-step damage if tapped, "{4}: Untap this artifact"
-- [ ] Mox Diamond (11): "discard a land card instead" replacement; Chrome Mox (9): imprint and its mana
-- [ ] Gemstone Caverns (11): opening-hand rule (Leylines now begin on the battlefield)
 - [ ] Hexing Squelcher (9): "Ward—Pay 2 life", "Spells you control can't be countered", granted ward
-- [ ] Mox Amber (9): mana of the colors among legends you control
 - [ ] Teferi, Time Raveler (7): opponents cast only at sorcery speed; sorceries with flash
 - [ ] Pithing Needle (7): choose a card name, its activated abilities can't be activated
 - [ ] Quantum Riddler (6): draw replacement, Warp; Gene Pollinator (6) and Springleaf Drum (5): "tap an untapped

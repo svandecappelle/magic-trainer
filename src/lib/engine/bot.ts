@@ -5,7 +5,7 @@ import {
 } from './engine';
 import {
   activatedOf, auraTarget, castInfo, castSpec, creatureValue, modeSets, faceCard, findPayment, hasInstantSpeed, isAdventure, isPlaneswalker, isSaga, isToken, staticsOf, hasKeyword, isCreature, isInstantOrSorcery, isLandCard, manaColors,
-  parseCost, spellSpec, type AbilitySpec, type Amount, type Effect,
+  discardsLandInstead, parseCost, spellSpec, stateMana, type AbilitySpec, type Amount, type Effect,
 } from './rules';
 import type { Card } from '../../types';
 
@@ -248,7 +248,12 @@ interface Candidate {
 function candidates(s: GameState, me: PlayerId): Candidate[] {
   const ps = s.players[me];
   const out: Candidate[] = [];
+  // Mox Diamond: only with a land to discard that isn't this turn's land drop.
+  const lands = ps.hand.filter((c) => isLandCard(c.card)).length;
   for (const inst of [...ps.hand, ...ps.graveyard, ...ps.exile]) {
+    if (discardsLandInstead(inst.card) && lands < (ps.landPlayed ? 1 : 2)) continue;
+    // Chrome Mox: only with a colored nonartifact, nonland card to exile.
+    if (stateMana(inst.card) === 'imprinted' && !ps.hand.some((c) => c !== inst && imprintable(c.card))) continue;
     for (const opt of castOptions(s, me, inst.iid)) {
       const modal = castInfo(inst.card, opt.face).modal;
       for (const modes of modal ? modeSets(modal) : [undefined]) {
@@ -298,6 +303,9 @@ function chooseCycle(s: GameState, me: PlayerId): Action | null {
   }
   return null;
 }
+
+/** A card Chrome Mox can exile for mana: nonartifact, nonland, with a color. */
+const imprintable = (card: Card) => !isLandCard(card) && !/\bArtifact\b/.test(card.typeLine) && card.colors.length > 0;
 
 function castable(s: GameState, me: PlayerId) {
   return s.players[me].hand
@@ -881,6 +889,20 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
         options.sort((a, b) => cardWorth(b.card) - cardWorth(a.card));
         return { kind: 'cards', iids: options.slice(0, choice.max).map((c) => c.iid) };
       }
+      // Gemstone Caverns: a spare land, or the card worth least with a full hand.
+      if (choice.purpose === 'gemstoneCaverns') {
+        const hand = s.players[choice.player].hand;
+        const lands = options.filter((c) => isLandCard(c.card));
+        const spare = lands.length >= 3 ? lands[0] : hand.length >= 7 ? [...options].sort((a, b) => cardWorth(a.card) - cardWorth(b.card))[0] : undefined;
+        return { kind: 'cards', iids: !safe && spare ? [spare.iid] : [] };
+      }
+      // Chrome Mox: the colored card worth least.
+      if (choice.purpose === 'exileFromHand') {
+        const colored = options.filter((c) => imprintable(c.card)).sort((a, b) => cardWorth(a.card) - cardWorth(b.card));
+        return { kind: 'cards', iids: safe ? [] : colored.slice(0, 1).map((c) => c.iid) };
+      }
+      // Mox Diamond: a land, always (it goes to the graveyard otherwise).
+      if (choice.purpose === 'discardLandInstead') return { kind: 'cards', iids: options.slice(0, 1).map((c) => c.iid) };
       if (!safe && choice.purpose === 'reflexiveCost') {
         // Inti: a spare land, when the "When you do" part has something to target.
         const hand = s.players[choice.player].hand;
@@ -962,6 +984,11 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
       if (choice.purpose === 'costChoice') {
         const life = String(choice.params?.no).startsWith('life:');
         return { kind: 'yesNo', yes: safe || !life || s.players[choice.player].life <= 10 };
+      }
+      // Mana Vault: paying {4} in the upkeep to untap a source of {C}{C}{C} loses mana this turn; anything else is used.
+      if (choice.purpose === 'mayPay') {
+        const effects = s.resolving?.item.ability?.effects ?? [];
+        return { kind: 'yesNo', yes: !safe && !effects.every((e) => e.kind === 'tap' && e.untap && e.to === 'self') };
       }
       if (choice.purpose === 'reflexivePay') return { kind: 'yesNo', yes: !safe && reflexiveUseful(s, choice.player) && s.players[choice.player].life > Number(choice.params?.life ?? 0) + 5 };
       return { kind: 'yesNo', yes: !safe && (choice.purpose === 'payOrCounter' || choice.purpose === 'optional') };

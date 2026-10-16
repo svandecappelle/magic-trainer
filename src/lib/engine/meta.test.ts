@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
-import { actor, apply, canTapForMana, castOptions, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
+import { actor, apply, canTapForMana, type Answer, castOptions, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
 import { botAction } from './bot';
 import { activatedOf, castInfo, castSpec, finalChapter, manaUnits, parseAbilityText, spellSpec, triggersOf } from './rules';
 
@@ -1220,5 +1220,158 @@ describe('reflexive triggers ("When you do")', () => {
     expect(botAction(s)).toEqual({ type: 'choose', answer: { kind: 'cards', iids: ['h0'] } });
     s = choose(s, { kind: 'cards', iids: ['h0'] });
     expect(botAction(s)).toEqual({ type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] } });
+  });
+});
+
+describe('Mana rocks: Grim Monolith, Mana Vault, Mox Diamond', () => {
+  const grim = card({ name: 'Grim Monolith', typeLine: 'Artifact', manaCost: '{2}', cmc: 2, oracleText: 'This artifact doesn\'t untap during your untap step.\n{T}: Add {C}{C}{C}.\n{4}: Untap this artifact.' });
+  const vault = card({
+    name: 'Mana Vault', typeLine: 'Artifact', manaCost: '{1}', cmc: 1,
+    oracleText: 'This artifact doesn\'t untap during your untap step.\nAt the beginning of your upkeep, you may pay {4}. If you do, untap this artifact.\nAt the beginning of your draw step, if this artifact is tapped, it deals 1 damage to you.\n{T}: Add {C}{C}{C}.',
+  });
+  const moxDiamond = card({
+    name: 'Mox Diamond', typeLine: 'Artifact', manaCost: '{0}',
+    oracleText: 'If this artifact would enter, you may discard a land card instead. If you do, put this artifact onto the battlefield. If you don\'t, put it into its owner\'s graveyard.\n{T}: Add one mana of any color.',
+  });
+  /** Passes (both players, no attacks) until player 0's next turn reaches its first main phase; `answer` answers player 0's choices. */
+  const nextTurn = (s: GameState, answer: (s: GameState) => Answer) => {
+    const turn = s.turn;
+    for (let i = 0; i < 80 && s.winner === null && !(s.turn === turn + 2 && s.step === 'main1' && !s.stack.length && !s.triggered?.length && !s.pending); i++) {
+      s = s.pending ? apply(s, { type: 'choose', answer: s.pending.choice.player === 0 ? answer(s) : { kind: 'yesNo', yes: false } })
+        : !s.priority && s.step === 'attack' ? apply(s, { type: 'declareAttackers', attackers: [] })
+        : apply(s, { type: 'pass' });
+    }
+    return s;
+  };
+
+  it('Grim Monolith stays tapped and untaps for {4}', () => {
+    let s = board({ mana: 4, mine: [grim] });
+    s = apply(s, { type: 'tapForMana', iid: iidOf(s, 'Grim Monolith') });
+    s = nextTurn(s, () => ({ kind: 'yesNo', yes: false }));
+    expect(perm(s, 'Grim Monolith')!.tapped).toBe(true);
+    expect(s.battlefield.filter((p) => p.card.name === 'Swamp' && p.tapped)).toHaveLength(0);
+    const index = activatedOf(grim).findIndex((a) => a.ability.effects.some((e) => e.kind === 'tap'));
+    s = settle(apply(s, { type: 'activate', iid: iidOf(s, 'Grim Monolith'), index }));
+    for (let i = 0; i < 4 && s.stack.length; i++) s = settle(apply(s, { type: 'pass' }));
+    expect(perm(s, 'Grim Monolith')!.tapped).toBe(false);
+    expect(s.battlefield.filter((p) => p.card.name === 'Swamp' && p.tapped)).toHaveLength(4);
+  });
+
+  it('Mana Vault: pay {4} in the upkeep to untap it, otherwise 1 damage in the draw step', () => {
+    let s = board({ mana: 4, mine: [vault] });
+    s = apply(s, { type: 'tapForMana', iid: iidOf(s, 'Mana Vault') });
+    const asked: string[] = [];
+    s = nextTurn(s, (t) => {
+      asked.push(`${t.pending!.choice.purpose}:${t.pending!.choice.params?.cost}`);
+      return { kind: 'yesNo', yes: false };
+    });
+    expect(asked).toEqual(['mayPay:{4}']);
+    expect(perm(s, 'Mana Vault')!.tapped).toBe(true);
+    expect(s.players[0].life).toBe(19);
+    // This time it pays: untapped, no damage, the four Swamps tapped.
+    s = nextTurn(s, () => ({ kind: 'yesNo', yes: true }));
+    expect(perm(s, 'Mana Vault')!.tapped).toBe(false);
+    expect(s.players[0].life).toBe(19);
+    expect(s.battlefield.filter((p) => p.card.name === 'Swamp' && p.tapped)).toHaveLength(4);
+    // Untapped: the upkeep trigger still asks (declined), no damage.
+    s = nextTurn(s, () => ({ kind: 'yesNo', yes: false }));
+    expect(s.players[0].life).toBe(19);
+  });
+
+  it('Mana Vault: not asked to pay without {4}', () => {
+    let s = board({ mana: 2, mine: [vault] });
+    s = apply(s, { type: 'tapForMana', iid: iidOf(s, 'Mana Vault') });
+    s = nextTurn(s, () => { throw new Error('nothing to ask'); });
+    expect(s.players[0].life).toBe(19);
+  });
+
+  it('Mox Diamond enters only by discarding a land card', () => {
+    let s = board({ hand: [moxDiamond, swamp, spell('Shock', '{R}', 'Shock deals 2 damage to any target.')] });
+    s = settle(apply(s, { type: 'cast', iid: 'h0' }));
+    expect(s.pending?.choice).toMatchObject({ kind: 'cards', purpose: 'discardLandInstead', min: 0, max: 1 });
+    expect(s.pending?.choice.kind === 'cards' && s.pending.choice.options.map((c) => c.iid)).toEqual(['h1']);
+    expect(botAction(s)).toEqual({ type: 'choose', answer: { kind: 'cards', iids: ['h1'] } });
+    s = apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['h1'] } });
+    expect(perm(s, 'Mox Diamond')).toBeDefined();
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toEqual(['Swamp']);
+
+    // Declined, or no land card: it goes to the graveyard.
+    s = board({ hand: [moxDiamond, swamp] });
+    s = settle(apply(s, { type: 'cast', iid: 'h0' }));
+    s = apply(s, { type: 'choose', answer: { kind: 'cards', iids: [] } });
+    expect(perm(s, 'Mox Diamond')).toBeUndefined();
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toEqual(['Mox Diamond']);
+    s = board({ hand: [moxDiamond] });
+    s = settle(apply(s, { type: 'cast', iid: 'h0' }));
+    expect(s.pending).toBeNull();
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toEqual(['Mox Diamond']);
+  });
+});
+
+describe('Moxen and Gemstone Caverns', () => {
+  const chromeMox = card({
+    name: 'Chrome Mox', typeLine: 'Artifact', manaCost: '{0}',
+    oracleText: 'Imprint — When this artifact enters, you may exile a nonartifact, nonland card from your hand.\n{T}: Add one mana of any of the exiled card\'s colors.',
+  });
+  const moxAmber = card({ name: 'Mox Amber', typeLine: 'Legendary Artifact', manaCost: '{0}', oracleText: '{T}: Add one mana of any color among legendary creatures and planeswalkers you control.' });
+  const moxOpal = card({ name: 'Mox Opal', typeLine: 'Legendary Artifact', manaCost: '{0}', keywords: ['Metalcraft'], oracleText: 'Metalcraft — {T}: Add one mana of any color. Activate only if you control three or more artifacts.' });
+  const caverns = card({
+    name: 'Gemstone Caverns', typeLine: 'Legendary Land',
+    oracleText: 'If this card is in your opening hand and you\'re not the starting player, you may begin the game with Gemstone Caverns on the battlefield with a luck counter on it. If you do, exile a card from your hand.\n{T}: Add {C}. If Gemstone Caverns has a luck counter on it, instead add one mana of any color.',
+  });
+  const bolt = card({ name: 'Lightning Bolt', typeLine: 'Instant', manaCost: '{R}', cmc: 1, colors: ['R'], oracleText: 'Lightning Bolt deals 3 damage to any target.' });
+  const ornithopter = card({ name: 'Ornithopter', typeLine: 'Artifact Creature — Thopter', manaCost: '{0}', power: '0', toughness: '2', oracleText: 'Flying' });
+
+  it('Chrome Mox makes the colors of the card it exiled', () => {
+    let s = board({ hand: [chromeMox, bolt, swamp, ornithopter] });
+    s = settle(apply(s, { type: 'cast', iid: 'h0' }));
+    for (let i = 0; i < 4 && !s.pending && (s.stack.length || s.triggered?.length); i++) s = settle(apply(s, { type: 'pass' }));
+    // Only the nonartifact, nonland card can be exiled; no yes/no before.
+    expect(s.pending?.choice).toMatchObject({ kind: 'cards', purpose: 'exileFromHand', min: 0, max: 1 });
+    expect(s.pending?.choice.kind === 'cards' && s.pending.choice.options.map((c) => c.card.name)).toEqual(['Lightning Bolt']);
+    expect(botAction(s)).toEqual({ type: 'choose', answer: { kind: 'cards', iids: ['h1'] } });
+    s = apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['h1'] } });
+    expect(s.players[0].exile.map((c) => c.card.name)).toEqual(['Lightning Bolt']);
+    expect(unitsOf(s, perm(s, 'Chrome Mox')!)).toEqual([['R']]);
+    // Nothing exiled: no mana.
+    s = board({ mine: [chromeMox] });
+    expect(canTapForMana(s, perm(s, 'Chrome Mox')!)).toBe(false);
+  });
+
+  it('Mox Amber makes the colors of legendary creatures and planeswalkers', () => {
+    const legend = creature('Ragavan', 2, 1, { typeLine: 'Legendary Creature — Monkey Pirate', colors: ['R'] });
+    const walker = card({ name: 'Teferi', typeLine: 'Legendary Planeswalker — Teferi', colors: ['W', 'U'], loyalty: '4' });
+    let s = board({ mine: [moxAmber] });
+    expect(canTapForMana(s, perm(s, 'Mox Amber')!)).toBe(false);
+    s = board({ mine: [moxAmber, legend, walker, creature('Bear', 2, 2, { colors: ['G'] })], theirs: [creature('Their Legend', 1, 1, { typeLine: 'Legendary Creature — Elf', colors: ['B'] })] });
+    expect(unitsOf(s, perm(s, 'Mox Amber')!)).toEqual([['R', 'W', 'U']]);
+  });
+
+  it('Mox Opal makes mana only with three or more artifacts', () => {
+    let s = board({ mine: [moxOpal, ornithopter] });
+    expect(canTapForMana(s, perm(s, 'Mox Opal')!)).toBe(false);
+    s = board({ mine: [moxOpal, ornithopter, chromeMox] });
+    expect(unitsOf(s, perm(s, 'Mox Opal')!)).toEqual([['W', 'U', 'B', 'R', 'G']]);
+  });
+
+  it('Gemstone Caverns begins on the battlefield for the player going second', () => {
+    const deck = (land: Card) => [...Array(10).fill(caverns), ...Array(10).fill(land)];
+    let s = newGame({ decks: [deck(swamp), deck(island)], names: ['Me', 'Bot'], first: 0, rng: () => 0.5 });
+    s = apply(s, { type: 'keep', bottom: [] });
+    s = apply(s, { type: 'keep', bottom: [] });
+    // Only the player not starting is asked.
+    expect(s.pending?.choice).toMatchObject({ kind: 'cards', player: 1, purpose: 'gemstoneCaverns', min: 0, max: 1 });
+    const hand = s.players[1].hand.length;
+    const exiled = s.pending!.choice.kind === 'cards' ? s.pending!.choice.options[0].iid : '';
+    s = apply(s, { type: 'choose', answer: { kind: 'cards', iids: [exiled] } });
+    expect(s.players[1].hand).toHaveLength(hand - 2);
+    expect(s.players[1].exile.map((c) => c.iid)).toEqual([exiled]);
+    const mine = s.battlefield.filter((p) => p.card.name === 'Gemstone Caverns');
+    expect(mine.map((p) => [p.controller, p.counters.luck])).toEqual([[1, 1]]);
+    expect(unitsOf(s, mine[0])).toEqual([['W', 'U', 'B', 'R', 'G']]);
+    expect(s.turn).toBe(1);
+    // Without a luck counter: {C}.
+    s = board({ mine: [caverns] });
+    expect(unitsOf(s, perm(s, 'Gemstone Caverns')!)).toEqual([['C']]);
   });
 });
