@@ -68,7 +68,7 @@ OK       Germinate Recruits {2}{W} — Instant
       spell → token
 OK       Get Lost {1}{W} — Instant
   ✓ Destroy target creature, enchantment, or planeswalker. Its controller…
-      spell → destroy (1 target)
+      spell → destroy+token (1 target)
 OK       Haliya, Guided by Light {2}{W} — Legendary Creature — Human Soldier
   ✓ Whenever Haliya or another creature or artifact you control enters, y…
       trigger (enters) → gainLife

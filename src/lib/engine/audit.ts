@@ -1,7 +1,7 @@
 import type { Card } from '../../types';
 import {
   activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, entersCounters, entersTappedRule, beginsWithLuck, discardsLandInstead, manaConditions, stateMana, doesntUntap, frontText, gameRulesOf, isInstantOrSorcery,
-  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, reconfiguresEnchanted, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, returnsExiledWhenLeaving, fadingOf, type AbilitySpec,
+  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, reconfiguresEnchanted, entersPrepared, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, returnsExiledWhenLeaving, fadingOf, type AbilitySpec,
 } from './rules';
 
 /**
@@ -47,6 +47,7 @@ function effectsText(spec: AbilitySpec): string | null {
 
 /** Keywords on a line ("Flying, lifelink", "Ward {2}", "Kicker {1}{U}"), or null if it isn't a keyword line. */
 function keywordLine(card: Card, line: string, one: Card): LineReport | null {
+  if (/^Waterbend \{\d+\}: /.test(line)) return null; // an activated ability
   // A static ability starting like a keyword ("Double all damage …", Scryfall's keyword "Double").
   if (staticsOf(one).length) return null;
   const known = (card.keywords ?? []).map((k) => k.toLowerCase());
@@ -68,6 +69,7 @@ function keywordLine(card: Card, line: string, one: Card): LineReport | null {
     if (k === 'convoke') return info.convoke;
     if (k === 'delve') return info.delve;
     if (k === 'affinity') return !!info.affinity;
+    if (k === 'waterbend') return activatedOf(one).some((a) => a.cost.waterbend);
     if (k === 'ascend') return triggersOf(card).some((tr) => tr.ability.effects.some((x) => x.kind === 'copyNewTokens'));
     if (k === 'mobilize') return triggersOf(one).length > 0;
     if (k === 'storied') return isStoried(one);
@@ -127,6 +129,7 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   if (choosesBasicType(card) && /^As this land enters, choose a basic land type|^This land is the chosen type/.test(line)) {
     return { text: line, status: 'ok', how: 'chooses a basic land type (its mana); pay 2 life or it enters tapped' };
   }
+  if (entersPrepared(one)) return { text: line, status: 'ok', how: 'enters prepared: a copy of its other face\'s spell can be cast once' };
   const crew = reconfiguresEnchanted(one);
   if (crew !== null) return { text: line, status: 'ok', how: `the enchanted permanent is a noncreature Vehicle artifact with crew ${crew}` };
   if (blocksOnlyFlyers(one)) return { text: line, status: 'ok', how: 'blocks only creatures with flying' };

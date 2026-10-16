@@ -478,7 +478,11 @@ export type Effect =
   | { kind: 'sacrificeSelf' }
   /** Create N tokens under the controller's control. */
   /** `attacking`: "tapped and attacking"; `sacrificeAtEnd`: "Sacrifice them at the beginning of the next end step". */
-  | { kind: 'token'; n: Amount; token: TokenSpec; attacking?: boolean; sacrificeAtEnd?: boolean }
+  /** `forTargetController`: Get Lost's "Its controller creates two Map tokens" (the target's controller gets them). */
+  | { kind: 'token'; n: Amount; token: TokenSpec; attacking?: boolean; sacrificeAtEnd?: boolean; forTargetController?: { slot: number } }
+  // Map tokens: "Target creature you control explores." (a land on top goes to the hand; otherwise a +1/+1 counter, and
+  // the card may go to the graveyard).
+  | { kind: 'explore'; to: Affected }
   /** A card in a graveyard goes to its owner's hand, or onto the battlefield under the controller's control. */
   // Pre-War Formalwear: "… to the battlefield and attach this Equipment to it".
   | { kind: 'returnCard'; to: Affected; dest: 'hand' | 'battlefield'; attachSource?: true }
@@ -588,6 +592,10 @@ export type Effect =
   | { kind: 'plot'; to: Affected }
   // Malcolm: "If there are four or more chorus counters on Malcolm, you may cast the discarded card without paying its mana cost."
   | { kind: 'castDiscarded'; minCounters: number; counter: CounterKind }
+  // "Transform Aang.": the permanent turns to its other face.
+  | { kind: 'transform' }
+  // All Aboard: "Exile target non-Pilot creature you control, then return that card to the battlefield under its owner's control."
+  | { kind: 'flicker'; to: Affected }
   /** Fog: no combat damage this turn. */
   | { kind: 'preventCombat' }
   /** "Prevent the next N damage that would be dealt to any target this turn." */
@@ -610,6 +618,7 @@ export const PREDEFINED_TOKENS: Record<string, TokenSpec> = {
   treasure: { name: 'Treasure', typeLine: 'Token Artifact — Treasure', colors: [], keywords: [], oracleText: '{T}, Sacrifice this artifact: Add one mana of any color.' },
   clue: { name: 'Clue', typeLine: 'Token Artifact — Clue', colors: [], keywords: [], oracleText: '{2}, Sacrifice this artifact: Draw a card.' },
   food: { name: 'Food', typeLine: 'Token Artifact — Food', colors: [], keywords: [], oracleText: '{2}, {T}, Sacrifice this artifact: You gain 3 life.' },
+  map: { name: 'Map', typeLine: 'Token Artifact — Map', colors: [], keywords: [], oracleText: '{1}, {T}, Sacrifice this artifact: Target creature you control explores. Activate only as a sorcery.' },
 };
 
 /** Is the card a token (created by the engine)? */
@@ -775,6 +784,8 @@ export function parseTargetPhrase(phrase: string): TargetSpec | null {
     else if (w.startsWith('non') && COLOR_WORDS[w.slice(3).replace('-', '')]) (filter.nonColors ??= []).push(COLOR_WORDS[w.slice(3).replace('-', '')]);
     else if (w.startsWith('non') && CARD_TYPES.includes(w.slice(3).replace('-', '') as CardType)) (filter.nonTypes ??= []).push(w.slice(3).replace('-', '') as CardType);
     else if (CARD_TYPES.includes(w as CardType)) adjectiveTypes.push(w as CardType); // "creature spell", "instant or sorcery spell"
+    // All Aboard: "non-Pilot creature" (a capitalized subtype; not "non-outlaw", a group of types).
+    else if (/^non-[a-z]+$/.test(w) && phrase.includes(`non-${w[4].toUpperCase()}${w.slice(5)}`)) (filter.nonSubtypes ??= []).push(w.slice(4));
     else return null;
   }
   if (!nouns.size) return null;
@@ -1014,7 +1025,7 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     return which && { kind: 'pumpAll', power: 0, toughness: 0, keywords: keywordList(m[2]), which };
   });
   // Not Phelia's "exile … . At the beginning of the next end step, return that card" (flickerAtEnd).
-  scan(new RegExp(`\\b(destroy|exile) (${TARGET})${END}(?!\\. At the beginning of the next end step, return that card|\\. It becomes plotted)`, 'gi'), (m) => {
+  scan(new RegExp(`\\b(destroy|exile) (${TARGET})${END}(?!\\. At the beginning of the next end step, return that card|\\. It becomes plotted|, then return that card to the battlefield)`, 'gi'), (m) => {
     const to = slotFor(m[2], (spec) => spec.kind === 'creature' || spec.kind === 'permanent' || (spec.kind === 'card' && m[1].toLowerCase() === 'exile'));
     return to && { kind: 'destroy', exile: m[1].toLowerCase() === 'exile', to };
   });
@@ -1027,8 +1038,9 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     const which = selector(m[2]);
     return which && { kind: 'destroyAll', exile: m[1].toLowerCase() === 'exile', which };
   });
-  scan(new RegExp(`\\bput (${AMOUNT}) ([+-]1\\/[+-]1) counters? on each ((?:other )?creature(?: you control| you don't control| your opponents control)?)${END}`, 'gi'), (m) => {
-    const which = selector(m[3].replace(/^(other )?creature/i, (_, o) => `${o ?? ''}creatures`));
+  // Aang and La: "on each tapped creature you control".
+  scan(new RegExp(`\\bput (${AMOUNT}) ([+-]1\\/[+-]1) counters? on each ((?:other )?(?:tapped |untapped )?creature(?: you control| you don't control| your opponents control)?)${END}`, 'gi'), (m) => {
+    const which = selector(m[3].replace(/\bcreature\b/i, 'creatures'));
     return which && { kind: 'addCountersAll', counter: m[2] as CounterKind, n: toAmount(m[1]), which, other: /^other /i.test(m[3]) };
   });
   // Poison: "Target player gets two poison counters", "each opponent gets a poison counter".
@@ -1054,6 +1066,10 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
   scan(new RegExp(`\\b[Cc]reate a token that's a copy of (${TARGET})(?=\\.|,| and |$)`, 'g'), (m) => {
     const to = slotFor(m[1], (spec) => spec.kind === 'creature' || spec.kind === 'permanent');
     return to && { kind: 'tokenCopy', to };
+  });
+  scan(new RegExp(`\\bexile (${TARGET}), then return that card to the battlefield under its owner's control(?=\\.)`, 'gi'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'creature' || spec.kind === 'permanent');
+    return to && { kind: 'flicker', to };
   });
   scan(new RegExp(`\\bairbend (${TARGET})(?=\\.)`, 'gi'), (m) => {
     const to = slotFor(m[1], (spec) => spec.kind === 'creature' || spec.kind === 'permanent' || spec.kind === 'spell' || spec.kind === 'spellOrPermanent');
@@ -1167,6 +1183,16 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
   scan(new RegExp(TRADE_FOR_CARD.source, 'g'), (m) => ({
     kind: 'tradeForCard', sacrifice: { kind: m[1] === 'creature' ? 'creature' : 'permanent', filter: { types: [m[1] as CardType], controller: 'you' } },
   }));
+  // Get Lost: "Its controller creates two Map tokens."
+  scan(/(?:^|[.] *)Its controller creates (\w+) Map tokens?(?=\.)/g, (m) => {
+    const n = toNumber(m[1]);
+    if (targets.length !== 1 || (targets[0].kind !== 'creature' && targets[0].kind !== 'permanent') || !n) return null;
+    return { kind: 'token', n, token: PREDEFINED_TOKENS.map, forTargetController: { slot: 0 } };
+  });
+  scan(new RegExp(`(${TARGET}) explores(?=\\.)`, 'gi'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'creature');
+    return to && { kind: 'explore', to };
+  });
   // Swords to Plowshares: "Exile target creature. Its controller gains life equal to its power."
   scan(new RegExp(`(?:^|[.] *)${POWER_LIFE.source}`, 'g'), () => {
     if (targets.length !== 1 || targets[0].kind !== 'creature') return null;
@@ -1325,6 +1351,7 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     // "it" only means the source when nothing else was targeted ("Target creature gets +1/+0. It gains…").
     const words = [...selfWords(self), ...(/\btargets?\b/i.test(text) ? [] : ['it'])].map(escapeRe).join('|');
     const SELF = `(?:${words})`;
+    scan(new RegExp(`(?:^|\\. )Transform ${SELF}(?=\\.)`, 'g'), () => ({ kind: 'transform' }));
     scan(new RegExp(`(?:^|[.,] *|then |and )${SELF} gets ([+-]\\d+)\\/([+-]\\d+)(?: and gains ${KEYWORD_LIST})? until end of turn`, 'gi'), (m) => ({
       kind: 'pump', power: Number(m[1]), toughness: Number(m[2]), keywords: keywordList(m[3]), to: 'self',
     }));
@@ -1383,6 +1410,8 @@ const POWER_LIFE = /(?:Its|That creature's) controller gains life equal to its p
 /** Memory Lapse, Remand, Force of Negation: where the countered spell goes instead. */
 const COUNTER_DEST = /If that spell is countered this way, (put it on top of its owner's library|put it into its owner's hand|exile it) instead of (?:into that player's graveyard|putting it into its owner's graveyard)(?=\.)/;
 /** Tishana's Tidebinder: the countered ability's permanent loses all abilities. */
+/** All Aboard: exiled and back at once (flicker). */
+const FLICKER = /, then return that card to the battlefield under its owner's control\./g;
 /** Malcolm: the discarded card may be cast for free with four chorus counters (castDiscarded). */
 const MALCOLM = /If there are (\w+) or more chorus counters on [^,]+, you may cast the discarded card without paying its mana cost\./g;
 /** Ghost Vacuum: the creature cards it exiled come back as 1/1 Spirits with flying counters (returnExiledSpirits). */
@@ -1427,8 +1456,6 @@ const IGNORED = new RegExp([
   /(?:It|They|That creature) can't be regenerated\./,
   /You may choose new targets for the copy\./,
   /If that spell is countered this way, exile it instead of putting it into its owner's graveyard\./,
-  // Small upsides for the opponent of a removal spell, not simulated (listed in TODO.md): Get Lost's Map tokens.
-  /Its controller creates two Map tokens\./,
   // Loyalty for a Jace you control (Countersculpt, Fatehold Charm): not simulated, listed in TODO.md.
   /Empower Jace \d+\./,
   /This spell can't be countered\./,
@@ -1811,7 +1838,7 @@ const UNSUPPORTED_WORDS = /\b(?:if|unless|for each|where|instead|that (?:creatur
 const UNSUPPORTED = {
   test: (text: string) => {
     let rest = text;
-    for (const handled of [CONTROLLER_SEARCH, SURVEIL_TO_HAND, THORIN_ATTACH, BECOMES_CREATURE, LAND_BECOMES, TRADE_FOR_CARD, COUNTER_DEST, TIDEBINDER, POWER_LIFE, PHELIA, CITY_COPIES, GHOST_VACUUM, MALCOLM]) rest = rest.replace(handled, '');
+    for (const handled of [CONTROLLER_SEARCH, SURVEIL_TO_HAND, THORIN_ATTACH, BECOMES_CREATURE, LAND_BECOMES, TRADE_FOR_CARD, COUNTER_DEST, TIDEBINDER, POWER_LIFE, PHELIA, CITY_COPIES, GHOST_VACUUM, MALCOLM, FLICKER]) rest = rest.replace(handled, '');
     return UNSUPPORTED_WORDS.test(rest.replace(/"[^"]*"/g, '""'));
   },
 };
@@ -2083,11 +2110,14 @@ export function triggersOf(card: Card): TriggerSpec[] {
 
     // Kíli: "Whenever another Dwarf or Equipment you control enters, draw a card. This ability triggers only once each turn."
     const oncePerTurn = / This ability triggers only once each turn\.$/.test(line);
-    const ev = line.replace(/ This ability triggers only once each turn\.$/, '')
-      .match(/^(?:When|Whenever) (.+?) (enters(?: the battlefield)?( under your control)?|attacks|dies|deals combat damage to a player)(?: or (enters|attacks|dies)(?: the battlefield)?)?, (.+)$/i);
+    const matched = line.replace(/ This ability triggers only once each turn\.$/, '')
+      .match(/^(?:When|Whenever) (.+?) (enters(?: the battlefield)?( under your control)?|attacks?|dies|deals combat damage to a player)(?: or (enters|attacks|dies)(?: the battlefield)?)?, (.+)$/i);
+    // "attack" only for a plural name ("Whenever Aang and La attack"), not "Whenever you attack".
+    const ev = matched && (matched[2].toLowerCase() !== 'attack' || selves.includes(matched[1].toLowerCase())) ? matched : null;
     if (ev) {
       const [, rawSubject, verb, under, alsoVerb, text] = ev;
-      const ons = [verb, alsoVerb].filter(Boolean).map((v): ObjectEvent => (v.startsWith('deals') ? 'combatDamage' : (v.toLowerCase().split(' ')[0] as ObjectEvent)));
+      // "Whenever Aang and La attack": a plural name.
+      const ons = [verb, alsoVerb].filter(Boolean).map((v): ObjectEvent => (v.startsWith('deals') ? 'combatDamage' : (v.toLowerCase().split(' ')[0].replace(/^attack$/, 'attacks') as ObjectEvent)));
       // "this creature or another creature you control" is any creature you control, itself included.
       const orAnother = rawSubject.match(/^(.+?) or another (.+)$/i);
       const subject = orAnother && selves.includes(orAnother[1].toLowerCase()) ? `a ${orAnother[2]}` : rawSubject;
@@ -2173,6 +2203,8 @@ export interface ActivationCost {
   removeCounter?: CounterKind;
   /** Moorland Haunt: "Exile a creature card from your graveyard" (chosen when activating). */
   exileFromGraveyard?: TargetFilter;
+  /** Waterbend {N}: each artifact or creature tapped while paying pays for {1}. */
+  waterbend?: boolean;
 }
 
 export interface ActivatedSpec {
@@ -2249,6 +2281,10 @@ export function activatedOf(card: Card): ActivatedSpec[] {
       const p = part.trim();
       if (/^(\{[^}]+\})+$/.test(p) && !p.includes('{T}') && !p.includes('{Q}')) cost.mana += p;
       else if (p === '{T}') cost.tap = true;
+      else if (/^Waterbend (\{\d+\})$/.test(p)) {
+        cost.mana += p.slice('Waterbend '.length);
+        cost.waterbend = true;
+      }
       else if (/^sacrifice /i.test(p) && selves.includes(p.slice('sacrifice '.length).toLowerCase())) cost.sacrificeSelf = true;
       else if (/^sacrifice (?:a|an|another) /i.test(p)) {
         const subject = triggerSubject(p.slice('sacrifice '.length), true);
@@ -2584,6 +2620,15 @@ export const drawsOneMore = (card: Card) =>
  * Springleaf Drum: "{T}, Tap an untapped creature you control: Add one mana of any color." (creature); Gene Pollinator:
  * "{T}, Tap an untapped permanent you control: …" (permanent). Null for other cards.
  */
+/** Black Panther: "Prevent all damage that would be dealt to Black Panther." */
+export function preventsDamageToSelf(card: Card): boolean {
+  const selves = selfWords(selfName(card)).map(escapeRe).join('|');
+  return new RegExp(`^Prevent all damage that would be dealt to (?:${selves})\\.$`, 'mi').test(frontText(card));
+}
+
+/** Skycoach Conductor: "This creature enters prepared." (a copy of its other face's spell can be cast once). */
+export const entersPrepared = (card: Card) => /^This creature enters prepared\.(?: \([^)]*\))?$/m.test(frontText(card));
+
 /**
  * Swift Reconfiguration: "Enchanted permanent is a Vehicle artifact with crew 5 and it loses all other card types."
  * The crew number.

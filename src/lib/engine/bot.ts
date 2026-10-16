@@ -1,5 +1,5 @@
 import {
-  abilityMaxX, activatable, activationProblem, canPayAbility, actor, channelCost, crewOptions, firstOpponent, mulliganBottom, isActivePlayer, opponentsOf, teamOf, canAttack, castCost, castOptions, castSources, findInGraveyard, landFaces, manaSources, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
+  abilityMaxX, activatable, activationProblem, canPayAbility, actor, castSource, channelCost, crewOptions, firstOpponent, mulliganBottom, isActivePlayer, opponentsOf, teamOf, canAttack, castCost, castOptions, castSources, findInGraveyard, landFaces, manaSources, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
   legalTargets, matching, maxX, powerOf, toughnessOf, xCount,
   type Action, type Answer, type CastOption, type CardInst, type Choice, type GameState, type Permanent, type PlayerId, type StackItem, type Target, type Triggered,
 } from './engine';
@@ -258,13 +258,13 @@ interface Candidate {
   modes?: number[];
 }
 
-/** Every way the bot can cast something now: from hand, graveyard (flashback) and exile (adventures). */
+/** Every way the bot can cast something now: from hand, graveyard (flashback), exile (adventures) and the command zone. */
 function candidates(s: GameState, me: PlayerId): Candidate[] {
   const ps = s.players[me];
   const out: Candidate[] = [];
   // Mox Diamond: only with a land to discard that isn't this turn's land drop.
   const lands = ps.hand.filter((c) => isLandCard(c.card)).length;
-  for (const inst of [...ps.hand, ...ps.graveyard, ...ps.exile]) {
+  for (const inst of [...ps.hand, ...ps.graveyard, ...ps.exile, ...(ps.command ?? [])]) {
     if (discardsLandInstead(inst.card) && lands < (ps.landPlayed ? 1 : 2)) continue;
     // Chrome Mox: only with a colored nonartifact, nonland card to exile.
     if (stateMana(inst.card) === 'imprinted' && !ps.hand.some((c) => c !== inst && imprintable(c.card))) continue;
@@ -473,7 +473,7 @@ function intentOf(e: Effect): Intent {
       return e.power < 0 || e.toughness < 0 ? 'harm' : 'help';
     case 'addCounters':
       return e.counter === '-1/-1' ? 'harm' : 'help';
-    case 'draw': case 'gainLife': case 'returnCard': case 'grantFlashback': case 'search': case 'tokenCopy': case 'preventDamage': case 'extraTurn':
+    case 'draw': case 'gainLife': case 'returnCard': case 'grantFlashback': case 'flicker': case 'search': case 'tokenCopy': case 'preventDamage': case 'extraTurn':
       return 'help';
     default:
       return 'neutral';
@@ -607,6 +607,17 @@ function playWithGoodTarget(s: GameState, me: PlayerId, play: Play, among?: Perm
     const card = chooseGraveCard(s, me, spec);
     return card ? cast([[card]]) : null;
   }
+  // Step Through: "two target creatures": the most valuable of theirs, when there are enough.
+  const slot = spec.targets[0];
+  if (slot.min > 1) {
+    const onSlot = effects.filter((e) => 'to' in e && typeof e.to === 'object' && e.to.slot === 0);
+    if (!onSlot.length || !onSlot.every((e) => intentOf(e) === 'harm')) return null;
+    const theirs = legalTargets(s, me, slot, undefined, play.source)
+      .flatMap((t) => (t.kind === 'permanent' ? [findPermanent(s, t.iid)!] : []))
+      .filter((x) => !friend(s, me, x.controller) && (!among || among.includes(x)))
+      .sort((a, b) => creatureValue(b.card) - creatureValue(a.card));
+    return theirs.length >= slot.min ? cast([theirs.slice(0, slot.max).map(asTarget)]) : null;
+  }
   const target = chooseTarget(s, me, spec, among, play.source);
   return target === null ? null : cast([[asTarget(target)]]);
 }
@@ -719,6 +730,7 @@ function abilityPlays(s: GameState, me: PlayerId): (Play & { perm: Permanent; in
       index,
       equip: !!spec.equip,
       spec: spec.ability,
+      source: perm.card,
       hasX: spec.cost.mana.includes('{X}'),
       maxX: abilityMaxX(s, perm, index),
       tapsCreature: spec.cost.tap && isCreature(perm.card),
@@ -801,6 +813,9 @@ function respond(s: GameState, me: PlayerId): Action | null {
         if (isLegalTarget(s, me, c.spec.targets[0], target)) return { type: 'cast', iid: c.iid, targets: [[target]] };
       }
     }
+    // Skycoach Conductor: All Aboard's copy blinks our creature out of the way.
+    const blinked = blinkFrom(s, me, top);
+    if (blinked) return blinked;
     // Mother of Runes, Reverent Mantra: protection from the color of what targets our creature.
     const shielded = protectFrom(s, me, top, spells);
     if (shielded) return shielded;
@@ -842,6 +857,19 @@ function respond(s: GameState, me: PlayerId): Action | null {
       if (action) return action;
     }
     return useAbility(s, me) ?? chooseCycle(s, me);
+  }
+  return null;
+}
+
+/** A prepared flicker spell (All Aboard) for our creature an opponent's spell or ability targets. */
+function blinkFrom(s: GameState, me: PlayerId, top: StackItem): Action | null {
+  for (const perm of s.battlefield) {
+    if (perm.controller !== me || !perm.prepared || !castOptions(s, me, perm.iid).length) continue;
+    const spell = castSource(s, me, perm.iid)!.inst.card;
+    const slot = spellSpec(spell).targets[0];
+    if (!slot || !spellSpec(spell).effects.some((e) => e.kind === 'flicker')) continue;
+    const target = top.targets.flat().find((t) => t.kind === 'permanent' && findPermanent(s, t.iid)?.controller === me && isLegalTarget(s, me, slot, t));
+    if (target) return { type: 'cast', iid: perm.iid, targets: [[target]] };
   }
   return null;
 }
@@ -1044,6 +1072,12 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
       if (choice.purpose === 'triggerMode' && s.pending?.trigger?.ability.modal) return { kind: 'mode', modes: triggerModes(s, choice.player, s.pending.trigger) };
       return { kind: 'mode', modes: Array.from({ length: choice.min }, (_, i) => i) };
     case 'yesNo':
+      // Explore: a card it can't cast soon goes to the graveyard.
+      if (choice.purpose === 'exploreMill') {
+        const revealed = s.players[choice.player].library[0];
+        const lands = s.battlefield.filter((x) => x.controller === choice.player && isLandCard(x.card)).length;
+        return { kind: 'yesNo', yes: !!revealed && revealed.card.cmc > lands + 1 };
+      }
       // Ponder: the top cards were just arranged, keep them.
       if (choice.purpose === 'mayShuffle') return { kind: 'yesNo', yes: false };
       // Paying to keep our spell is worth it; our own "you may" abilities are used.

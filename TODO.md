@@ -353,13 +353,16 @@ Second pass (every mechanism of the deck, tested with the Oracle texts):
   Swift Reconfiguration (a noncreature Vehicle with crew 5; "creature or Vehicle" targets), Aang's airbend (castable
   from exile for {2}), Aven Interrupter's plot (free as a sorcery on a later turn).
 
-Approximations: Malcolm's free spell is cast right after its trigger resolves (the next action), not during it;
-Mystic Gate always pays its {W/U} with the land making fewest colors.
+- Transform: Aang's waterbend {8} (artifacts and creatures tapped pay {1} each) into Aang and La (counters on tapped
+  creatures when they attack), King T'Challa into Black Panther (damage to it prevented). Skycoach Conductor enters
+  prepared (a copy of All Aboard: exile a non-Pilot creature and return it). Get Lost's Map tokens (explore).
 
-Still not simulated:
-- [ ] Transform: Aang's waterbend {8} (Aang and La, Ocean's Fury), King T'Challa's {4}{W}{U} (Black Panther)
-- [ ] Skycoach Conductor ("enters prepared": cast a copy of All Aboard)
-- [ ] Get Lost's Map tokens (explore)
+All 91 cards are simulated. 64 bot-vs-bot Commander games with the deck (mirror) run to the end without errors; they
+found two bot gaps, fixed: it never cast its commander from the command zone, and it gave one target to "two target
+creatures" (Step Through).
+
+Approximations: Malcolm's free spell is cast right after its trigger resolves (the next action), not during it;
+Mystic Gate always pays its {W/U} with the land making fewest colors; waterbend never taps the permanent itself.
 
 ## Standard: Boros Dwarves (mtgtop8 deck 899948)
 

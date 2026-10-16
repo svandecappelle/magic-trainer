@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, reconfiguresEnchanted, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type AltCost, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -73,6 +73,10 @@ export interface Permanent extends CardInst {
   imprinted?: Card;
   /** A noncreature permanent that is a creature until end of turn (crewed Vehicle, Iron Man Armor): its own card. */
   unanimated?: Card;
+  /** Transformed: showing its back face (Aang and La, Black Panther). */
+  transformed?: boolean;
+  /** Skycoach Conductor: a copy of its other face's spell can still be cast. */
+  prepared?: boolean;
   /** Swift Reconfiguration: its card before it became a Vehicle artifact (restored when the Aura leaves). */
   reconfigured?: Card;
   /** What static abilities (anthems, Auras, Equipment) give it right now; recomputed by the engine. */
@@ -109,7 +113,8 @@ export interface StackItem extends CardInst {
 }
 
 /** Where a spell is cast from: hand, graveyard (flashback) or exile (a creature back from its adventure). */
-export type CastZone = 'hand' | 'graveyard' | 'exile' | 'command';
+/** `prepared`: a copy of a prepared permanent's spell (Skycoach Conductor's All Aboard). */
+export type CastZone = 'hand' | 'graveyard' | 'exile' | 'command' | 'prepared';
 
 /** One way to cast a card right now. */
 export interface CastOption {
@@ -258,6 +263,7 @@ export type ChoicePurpose =
   | 'spellName' // Meddling Mage: "choose a nonland card name"
   | 'basicType' // Multiversal Passage: "choose a basic land type"
   | 'color' // Mother of Runes: "protection from the color of your choice"
+  | 'exploreMill' // explore: put the revealed nonland card into the graveyard?
   | 'chosenPlayer' // True-Name Nemesis: "choose a player"
   | 'crewCost' // Crew N: which creatures to tap
   | 'dig' // "look at the top N cards …": which to put into the hand
@@ -369,6 +375,8 @@ export type LogEntry =
   | { k: 'citysBlessing'; p: PlayerId }
   | { k: 'mayCastFree'; p: PlayerId; card: string }
   | { k: 'becomesVehicle'; card: string }
+  | { k: 'transformed'; card: string; into: string }
+  | { k: 'explores'; card: string; revealed?: string; land: boolean }
   | { k: 'counters'; card: string; counter: CounterKind; n: number }
   | { k: 'countered'; card: string }
   | { k: 'paidLife'; p: PlayerId; n: number; card: string }
@@ -1187,6 +1195,9 @@ export function castSource(s: GameState, p: PlayerId, iid: string): { inst: Card
   if (inExile) return { inst: inExile, from: 'exile' };
   const inCommand = ps.command?.find((c) => c.iid === iid);
   if (inCommand) return { inst: inCommand, from: 'command' };
+  // Skycoach Conductor: "While it's prepared, you may cast a copy of its spell."
+  const prepared = s.battlefield.find((x) => x.iid === iid && x.controller === p && x.prepared);
+  if (prepared) return { inst: { iid, card: faceCard(printedCard(prepared), 1) }, from: 'prepared' };
   return null;
 }
 
@@ -1284,8 +1295,15 @@ const freeEquip = (s: GameState, p: PlayerId) =>
  * Mana sources that can pay for an ability of `perm`: not the permanent itself when it must tap, nor a manland
  * paying to become a creature (it would be tapped to attack or block).
  */
-const sourcesFor = (s: GameState, perm: Permanent, spec: ActivatedSpec) =>
-  manaSources(s, perm.controller).filter((m) => !((spec.cost.tap || spec.ability.effects.some((e) => e.kind === 'animate' && e.to === 'self')) && m.iid === perm.iid));
+const sourcesFor = (s: GameState, perm: Permanent, spec: ActivatedSpec) => {
+  const mana = manaSources(s, perm.controller).filter((m) => !((spec.cost.tap || spec.ability.effects.some((e) => e.kind === 'animate' && e.to === 'self')) && m.iid === perm.iid));
+  if (!spec.cost.waterbend) return mana;
+  // Waterbend: each untapped artifact or creature (that isn't already a mana source) can be tapped to pay {1}; not the
+  // permanent itself (Aang would no longer attack after transforming).
+  const helpers = s.battlefield.filter((x) => x.controller === perm.controller && x.iid !== perm.iid && !x.tapped && (isCreature(x.card) || cardTypes(x.card).includes('artifact'))
+    && !mana.some((m) => m.iid === x.iid));
+  return [...mana, ...helpers.map((x): ManaSource => ({ iid: `convoke:${x.iid}`, colors: ['C'], last: true }))];
+};
 
 /** Why `p` can't activate this ability now (timing, tapping, mana, life), or null if they can. */
 export function activationProblem(s: GameState, p: PlayerId, perm: Permanent, index: number, x = 0): GameErrorCode | null {
@@ -1992,6 +2010,7 @@ function putOntoBattlefield(d: GameState, inst: CardInst, controller: PlayerId, 
 
 function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, opts: { x?: number; tapped?: boolean } = {}): Permanent {
   const perm = newPermanent(inst, controller, d.turn);
+  if (entersPrepared(inst.card)) perm.prepared = true;
   // Magus of the Moon: a nonbasic land enters without its abilities ("enters tapped" ones included).
   const rule = mooned(d, inst.card) ? null : entersTappedRule(inst.card);
   const otherLands = d.battlefield.filter((x) => x.controller === controller && isLandCard(x.card));
@@ -2605,6 +2624,8 @@ function dealDamage(d: GameState, source: CardInst, controller: PlayerId, target
   const dealer = findPermanent(d, source.iid) ?? ((source as StackItem).source ? findPermanent(d, (source as StackItem).source!) : undefined);
   if (dealer?.statics?.doubleDamage) amount *= 2;
   if (typeof target !== 'number' && (protectedFrom(target, source.card) || protectedFromPlayer(target, controller))) return; // protection prevents it
+  // Black Panther: "Prevent all damage that would be dealt to Black Panther."
+  if (typeof target !== 'number' && preventsDamageToSelf(target.card)) return;
   // "Prevent the next N damage" shields.
   const key = typeof target === 'number' ? `player:${target}` : target.iid;
   for (const sh of d.shields ?? []) {
@@ -3498,6 +3519,32 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         log(d, { k: 'token', p: caster, card: model.name, n: 1 });
       }
       break;
+    case 'transform': {
+      // The permanent turns to its other face (counters, damage and attachments stay).
+      const perm = item.source ? findPermanent(d, item.source) : undefined;
+      if (!perm) break;
+      const full = printedCard(perm);
+      if (cardFaces(full).length < 2) break;
+      perm.printed = full;
+      perm.transformed = !perm.transformed;
+      perm.card = faceCard(full, perm.transformed ? 1 : 0);
+      log(d, { k: 'transformed', card: full.name.split(' // ')[0], into: perm.card.name.split(' // ')[0] });
+      break;
+    }
+    case 'flicker':
+      // All Aboard: exiled, then back at once under its owner's control (a new object: no counters, untapped).
+      for (const perm of perms) {
+        const owner = perm.owner ?? perm.controller;
+        const token = isToken(printedCard(perm));
+        removePermanent(d, perm, 'exile');
+        log(d, { k: 'exiled', card: perm.card.name });
+        const inst = token ? undefined : d.players[owner].exile.find((c) => c.iid === perm.iid);
+        if (!inst) continue;
+        d.players[owner].exile = d.players[owner].exile.filter((c) => c !== inst);
+        log(d, { k: 'returned', card: inst.card.name, dest: 'battlefield' });
+        putOntoBattlefield(d, inst, owner);
+      }
+      break;
     case 'airbend':
     case 'plot': {
       // Aang: "Exile it. While it's exiled, its owner may cast it for {2} rather than its mana cost."
@@ -3527,7 +3574,8 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       const src = item.source ? findPermanent(d, item.source) : undefined;
       const iid = r.discarded?.at(-1);
       if (!src || (src.counters[e.counter] ?? 0) < e.minCounters || !iid) break;
-      if (!d.players[caster].graveyard.some((c) => c.iid === iid)) break;
+      const discarded = d.players[caster].graveyard.find((c) => c.iid === iid);
+      if (!discarded || isLand(discarded.card)) break; // a land can't be cast
       d.castNow = { player: caster, iid };
       log(d, { k: 'mayCastFree', p: caster, card: d.players[caster].graveyard.find((c) => c.iid === iid)!.card.name });
       break;
@@ -3590,16 +3638,42 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
     }
     case 'token': {
       const n = amount(d, r, e.n);
+      // Get Lost: the controller of the permanent it targeted (destroyed or not).
+      const t = e.forTargetController ? r.legal[e.forTargetController.slot]?.[0] : undefined;
+      const owner = !e.forTargetController ? caster
+        : t?.kind === 'permanent' ? r.removed?.[t.iid] ?? findPermanent(d, t.iid)?.controller : undefined;
+      if (owner === undefined) break;
       for (let i = 0; i < n; i++) {
         d.abilities = (d.abilities ?? 0) + 1;
-        const token = enterBattlefield(d, { iid: `token-${d.abilities}`, card: tokenCard(e.token) }, caster, { tapped: e.attacking });
+        const token = enterBattlefield(d, { iid: `token-${d.abilities}`, card: tokenCard(e.token) }, owner, { tapped: e.attacking });
         // "tapped and attacking": attacking (the defending player) without having been declared, so no attack trigger.
         if (e.attacking && d.attackers.length) d.attackers = [...d.attackers, token.iid];
         if (e.sacrificeAtEnd) (d.sacrificeAtEnd ??= []).push(token.iid);
       }
-      if (n > 0) log(d, { k: 'token', p: caster, card: e.token.name, n });
+      if (n > 0) log(d, { k: 'token', p: owner, card: e.token.name, n });
       break;
     }
+    case 'explore':
+      for (const perm of perms) {
+        const ps = d.players[perm.controller];
+        const top = ps.library[0];
+        // A land: into the hand. Anything else (or nothing): a +1/+1 counter, and the card may go to the graveyard.
+        if (top && isLand(top.card)) {
+          ps.library.shift();
+          ps.hand.push(top);
+          log(d, { k: 'explores', card: perm.card.name, revealed: top.card.name, land: true });
+          continue;
+        }
+        if (answer?.kind !== 'yesNo') {
+          perm.counters = { ...perm.counters, '+1/+1': (perm.counters['+1/+1'] ?? 0) + 1 };
+          log(d, { k: 'explores', card: perm.card.name, ...(top ? { revealed: top.card.name } : {}), land: false });
+          if (!top) continue;
+          return { kind: 'yesNo', player: perm.controller, purpose: 'exploreMill', params: { card: top.card.name } };
+        }
+        if (answer.yes) moveToGraveyard(d, perm.controller, ps.library.shift()!, 'library');
+        answer = undefined;
+      }
+      break;
   }
   return undefined;
 }
@@ -4313,10 +4387,14 @@ export function apply(state: GameState, action: Action): GameState {
       else if (from === 'command') {
         me.command = me.command!.filter((c) => c.iid !== inst.iid);
         me.commanderCasts = { ...me.commanderCasts, [inst.iid]: (me.commanderCasts?.[inst.iid] ?? 0) + 1 };
+      } else if (from === 'prepared') {
+        // "Doing so unprepares it": the copy is a new object on the stack.
+        findPermanent(d, inst.iid)!.prepared = false;
+        d.abilities = (d.abilities ?? 0) + 1;
       } else me.exile = me.exile.filter((c) => c.iid !== inst.iid);
       const named = targets.flat().map((t) => targetName(d, t));
       const item: StackItem = {
-        iid: inst.iid, card: inst.card, controller: p, targets, ...(xCount(card) ? { x } : {}),
+        iid: from === 'prepared' ? `${inst.iid}-prepared-${d.abilities}` : inst.iid, card: inst.card, ...(from === 'prepared' ? { copy: true } : {}), controller: p, targets, ...(xCount(card) ? { x } : {}),
         ...(face ? { face } : {}), ...(modes ? { modes } : {}), ...(kicked ? { kicked } : {}), ...(from !== 'hand' ? { from } : {}),
         ...(inst.commander ? { commander: true } : {}), ...(noMana ? { noMana } : {}), ...(uncounterable ? { uncounterable } : {}),
         ...(altIndex !== undefined ? { alt: altIndex } : {}), ...(castNow ? { castNow } : {}),

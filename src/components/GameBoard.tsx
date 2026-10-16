@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom';
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import {
-  activatable, activationProblem, abilityMaxX, actor, apply, canAttack, canTapForMana, canUntapForMana, castCost, castOptions, castSources, channelCost, manaSources,
+  activatable, activationProblem, abilityMaxX, actor, apply, canAttack, canTapForMana, canUntapForMana, castCost, castOptions, castSource, castSources, channelCost, manaSources,
   landFaces, findInGraveyard, legalTargets, canBlock, findPermanent, hasKw, IllegalAction, isActivePlayer, mulliganBottom, isLegalTarget, isMainStep, firstOpponent, opponentsOf, teammatesOf, teamPlayers, wonBy,
   powerOf, toughnessOf, unitsOf, xCount,
   type Action, type CardInst, type CastOption, type GameState, type Permanent, type PlayerId, type Target,
@@ -238,6 +238,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
         : alt.kind === 'exileCard' ? (alt.evoke ? t.game.altCosts.evoke(colorName(alt.color).toLowerCase()) : t.game.altCosts.exileCard(colorName(alt.color).toLowerCase()))
         : alt.kind === 'phyrexian' ? t.game.altCosts.phyrexian(2 * alt.n)
         : t.game.altCosts[alt.name](alt.cost))
+        : opt.from === 'prepared' ? t.game.castCopy(name)
         : g.castNow?.iid === iid ? t.game.castFree(name)
         : opt.from === 'graveyard' ? t.game.castFlashback(name, info.flashback ?? card.manaCost)
         : opt.from === 'exile' && exiledFor !== undefined ? (exiledFor ? t.game.castFor(name, exiledFor) : t.game.castFree(name))
@@ -415,6 +416,9 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
       if (canUntapForMana(g, me, perm)) return act({ type: 'untapForMana', iid: perm.iid });
       const abilities = activatedOf(perm.card).map((spec, index) => ({ spec, index })).filter((a) => a.spec.ability.effects.length);
       const mana = canTapForMana(g, perm);
+      // Skycoach Conductor: a copy of its prepared spell.
+      const prepared = castSource(g, me, perm.iid);
+      if (prepared?.from === 'prepared' && !abilities.length && !mana) return playCard(perm.iid, prepared.inst.card);
       if (abilities.length + (mana ? 1 : 0) > 1) setAbilityMenu(perm);
       else if (abilities.length === 1) startActivation(perm, abilities[0].index);
       else if (mana) act({ type: 'tapForMana', iid: perm.iid });

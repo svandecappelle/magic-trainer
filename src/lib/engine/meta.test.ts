@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
-import { activationProblem, actor, apply, hasKw, canBlock, canCastNow, castCost, castSource, canTapForMana, type Answer, castOptions, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
+import { activationProblem, actor, apply, findPermanent, hasKw, canBlock, canCastNow, castCost, castSource, canTapForMana, type Answer, castOptions, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
 import { botAction } from './bot';
-import { activatedOf, castInfo, castSpec, finalChapter, hasKeyword, type TargetSpec, manaUnits, parseAbilityText, spellSpec, triggersOf } from './rules';
+import { activatedOf, castInfo, castSpec, finalChapter, hasKeyword, isCreature, PREDEFINED_TOKENS, tokenCard, type TargetSpec, manaUnits, parseAbilityText, spellSpec, triggersOf } from './rules';
 
 // Cards from Standard decks on mtgtop8 (Oct 2026), with their Oracle text.
 let n = 0;
@@ -2692,3 +2692,107 @@ describe('Aang deck, batch 4: permanents with more to do', () => {
     expect(canBlock(perm(s, 'Ogre')!, perm(s, 'Bear')!)).toBe(false);
   });
 });
+
+describe('Aang deck, batch 5: transform and prepared', () => {
+  const run = (s: GameState) => {
+    for (let i = 0; i < 12 && !s.pending && (s.stack.length || s.triggered?.length); i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  const land = (type: string, n: number) => Array.from({ length: n }, () => card({ name: type, typeLine: `Basic Land — ${type}` }));
+  const bear = creature('Bear', 2, 2, { typeLine: 'Creature — Bear' });
+  const dfc = (front: Partial<Card> & { name: string }, back: { name: string; typeLine: string; oracleText: string; power?: string; toughness?: string; manaCost?: string }, layout: string) => card({
+    ...front, name: `${front.name} // ${back.name}`, layout,
+    faces: [
+      { name: front.name, manaCost: front.manaCost ?? '', typeLine: front.typeLine ?? '', oracleText: front.oracleText ?? '', power: front.power, toughness: front.toughness },
+      { manaCost: '', ...back },
+    ],
+    oracleText: `${front.oracleText}\n//\n${back.oracleText}`, typeLine: `${front.typeLine} // ${back.typeLine}`,
+  });
+  const aang = dfc({
+    name: 'Aang, Swift Savior', manaCost: '{1}{W}{U}', cmc: 3, typeLine: 'Legendary Creature — Human Avatar Ally', power: '2', toughness: '3', colors: ['W', 'U'],
+    keywords: ['Flying', 'Reach', 'Airbend', 'Transform', 'Trample', 'Flash', 'Waterbend'],
+    oracleText: 'Flash\nFlying\nWhen Aang enters, airbend up to one other target creature or spell. (Exile it. While it\'s exiled, its owner may cast it for {2} rather than its mana cost.)\nWaterbend {8}: Transform Aang.',
+  }, { name: 'Aang and La, Ocean\'s Fury', typeLine: 'Legendary Creature — Avatar Spirit Ally', power: '5', toughness: '5', oracleText: 'Reach, trample\nWhenever Aang and La attack, put a +1/+1 counter on each tapped creature you control.' }, 'transform');
+  const tchalla = dfc({
+    name: 'King T\'Challa', manaCost: '{1}{W}{U}', cmc: 3, typeLine: 'Legendary Creature — Human Noble Hero', power: '3', toughness: '2', colors: ['W', 'U'], keywords: ['Transform', 'Double strike', 'Flash'],
+    oracleText: 'Flash\nWhenever a player draws their second card each turn, you draw a card.\n{4}{W}{U}: Transform King T\'Challa. Activate only as a sorcery.',
+  }, { name: 'Black Panther, Hope Enduring', manaCost: '{4}{W}{U}', typeLine: 'Legendary Creature — Human Warrior Hero', power: '3', toughness: '3', oracleText: 'Flash\nDouble strike\nPrevent all damage that would be dealt to Black Panther.\nWhenever Black Panther deals combat damage to a player, draw a card.' }, 'modal_dfc');
+  const skycoach = dfc({
+    name: 'Skycoach Conductor', manaCost: '{2}{U}', cmc: 3, typeLine: 'Creature — Bird Pilot', power: '2', toughness: '3', colors: ['U'], keywords: ['Flying', 'Vigilance', 'Prepared', 'Flash'],
+    oracleText: 'Flash\nFlying, vigilance\nThis creature enters prepared. (While it\'s prepared, you may cast a copy of its spell. Doing so unprepares it.)',
+  }, { name: 'All Aboard', manaCost: '{U}', typeLine: 'Instant', oracleText: 'Exile target non-Pilot creature you control, then return that card to the battlefield under its owner\'s control.' }, 'prepare');
+
+  it('Aang: waterbend {8} with creatures tapped to pay; Aang and La put counters on tapped creatures', () => {
+    const mine = [aang, ...land('Plains', 4), ...Array.from({ length: 4 }, (_, i) => creature(`Cat ${i}`, 1, 1))];
+    let s = board({ mine });
+    expect(activatedOf(aang)[0].cost).toMatchObject({ mana: '{8}', waterbend: true });
+    s = run(settle(apply(s, { type: 'activate', iid: iidOf(s, 'Aang, Swift Savior // Aang and La, Ocean\'s Fury'), index: 0 })));
+    const la = s.battlefield.find((x) => x.card.name === 'Aang and La, Ocean\'s Fury')!;
+    expect(la.transformed).toBe(true);
+    expect([powerOf(la), hasKw(la, 'trample'), hasKw(la, 'reach')]).toEqual([5, true, true]);
+    expect(s.battlefield.filter((x) => x.card.name.startsWith('Cat')).every((x) => x.tapped)).toBe(true);
+    // Its attack trigger: a counter on each tapped creature (the four Cats and itself, tapped by attacking).
+    s = apply(s, { type: 'pass' });
+    for (let i = 0; i < 5 && (s.priority || s.step !== 'attack'); i++) s = apply(s, { type: 'pass' });
+    s = run(settle(apply(s, { type: 'declareAttackers', attackers: [la.iid] })));
+    expect(s.battlefield.filter((x) => x.controller === 0 && isCreature(x.card)).map((x) => x.counters['+1/+1'])).toEqual([1, 1, 1, 1, 1]);
+  });
+
+  it('King T\'Challa transforms at sorcery speed; Black Panther takes no damage', () => {
+    let s = board({ mine: [tchalla, ...land('Plains', 3), ...land('Island', 3)] });
+    const iid = iidOf(s, 'King T\'Challa // Black Panther, Hope Enduring');
+    s = run(settle(apply(s, { type: 'activate', iid, index: 0 })));
+    const panther = findPermanent(s, iid)!;
+    expect(panther.card.name).toBe('Black Panther, Hope Enduring');
+    expect(hasKw(panther, 'double strike')).toBe(true);
+    const shock = spell('Shock', '{R}', 'Shock deals 2 damage to any target.');
+    s.stack = [{ iid: 'x0', card: shock, controller: 1, targets: [[{ kind: 'permanent', iid }]] }];
+    s.priority = { player: 0, passes: 0, reason: 'main' };
+    s = run(s);
+    expect(findPermanent(s, iid)!.damage).toBe(0);
+  });
+
+  it('Skycoach Conductor enters prepared: a copy of All Aboard blinks a non-Pilot creature, once', () => {
+    let s = board({ mine: [...land('Island', 4), bear], hand: [skycoach] });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    const conductor = s.battlefield.find((x) => x.card.name.startsWith('Skycoach'))!;
+    expect(conductor.prepared).toBe(true);
+    expect(castOptions(s, 0, conductor.iid)).toEqual([{ face: 0, kicked: false, from: 'prepared' }]);
+    perm(s, 'Bear')!.damage = 1;
+    const slot = spellSpec(castSource(s, 0, conductor.iid)!.inst.card).targets[0];
+    // Not a Pilot.
+    expect(isLegalTarget(s, 0, slot, { kind: 'permanent', iid: conductor.iid })).toBe(false);
+    s = run(settle(apply(s, { type: 'cast', iid: conductor.iid, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] })));
+    expect(perm(s, 'Bear')!.damage).toBe(0);
+    expect(perm(s, 'Bear')!.sick).toBe(true);
+    expect(findPermanent(s, conductor.iid)!.prepared).toBe(false);
+    expect(castOptions(s, 0, conductor.iid)).toEqual([]);
+    // The copy ceased to exist: nothing in the graveyard.
+    expect(s.players[0].graveyard).toEqual([]);
+  });
+
+  it('Get Lost: the destroyed creature\'s controller creates two Map tokens; a Map makes a creature explore', () => {
+    const getLost = spell('Get Lost', '{1}{W}', 'Destroy target creature, enchantment, or planeswalker. Its controller creates two Map tokens. (They\'re artifacts with "{1}, {T}, Sacrifice this token: Target creature you control explores. Activate only as a sorcery.")');
+    const ogre = creature('Ogre', 3, 3);
+    let s = board({ mine: land('Plains', 2), hand: [getLost], theirs: [ogre] });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Ogre') }]] })));
+    expect(perm(s, 'Ogre')).toBeUndefined();
+    expect(s.battlefield.filter((x) => x.card.name === 'Map').map((x) => x.controller)).toEqual([1, 1]);
+    // Explore: a land goes to the hand.
+    const map = tokenCard(PREDEFINED_TOKENS.map);
+    s = board({ mana: 2, mine: [map, map, bear] });
+    const sorcery = spell('Divination', '{2}{U}', 'Draw two cards.', 'Sorcery');
+    s.players[0].library = [{ iid: 'l0', card: land('Island', 1)[0] }, { iid: 'l1', card: sorcery }, ...s.players[0].library];
+    const maps = s.battlefield.filter((x) => x.card.name === 'Map').map((x) => x.iid);
+    s = run(settle(apply(s, { type: 'activate', iid: maps[0], index: 0, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] })));
+    expect(s.players[0].hand.map((c) => c.card.name)).toEqual(['Island']);
+    expect(perm(s, 'Bear')!.counters['+1/+1']).toBeUndefined();
+    // Not a land: a +1/+1 counter, and the card may go to the graveyard.
+    s = run(settle(apply(s, { type: 'activate', iid: maps[1], index: 0, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] })));
+    expect(s.pending?.choice).toMatchObject({ kind: 'yesNo', purpose: 'exploreMill' });
+    s = run(apply(s, { type: 'choose', answer: { kind: 'yesNo', yes: true } }));
+    expect(perm(s, 'Bear')!.counters['+1/+1']).toBe(1);
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toContain('Divination');
+  });
+});
+

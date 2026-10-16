@@ -1,26 +1,12 @@
-NONE     Skycoach Conductor // All Aboard {2}{U} // {U} — Creature — Bird Pilot // Instant (other faces not audited)
-  ✓ Flash
-      keyword
-  ✓ Flying, vigilance
-      keyword
-  ? This creature enters prepared.
-      not read by the engine
-PARTIAL  Aang, Swift Savior // Aang and La, Ocean's Fury {1}{W}{U} — Legendary Creature — Human Avatar Ally // Legendary Creature — Avatar Spirit Ally (other faces not audited)
+OK       Aang, Swift Savior // Aang and La, Ocean's Fury {1}{W}{U} — Legendary Creature — Human Avatar Ally // Legendary Creature — Avatar Spirit Ally (other faces not audited)
   ✓ Flash
       keyword
   ✓ Flying
       keyword
   ✓ When Aang enters, airbend up to one other target creature or spell.
       trigger (enters) → airbend (1 target)
-  ✗ Waterbend {8}: Transform Aang.
-      keyword not simulated: waterbend
-PARTIAL  King T'Challa // Black Panther, Hope Enduring {1}{W}{U} — Legendary Creature — Human Noble Hero // Legendary Creature — Human Warrior Hero (other faces not audited)
-  ✓ Flash
-      keyword
-  ✓ Whenever a player draws their second card each turn, you draw a card.
-      trigger (opponentDraws) → draw
-  ✗ {4}{W}{U}: Transform King T'Challa. Activate only as a sorcery.
-      activated ability, effect not simulated
+  ✓ Waterbend {8}: Transform Aang.
+      activated → transform
 OK       Adarkar Wastes  — Land
   ✓ {T}: Add {C}.
       mana: C
@@ -140,7 +126,7 @@ OK       Force of Negation {1}{U}{U} — Instant
       spell → counter (1 target)
 OK       Get Lost {1}{W} — Instant
   ✓ Destroy target creature, enchantment, or planeswalker. Its controller…
-      spell → destroy (1 target)
+      spell → destroy+token (1 target)
 OK       Ghost Vacuum {1} — Artifact
   ✓ {T}: Exile target card from a graveyard.
       activated → destroy (1 target)
@@ -165,6 +151,13 @@ OK       Harbinger of the Seas {1}{U}{U} — Creature — Merfolk Wizard
 OK       Hengegate Pathway // Mistgate Pathway  — Land // Land (other faces not audited)
   ✓ {T}: Add {W}.
       mana: W
+OK       King T'Challa // Black Panther, Hope Enduring {1}{W}{U} — Legendary Creature — Human Noble Hero // Legendary Creature — Human Warrior Hero (other faces not audited)
+  ✓ Flash
+      keyword
+  ✓ Whenever a player draws their second card each turn, you draw a card.
+      trigger (opponentDraws) → draw
+  ✓ {4}{W}{U}: Transform King T'Challa. Activate only as a sorcery.
+      activated → transform
 OK       Lórien Revealed {3}{U}{U} — Sorcery
   ✓ Islandcycling {1}
       keyword
@@ -320,6 +313,13 @@ OK       Skyclave Apparition {1}{W}{W} — Creature — Kor Spirit
       trigger (enters) → destroy (1 target)
   ✓ When this creature leaves the battlefield, the exiled card's owner cr…
       leaves: the exiled card's owner gets an X/X Illusion
+OK       Skycoach Conductor // All Aboard {2}{U} // {U} — Creature — Bird Pilot // Instant (other faces not audited)
+  ✓ Flash
+      keyword
+  ✓ Flying, vigilance
+      keyword
+  ✓ This creature enters prepared.
+      enters prepared: a copy of its other face's spell can be cast once
 OK       Snapcaster Mage {1}{U} — Creature — Human Wizard
   ✓ Flash
       keyword
@@ -434,5 +434,5 @@ OK       Witch Enchanter // Witch-Blessed Meadow {3}{W} — Creature — Human W
   ✓ When this creature enters, destroy target artifact or enchantment an …
       trigger (enters) → destroy (1 target)
 
-91 cards: 88 ok, 2 partial, 1 not simulated, 0 can't be cast
+91 cards: 91 ok, 0 partial, 0 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

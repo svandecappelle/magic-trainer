@@ -60,13 +60,6 @@ NONE     Deep-Cavern Bat {1}{B} — Creature — Bat
       keyword
   ✗ When this creature enters, look at target opponent's hand. You may ex…
       trigger (enters), effect not simulated
-NONE     Emeritus of Ideation // Ancestral Recall {3}{U}{U} // {U} — Creature — Human Wizard // Instant (other faces not audited)
-  ✓ Flying, ward {2}
-      keyword
-  ? This creature enters prepared.
-      not read by the engine
-  ✗ Whenever this creature attacks, you may exile eight cards from your g…
-      trigger (attacks), effect not simulated
 NONE     Emptiness {4}{W/B}{W/B} — Creature — Elemental Incarnation
   ✗ When this creature enters, if {W}{W} was spent to cast it, return tar…
       trigger (enters), effect not simulated
@@ -408,6 +401,13 @@ PARTIAL  Elspeth, Storm Slayer {3}{W}{W} — Legendary Planeswalker — Elspeth
       activated ability, effect not simulated
   ✓ −3: Destroy target creature an opponent controls with mana value 3 or…
       loyalty ability → destroy (1 target)
+PARTIAL  Emeritus of Ideation // Ancestral Recall {3}{U}{U} // {U} — Creature — Human Wizard // Instant (other faces not audited)
+  ✓ Flying, ward {2}
+      keyword
+  ✓ This creature enters prepared.
+      enters prepared: a copy of its other face's spell can be cast once
+  ✗ Whenever this creature attacks, you may exile eight cards from your g…
+      trigger (attacks), effect not simulated
 PARTIAL  Enduring Innocence {1}{W}{W} — Enchantment Creature — Sheep Glimmer
   ✓ Lifelink
       keyword
@@ -739,7 +739,7 @@ OK       Gandalf, Goblins' Bane // Flameshape {2}{R} // {1}{R} — Legendary Cre
       trigger (cast) → pump+damage
 OK       Get Lost {1}{W} — Instant
   ✓ Destroy target creature, enchantment, or planeswalker. Its controller…
-      spell → destroy (1 target)
+      spell → destroy+token (1 target)
 OK       Ghost Vacuum {1} — Artifact
   ✓ {T}: Exile target card from a graveyard.
       activated → destroy (1 target)
@@ -961,5 +961,5 @@ OK       Watery Grave  — Land — Island Swamp
   ✓ As this land enters, you may pay 2 life. If you don't, it enters tapp…
       enters tapped (payLife)
 
-178 cards: 81 ok, 39 partial, 58 not simulated, 0 can't be cast
+178 cards: 81 ok, 40 partial, 57 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)
