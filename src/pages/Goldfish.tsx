@@ -6,6 +6,7 @@ import { goldfishReducer, initialState, type GoldfishLogEntry, type Instance, ty
 import { countCards, isLand } from '../lib/stats';
 import { useApp } from '../store/useApp';
 import type { Card } from '../types';
+import { Icon } from '../components/Icon';
 
 interface ZoneAction {
   /** Key into t.goldfish.actions: [short label, tooltip]. */
@@ -128,7 +129,7 @@ export function Goldfish() {
         <span>{t.common.turn} <strong>{state.turn || '–'}</strong></span>
         <span className="life-mini">
           <button className="icon" onClick={() => dispatch({ type: 'life', delta: -1 })}>−</button>
-          ♥ <strong>{state.life}</strong>
+          <Icon name="heart" /> <strong>{state.life}</strong>
           <button className="icon" onClick={() => dispatch({ type: 'life', delta: 1 })}>+</button>
         </span>
         <span title={t.goldfish.untapped}>◈ {untappedLands}</span>

@@ -458,7 +458,7 @@ export const fr: Messages = {
     changeDecks: 'Changer de decks',
     botName: 'Bot',
     rules:
-      "Règles simplifiées. Mulligan London ; les éphémères et les cartes avec le flash peuvent être lancés quand vous avez la priorité : en réponse à un sort, après la déclaration des attaquants ou des bloqueurs, et en fin de tour. Vous n'êtes sollicité que si vous avez quelque chose à lancer, sauf si vous activez le contrôle total pendant la partie. Le combat gère le vol, la portée, la célérité, la vigilance, le piétinement, le contact mortel, le lien de vie, le défenseur, l'initiative, la double initiative et la menace. Les effets courants des éphémères et rituels sont automatisés (blessures, sorts à X, destruction et balayage, contresorts, bonus et malus, marqueurs, pioche, défausse, gain et perte de points de vie, meule, regard, surveillance, engagement, renvoi en main, combat), avec plusieurs cibles et des restrictions comme « non-noire » ; les autres effets (dont les capacités et déclenchements des créatures) ne sont pas encore simulés. Voir TODO.md pour la suite.",
+      "Des tours complets avec la priorité, la pile et le combat (mulligan London). Les capacités déclenchées, activées et modales, les équipements, les auras, les sagas, les terrains-créatures et les planeswalkers sont joués par le moteur de règles ; chaque carte indique si elle est simulée (l'éditeur de deck le montre pour tout votre deck). Vous n'êtes sollicité pour répondre que si vous avez quelque chose à lancer, sauf si vous activez le contrôle total pendant la partie. Voir TODO.md pour ce qui n'est pas encore simulé.",
     buildDeck: 'Créez un deck',
     bringYourOwn: 'pour jouer avec le vôtre.',
     yourDecks: 'Vos decks',

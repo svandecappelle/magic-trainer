@@ -44,10 +44,10 @@ export function LifeTracker() {
               <input className="player-name" value={p.name} placeholder={t.life.playerName(i + 1)} onChange={(e) => update(i, { name: e.target.value })} />
               <div className="life-total">{p.life}</div>
               <div className="row center">
-                <button onClick={() => update(i, { life: p.life - 5 })}>−5</button>
-                <button onClick={() => update(i, { life: p.life - 1 })}>−1</button>
-                <button onClick={() => update(i, { life: p.life + 1 })}>+1</button>
-                <button onClick={() => update(i, { life: p.life + 5 })}>+5</button>
+                <button onClick={() => update(i, { life: p.life - 5 })} className="secondary life-step">−5</button>
+                <button onClick={() => update(i, { life: p.life - 1 })} className="secondary life-step">−1</button>
+                <button onClick={() => update(i, { life: p.life + 1 })} className="secondary life-step">+1</button>
+                <button onClick={() => update(i, { life: p.life + 5 })} className="secondary life-step">+5</button>
               </div>
               <div className="row center small">
                 {t.life.poison}

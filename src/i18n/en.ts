@@ -449,7 +449,7 @@ export const en = {
     changeDecks: 'Change decks',
     botName: 'Bot',
     rules:
-      'Simplified rules. London mulligans; instants and flash cards can be cast when you get priority: in response to a spell, after attackers or blockers are declared, and at end of turn. You are only asked when you hold something castable, unless you turn on full control during a game. Combat supports flying, reach, haste, vigilance, trample, deathtouch, lifelink, defender, first strike, double strike and menace. Common instant and sorcery effects are automated (damage, X spells, removal and board wipes, counterspells, pump and shrink, counters, card draw, discard, life gain and loss, mill, scry, surveil, tap, bounce, fight), including several targets and restrictions such as "nonblack"; other effects (including creature abilities and triggers) are not simulated yet. See TODO.md for what comes next.',
+      'Full turns with priority, the stack and combat (London mulligans). Triggered, activated and modal abilities, Equipment, Auras, Sagas, manlands and planeswalkers are played by the rules engine; each card says whether it is simulated (the deck editor shows it for your whole deck). You are only asked to respond when you hold something castable, unless you turn on full control during a game. See TODO.md for what is not simulated yet.',
     buildDeck: 'Build a deck',
     bringYourOwn: 'to bring your own.',
     yourDecks: 'Your decks',

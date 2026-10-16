@@ -31,7 +31,13 @@ export function App() {
   return (
     <>
       <nav className="topnav">
-        <NavLink to="/" className="brand" end>Magic Trainer</NavLink>
+        <NavLink to="/" className="brand" end>
+          <svg className="brand-mark" width="26" height="26" viewBox="0 0 40 40" aria-hidden="true">
+            <path d="M20 3 35 12v16L20 37 5 28V12z" fill="none" stroke="var(--accent)" strokeWidth="2.6" />
+            <path d="M20 10 28 15v10l-8 5-8-5V15z" fill="var(--accent)" />
+          </svg>
+          Magic Trainer
+        </NavLink>
         <NavLink to="/decks">{t.nav.decks}</NavLink>
         <NavLink to="/collection">{t.nav.collection}</NavLink>
         <NavLink to="/goldfish">{t.nav.goldfish}</NavLink>

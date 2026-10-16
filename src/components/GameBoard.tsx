@@ -7,6 +7,7 @@ import {
   type Action, type CardInst, type CastOption, type GameState, type Permanent, type PlayerId, type Target,
 } from '../lib/engine/engine';
 import { errorText, logText, useT, type AppError } from '../i18n';
+import { Icon } from './Icon';
 import { useCardDisplay } from '../lib/cardLocale';
 import {
   activatedOf, castInfo, castSpec, faceCard, faceName, modeSimulated, findPayment, isCreature, isLandCard, isPlaneswalker, parseCost, type AbilitySpec,
@@ -716,7 +717,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
       'hud', ours(p) ? 'mine' : 'theirs', p !== me && ours(p) && 'ally', isActivePlayer(g, p) && 'active', acting === p && 'acting',
       canTarget(asTarget) && 'targetable', isPicked(asTarget) && 'picked',
     ].filter(Boolean).join(' ');
-    const zone = (z: 'graveyard' | 'exile' | 'command', icon: string) => (
+    const zone = (z: 'graveyard' | 'exile' | 'command', icon: ReactNode) => (
       <button className={`zone-chip ${p === me && zoneCards(p, z).some((c) => castOptions(g, me, c.iid).length > 0) ? 'castable' : ''}`} title={t.game.zoneNames[z]} onClick={(e) => { e.stopPropagation(); setZoneView(zoneView?.p === p && zoneView.zone === z ? null : { p, zone: z }); }}>
         {icon} {zoneCards(p, z).length}
       </button>
@@ -729,7 +730,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
           <strong>{p === me && ps.name ? t.game.nameYou(ps.name) : names[p]}</strong>
           {isActivePlayer(g, p) && <span className="turn-dot" title={t.game.turnOf(ours(p), teamName(p))} />}
         </div>
-        <div className="life" key={ps.life}>♥ {ps.life}{floatsFor(`player:${p}`)}</div>
+        <div className="life" key={ps.life}>{ps.life}{floatsFor(`player:${p}`)}</div>
         {ps.pool && ps.pool.length > 0 && (
           <div className="pool" title={t.game.manaPool}>
             {ps.pool.map((m, i) => (
@@ -738,13 +739,13 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
           </div>
         )}
         <div className="zones small">
-          <span title={t.game.zoneNames.library}>📚 {ps.library.length}</span>
-          <span title={t.game.zoneNames.hand}>✋ {ps.hand.length}</span>
-          {zone('graveyard', '🪦')}
-          {!!ps.poison && <span className="poison" title={t.game.poisonTitle}>☠ {ps.poison}</span>}
-          {zone('exile', '🌀')}
-          {ps.command && zone('command', '👑')}
-          {commanderDamage > 0 && <span className="poison" title={t.game.commanderDamageTitle}>⚔ {commanderDamage}</span>}
+          <span className="zone-count" title={t.game.zoneNames.library}><Icon name="library" /> {ps.library.length}</span>
+          <span className="zone-count" title={t.game.zoneNames.hand}><Icon name="hand" /> {ps.hand.length}</span>
+          {zone('graveyard', <Icon name="graveyard" />)}
+          {!!ps.poison && <span className="poison" title={t.game.poisonTitle}><Icon name="poison" /> {ps.poison}</span>}
+          {zone('exile', <Icon name="exile" />)}
+          {ps.command && zone('command', <Icon name="command" />)}
+          {commanderDamage > 0 && <span className="poison" title={t.game.commanderDamageTitle}><Icon name="sword" /> {commanderDamage}</span>}
           {(ps.emblems ?? []).map((e, i) => (
             <span key={i} className="emblem" title={e.oracleText} {...zoomable(e)}>★ {t.game.emblem}</span>
           ))}
