@@ -1815,3 +1815,98 @@ describe('Metagame audit 2026-10-16, second batch', () => {
     expect(hasKeyword(copy.card, 'flying')).toBe(true);
   });
 });
+
+describe('Metagame audit 2026-10-16: rule-changing permanents', () => {
+  const thalia = creature('Thalia, Guardian of Thraben', 2, 1, { typeLine: 'Legendary Creature — Human Soldier', manaCost: '{1}{W}', cmc: 2, keywords: ['First strike'], oracleText: 'First strike\nNoncreature spells cost {1} more to cast.' });
+  const trinisphere = card({ name: 'Trinisphere', typeLine: 'Artifact', manaCost: '{3}', cmc: 3, oracleText: 'As long as this artifact is untapped, each spell that would cost less than three mana to cast costs three mana to cast. (Additional mana in the cost may be paid with any color of mana or colorless mana. For example, a spell that would cost {1}{B} to cast costs {2}{B} to cast instead.)' });
+  const damping = card({ name: 'Damping Sphere', typeLine: 'Artifact', manaCost: '{2}', cmc: 2, oracleText: 'If a land is tapped for two or more mana, it produces {C} instead of any other type and amount.\nEach spell a player casts costs {1} more to cast for each other spell that player has cast this turn.' });
+  const nullRod = card({ name: 'Null Rod', typeLine: 'Artifact', manaCost: '{2}', cmc: 2, oracleText: 'Activated abilities of artifacts can\'t be activated.' });
+  const drannith = creature('Drannith Magistrate', 1, 3, { typeLine: 'Creature — Human Wizard', manaCost: '{1}{W}', cmc: 2, oracleText: 'Your opponents can\'t cast spells from anywhere other than their hands.' });
+  const magus = creature('Magus of the Moon', 2, 2, { typeLine: 'Creature — Human Wizard', manaCost: '{2}{R}', cmc: 3, oracleText: 'Nonbasic lands are Mountains.' });
+  const urborg = card({ name: 'Urborg, Tomb of Yawgmoth', typeLine: 'Legendary Land', oracleText: 'Each land is a Swamp in addition to its other land types.' });
+  const cradle = card({ name: 'Gaea\'s Cradle', typeLine: 'Legendary Land', oracleText: '{T}: Add {G} for each creature you control.' });
+  const fellwar = card({ name: 'Fellwar Stone', typeLine: 'Artifact', manaCost: '{2}', cmc: 2, oracleText: '{T}: Add one mana of any color that a land an opponent controls could produce.' });
+  const mage = creature('Meddling Mage', 2, 2, { typeLine: 'Creature — Human Wizard', manaCost: '{W}{U}', cmc: 2, oracleText: 'As this creature enters, choose a nonland card name.\nSpells with the chosen name can\'t be cast.' });
+  const sentinel = creature('Esper Sentinel', 1, 1, { typeLine: 'Artifact Creature — Human Soldier', manaCost: '{W}', oracleText: 'Whenever an opponent casts their first noncreature spell each turn, draw a card unless that player pays {X}, where X is this creature\'s power.' });
+  const shock = spell('Shock', '{B}', 'Shock deals 2 damage to any target.');
+  const bear = creature('Bear', 2, 2, { manaCost: '{1}{B}', cmc: 2 });
+  const sol = card({ name: 'Sol Ring', typeLine: 'Artifact', manaCost: '{1}', cmc: 1, oracleText: '{T}: Add {C}{C}.' });
+  const ancient = card({ name: 'Ancient Tomb', typeLine: 'Land', oracleText: '{T}: Add {C}{C}. This land deals 2 damage to you.' });
+  const run = (s: GameState) => {
+    for (let i = 0; i < 12 && !s.pending && (s.stack.length || s.triggered?.length); i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+
+  it('Thalia, Trinisphere and Damping Sphere change costs', () => {
+    let s = board({ theirs: [thalia] });
+    expect(castCost(s, 0, shock, {})).toEqual({ generic: 1, colored: [['B']] });
+    expect(castCost(s, 0, bear, {})).toEqual({ generic: 1, colored: [['B']] });
+    s = board({ theirs: [trinisphere] });
+    expect(castCost(s, 0, shock, {})).toEqual({ generic: 2, colored: [['B']] });
+    perm(s, 'Trinisphere')!.tapped = true;
+    expect(castCost(s, 0, shock, {})).toEqual({ generic: 0, colored: [['B']] });
+    s = board({ theirs: [damping] });
+    s.players[0].spellsThisTurn = 2;
+    expect(castCost(s, 0, shock, {})).toEqual({ generic: 2, colored: [['B']] });
+  });
+
+  it('Damping Sphere: a land tapped for two mana makes {C}', () => {
+    const s = board({ mine: [ancient, sol], theirs: [damping] });
+    expect(unitsOf(s, perm(s, 'Ancient Tomb')!)).toEqual([['C']]);
+    expect(unitsOf(s, perm(s, 'Sol Ring')!)).toEqual([['C'], ['C']]);
+  });
+
+  it('Null Rod: no activated abilities of artifacts, mana included', () => {
+    const s = board({ mine: [sol], theirs: [nullRod] });
+    expect(canTapForMana(s, perm(s, 'Sol Ring')!)).toBe(false);
+  });
+
+  it('Drannith Magistrate: opponents cast only from their hands', () => {
+    const souls = spell('Lingering Souls', '{2}{W}', 'Create two 1/1 white Spirit creature tokens with flying.\nFlashback {1}{B}', 'Sorcery');
+    let s = board({ mana: 2, grave: [souls] });
+    expect(castOptions(s, 0, 'g0').length).toBeGreaterThan(0);
+    s = board({ mana: 2, grave: [souls], theirs: [drannith] });
+    expect(castOptions(s, 0, 'g0')).toEqual([]);
+  });
+
+  it('Magus of the Moon: nonbasic lands make only {R}; Urborg makes every land a Swamp', () => {
+    let s = board({ mine: [ancient, swamp], theirs: [magus] });
+    expect(unitsOf(s, perm(s, 'Ancient Tomb')!)).toEqual([['R']]);
+    expect(unitsOf(s, perm(s, 'Swamp')!)).toEqual([['B']]);
+    s = board({ mine: [urborg, island] });
+    expect(unitsOf(s, perm(s, 'Island')!)).toEqual([['U', 'B']]);
+  });
+
+  it('Gaea\'s Cradle and Fellwar Stone', () => {
+    let s = board({ mine: [cradle, bear, bear] });
+    expect(unitsOf(s, perm(s, 'Gaea\'s Cradle')!)).toEqual([['G'], ['G']]);
+    s = board({ mine: [fellwar], oppMana: 1 });
+    expect(unitsOf(s, perm(s, 'Fellwar Stone')!)).toEqual([['U']]);
+  });
+
+  it('Meddling Mage names a nonland card: it can\'t be cast', () => {
+    let s = board({ mine: [card({ name: 'Plains', typeLine: 'Basic Land — Plains' }), island, swamp], hand: [mage, shock], theirs: [bear] });
+    s.players[1].graveyard = [{ iid: 'og', card: shock }];
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    expect(s.pending?.choice).toMatchObject({ kind: 'mode', purpose: 'spellName' });
+    const modes = (s.pending!.choice as { modes: string[] }).modes;
+    expect(modes).toContain('Shock');
+    s = apply(s, { type: 'choose', answer: { kind: 'mode', modes: [modes.indexOf('Shock')] } });
+    expect(canCastNow(s, 0, shock)).toBe(false);
+    expect(castOptions(s, 0, 'h1')).toEqual([]);
+  });
+
+  it('Esper Sentinel: the first noncreature spell each turn, pay X or it draws', () => {
+    let s = board({ mana: 2, hand: [shock, shock], theirs: [sentinel] });
+    const theirHand = s.players[1].hand.length;
+    s = settle(apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'player', player: 1 }]] }));
+    for (let i = 0; i < 6 && !(s.pending?.choice.player === 0); i++) s = settle(apply(s, { type: 'pass' }));
+    expect(s.pending?.choice).toMatchObject({ kind: 'yesNo', purpose: 'payOrDraw', params: { n: 1 } });
+    s = run(apply(s, { type: 'choose', answer: { kind: 'yesNo', yes: false } }));
+    expect(s.players[1].hand).toHaveLength(theirHand + 1);
+    // The second one: no trigger.
+    s = run(settle(apply(s, { type: 'cast', iid: 'h1', targets: [[{ kind: 'player', player: 1 }]] })));
+    expect(s.pending).toBeNull();
+    expect(s.players[1].hand).toHaveLength(theirHand + 1);
+  });
+});

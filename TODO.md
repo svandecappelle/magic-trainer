@@ -311,7 +311,17 @@ land is also a Forest: {G} and Forest checks), Reflecting Pool (the mana types o
 (artifacts and creatures entering trigger nothing), High Noon (one spell each turn), Sowing Mycospawn ("When you cast
 this spell" triggers, kicked or not), Mockingbird (a copy with mana value up to the mana spent, a Bird with flying).
 
-Approximations: Delighted Halfling makes the legendary spell uncounterable whichever of its two abilities paid;
+Third batch, rule-changing permanents: Thalia ({1} more for noncreature spells), Trinisphere (at least three mana
+while untapped), Damping Sphere (a land tapped for two or more mana makes {C}; {1} more for each other spell cast this
+turn), Null Rod (no activated abilities of artifacts, mana ones included), Drannith Magistrate (opponents cast only
+from their hands), Magus of the Moon (nonbasic lands are Mountains: only {R}, no other ability, no "enters tapped"),
+Urborg (each land is also a Swamp), Gaea's Cradle ({G} per creature), Fellwar Stone (the colors of the opponents'
+lands), Meddling Mage (names a nonland card seen in the game: it can't be cast), Esper Sentinel (the opponent's first
+noncreature spell each turn: pay X or it draws).
+
+Approximations: Meddling Mage, like Pithing Needle, can only name a card seen in the game; Magus of the Moon and
+Yavimaya/Urborg don't follow timestamps (the added types always apply);
+Delighted Halfling makes the legendary spell uncounterable whichever of its two abilities paid;
 Yavimaya's {G} replaces nothing for a land with several mana per tap (City of Traitors); Mockingbird counts the mana
 spent as its mana cost with X.
 

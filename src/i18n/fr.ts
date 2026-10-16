@@ -614,6 +614,7 @@ export const fr: Messages = {
       sacrificeCost: (p) => `Choisissez quoi sacrifier pour la capacité de ${p.card}.`,
       creatureType: (p) => `${p.card} : choisissez un type de créature.`,
       cardName: (p) => `${p.card} : choisissez un nom de carte (ses capacités activées, sauf de mana, ne peuvent pas être activées).`,
+      spellName: (p) => `${p.card} : choisissez un nom de carte non-terrain (les sorts de ce nom ne peuvent pas être lancés).`,
       basicType: (p) => `${p.card} : choisissez un type de terrain de base (il produit le mana de ce terrain).`,
       crewCost: (p) => `Piloter ${p.card} : engagez des créatures d'une force totale de ${p.n} ou plus.`,
       dig: (p) => `Vous regardez les ${p.n} cartes du dessus : choisissez celles à mettre en main (les autres vont au-dessous).`,

@@ -1,7 +1,7 @@
 import type { Card } from '../../types';
 import {
   activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, entersCounters, entersTappedRule, beginsWithLuck, discardsLandInstead, manaConditions, stateMana, doesntUntap, frontText, gameRulesOf, isInstantOrSorcery,
-  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, type AbilitySpec,
+  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, type AbilitySpec,
 } from './rules';
 
 /**
@@ -129,7 +129,7 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   if (fromHand) return { text: line, status: 'ok', how: `mana: ${fromHand}, exiling it from the hand (spent last)` };
   const state = stateMana(one);
   if (state) {
-    const how = { imprinted: 'the colors of the exiled card', legends: 'the colors of your legendary creatures and planeswalkers', luck: 'C, any color with a luck counter', perArtifact: 'U for each artifact you control', mining: 'any color, removing a mining counter (sacrificed after the last)', reflect: 'one mana of a type your other lands could make' }[state];
+    const how = { imprinted: 'the colors of the exiled card', legends: 'the colors of your legendary creatures and planeswalkers', luck: 'C, any color with a luck counter', perArtifact: 'U for each artifact you control', mining: 'any color, removing a mining counter (sacrificed after the last)', reflect: 'one mana of a type your other lands could make', perCreature: 'G for each creature you control', opponentLands: 'a color an opponent\'s land could make' }[state];
     return { text: line, status: 'ok', how: `mana: ${how}` };
   }
   if (/\bAdd \{|\bAdd (?:one|two|three) mana\b/.test(line) && !spell) {
@@ -148,6 +148,8 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   if (doublesEquippedTriggers(one)) return { text: line, status: 'ok', how: 'triggers an additional time while equipped' };
   if (choosesCreatureType(one)) return { text: line, status: 'ok', how: 'chooses a creature type as it enters' };
   if (discardsLandInstead(one)) return { text: line, status: 'ok', how: 'enters only by discarding a land card' };
+  // Meddling Mage: its two lines are read together.
+  if (namesSpellToStop(card) && /choose a nonland card name|Spells with the chosen name/.test(line)) return { text: line, status: 'ok', how: 'names a nonland card (one seen in the game): it can\'t be cast' };
   // Pithing Needle: its two lines are read together.
   if (namesCardToStop(card) && /choose a card name|sources with the chosen name/.test(line)) return { text: line, status: 'ok', how: 'names a card: its activated abilities (not mana) are stopped' };
   if (drawsOneMore(one)) return { text: line, status: 'ok', how: 'draws one more card with one or fewer in hand' };

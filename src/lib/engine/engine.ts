@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -118,8 +118,9 @@ export interface PoolMana {
 
 export interface PlayerState {
   name: string;
-  /** Spells cast this turn (High Noon). */
+  /** Spells cast this turn (High Noon, Damping Sphere), noncreature ones (Esper Sentinel). */
   spellsThisTurn?: number;
+  noncreatureThisTurn?: number;
   /** Cards drawn this turn (Faerie Mastermind: "their second card each turn"). */
   drawnThisTurn?: number;
   /** Teferi, Time Raveler's +1: may cast sorceries as though they had flash until their next turn. */
@@ -215,6 +216,7 @@ export type ChoicePurpose =
   | 'costChoice' // a spell's additional cost "A or B": yes pays the first
   | 'creatureType' // Cavern of Souls: "choose a creature type"
   | 'cardName' // Pithing Needle: "choose a card name"
+  | 'spellName' // Meddling Mage: "choose a nonland card name"
   | 'basicType' // Multiversal Passage: "choose a basic land type"
   | 'crewCost' // Crew N: which creatures to tap
   | 'dig' // "look at the top N cards …": which to put into the hand
@@ -597,14 +599,26 @@ const protectedFrom = (perm: Permanent, source: Card) => protectionsOf(perm.card
  */
 export function unitsOf(s: GameState, perm: Permanent, spell?: Card): Color[][] {
   const identity = s.players[perm.controller]?.identity;
+  // Magus of the Moon: a nonbasic land only makes {R} (Yavimaya and Urborg still add their types).
+  if (mooned(s, perm.card)) return landTypeMana(s, [['R']]);
   let units = manaUnits(perm.card, identity);
-  // Yavimaya, Cradle of Growth: each land is a Forest too ({G} as one more choice for a single-ability land).
-  if (isLandCard(perm.card) && withRule(s, 'landsAreForests').length && units.length <= 1) units = [[...new Set([...(units[0] ?? []), 'G' as Color])]];
+  if (isLandCard(perm.card)) units = landTypeMana(s, units);
   // Springleaf Drum, Gene Pollinator: any color, with another untapped permanent to tap.
   if (tapsAnotherForMana(perm.card)) units = manaHelpers(s, perm).length ? [['W', 'U', 'B', 'R', 'G']] : [];
   // Chrome Mox: the imprinted card's colors; Mox Amber: the colors of legendary creatures and planeswalkers.
   const state = stateMana(perm.card);
-  if (state === 'reflect') {
+  if (state === 'perCreature') {
+    // Gaea's Cradle: {G} for each creature you control.
+    const n = s.battlefield.filter((x) => x.controller === perm.controller && isCreature(x.card)).length;
+    units = Array.from({ length: n }, () => ['G'] as Color[]);
+  } else if (state === 'opponentLands') {
+    // Fellwar Stone: the colors an opponent's land could make (Pools and Stones aside).
+    const colors = s.battlefield
+      .filter((x) => teamOf(s, x.controller) !== teamOf(s, perm.controller) && isLandCard(x.card) && stateMana(x.card) !== 'reflect')
+      .flatMap((x) => unitsOf(s, x).flat())
+      .filter((c) => c !== 'C');
+    units = colors.length ? [[...new Set(colors)]] : [];
+  } else if (state === 'reflect') {
     // Reflecting Pool: the types the other lands could make (other Pools aside: they add nothing new).
     const types = s.battlefield
       .filter((x) => x.controller === perm.controller && isLandCard(x.card) && stateMana(x.card) !== 'reflect')
@@ -632,6 +646,8 @@ export function unitsOf(s: GameState, perm: Permanent, spell?: Card): Color[][] 
   const pain = manaPain(perm.card, identity);
   if (pain && s.players[perm.controller].life < pain.life) units = units.map((u) => u.filter((c) => !pain.colors.includes(c)));
   // Sunbillow Verge: "{T}: Add {R}. Activate only if you control a Mountain or a Plains."
+  // Damping Sphere: a land tapped for two or more mana makes {C} instead.
+  if (isLandCard(perm.card) && units.length >= 2 && withRule(s, 'landsMakeOneColorless').length) units = [['C']];
   for (const cond of manaConditions(perm.card)) {
     const mine = s.battlefield.filter((x) => x.controller === perm.controller);
     const met = 'subtypes' in cond
@@ -644,7 +660,9 @@ export function unitsOf(s: GameState, perm: Permanent, spell?: Card): Color[][] 
 
 /** A subtype, counting Yavimaya, Cradle of Growth: "Each land is a Forest in addition to its other land types." */
 const landHasType = (s: GameState, card: Card, type: string) =>
-  hasSubtype(card, type) || (type === 'forest' && isLandCard(card) && withRule(s, 'landsAreForests').length > 0);
+  (mooned(s, card) ? type === 'mountain' : hasSubtype(card, type))
+  || (type === 'forest' && isLandCard(card) && withRule(s, 'landsAreForests').length > 0)
+  || (type === 'swamp' && isLandCard(card) && withRule(s, 'landsAreSwamps').length > 0);
 
 /** Is the card a creature (spell) of this creature type? (Cavern of Souls) */
 const ofType = (card: Card, type: string) => isCreature(card) && hasSubtype(card, type);
@@ -679,6 +697,15 @@ export function delirium(s: GameState, p: PlayerId): boolean {
   return types.size >= 4;
 }
 
+/**
+ * Yavimaya (Forest) and Urborg (Swamp): each land has that type too, its mana as one more choice for a land making one
+ * mana per tap.
+ */
+function landTypeMana(s: GameState, units: Color[][]): Color[][] {
+  const extra: Color[] = [...(withRule(s, 'landsAreForests').length ? ['G' as Color] : []), ...(withRule(s, 'landsAreSwamps').length ? ['B' as Color] : [])];
+  return extra.length && units.length <= 1 ? [[...new Set([...(units[0] ?? []), ...extra])]] : units;
+}
+
 /** A card with a mana ability of its own (then it's never tapped to pay for Springleaf Drum's mana). */
 const makesMana = (card: Card) => manaUnits(card).length > 0 || !!tapsAnotherForMana(card) || !!stateMana(card) || !!chosenTypeMana(card);
 
@@ -704,7 +731,22 @@ const painfulMana = (perm: Permanent) =>
   manaLifeCost(perm.card) > 0 || !!tapsAnotherForMana(perm.card) || triggersOf(perm.card).some((t) => t.event.on === 'becomesTapped');
 
 /** Permanents on the battlefield with a rule-changing static ability. */
-const withRule = (s: GameState, rule: GameRule) => s.battlefield.filter((x) => gameRulesOf(x.card).includes(rule));
+const withRule = (s: GameState, rule: GameRule) => {
+  // Magus of the Moon: nonbasic lands lose their abilities (Yavimaya, Urborg).
+  const moon = rule !== 'nonbasicLandsAreMountains' && s.battlefield.some((x) => gameRulesOf(x.card).includes('nonbasicLandsAreMountains'));
+  return s.battlefield.filter((x) => gameRulesOf(x.card).includes(rule) && !(moon && isNonbasicLand(x.card)))
+    // Trinisphere only works untapped.
+    .filter((x) => rule !== 'spellsCostAtLeast3' || !x.tapped);
+};
+
+const isNonbasicLand = (card: Card) => isLandCard(card) && !/\bBasic\b/.test(card.typeLine.split('//')[0]);
+
+/** Magus of the Moon: this permanent is a nonbasic land, so a Mountain with no other ability. */
+const mooned = (s: GameState, card: Card) => isNonbasicLand(card) && withRule(s, 'nonbasicLandsAreMountains').length > 0;
+
+/** Meddling Mage: spells with the name it chose can't be cast. */
+export const spellNameStopped = (s: GameState, name: string) =>
+  s.battlefield.some((x) => x.chosenName === name && namesSpellToStop(x.card));
 
 /** Pithing Needle: a Needle naming `name` stops its activated abilities other than mana abilities. */
 export const nameStopped = (s: GameState, name: string) =>
@@ -712,6 +754,8 @@ export const nameStopped = (s: GameState, name: string) =>
 
 /** Clarion Conqueror: no activated abilities (mana abilities included) for artifacts, creatures and planeswalkers. */
 function activationsForbidden(s: GameState, perm: Permanent): boolean {
+  // Null Rod: artifacts' activated abilities, mana abilities included.
+  if (cardTypes(perm.card).includes('artifact') && withRule(s, 'noArtifactAbilities').length) return true;
   if (!withRule(s, 'noActivatedAbilities').length) return false;
   const types = cardTypes(perm.card);
   return types.includes('artifact') || types.includes('creature') || types.includes('planeswalker');
@@ -875,10 +919,17 @@ export function castCost(s: GameState, p: PlayerId, card: Card, opt: { face?: nu
     kicker.colored = [...kicker.colored, ...more.colored];
   }
   const discount = info.affinity ? s.battlefield.filter((x) => x.controller === p && cardMatches(x.card, info.affinity!)).length : 0;
-  // Commander tax: {2} more for each previous cast from the command zone; Defense Grid: {3} more off its caster's turn.
+  // Commander tax: {2} more for each previous cast from the command zone; Defense Grid: {3} more off its caster's turn;
+  // Thalia: {1} more for a noncreature spell; Damping Sphere: {1} more for each other spell cast this turn.
   const tax = (opt.from === 'command' && opt.iid ? 2 * (s.players[p].commanderCasts?.[opt.iid] ?? 0) : 0)
-    + (isActivePlayer(s, p) ? 0 : 3 * withRule(s, 'offTurnSpellsCost3').length);
-  return { generic: Math.max(0, base.generic + kicker.generic + tax - discount), colored: [...base.colored, ...kicker.colored] };
+    + (isActivePlayer(s, p) ? 0 : 3 * withRule(s, 'offTurnSpellsCost3').length)
+    + (isCreature(c) ? 0 : withRule(s, 'noncreatureSpellsCost1').length)
+    + (s.players[p].spellsThisTurn ?? 0) * withRule(s, 'spellsCostMorePerSpell').length;
+  const cost = { generic: Math.max(0, base.generic + kicker.generic + tax - discount), colored: [...base.colored, ...kicker.colored] };
+  // Trinisphere: less than three mana costs three.
+  const total = cost.generic + cost.colored.length;
+  if (total < 3 && withRule(s, 'spellsCostAtLeast3').length) cost.generic += 3 - total;
+  return cost;
 }
 
 /** What can pay for casting `card`: mana, plus creatures to tap (convoke) and graveyard cards to exile (delve). */
@@ -927,7 +978,7 @@ export const isMainStep = (s: GameState) => s.step === 'main1' || s.step === 'ma
 
 /** Can `p` legally cast `card` right now (timing and mana; targets aside)? */
 export function canCastNow(s: GameState, p: PlayerId, card: Card): boolean {
-  if (isLandCard(card) || s.mulligan || s.pending || actor(s) !== p || castingForbidden(s, p)) return false;
+  if (isLandCard(card) || s.mulligan || s.pending || actor(s) !== p || castingForbidden(s, p) || spellNameStopped(s, card.name)) return false;
   return castTimingOk(s, p, card) && canPay(s, p, card);
 }
 
@@ -936,6 +987,8 @@ export function castSource(s: GameState, p: PlayerId, iid: string): { inst: Card
   const ps = s.players[p];
   const inHand = ps.hand.find((c) => c.iid === iid);
   if (inHand) return { inst: inHand, from: 'hand' };
+  // Drannith Magistrate: an opponent's makes the hand the only place to cast from.
+  if (withRule(s, 'opponentsCastFromHandOnly').some((x) => teamOf(s, x.controller) !== teamOf(s, p))) return null;
   const inGrave = ps.graveyard.find((c) => c.iid === iid);
   // Grafdigger's Cage: "Players can't cast spells from graveyards or libraries."
   if (inGrave && castInfo(inGrave.card).flashback && !withRule(s, 'noCastingFromGraveyardsLibraries').length) return { inst: inGrave, from: 'graveyard' };
@@ -958,7 +1011,7 @@ function usefulTargets(s: GameState, p: PlayerId, card: Card, choice: CastChoice
 export function castOptions(s: GameState, p: PlayerId, iid: string): CastOption[] {
   if (s.mulligan || s.pending || actor(s) !== p || castingForbidden(s, p)) return [];
   const src = castSource(s, p, iid);
-  if (!src) return [];
+  if (!src || spellNameStopped(s, src.inst.card.name)) return [];
   const { inst, from } = src;
   const faces = from === 'hand' ? playableFaces(inst.card) : [0];
   const out: CastOption[] = [];
@@ -1031,6 +1084,8 @@ export function activationProblem(s: GameState, p: PlayerId, perm: Permanent, in
   if (!spec || perm.controller !== p) return 'noSuchAbility';
   if (activationsForbidden(s, perm)) return 'activationForbidden';
   if (nameStopped(s, printedCard(perm).name)) return 'nameStopped';
+  // Magus of the Moon: a nonbasic land has only its {R} mana ability.
+  if (mooned(s, perm.card)) return 'activationForbidden';
   if (s.mulligan || s.pending || actor(s) !== p) return 'activateTiming';
   const sorcerySpeed = !s.priority && isMainStep(s) && isActivePlayer(s, p) && !s.stack.length;
   if (spec.sorcery ? !sorcerySpeed : !s.priority && !(isMainStep(s) && isActivePlayer(s, p))) return 'activateTiming';
@@ -1072,7 +1127,10 @@ function finishCast(d: GameState, item: StackItem, named: LogTarget[]) {
   log(d, {
     k: 'cast', p, card: faceName(item.card, item.face ?? 0), ...(named.length ? { targets: named } : {}), ...(item.kicked ? { kicked: true } : {}), ...(item.from ? { from: item.from } : {}),
   });
-  if (!item.copy) d.players[p].spellsThisTurn = (d.players[p].spellsThisTurn ?? 0) + 1;
+  if (!item.copy) {
+    d.players[p].spellsThisTurn = (d.players[p].spellsThisTurn ?? 0) + 1;
+    if (!isCreature(card)) d.players[p].noncreatureThisTurn = (d.players[p].noncreatureThisTurn ?? 0) + 1;
+  }
   // Sowing Mycospawn: "When you cast this spell, …" (a copy isn't cast).
   if (!item.copy) {
     for (const t of triggersOf(card)) {
@@ -1426,6 +1484,7 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
   for (const ps of d.players) {
     delete ps.drawnThisTurn;
     delete ps.spellsThisTurn;
+    delete ps.noncreatureThisTurn;
     delete ps.gainedThisTurn;
     delete ps.lostThisTurn;
     delete ps.equipsThisTurn;
@@ -1681,7 +1740,8 @@ function putOntoBattlefield(d: GameState, inst: CardInst, controller: PlayerId, 
 
 function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, opts: { x?: number; tapped?: boolean } = {}): Permanent {
   const perm = newPermanent(inst, controller);
-  const rule = entersTappedRule(inst.card);
+  // Magus of the Moon: a nonbasic land enters without its abilities ("enters tapped" ones included).
+  const rule = mooned(d, inst.card) ? null : entersTappedRule(inst.card);
   const otherLands = d.battlefield.filter((x) => x.controller === controller && isLandCard(x.card));
   if (opts.tapped || rule?.kind === 'always') perm.tapped = true;
   else if (rule?.kind === 'unlessSubtypes') {
@@ -1826,18 +1886,31 @@ function askBasicType(d: GameState): boolean {
   return true;
 }
 
+/** Meddling Mage: nonland card names seen in the game, the opponents' first (battlefield, graveyards, exile, stack). */
+function spellNames(d: GameState, p: PlayerId): string[] {
+  const theirs = (q: PlayerId) => teamOf(d, q) !== teamOf(d, p);
+  const seen = [
+    ...d.stack.filter((x) => !x.ability && theirs(x.controller)).map((x) => x.card),
+    ...d.battlefield.filter((x) => theirs(x.controller)).map((x) => printedCard(x)),
+    ...d.players.flatMap((ps, q) => (theirs(q) ? [...ps.graveyard, ...ps.exile] : [])).map((c) => c.card),
+  ];
+  const names: string[] = [];
+  for (const c of seen) if (!names.includes(c.name) && !isLandCard(c)) names.push(c.name);
+  return names.slice(0, 16);
+}
+
 /** Pithing Needle: "As this artifact enters, choose a card name." (asked once nothing else is going on). */
 function askCardName(d: GameState): boolean {
-  const perm = d.battlefield.find((x) => namesCardToStop(x.card) && x.chosenName === undefined);
+  const perm = d.battlefield.find((x) => (namesCardToStop(x.card) || namesSpellToStop(x.card)) && x.chosenName === undefined);
   if (!perm) return false;
-  const names = stoppableNames(d, perm.controller);
+  const names = namesSpellToStop(perm.card) ? spellNames(d, perm.controller) : stoppableNames(d, perm.controller);
   if (!names.length) {
     perm.chosenName = '';
     log(d, { k: 'chosenName', card: perm.card.name, name: '' });
     return false;
   }
   d.pending = {
-    choice: { kind: 'mode', player: perm.controller, purpose: 'cardName', min: 1, max: 1, modes: names, params: { card: perm.card.name } },
+    choice: { kind: 'mode', player: perm.controller, purpose: namesSpellToStop(perm.card) ? 'spellName' : 'cardName', min: 1, max: 1, modes: names, params: { card: perm.card.name } },
     resume: 'cardName', iid: perm.iid,
   };
   return true;
@@ -1892,6 +1965,8 @@ function conditionMet(d: GameState, p: PlayerId, cond: AbilitySpec['condition'],
 }
 
 function queueTrigger(d: GameState, source: CardInst, controller: PlayerId, ability: AbilitySpec, batch?: string) {
+  // Magus of the Moon: a nonbasic land has no triggered ability.
+  if (mooned(d, source.card) && d.battlefield.some((x) => x.iid === source.iid)) return;
   if (!ability.effects.length) {
     log(d, { k: 'notSimulated', card: source.card.name });
     return;
@@ -1979,7 +2054,7 @@ function fireCast(d: GameState, p: PlayerId, card: Card) {
   for (const x of d.battlefield) {
     if (teamOf(d, x.controller) === teamOf(d, p)) continue;
     for (const t of triggersOf(x.card)) {
-      if (t.event.on === 'opponentCasts' && cardMatches(card, t.event.filter)) {
+      if (t.event.on === 'opponentCasts' && cardMatches(card, t.event.filter) && (!t.event.firstNoncreature || d.players[p].noncreatureThisTurn === 1)) {
         (d.triggered ??= []).push({ source: { iid: x.iid, card: x.card }, controller: x.controller, ability: t.ability, targets: [[{ kind: 'player', player: p }]] });
       }
     }
@@ -2817,12 +2892,15 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       // Rhystic Study: the player who cast the spell may pay; if they don't, its controller draws.
       const t = r.legal[0]?.[0];
       const payer = t?.kind === 'player' ? t.player : undefined;
-      const cost = { generic: e.mana, colored: [] };
+      // Esper Sentinel: X is its power (as it resolves; its last known power if it left).
+      const src = item.source ? findPermanent(d, item.source) : undefined;
+      const n = e.mana === 'power' ? (src ? powerOf(src) : power(item.card)) : e.mana;
+      const cost = { generic: n, colored: [] };
       if (payer !== undefined && findPayment(manaSources(d, payer), cost)) {
-        if (answer?.kind !== 'yesNo') return { kind: 'yesNo', player: payer, purpose: 'payOrDraw', params: { card: item.card.name, n: e.mana } };
+        if (answer?.kind !== 'yesNo') return { kind: 'yesNo', player: payer, purpose: 'payOrDraw', params: { card: item.card.name, n } };
         if (answer.yes) {
           pay(d, payer, manaSources(d, payer), cost);
-          log(d, { k: 'paidTax', p: payer, n: e.mana, card: item.card.name });
+          log(d, { k: 'paidTax', p: payer, n, card: item.card.name });
           break;
         }
       }
@@ -3556,6 +3634,7 @@ export function apply(state: GameState, action: Action): GameState {
       const card = faceCard(inst.card, face);
       if (isLandCard(card)) throw new IllegalAction('notASpell');
       if (castingForbidden(d, p)) throw new IllegalAction('castingForbidden');
+      if (spellNameStopped(d, inst.card.name)) throw new IllegalAction('nameStopped');
       if (d.priority) {
         if (sorceryOnly(d, p)) throw new IllegalAction('sorceryOnly');
         if (!castTimingOk(d, p, card)) throw new IllegalAction('sorcerySpeed', { card: card.name });

@@ -471,7 +471,7 @@ export type Effect =
    */
   | { kind: 'cumulativeUpkeep'; mana: string }
   /** Rhystic Study: "you may draw a card unless that player pays {1}" (that player: the ability's slot 0). */
-  | { kind: 'drawUnlessPays'; n: number; mana: number }
+  | { kind: 'drawUnlessPays'; n: number; mana: number | 'power' }
   /** Teferi, Time Raveler's +1: "Until your next turn, you may cast sorcery spells as though they had flash." */
   | { kind: 'sorceryFlash' }
   /**
@@ -1528,8 +1528,8 @@ export type TriggerEvent =
   | { on: 'youPlayLand' }
   /** Sowing Mycospawn: "When you cast this spell, …" (`kicked`: "if it was kicked"). */
   | { on: 'castSelf'; kicked?: boolean }
-  /** Rhystic Study: "Whenever an opponent casts a spell, …" (the ability's slot 0 is that player). */
-  | { on: 'opponentCasts'; filter: TargetFilter };
+  /** Rhystic Study: "Whenever an opponent casts a spell, …" (the ability's slot 0 is that player); Esper Sentinel: only their first noncreature spell each turn. */
+  | { on: 'opponentCasts'; filter: TargetFilter; firstNoncreature?: boolean };
 
 export interface TriggerSpec {
   event: TriggerEvent;
@@ -1746,6 +1746,15 @@ export function triggersOf(card: Card): TriggerSpec[] {
     if (bowmasters && selves.includes(bowmasters[1].toLowerCase())) {
       const ability = triggerAbility(bowmasters[2], name, true);
       out.push({ event: { on: 'enters', self: true }, ability }, { event: { on: 'opponentDraws', notFirstInDrawStep: true }, ability });
+      continue;
+    }
+    // Esper Sentinel: "Whenever an opponent casts their first noncreature spell each turn, draw a card unless that player
+    // pays {X}, where X is this creature's power."
+    if (/^Whenever an opponent casts their first noncreature spell each turn, draw a card unless that player pays \{X\}, where X is this creature's power\.$/i.test(line)) {
+      out.push({
+        event: { on: 'opponentCasts', filter: { nonTypes: ['creature'] }, firstNoncreature: true },
+        ability: { targets: [{ kind: 'player', min: 1, max: 1, filter: {} }], effects: [{ kind: 'drawUnlessPays', n: 1, mana: 'power' }] },
+      });
       continue;
     }
     // Sowing Mycospawn: "When you cast this spell, search …", "When you cast this spell, if it was kicked, exile target land."
@@ -2020,8 +2029,12 @@ export function doublesEquippedTriggers(card: Card): boolean {
  * Amber "{T}: Add one mana of any color among legendary creatures and planeswalkers you control." (legends),
  * Gemstone Caverns (luck: any color with a luck counter, otherwise {C}).
  */
-export function stateMana(card: Card): 'imprinted' | 'legends' | 'luck' | 'perArtifact' | 'mining' | 'reflect' | null {
+export function stateMana(card: Card): 'imprinted' | 'legends' | 'luck' | 'perArtifact' | 'mining' | 'reflect' | 'perCreature' | 'opponentLands' | null {
   const text = frontText(card);
+  // Gaea's Cradle: "{T}: Add {G} for each creature you control."
+  if (/^\{T\}: Add \{G\} for each creature you control\.$/m.test(text)) return 'perCreature';
+  // Fellwar Stone: "{T}: Add one mana of any color that a land an opponent controls could produce."
+  if (/^\{T\}: Add one mana of any color that a land an opponent controls could produce\.$/m.test(text)) return 'opponentLands';
   // Reflecting Pool: "{T}: Add one mana of any type that a land you control could produce."
   if (/^\{T\}: Add one mana of any type that a land you control could produce\.$/m.test(text)) return 'reflect';
   // Gemstone Mine: "{T}, Remove a mining counter from this land: Add one mana of any color. If there are no mining
@@ -2291,6 +2304,10 @@ export function handMana(card: Card): Color | null {
 export const choosesBasicType = (card: Card) =>
   /^As this land enters, choose a basic land type\./m.test(frontText(card)) && /^This land is the chosen type\.$/m.test(frontText(card));
 
+/** Meddling Mage: "As this creature enters, choose a nonland card name." and "Spells with the chosen name can't be cast." */
+export const namesSpellToStop = (card: Card) =>
+  /^As this creature enters, choose a nonland card name\.$/m.test(frontText(card)) && /^Spells with the chosen name can't be cast\.$/m.test(frontText(card));
+
 /** Hexing Squelcher: "Spells you control can't be countered." */
 export const protectsSpells = (card: Card) => /^Spells you control can't be countered\.$/m.test(frontText(card));
 
@@ -2364,7 +2381,23 @@ export type GameRule =
   /** High Noon: "Each player can't cast more than one spell each turn." */
   | 'oneSpellEachTurn'
   /** Yavimaya, Cradle of Growth: "Each land is a Forest in addition to its other land types." */
-  | 'landsAreForests';
+  | 'landsAreForests'
+  /** Urborg, Tomb of Yawgmoth: "Each land is a Swamp in addition to its other land types." */
+  | 'landsAreSwamps'
+  /** Thalia, Guardian of Thraben: "Noncreature spells cost {1} more to cast." */
+  | 'noncreatureSpellsCost1'
+  /** Trinisphere: "As long as this artifact is untapped, each spell that would cost less than three mana to cast costs three mana to cast." */
+  | 'spellsCostAtLeast3'
+  /** Damping Sphere: "If a land is tapped for two or more mana, it produces {C} instead of any other type and amount." */
+  | 'landsMakeOneColorless'
+  /** Damping Sphere: "Each spell a player casts costs {1} more to cast for each other spell that player has cast this turn." */
+  | 'spellsCostMorePerSpell'
+  /** Null Rod: "Activated abilities of artifacts can't be activated." */
+  | 'noArtifactAbilities'
+  /** Drannith Magistrate: "Your opponents can't cast spells from anywhere other than their hands." */
+  | 'opponentsCastFromHandOnly'
+  /** Magus of the Moon: "Nonbasic lands are Mountains." */
+  | 'nonbasicLandsAreMountains';
 
 const GAME_RULES: [RegExp, GameRule][] = [
   [/^Your opponents can't cast spells during your turn\.$/m, 'opponentsCantCastOnYourTurn'],
@@ -2379,9 +2412,27 @@ const GAME_RULES: [RegExp, GameRule][] = [
   [/^Artifacts and creatures entering don't cause abilities to trigger\.$/m, 'noEntersTriggers'],
   [/^Each player can't cast more than one spell each turn\.$/m, 'oneSpellEachTurn'],
   [/^Each land is a Forest in addition to its other land types\.$/m, 'landsAreForests'],
+  [/^Each land is a Swamp in addition to its other land types\.$/m, 'landsAreSwamps'],
+  [/^Noncreature spells cost \{1\} more to cast\.$/m, 'noncreatureSpellsCost1'],
+  [/^As long as this artifact is untapped, each spell that would cost less than three mana to cast costs three mana to cast\./m, 'spellsCostAtLeast3'],
+  [/^If a land is tapped for two or more mana, it produces \{C\} instead of any other type and amount\.$/m, 'landsMakeOneColorless'],
+  [/^Each spell a player casts costs \{1\} more to cast for each other spell that player has cast this turn\.$/m, 'spellsCostMorePerSpell'],
+  [/^Activated abilities of artifacts can't be activated\.$/m, 'noArtifactAbilities'],
+  [/^Your opponents can't cast spells from anywhere other than their hands\.$/m, 'opponentsCastFromHandOnly'],
+  [/^Nonbasic lands are Mountains\.$/m, 'nonbasicLandsAreMountains'],
 ];
 
-export const gameRulesOf = (card: Card): GameRule[] => GAME_RULES.filter(([re]) => re.test(frontText(card))).map(([, rule]) => rule);
+const rulesCache = new Map<string, GameRule[]>();
+
+export function gameRulesOf(card: Card): GameRule[] {
+  const key = `${card.name}\n${card.oracleText}`;
+  let rules = rulesCache.get(key);
+  if (!rules) {
+    rules = GAME_RULES.filter(([re]) => re.test(frontText(card))).map(([, rule]) => rule);
+    rulesCache.set(key, rules);
+  }
+  return rules;
+}
 
 /** "Toxic 2": combat damage to a player also gives that many poison counters. */
 export function toxicOf(card: Card): number {
