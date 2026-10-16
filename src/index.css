@@ -272,6 +272,31 @@ footer { padding: 16px 20px; border-top: 1px solid #1f2530; color: var(--faint);
 .deck-tile img, .deck-cover-empty { width: 70px; border-radius: 4px; aspect-ratio: 488 / 680; background: var(--panel-2); }
 
 /* Collection */
+.page.collection { display: flex; flex-direction: column; gap: 20px; padding-top: 12px; }
+.collection-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 24px; }
+.collection-head h1 { margin: 8px 0 4px; }
+.collection-head p { margin: 0 0 10px; }
+.card-frame { position: relative; }
+.count-badge {
+  position: absolute; top: -8px; right: -8px; min-width: 30px; height: 30px; padding: 0 8px; border-radius: 999px;
+  display: grid; place-items: center; background: var(--accent); color: var(--accent-text); font-weight: 700; font-size: 0.8rem;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+.result-card.missing img { opacity: 0.5; filter: grayscale(0.6); }
+.result-card.missing .count-badge { background: var(--panel-2); color: #f0c46a; border: 1px solid #5a4a26; }
+.result-card .ok, .deck-progress .ok { color: #9fd3ae; }
+.result-card .warn, .deck-progress .warn { color: #f0c46a; }
+.deck-progress { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 12px; }
+.deck-progress h4 { margin: 0; }
+.progress-card { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line-soft); color: var(--text); }
+.progress-card:hover { border-color: #3a4254; color: var(--text); }
+.progress-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.progress-name { font-family: var(--font-display); font-size: 1.1rem; font-weight: 600; }
+.progress-bar { height: 6px; border-radius: 3px; background: var(--line-soft); overflow: hidden; }
+.progress-bar span { display: block; height: 100%; }
+.progress-bar .ok { background: #5fae76; }
+.progress-bar .warn { background: #d9a94e; }
+@media (max-width: 1000px) { .deck-progress { position: static; } }
 .collection-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
 .collection-table th { text-align: left; font-size: 0.8rem; color: var(--muted); border-bottom: 1px solid var(--border); padding: 4px; }
 .collection-table td { padding: 4px; border-bottom: 1px solid var(--border); white-space: nowrap; }
