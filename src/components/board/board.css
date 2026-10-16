@@ -51,6 +51,13 @@ main:has(> .page.play) { padding: 0 10px 10px; }
 .player-bar.theirs .seat + .seat { margin-left: 18px; }
 .hud.ally { width: auto; min-width: 110px; padding: 4px 8px; opacity: 0.9; }
 .hud.ally .life { font-size: 1.2rem; }
+/* Two-Headed Giant: the teammate's hand, face up and small, under its life. */
+.ally-seat { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; flex: 0 1 auto; }
+.ally-hand { display: flex; padding-left: 14px; max-width: 260px; }
+.ally-card { flex: 0 1 44px; min-width: 12px; margin-left: -14px; transition: transform 0.15s; cursor: zoom-in; }
+.ally-card:last-child { flex-shrink: 0; }
+.ally-card img { width: 44px; max-width: none; display: block; border-radius: 3px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5); }
+@media (hover: hover) { .ally-card:hover { transform: translateY(-6px); z-index: 2; } }
 
 .battlefield { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow: auto; padding: 6px 8px; }
 .battlefield.theirs { justify-content: flex-end; }
@@ -467,6 +474,11 @@ main:has(> .page.play) { padding: 0 10px 10px; }
   /* The hand gets the whole width, under your life and zones. */
   .player-bar.mine { flex-wrap: wrap; }
   .player-bar.mine .my-hand { flex-basis: 100%; min-height: calc(var(--hand-w) * 1.4 + 4px); padding-top: 4px; }
+  /* The teammate's life with its hand under it, next to yours. */
+  .ally-seat { flex: 1 1 0; align-items: stretch; }
+  .ally-hand { min-width: 0; max-width: none; padding-left: 12px; }
+  .ally-card { flex-basis: 30px; margin-left: -12px; }
+  .ally-card img { width: 30px; }
 }
 @media (max-width: 640px), (max-height: 560px) {
   .game { margin-top: 4px; gap: 8px; }

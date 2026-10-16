@@ -626,6 +626,7 @@ export const fr: Messages = {
     thinking: (name) => `${name} réfléchit…`,
     addMana: 'Produire du mana',
     manaPool: "Réserve de mana : dépensée en premier, elle se vide à la fin de l'étape",
+    allyHand: (name) => `Main de ${name}`,
     chooseHowToPlay: (card) => `Comment jouer ${card} ?`,
     castNamed: (card) => `Lancer ${card}`,
     castKicked: (card, cost) => `Lancer ${card} avec le kick (+${cost})`,

@@ -616,6 +616,7 @@ export const en = {
     thinking: (name: string) => `${name} is thinking…`,
     addMana: 'Add mana',
     manaPool: 'Mana pool: spent first, empties at the end of the step',
+    allyHand: (name: string) => `${name}'s hand`,
     chooseHowToPlay: (card: string) => `How do you play ${card}?`,
     castNamed: (card: string) => `Cast ${card}`,
     castKicked: (card: string, cost: string) => `Cast ${card} kicked (+${cost})`,

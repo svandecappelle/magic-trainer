@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom';
-import { Fragment, useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import {
   activatable, activationProblem, abilityMaxX, actor, apply, canAttack, canTapForMana, canUntapForMana, castCost, castOptions, castSources, channelCost, manaSources,
   landFaces, findInGraveyard, legalTargets, canBlock, findPermanent, hasKw, IllegalAction, isActivePlayer, mulliganBottom, isLegalTarget, isMainStep, firstOpponent, opponentsOf, teammatesOf, teamPlayers, wonBy,
@@ -622,7 +622,8 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     ));
 
   const blockedBy = (iid: string) => Object.entries(shownBlocks).find(([, b]) => b.includes(iid))?.[0];
-  const attackerIds = new Set([...g.attackers, ...(declaringAttack ? attackSel : [])]);
+  // Two-Headed Giant: the attackers a teammate already declared show while the next head declares.
+  const attackerIds = new Set([...g.attackers, ...(g.attackPlan ?? []).flatMap((x) => x.ids), ...(declaringAttack ? attackSel : [])]);
 
   const renderPermanent = (perm: Permanent, ghost = false) => {
     const attacking = attackerIds.has(perm.iid);
@@ -866,7 +867,21 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
         {/* You (and your teammate) */}
         <div className="player-bar mine">
           {hud(me)}
-          {mates.map((m) => <Fragment key={m}>{hud(m)}</Fragment>)}
+          {/* Two-Headed Giant: your teammate's hand, face up (teammates see each other's hands). */}
+          {mates.map((m) => (
+            <div key={m} className="ally-seat">
+              {hud(m)}
+              {g.players[m].hand.length > 0 && (
+                <div className="ally-hand" aria-label={t.game.allyHand(names[m])}>
+                  {g.players[m].hand.map((c) => (
+                    <div key={c.iid} className="ally-card" {...zoomable(c.card)}>
+                      <img src={show.imageSmall(c.card)} alt={show.name(c.card)} draggable={false} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
           {/* Your command zone: commanders are cast from here, like cards in hand (with their tax). */}
           {(g.players[me].command?.length ?? 0) > 0 && (
             <div className="command-zone" title={t.game.zoneNames.command}>

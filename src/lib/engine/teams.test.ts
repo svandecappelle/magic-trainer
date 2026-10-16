@@ -137,6 +137,34 @@ describe('Two-Headed Giant', () => {
     expect(s.players[3].life).toBe(28);
   });
 
+  it('has the team attack together: tapped and triggering once both heads declared', () => {
+    let s = twoHeaded();
+    const cheer = (name: string) => creature(name, 2, 2, { oracleText: 'Whenever you attack, you gain 1 life.' });
+    put(s, 0, cheer('Cheerleader A'), 'a');
+    put(s, 1, cheer('Cheerleader B'), 'b');
+    put(s, 1, creature('Bear', 2, 2, { oracleText: 'Whenever this creature attacks, you gain 1 life.' }), 'bear');
+    s = apply(s, { type: 'pass' });
+    s = apply(s, { type: 'pass' });
+    while (s.priority) s = apply(s, { type: 'pass' });
+    s = apply(s, { type: 'declareAttackers', attackers: ['a'] });
+    // Planned, not attacking yet: untapped, no trigger, the teammate declares.
+    expect(actor(s)).toBe(1);
+    expect(s.attackers).toEqual([]);
+    expect(s.battlefield.find((p) => p.iid === 'a')!.tapped).toBe(false);
+    expect(s.triggered ?? []).toEqual([]);
+    expect(s.stack).toEqual([]);
+    expect(s.attackPlan).toEqual([{ p: 0, ids: ['a'], pw: {} }]);
+    s = apply(s, { type: 'declareAttackers', attackers: ['b', 'bear'] });
+    // Everything attacks at once, then the triggers of both boards.
+    while (s.stack.length || s.priority) s = apply(s, { type: 'pass' });
+    expect(s.attackPlan).toBeUndefined();
+    expect(['a', 'b', 'bear'].map((iid) => s.battlefield.find((p) => p.iid === iid)!.tapped)).toEqual([true, true, true]);
+    const order = s.log.filter((e) => e.k === 'attack' || e.k === 'gainLife').map((e) => e.k);
+    expect(order).toEqual(['attack', 'attack', 'gainLife', 'gainLife', 'gainLife']);
+    expect(s.players[0].life).toBe(33);
+    expect(s.players[2].life).toBe(24);
+  });
+
   it('lets bots play a whole Two-Headed Giant game', () => {
     let s = newGame({
       decks: [0, 1, 2, 3].map((p) => [...Array(17).fill(mountain), ...Array.from({ length: 13 }, (_, i) => creature(`C${p}-${i}`, 2, 2))]),

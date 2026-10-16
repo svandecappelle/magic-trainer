@@ -150,8 +150,9 @@ get each face's cost and image (their text is rebuilt from the joined faces mean
   - [x] E. Bot: several opponents, bot teammate
   - [x] F. Online: 4-seat rooms in two teams, teammates see each other's hands
   - [x] G. Tests and browser games (online 4-player games tested by the server tests only)
-  Simplifications: each head acts in turn in the main phases and declares its own attackers and blockers (no
-  simultaneous team decisions); combat damage to the defending team counts as commander damage to its first player;
+  The team attacks together: each head declares its attackers in turn (the teammate sees them), then all become
+  attacking at once, so the attack triggers of both boards see every attacker. Teammates' hands are shown face up.
+  Simplifications: each head acts in turn in the main phases and declares its own blockers; combat damage to the defending team counts as commander damage to its first player;
   a commander always goes back to the command zone. More than two teams (free-for-all) is not supported.
 - [x] Turn timer, reconnect timeout — online: TURN_SECONDS per decision (default action on timeout, conceding after
   3 in a row), RECONNECT_SECONDS to come back (concede otherwise); countdown shown to both players

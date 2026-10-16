@@ -374,6 +374,11 @@ export interface GameState {
   pendingBlocks?: Record<string, string[]>;
   /** Heads that already declared attackers or blockers this step. */
   declared?: PlayerId[];
+  /**
+   * Two-Headed Giant: attackers declared by the heads so far. The team attacks together: they become attacking
+   * (tapped, "attacks" triggers) once the last head has declared.
+   */
+  attackPlan?: { p: PlayerId; ids: string[]; pw: Record<string, string> }[];
   battlefield: Permanent[];
   stack: StackItem[];
   active: PlayerId;
@@ -2838,6 +2843,7 @@ function closeWindow(d: GameState, reason: WindowReason) {
     // Attackers may have been removed during the window. Each head with creatures able to attack declares in turn.
     d.attackers = [];
     delete d.attackTargets;
+    delete d.attackPlan;
     const heads = teamPlayers(d, d.active).filter((q) => creaturesOf(d, q).some(canAttack));
     if (heads.length) {
       d.step = 'attack';
@@ -2879,8 +2885,9 @@ function nextHead(d: GameState, p: PlayerId): PlayerId | undefined {
 }
 
 /**
- * One head of the attacking team declares its attackers (none: an empty list). The next head with
- * creatures able to attack declares next; after the last, the attack window opens.
+ * One head of the attacking team declares its attackers (none: an empty list). The next head with creatures able to
+ * attack declares next; after the last, the whole team attacks at once (the attacking team declares attackers as a
+ * team), so the attack triggers of both boards see every attacker, and the attack window opens.
  */
 function declareAttacks(d: GameState, p: PlayerId, ids: string[], pw: Record<string, string>) {
   const attackers = [...new Set(ids)].map((iid) => {
@@ -2888,39 +2895,51 @@ function declareAttacks(d: GameState, p: PlayerId, ids: string[], pw: Record<str
     if (!perm || perm.controller !== p || !canAttack(perm)) throw new IllegalAction('cannotAttack');
     return perm;
   });
-  const targets: Record<string, string> = { ...(d.attackTargets ?? {}) };
   for (const [aid, pwIid] of Object.entries(pw)) {
     const walker = findPermanent(d, pwIid);
     if (!attackers.some((a) => a.iid === aid) || !walker || teamOf(d, walker.controller) === teamOf(d, p) || !isPlaneswalker(walker.card)) {
       throw new IllegalAction('cannotAttackThat');
     }
-    targets[aid] = pwIid;
   }
-  for (const a of attackers) if (!hasKw(a, 'vigilance')) tapPermanent(d, a);
-  d.attackers = [...d.attackers, ...attackers.map((a) => a.iid)];
-  if (Object.keys(targets).length) d.attackTargets = targets;
-  d.blocks = {};
-  if (attackers.length) log(d, { k: 'attack', p, cards: attackers.map((a) => a.card.name) });
-  for (const [aid, pwIid] of Object.entries(pw)) {
-    log(d, { k: 'attackPlaneswalker', card: findPermanent(d, aid)!.card.name, pw: findPermanent(d, pwIid)!.card.name });
-  }
-  for (const a of attackers) fireObject(d, 'attacks', a);
-  // "Whenever you attack".
-  if (attackers.length) {
-    for (const x of d.battlefield) {
-      if (x.controller === p) for (const t of triggersOf(x.card)) if (t.event.on === 'youAttack') queueTrigger(d, x, p, t.ability);
-    }
-  }
+  const plan = [...(d.attackPlan ?? []), { p, ids: attackers.map((a) => a.iid), pw }];
   // The next head of the team with creatures able to attack.
   const declared = [...(d.declared ?? []), p];
   const next = teamPlayers(d, d.active).find((q) => !declared.includes(q) && creaturesOf(d, q).some(canAttack));
   if (next !== undefined) {
+    d.attackPlan = plan;
     d.declared = declared;
     d.declaring = next;
     return;
   }
+  delete d.attackPlan;
   delete d.declared;
   delete d.declaring;
+  // Everything declared becomes attacking at once.
+  const all: { p: PlayerId; attackers: Permanent[] }[] = [];
+  for (const head of plan) {
+    const mine = head.ids.map((iid) => findPermanent(d, iid)).filter((a): a is Permanent => !!a && a.controller === head.p && canAttack(a));
+    for (const a of mine) if (!hasKw(a, 'vigilance')) tapPermanent(d, a);
+    d.attackers = [...d.attackers, ...mine.map((a) => a.iid)];
+    const targets = { ...(d.attackTargets ?? {}) };
+    for (const [aid, pwIid] of Object.entries(head.pw)) if (mine.some((a) => a.iid === aid) && findPermanent(d, pwIid)) targets[aid] = pwIid;
+    if (Object.keys(targets).length) d.attackTargets = targets;
+    if (mine.length) log(d, { k: 'attack', p: head.p, cards: mine.map((a) => a.card.name) });
+    for (const [aid, pwIid] of Object.entries(head.pw)) {
+      const a = findPermanent(d, aid);
+      const walker = findPermanent(d, pwIid);
+      if (a && walker && mine.includes(a)) log(d, { k: 'attackPlaneswalker', card: a.card.name, pw: walker.card.name });
+    }
+    all.push({ p: head.p, attackers: mine });
+  }
+  d.blocks = {};
+  for (const { attackers } of all) for (const a of attackers) fireObject(d, 'attacks', a);
+  // "Whenever you attack": each player who attacked with at least one creature.
+  for (const { p: q, attackers } of all) {
+    if (!attackers.length) continue;
+    for (const x of d.battlefield) {
+      if (x.controller === q) for (const t of triggersOf(x.card)) if (t.event.on === 'youAttack') queueTrigger(d, x, q, t.ability);
+    }
+  }
   if (!d.attackers.length) {
     d.step = 'main2';
     return;
