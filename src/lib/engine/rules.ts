@@ -1506,7 +1506,9 @@ export type TriggerEvent =
    * Each card an opponent draws (Orcish Bowmasters: `notFirstInDrawStep`, "except the first one they draw in each of
    * their draw steps"); Faerie Mastermind: only their `nth` (second) card each turn.
    */
-  | { on: 'opponentDraws'; nth?: number; notFirstInDrawStep?: boolean };
+  | { on: 'opponentDraws'; nth?: number; notFirstInDrawStep?: boolean }
+  /** City of Traitors: "When you play another land, …" */
+  | { on: 'youPlayLand' };
 
 export interface TriggerSpec {
   event: TriggerEvent;
@@ -1716,6 +1718,12 @@ export function triggersOf(card: Card): TriggerSpec[] {
     if (bowmasters && selves.includes(bowmasters[1].toLowerCase())) {
       const ability = triggerAbility(bowmasters[2], name, true);
       out.push({ event: { on: 'enters', self: true }, ability }, { event: { on: 'opponentDraws', notFirstInDrawStep: true }, ability });
+      continue;
+    }
+    // City of Traitors: "When you play another land, sacrifice this land."
+    const playLand = line.match(/^When(?:ever)? you play another land, (.+)$/i);
+    if (playLand) {
+      out.push({ event: { on: 'youPlayLand' }, ability: triggerAbility(playLand[1], name, true) });
       continue;
     }
     // Faerie Mastermind: "Whenever an opponent draws their second card each turn, you draw a card."
@@ -2189,6 +2197,16 @@ export function namesCardToStop(card: Card): boolean {
 export const drawsOneMore = (card: Card) =>
   /^As long as you have one or fewer cards in hand, if you would draw one or more cards, you draw that many cards plus one instead\.$/m.test(frontText(card));
 
+/** Elvish Spirit Guide: "Exile this card from your hand: Add {G}." (the color), or null. */
+export function handMana(card: Card): Color | null {
+  const m = frontText(card).match(/^Exile this card from your hand: Add \{([WUBRGC])\}\.$/m);
+  return m ? (m[1] as Color) : null;
+}
+
+/** Multiversal Passage: "As this land enters, choose a basic land type." and "This land is the chosen type." */
+export const choosesBasicType = (card: Card) =>
+  /^As this land enters, choose a basic land type\./m.test(frontText(card)) && /^This land is the chosen type\.$/m.test(frontText(card));
+
 /** Hexing Squelcher: "Spells you control can't be countered." */
 export const protectsSpells = (card: Card) => /^Spells you control can't be countered\.$/m.test(frontText(card));
 
@@ -2232,7 +2250,8 @@ export function entersTappedRule(card: Card): EntersTappedRule | null {
     if (types.every((t) => LAND_TYPES.includes(t) || OTHER_SUBTYPES.includes(t))) return { kind: 'unlessSubtypes', subtypes: types };
     return null;
   }
-  const shock = text.match(/As (?:this land|this permanent) enters(?: the battlefield)?, you may pay (\d+) life\. If you don't, it enters(?: the battlefield)? tapped\./i);
+  // Multiversal Passage: "As this land enters, choose a basic land type. Then you may pay 2 life. If you don't, …"
+  const shock = text.match(/As (?:this land|this permanent) enters(?: the battlefield)?, (?:choose a basic land type\. Then )?you may pay (\d+) life\. If you don't, it enters(?: the battlefield)? tapped\./i);
   return shock ? { kind: 'payLife', n: Number(shock[1]) } : null;
 }
 
@@ -2253,7 +2272,9 @@ export type GameRule =
   /** Grafdigger's Cage: "Creature cards in graveyards and libraries can't enter the battlefield." */
   | 'noCreaturesFromGraveyardsLibraries'
   /** Grafdigger's Cage: "Players can't cast spells from graveyards or libraries." */
-  | 'noCastingFromGraveyardsLibraries';
+  | 'noCastingFromGraveyardsLibraries'
+  /** Defense Grid: "Each spell costs {3} more to cast except during its controller's turn." */
+  | 'offTurnSpellsCost3';
 
 const GAME_RULES: [RegExp, GameRule][] = [
   [/^Your opponents can't cast spells during your turn\.$/m, 'opponentsCantCastOnYourTurn'],
@@ -2264,6 +2285,7 @@ const GAME_RULES: [RegExp, GameRule][] = [
   [/^If a nontoken creature would enter(?: the battlefield)? and it wasn't cast, exile it instead\.$/m, 'uncastCreaturesExiled'],
   [/^Creature cards in graveyards and libraries can't enter the battlefield\.$/m, 'noCreaturesFromGraveyardsLibraries'],
   [/^Players can't cast spells from graveyards or libraries\.$/m, 'noCastingFromGraveyardsLibraries'],
+  [/^Each spell costs \{3\} more to cast except during its controller's turn\.$/m, 'offTurnSpellsCost3'],
 ];
 
 export const gameRulesOf = (card: Card): GameRule[] => GAME_RULES.filter(([re]) => re.test(frontText(card))).map(([, rule]) => rule);

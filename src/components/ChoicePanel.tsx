@@ -29,6 +29,7 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
     case 'payLife': return t.game.choice.payLife({ card: card(String(p.card)), n });
     case 'sacrificeCost': return t.game.choice.sacrificeCost({ card: card(String(p.card)) });
     case 'creatureType': return t.game.choice.creatureType({ card: card(String(p.card)) });
+    case 'basicType': return t.game.choice.basicType({ card: card(String(p.card)) });
     case 'cardName': return t.game.choice.cardName({ card: card(String(p.card)) });
     case 'crewCost': return t.game.choice.crewCost({ card: card(String(p.card)), n });
     case 'dig': return t.game.choice.dig({ n });

@@ -150,11 +150,6 @@ NONE     Moseo, Vein's New Dean {2}{B} — Legendary Creature — Bird Skeleton 
 NONE     Multiply by Zero {1}{B} — Instant
   ✗ Target creature has base power and toughness 0/0 until end of turn.
       spell not simulated
-NONE     Multiversal Passage  — Land
-  ? As this land enters, choose a basic land type. Then you may pay 2 lif…
-      not read by the engine
-  ? This land is the chosen type.
-      not read by the engine
 NONE     Nurturing Pixie {W} — Creature — Faerie Rogue
   ✓ Flying
       keyword
@@ -821,6 +816,11 @@ OK       Meticulous Archive  — Land — Plains Island
       enters tapped (always)
   ✓ When this land enters, surveil 1.
       trigger (enters) → surveil
+OK       Multiversal Passage  — Land
+  ✓ As this land enters, choose a basic land type. Then you may pay 2 lif…
+      chooses a basic land type (its mana); pay 2 life or it enters tapped
+  ✓ This land is the chosen type.
+      chooses a basic land type (its mana); pay 2 life or it enters tapped
 OK       Negate {1}{U} — Instant
   ✓ Counter target noncreature spell.
       spell → counter (1 target)
@@ -961,5 +961,5 @@ OK       Watery Grave  — Land — Island Swamp
   ✓ As this land enters, you may pay 2 life. If you don't, it enters tapp…
       enters tapped (payLife)
 
-178 cards: 70 ok, 43 partial, 65 not simulated, 0 can't be cast
+178 cards: 71 ok, 43 partial, 64 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

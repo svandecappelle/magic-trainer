@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
-import { activationProblem, actor, apply, canCastNow, canTapForMana, type Answer, castOptions, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
+import { activationProblem, actor, apply, canCastNow, castCost, canTapForMana, type Answer, castOptions, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
 import { botAction } from './bot';
 import { activatedOf, castInfo, castSpec, finalChapter, manaUnits, parseAbilityText, spellSpec, triggersOf } from './rules';
 
@@ -1559,5 +1559,54 @@ describe('Orcish Bowmasters, Faerie Mastermind, Quantum Riddler, Containment Pri
     expect(castOptions(s, 0, 'g0')).toEqual([]);
     s = board({ mana: 3, grave: [souls] });
     expect(castOptions(s, 0, 'g0').length).toBeGreaterThan(0);
+  });
+});
+
+describe('City of Traitors, Defense Grid, Spirit Guides, Multiversal Passage', () => {
+  const city = card({ name: 'City of Traitors', typeLine: 'Land', oracleText: 'When you play another land, sacrifice this land.\n{T}: Add {C}{C}.' });
+  const grid = card({ name: 'Defense Grid', typeLine: 'Artifact', manaCost: '{2}', cmc: 2, oracleText: 'Each spell costs {3} more to cast except during its controller\'s turn.' });
+  const esg = creature('Elvish Spirit Guide', 2, 2, { typeLine: 'Creature — Elf Spirit', manaCost: '{2}{G}', cmc: 3, colors: ['G'], oracleText: 'Exile this card from your hand: Add {G}.' });
+  const passage = card({
+    name: 'Multiversal Passage', typeLine: 'Land',
+    oracleText: 'As this land enters, choose a basic land type. Then you may pay 2 life. If you don\'t, it enters tapped.\nThis land is the chosen type.',
+  });
+  const growth = spell('Giant Growth', '{G}', 'Target creature gets +3/+3 until end of turn.');
+
+  it('City of Traitors is sacrificed when you play another land', () => {
+    let s = board({ mine: [city], hand: [swamp] });
+    s = apply(s, { type: 'playLand', iid: 'h0' });
+    for (let i = 0; i < 6 && (s.stack.length || s.triggered?.length); i++) s = settle(apply(s, { type: 'pass' }));
+    expect(perm(s, 'City of Traitors')).toBeUndefined();
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toEqual(['City of Traitors']);
+  });
+
+  it('Defense Grid: spells cost {3} more except during their controller\'s turn', () => {
+    const s = board({ mine: [grid] });
+    expect(castCost(s, 0, growth, {})).toEqual({ generic: 0, colored: [['G']] });
+    expect(castCost(s, 1, growth, {})).toEqual({ generic: 3, colored: [['G']] });
+  });
+
+  it('Elvish Spirit Guide pays {G} by being exiled from the hand, last', () => {
+    let s = board({ hand: [growth, esg], mine: [creature('Bear', 2, 2)] });
+    expect(castOptions(s, 0, 'h0').length).toBeGreaterThan(0);
+    // It can't pay for itself.
+    expect(castOptions(s, 0, 'h1')).toEqual([]);
+    s = settle(apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] }));
+    expect(s.players[0].exile.map((c) => c.card.name)).toEqual(['Elvish Spirit Guide']);
+    expect(s.players[0].hand).toEqual([]);
+  });
+
+  it('Multiversal Passage: a basic land type, its mana, and 2 life or tapped', () => {
+    let s = board({ hand: [passage] });
+    s = apply(s, { type: 'playLand', iid: 'h0' });
+    expect(s.pending?.choice).toMatchObject({ kind: 'mode', purpose: 'basicType', modes: ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'] });
+    s = apply(s, { type: 'choose', answer: { kind: 'mode', modes: [1] } });
+    expect(s.pending?.choice).toMatchObject({ kind: 'yesNo', purpose: 'payLife', params: { n: 2 } });
+    s = apply(s, { type: 'choose', answer: { kind: 'yesNo', yes: true } });
+    const p = perm(s, 'Multiversal Passage')!;
+    expect(p.card.typeLine).toBe('Land — Island');
+    expect(p.tapped).toBe(false);
+    expect(s.players[0].life).toBe(18);
+    expect(unitsOf(s, p)).toEqual([['U']]);
   });
 });

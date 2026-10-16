@@ -602,6 +602,7 @@ export const en = {
       sacrificeCost: (p: { card: string }) => `Choose what to sacrifice for ${p.card}'s ability.`,
       creatureType: (p: { card: string }) => `${p.card}: choose a creature type.`,
       cardName: (p: { card: string }) => `${p.card}: choose a card name (its activated abilities, other than mana abilities, can't be activated).`,
+      basicType: (p: { card: string }) => `${p.card}: choose a basic land type (it makes that land's mana).`,
       crewCost: (p: { card: string; n: number }) => `Crew ${p.card}: tap creatures with total power ${p.n} or more.`,
       dig: (p: { n: number }) => `You look at the top ${p.n} cards: choose what to put into your hand (the rest go on the bottom).`,
       tradeForCard: (p: { card: string }) => `${p.card}: sacrifice an artifact or discard a card to draw a card (or choose nothing).`,

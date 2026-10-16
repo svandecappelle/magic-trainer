@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -209,6 +209,7 @@ export type ChoicePurpose =
   | 'costChoice' // a spell's additional cost "A or B": yes pays the first
   | 'creatureType' // Cavern of Souls: "choose a creature type"
   | 'cardName' // Pithing Needle: "choose a card name"
+  | 'basicType' // Multiversal Passage: "choose a basic land type"
   | 'crewCost' // Crew N: which creatures to tap
   | 'dig' // "look at the top N cards …": which to put into the hand
   | 'tradeForCard' // Chandra's +2: sacrifice an artifact or discard a card (or neither)
@@ -251,7 +252,7 @@ export interface Pending {
    * What continues once answered: the end of turn, the spell or ability being resolved, or a
    * triggered ability waiting for targets (`trigger`).
    */
-  resume: 'cleanup' | 'effect' | 'trigger' | 'activation' | 'legend' | 'payLife' | 'castCost' | 'clone' | 'discardLandInstead' | 'gemstoneCaverns' | 'damageOrder' | 'creatureType' | 'cardName' | 'crew' | 'triggerMode';
+  resume: 'cleanup' | 'effect' | 'trigger' | 'activation' | 'legend' | 'payLife' | 'castCost' | 'clone' | 'discardLandInstead' | 'gemstoneCaverns' | 'damageOrder' | 'creatureType' | 'cardName' | 'basicType' | 'crew' | 'triggerMode';
   /** For clone: the window the resolving spell belongs to. */
   reason?: WindowReason;
   /** For payLife: the land that entered. */
@@ -714,7 +715,12 @@ export function manaSources(s: GameState, p: PlayerId, spell?: Card): ManaSource
         iid: x.iid, colors: [...new Set(units.flat())], ...(units.length > 1 ? { units } : {}), ...(painfulMana(x) ? { last: true } : {}), ...(pain ? { pain } : {}),
       };
     });
-  return [...pool, ...perms];
+  // Elvish / Simian Spirit Guide: exiled from the hand for one mana, spent last.
+  const fromHand = s.players[p].hand.flatMap((c): ManaSource[] => {
+    const color = handMana(c.card);
+    return color ? [{ iid: `hand:${c.iid}`, colors: [color], last: true }] : [];
+  });
+  return [...pool, ...perms, ...fromHand];
 }
 
 /** Can the permanent's mana be taken back (all of it still unspent in the pool)? */
@@ -744,7 +750,7 @@ export function costWithX(card: Card, x = 0) {
 }
 
 export const canPay = (s: GameState, p: PlayerId, card: Card, x = 0) =>
-  findPayment(manaSources(s, p, card), costWithX(card, x)) !== null;
+  findPayment(manaSources(s, p, card), castCost(s, p, card, {}, x)) !== null;
 
 /** The mana cost of casting `card` a given way: its face's cost (or flashback), kicker, X, minus affinity. */
 /** Why `p` can't pay an additional cost of casting the card `iid` (null: they can). */
@@ -805,15 +811,17 @@ export function castCost(s: GameState, p: PlayerId, card: Card, opt: { face?: nu
     kicker.colored = [...kicker.colored, ...more.colored];
   }
   const discount = info.affinity ? s.battlefield.filter((x) => x.controller === p && cardMatches(x.card, info.affinity!)).length : 0;
-  // Commander tax: {2} more for each previous cast from the command zone.
-  const tax = opt.from === 'command' && opt.iid ? 2 * (s.players[p].commanderCasts?.[opt.iid] ?? 0) : 0;
+  // Commander tax: {2} more for each previous cast from the command zone; Defense Grid: {3} more off its caster's turn.
+  const tax = (opt.from === 'command' && opt.iid ? 2 * (s.players[p].commanderCasts?.[opt.iid] ?? 0) : 0)
+    + (isActivePlayer(s, p) ? 0 : 3 * withRule(s, 'offTurnSpellsCost3').length);
   return { generic: Math.max(0, base.generic + kicker.generic + tax - discount), colored: [...base.colored, ...kicker.colored] };
 }
 
 /** What can pay for casting `card`: mana, plus creatures to tap (convoke) and graveyard cards to exile (delve). */
 export function castSources(s: GameState, p: PlayerId, card: Card, iid: string, face = 0): ManaSource[] {
   const info = castInfo(card, face);
-  const out = manaSources(s, p, faceCard(card, face));
+  // A Spirit Guide can't pay for casting itself.
+  const out = manaSources(s, p, faceCard(card, face)).filter((m) => m.iid !== `hand:${iid}`);
   if (info.convoke) {
     for (const x of s.battlefield) {
       if (x.controller !== p || x.tapped || !isCreature(x.card)) continue;
@@ -1502,6 +1510,13 @@ function payMana(d: GameState, p: PlayerId, plan: ManaPick[]) {
       tapPermanent(d, findPermanent(d, iid.slice(8))!);
       continue;
     }
+    if (iid.startsWith('hand:')) {
+      const inst = ps.hand.find((c) => c.iid === iid.slice(5))!;
+      ps.hand = ps.hand.filter((c) => c !== inst);
+      ps.exile.push(inst);
+      log(d, { k: 'exiledCard', card: inst.card.name, from: 'hand' });
+      continue;
+    }
     if (iid.startsWith('delve:')) {
       const inst = ps.graveyard.find((c) => c.iid === iid.slice(6))!;
       ps.graveyard = ps.graveyard.filter((c) => c !== inst);
@@ -1710,6 +1725,22 @@ function stoppableNames(d: GameState, p: PlayerId): string[] {
     if (activatedOf(c).length || castInfo(c).channel) names.push(c.name);
   }
   return names.slice(0, 16);
+}
+
+const BASIC_LAND_TYPES = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'];
+
+/**
+ * Multiversal Passage: "As this land enters, choose a basic land type." It becomes that type (its mana, and "if you
+ * control a Mountain"), for as long as it stays.
+ */
+function askBasicType(d: GameState): boolean {
+  const perm = d.battlefield.find((x) => choosesBasicType(x.card) && !x.chosenType);
+  if (!perm) return false;
+  d.pending = {
+    choice: { kind: 'mode', player: perm.controller, purpose: 'basicType', min: 1, max: 1, modes: BASIC_LAND_TYPES, params: { card: perm.card.name } },
+    resume: 'basicType', iid: perm.iid,
+  };
+  return true;
 }
 
 /** Pithing Needle: "As this artifact enters, choose a card name." (asked once nothing else is going on). */
@@ -2940,7 +2971,7 @@ function settle(d: GameState) {
   for (;;) {
     checkStateBased(d);
     if (d.winner !== null || d.pending || d.mulligan) return;
-    if (askLegendRule(d) || askLifeChoice(d) || askCreatureType(d) || askCardName(d)) return;
+    if (askLegendRule(d) || askBasicType(d) || askLifeChoice(d) || askCreatureType(d) || askCardName(d)) return;
     if (d.triggered?.length) {
       if (!flushTrigger(d)) return;
       continue;
@@ -3242,6 +3273,15 @@ export function apply(state: GameState, action: Action): GameState {
             log(d, { k: 'legendRule', card: perm.card.name });
           }
         }
+      } else if (pending.resume === 'basicType' && action.answer.kind === 'mode') {
+        const perm = findPermanent(d, pending.iid!);
+        const type = BASIC_LAND_TYPES[action.answer.modes[0]];
+        if (perm && type) {
+          perm.chosenType = type;
+          perm.printed ??= perm.card;
+          perm.card = { ...perm.card, typeLine: `${perm.card.typeLine.split(' — ')[0]} — ${type}` };
+          log(d, { k: 'chosenType', card: perm.card.name, type });
+        }
       } else if (pending.resume === 'cardName' && action.answer.kind === 'mode') {
         const perm = findPermanent(d, pending.iid!);
         const name = (pending.choice as { modes: string[] }).modes[action.answer.modes[0]];
@@ -3352,6 +3392,11 @@ export function apply(state: GameState, action: Action): GameState {
       log(d, { k: 'playLand', p, card: land.name });
       const perm = enterBattlefield(d, { iid: inst.iid, card: land }, p);
       if (land !== inst.card) perm.printed = inst.card;
+      // City of Traitors: "When you play another land, …"
+      for (const x of d.battlefield) {
+        if (x.controller !== p || x.iid === perm.iid) continue;
+        for (const t of triggersOf(x.card)) if (t.event.on === 'youPlayLand') queueTrigger(d, x, p, t.ability);
+      }
       break;
     }
 

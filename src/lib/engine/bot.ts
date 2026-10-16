@@ -5,7 +5,7 @@ import {
 } from './engine';
 import {
   activatedOf, auraTarget, castInfo, castSpec, creatureValue, modeSets, faceCard, findPayment, hasInstantSpeed, isAdventure, isPlaneswalker, isSaga, isToken, staticsOf, hasKeyword, isCreature, isInstantOrSorcery, isLandCard, manaColors,
-  discardsLandInstead, parseCost, spellSpec, stateMana, type AbilitySpec, type Amount, type Effect,
+  choosesBasicType, discardsLandInstead, parseCost, spellSpec, stateMana, type AbilitySpec, type Amount, type Effect,
 } from './rules';
 import type { Card } from '../../types';
 
@@ -218,8 +218,8 @@ function chooseDoubleBlock(a: Permanent, options: Permanent[], mustBlock: boolea
 function chooseLand(s: GameState, me: PlayerId): { iid: string; face: number } | null {
   const player = s.players[me];
   if (player.landPlayed) return null;
-  // Urza's Saga makes {C} from its chapter I.
-  const colorsOf = (c: Card): string[] => (isSaga(c) && !manaColors(c).length ? ['C'] : manaColors(c, player.identity));
+  // Urza's Saga makes {C} from its chapter I; Multiversal Passage becomes the basic land type it needs.
+  const colorsOf = (c: Card): string[] => (choosesBasicType(c) ? ['W', 'U', 'B', 'R', 'G'] : isSaga(c) && !manaColors(c).length ? ['C'] : manaColors(c, player.identity));
   const lands = player.hand.filter((c) => isLandCard(c.card) && colorsOf(c.card).length);
   if (!lands.length) {
     // A modal double-faced card with a land on its back, when there's no other land to play.
@@ -974,6 +974,14 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
       };
     }
     case 'mode':
+      // Multiversal Passage: the basic type of the color its hand and library need most.
+      if (choice.purpose === 'basicType') {
+        const ps = s.players[choice.player];
+        const need = (color: string) => [...ps.hand, ...ps.library].reduce((n, c) => n + (c.card.manaCost.match(new RegExp(`\\{${color}\\}`, 'g'))?.length ?? 0), 0);
+        const order = ['W', 'U', 'B', 'R', 'G'];
+        const best = order.reduce((a, b) => (need(b) > need(a) ? b : a));
+        return { kind: 'mode', modes: [order.indexOf(best)] };
+      }
       if (choice.purpose === 'triggerMode' && s.pending?.trigger?.ability.modal) return { kind: 'mode', modes: triggerModes(s, choice.player, s.pending.trigger) };
       return { kind: 'mode', modes: Array.from({ length: choice.min }, (_, i) => i) };
     case 'yesNo':
