@@ -12,6 +12,7 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
   switch (choice.purpose) {
     case 'cleanupDiscard': return t.game.choice.cleanupDiscard({ n });
     case 'payOrCounter': return t.game.choice.payOrCounter({ card: card(String(p.card)), n });
+    case 'payLifeOrCounter': return t.game.choice.payLifeOrCounter({ card: card(String(p.card)), n });
     case 'discard': return t.game.choice.discard({ n });
     case 'discardChosen': return t.game.choice.discardChosen({ n, who: names[Number(p.p) as 0 | 1] });
     case 'scry': return t.game.choice.scry({ n });
@@ -28,6 +29,7 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
     case 'payLife': return t.game.choice.payLife({ card: card(String(p.card)), n });
     case 'sacrificeCost': return t.game.choice.sacrificeCost({ card: card(String(p.card)) });
     case 'creatureType': return t.game.choice.creatureType({ card: card(String(p.card)) });
+    case 'cardName': return t.game.choice.cardName({ card: card(String(p.card)) });
     case 'crewCost': return t.game.choice.crewCost({ card: card(String(p.card)), n });
     case 'dig': return t.game.choice.dig({ n });
     case 'tradeForCard': return t.game.choice.tradeForCard({ card: card(String(p.card)) });
@@ -100,6 +102,7 @@ export function ChoicePanel({ choice, onAnswer, onPreview, title }: Props) {
     const n = Number(choice.params?.n);
     const [yes, no] =
       choice.purpose === 'payOrCounter' ? [t.game.payN(n), t.game.dontPay]
+      : choice.purpose === 'payLifeOrCounter' ? [t.game.payLifeN(n), t.game.dontPay]
       : choice.purpose === 'payLife' ? [t.game.payLifeN(n), t.game.enterTapped]
       : choice.purpose === 'costChoice' ? [costLabel(t, String(choice.params?.yes)), costLabel(t, String(choice.params?.no))]
       : [t.game.yes, t.game.no];

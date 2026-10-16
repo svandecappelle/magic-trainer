@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
-import { actor, apply, canTapForMana, type Answer, castOptions, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
+import { activationProblem, actor, apply, canCastNow, canTapForMana, type Answer, castOptions, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
 import { botAction } from './bot';
 import { activatedOf, castInfo, castSpec, finalChapter, manaUnits, parseAbilityText, spellSpec, triggersOf } from './rules';
 
@@ -1373,5 +1373,93 @@ describe('Moxen and Gemstone Caverns', () => {
     // Without a luck counter: {C}.
     s = board({ mine: [caverns] });
     expect(unitsOf(s, perm(s, 'Gemstone Caverns')!)).toEqual([['C']]);
+  });
+});
+
+describe('Hexing Squelcher, Teferi, Time Raveler, Pithing Needle', () => {
+  const squelcher = creature('Hexing Squelcher', 2, 2, {
+    typeLine: 'Creature — Goblin Sorcerer', manaCost: '{1}{R}', cmc: 2, colors: ['R'], keywords: ['Ward'],
+    oracleText: 'This spell can\'t be countered.\nWard—Pay 2 life.\nSpells you control can\'t be countered.\nOther creatures you control have "Ward—Pay 2 life."',
+  });
+  const teferi = card({
+    name: 'Teferi, Time Raveler', typeLine: 'Legendary Planeswalker — Teferi', manaCost: '{1}{W}{U}', cmc: 3, colors: ['W', 'U'], loyalty: '4',
+    oracleText: 'Each opponent can cast spells only any time they could cast a sorcery.\n+1: Until your next turn, you may cast sorcery spells as though they had flash.\n−3: Return up to one target artifact, creature, or enchantment to its owner\'s hand. Draw a card.',
+  });
+  const needle = card({
+    name: 'Pithing Needle', typeLine: 'Artifact', manaCost: '{1}', cmc: 1,
+    oracleText: 'As this artifact enters, choose a card name.\nActivated abilities of sources with the chosen name can\'t be activated unless they\'re mana abilities.',
+  });
+  const murder = spell('Murder', '{B}', 'Destroy target creature.');
+  const counter = spell('Counterspell', '{U}', 'Counter target spell.');
+  const pinger = creature('Pinger', 1, 1, { oracleText: '{T}: Pinger deals 1 damage to any target.' });
+  const elves = creature('Llanowar Elves', 1, 1, { typeLine: 'Creature — Elf Druid', oracleText: '{T}: Add {G}.' });
+  /** Passes (the opponent answers with settle) until player 0 has a choice or the stack is empty. */
+  const run = (s: GameState) => {
+    for (let i = 0; i < 12 && !s.pending && s.stack.length; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+
+  it('Hexing Squelcher gives its other creatures "Ward—Pay 2 life"', () => {
+    // Granted abilities are computed after each action: tap a Swamp first.
+    let s = board({ mana: 2, hand: [murder], theirs: [squelcher, creature('Bear', 2, 2)] });
+    s = apply(s, { type: 'tapForMana', iid: s.battlefield[0].iid });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] })));
+    expect(s.pending?.choice).toMatchObject({ kind: 'yesNo', player: 0, purpose: 'payLifeOrCounter', params: { n: 2 } });
+    // Not paid: Murder is countered.
+    s = run(apply(s, { type: 'choose', answer: { kind: 'yesNo', yes: false } }));
+    expect(perm(s, 'Bear')).toBeDefined();
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toEqual(['Murder']);
+    // Paid: 2 life, the Bear is destroyed.
+    s = board({ mana: 2, hand: [murder], theirs: [squelcher, creature('Bear', 2, 2)] });
+    s = apply(s, { type: 'tapForMana', iid: s.battlefield[0].iid });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] })));
+    s = run(apply(s, { type: 'choose', answer: { kind: 'yesNo', yes: true } }));
+    expect(s.players[0].life).toBe(18);
+    expect(perm(s, 'Bear')).toBeUndefined();
+  });
+
+  it('Hexing Squelcher: spells you control can\'t be countered', () => {
+    let s = board({ mana: 2, hand: [creature('Bear', 2, 2)], mine: [squelcher], oppHand: [counter], oppMana: 1 });
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    // The opponent counters the Bear: it still resolves.
+    if (actor(s) === 1 && s.priority) s = apply(s, { type: 'cast', iid: 'o0', targets: [[{ kind: 'spell', iid: s.stack[0].iid }]] });
+    s = run(settle(s));
+    expect(s.players[1].graveyard.map((c) => c.card.name)).toEqual(['Counterspell']);
+    expect(perm(s, 'Bear')).toBeDefined();
+  });
+
+  it('Teferi, Time Raveler: opponents cast only at sorcery speed; +1 gives sorceries flash', () => {
+    const bolt = spell('Bolt', '{B}', 'Bolt deals 3 damage to any target.');
+    const ritual = spell('Sorcery Bolt', '{B}', 'Sorcery Bolt deals 3 damage to any target.', 'Sorcery');
+    let s = board({ mana: 1, hand: [bolt], theirs: [teferi] });
+    s.priority = { player: 0, passes: 0, reason: 'main' };
+    expect(canCastNow(s, 0, bolt)).toBe(false);
+    expect(errorOf(() => apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'player', player: 1 }]] }))).toBe('sorceryOnly');
+    // In its controller's own main phase, at sorcery speed, the spell can be cast.
+    s.priority = null;
+    expect(canCastNow(s, 0, bolt)).toBe(true);
+
+    s = board({ mana: 1, hand: [ritual], mine: [teferi] });
+    perm(s, 'Teferi, Time Raveler')!.counters.loyalty = 4;
+    const plus = activatedOf(teferi).findIndex((a) => a.cost.loyalty === 1);
+    s = run(settle(apply(s, { type: 'activate', iid: iidOf(s, 'Teferi, Time Raveler'), index: plus })));
+    expect(s.players[0].sorceryFlash).toBe(true);
+    s.priority = { player: 0, passes: 0, reason: 'main' };
+    expect(canCastNow(s, 0, ritual)).toBe(true);
+  });
+
+  it('Pithing Needle names a card: its activated abilities stop, mana abilities don\'t', () => {
+    let s = board({ mana: 1, hand: [needle], theirs: [pinger, elves] });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    expect(s.pending?.choice).toMatchObject({ kind: 'mode', purpose: 'cardName', modes: ['Pinger'] });
+    s = apply(s, { type: 'choose', answer: { kind: 'mode', modes: [0] } });
+    expect(perm(s, 'Pithing Needle')!.chosenName).toBe('Pinger');
+    expect(activationProblem(s, 1, perm(s, 'Pinger')!, 0)).toBe('nameStopped');
+    expect(canTapForMana(s, perm(s, 'Llanowar Elves')!)).toBe(true);
+    // Nothing seen to name: it names nothing.
+    s = board({ mana: 1, hand: [needle] });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    expect(s.pending).toBeNull();
+    expect(perm(s, 'Pithing Needle')!.chosenName).toBe('');
   });
 });

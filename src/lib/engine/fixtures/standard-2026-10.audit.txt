@@ -1,6 +1,6 @@
 NONE     Amalia Benavides Aguirre {W}{B} — Legendary Creature — Vampire Scout
-  ✗ Ward—Pay 3 life.
-      keyword not simulated: ward
+  ✓ Ward—Pay 3 life.
+      keyword
   ✗ Whenever you gain life, Amalia Benavides Aguirre explores. Then destr…
       trigger (gainLife), effect not simulated
 NONE     Ancient Vendetta {3}{B} — Sorcery

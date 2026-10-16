@@ -401,7 +401,7 @@ export type DiscardMode = 'choose' | 'random' | 'casterChooses';
 export type Effect =
   | { kind: 'damage'; amount: Amount; to: Affected }
   /** "Counter target spell unless its controller pays {N}" when `unlessPays` is set. */
-  | { kind: 'counter'; to: Affected; unlessPays?: number }
+  | { kind: 'counter'; to: Affected; unlessPays?: number; unlessPaysLife?: number }
   /** "gets +N/+N (and gains …) until end of turn". Negative values shrink. */
   | { kind: 'pump'; power: number; toughness: number; keywords: Keyword[]; to: Affected }
   /** `untilLeaves`: exiled until the ability's source leaves the battlefield (Seam Rip). */
@@ -450,6 +450,8 @@ export type Effect =
   | { kind: 'attach'; to: Affected }
   /** Chrome Mox: "you may exile a nonartifact, nonland card from your hand" (remembered by the source: imprint). */
   | { kind: 'exileFromHand'; filter: TargetFilter }
+  /** Teferi, Time Raveler's +1: "Until your next turn, you may cast sorcery spells as though they had flash." */
+  | { kind: 'sorceryFlash' }
   /**
    * Thorin: "attach any number of target Equipment you control to target creature you control. When one or more
    * Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one
@@ -1123,6 +1125,7 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
       kind: 'addCounters', counter: m[2] as CounterKind, n: toAmount(m[1]), to: 'self',
     }));
     scan(new RegExp(`(?:^|[.,] *|then )sacrifice ${SELF}(?=\\.|$)`, 'gi'), () => ({ kind: 'sacrificeSelf' }));
+    scan(/(?:^|[.] *)Until your next turn, you may cast sorcery spells as though they had flash(?=\.|$)/g, () => ({ kind: 'sorceryFlash' }));
     // Chrome Mox: "Imprint — When this artifact enters, you may exile a nonartifact, nonland card from your hand."
     scan(/(?:^|[.,] *)(?:you )?exile an? ([a-z, -]+?) card from your hand(?=\.|$)/gi, (m) => {
       const filter = cardWordsFilter(m[1]);
@@ -2007,6 +2010,8 @@ export interface StaticSpec {
   keywords: Keyword[];
   /** "has … ward {2}" (Lavaspur Boots, Sheltered by Ghosts). */
   ward?: number;
+  /** Hexing Squelcher: "Other creatures you control have "Ward—Pay 2 life."" */
+  wardLife?: number;
   /** Dragonfire Blade: "has hexproof from monocolored". */
   hexproofFromMonocolored?: boolean;
   /** Mjölnir: "Double all damage equipped creature would deal." */
@@ -2101,6 +2106,13 @@ export function staticsOf(card: Card): StaticSpec[] {
       out.push({ who: attachedSubject, power: Number(perAttached![2]), toughness: Number(perAttached![3]), keywords: [], perAttached: true });
       continue;
     }
+    // Hexing Squelcher: "Other creatures you control have "Ward—Pay 2 life."" (ward {N} the same way).
+    const grantedWard = line.match(/^((?:Other )?[A-Za-z ]*?[Cc]reatures?(?: you control)?) have "Ward(?:—Pay (\d+) life| \{(\d+)\})\."$/);
+    const wardSubject = grantedWard && anthemSubject(grantedWard[1]);
+    if (wardSubject) {
+      out.push({ who: wardSubject, power: 0, toughness: 0, keywords: [], ...(grantedWard![2] ? { wardLife: Number(grantedWard![2]) } : { ward: Number(grantedWard![3]) }) });
+      continue;
+    }
     const anthem = line.match(/^((?:Other )?[A-Za-z ]*?[Cc]reatures?(?: you control| your opponents control| you don't control)?) (?:get ([+-]\d+)\/([+-]\d+)(?: and have (.+))?|have (.+))\.$/);
     if (anthem) {
       const subject = anthemSubject(anthem[1]);
@@ -2126,6 +2138,25 @@ export function wardCost(card: Card): number {
   const m = frontText(card).match(/(?:^|\n|, )Ward \{(\d+)\}/i);
   return m ? Number(m[1]) : 0;
 }
+
+/** "Ward—Pay 2 life.": the life an opponent must pay for each spell or ability targeting it (0 if none). */
+export function wardLife(card: Card): number {
+  const m = frontText(card).match(/(?:^|\n)Ward—Pay (\d+) life\./i);
+  return m ? Number(m[1]) : 0;
+}
+
+/**
+ * Pithing Needle: "As this artifact enters, choose a card name." and "Activated abilities of sources with the chosen
+ * name can't be activated unless they're mana abilities." (both lines, or neither is read).
+ */
+export function namesCardToStop(card: Card): boolean {
+  const text = frontText(card);
+  return /^As (?:this [a-z]+|.+?) enters(?: the battlefield)?, choose a card name\.$/m.test(text)
+    && /^Activated abilities of sources with the chosen name can't be activated unless they're mana abilities\.$/m.test(text);
+}
+
+/** Hexing Squelcher: "Spells you control can't be countered." */
+export const protectsSpells = (card: Card) => /^Spells you control can't be countered\.$/m.test(frontText(card));
 
 /** "Protection from red", "protection from white and from blue": colors it is protected from. */
 export function protectionsOf(card: Card): Color[] {
@@ -2180,13 +2211,16 @@ export type GameRule =
   /** Rest in Peace: "If a card or token would be put into a graveyard from anywhere, exile it instead." */
   | 'graveyardsExiled'
   /** Leyline of the Void: "If a card would be put into an opponent's graveyard from anywhere, exile it instead." */
-  | 'opponentGraveyardsExiled';
+  | 'opponentGraveyardsExiled'
+  /** Teferi, Time Raveler: "Each opponent can cast spells only any time they could cast a sorcery." */
+  | 'opponentsSorcerySpeed';
 
 const GAME_RULES: [RegExp, GameRule][] = [
   [/^Your opponents can't cast spells during your turn\.$/m, 'opponentsCantCastOnYourTurn'],
   [/^Activated abilities of artifacts, creatures, and planeswalkers can't be activated\.$/m, 'noActivatedAbilities'],
   [/^If a card or token would be put into a graveyard from anywhere, exile it instead\.$/m, 'graveyardsExiled'],
   [/^If a card would be put into an opponent's graveyard from anywhere, exile it instead\.$/m, 'opponentGraveyardsExiled'],
+  [/^Each opponent can cast spells only any time they could cast a sorcery\.$/m, 'opponentsSorcerySpeed'],
 ];
 
 export const gameRulesOf = (card: Card): GameRule[] => GAME_RULES.filter(([re]) => re.test(frontText(card))).map(([, rule]) => rule);

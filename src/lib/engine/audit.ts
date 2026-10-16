@@ -1,7 +1,7 @@
 import type { Card } from '../../types';
 import {
   activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, entersCounters, entersTappedRule, beginsWithLuck, discardsLandInstead, manaConditions, stateMana, doesntUntap, frontText, gameRulesOf, isInstantOrSorcery,
-  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, type AbilitySpec,
+  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, type AbilitySpec,
 } from './rules';
 
 /**
@@ -57,7 +57,7 @@ function keywordLine(card: Card, line: string, one: Card): LineReport | null {
   const supported = (p: string) => {
     const k = keywordOf(p)!;
     if ((KEYWORDS as readonly string[]).includes(k)) return true;
-    if (k === 'ward') return wardCost(one) > 0;
+    if (k === 'ward') return wardCost(one) > 0 || wardLife(one) > 0;
     if (k === 'protection') return protectionsOf(one).length > 0;
     if (k === 'toxic') return toxicOf(one) > 0;
     if (k === 'equip') return activatedOf(one).length > 0;
@@ -136,6 +136,9 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   if (doublesEquippedTriggers(one)) return { text: line, status: 'ok', how: 'triggers an additional time while equipped' };
   if (choosesCreatureType(one)) return { text: line, status: 'ok', how: 'chooses a creature type as it enters' };
   if (discardsLandInstead(one)) return { text: line, status: 'ok', how: 'enters only by discarding a land card' };
+  // Pithing Needle: its two lines are read together.
+  if (namesCardToStop(card) && /choose a card name|sources with the chosen name/.test(line)) return { text: line, status: 'ok', how: 'names a card: its activated abilities (not mana) are stopped' };
+  if (protectsSpells(one)) return { text: line, status: 'ok', how: 'your spells can\'t be countered' };
   if (doesntUntap(one)) return { text: line, status: 'ok', how: 'doesn\'t untap during its controller\'s untap step' };
   if (beginsWithLuck(one)) return { text: line, status: 'ok', how: 'may begin the game on the battlefield (not the starting player)' };
   if (beginsOnBattlefield(one)) return { text: line, status: 'ok', how: 'begins the game on the battlefield (always)' };

@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -50,12 +50,14 @@ export interface Permanent extends CardInst {
   attachedTo?: string;
   /** Cavern of Souls: the creature type chosen as it entered. */
   chosenType?: string;
+  /** Pithing Needle: the card name chosen as it entered ('' when there was nothing to name). */
+  chosenName?: string;
   /** Chrome Mox: the card exiled with it (imprint). */
   imprinted?: Card;
   /** A noncreature permanent that is a creature until end of turn (crewed Vehicle, Iron Man Armor): its own card. */
   unanimated?: Card;
   /** What static abilities (anthems, Auras, Equipment) give it right now; recomputed by the engine. */
-  statics?: { power: number; toughness: number; keywords: Keyword[]; cantAttack?: boolean; cantBlock?: boolean; ward?: number[]; hexproofFromMonocolored?: boolean; doubleDamage?: boolean };
+  statics?: { power: number; toughness: number; keywords: Keyword[]; cantAttack?: boolean; cantBlock?: boolean; ward?: number[]; wardLife?: number[]; hexproofFromMonocolored?: boolean; doubleDamage?: boolean };
 }
 
 export interface StackItem extends CardInst {
@@ -114,6 +116,8 @@ export interface PoolMana {
 
 export interface PlayerState {
   name: string;
+  /** Teferi, Time Raveler's +1: may cast sorceries as though they had flash until their next turn. */
+  sorceryFlash?: boolean;
   /** Gemstone Caverns in the opening hand: already asked. */
   luckAsked?: boolean;
   life: number;
@@ -184,6 +188,7 @@ export interface MulliganState {
 export type ChoicePurpose =
   | 'cleanupDiscard' // discard down to seven at end of turn
   | 'payOrCounter' // "counter target spell unless its controller pays {N}"
+  | 'payLifeOrCounter' // Ward—Pay N life: pay, or the spell or ability is countered
   | 'discard' // "discard a card": the discarding player chooses
   | 'discardChosen' // Duress: the spell's controller chooses from a revealed hand
   | 'scry'
@@ -201,6 +206,7 @@ export type ChoicePurpose =
   | 'exileCost' // a spell's additional cost: exile cards from your graveyard
   | 'costChoice' // a spell's additional cost "A or B": yes pays the first
   | 'creatureType' // Cavern of Souls: "choose a creature type"
+  | 'cardName' // Pithing Needle: "choose a card name"
   | 'crewCost' // Crew N: which creatures to tap
   | 'dig' // "look at the top N cards …": which to put into the hand
   | 'tradeForCard' // Chandra's +2: sacrifice an artifact or discard a card (or neither)
@@ -243,7 +249,7 @@ export interface Pending {
    * What continues once answered: the end of turn, the spell or ability being resolved, or a
    * triggered ability waiting for targets (`trigger`).
    */
-  resume: 'cleanup' | 'effect' | 'trigger' | 'activation' | 'legend' | 'payLife' | 'castCost' | 'clone' | 'discardLandInstead' | 'gemstoneCaverns' | 'damageOrder' | 'creatureType' | 'crew' | 'triggerMode';
+  resume: 'cleanup' | 'effect' | 'trigger' | 'activation' | 'legend' | 'payLife' | 'castCost' | 'clone' | 'discardLandInstead' | 'gemstoneCaverns' | 'damageOrder' | 'creatureType' | 'cardName' | 'crew' | 'triggerMode';
   /** For clone: the window the resolving spell belongs to. */
   reason?: WindowReason;
   /** For payLife: the land that entered. */
@@ -304,6 +310,8 @@ export type LogEntry =
   | { k: 'pump'; card: string; power: number; toughness: number; keywords: Keyword[] }
   | { k: 'counters'; card: string; counter: CounterKind; n: number }
   | { k: 'countered'; card: string }
+  | { k: 'paidLife'; p: PlayerId; n: number; card: string }
+  | { k: 'sorceryFlash'; p: PlayerId }
   | { k: 'paid'; p: PlayerId; n: number; card: string }
   | { k: 'fizzles'; card: string }
   | { k: 'notSimulated'; card: string }
@@ -321,6 +329,7 @@ export type LogEntry =
   /** Leylines: a card of the opening hand begins the game on the battlefield. */
   | { k: 'beginsOnBattlefield'; p: PlayerId; card: string }
   | { k: 'chosenType'; card: string; type: string }
+  | { k: 'chosenName'; card: string; name: string }
   | { k: 'emblem'; p: PlayerId; card: string }
   | { k: 'becomesCreature'; card: string }
   | { k: 'crewed'; card: string }
@@ -464,7 +473,7 @@ export type Action =
 /** Why an action was refused. Rendered in the player's language (src/i18n). */
 export type GameErrorCode =
   | 'gameOver' | 'keepFirst' | 'notMulliganTime' | 'noMoreMulligans' | 'chooseBottom' | 'notInHand'
-  | 'landTiming' | 'landAlreadyPlayed' | 'notALand' | 'notASpell' | 'sorcerySpeed' | 'castTiming'
+  | 'landTiming' | 'landAlreadyPlayed' | 'notALand' | 'notASpell' | 'sorcerySpeed' | 'castTiming' | 'sorceryOnly' | 'nameStopped'
   | 'needsTarget' | 'tooManyTargets' | 'targetMustBe' | 'illegalTarget' | 'notEnoughMana' | 'declareBlockersFirst'
   | 'notAttackStep' | 'cannotAttack' | 'notBlockStep' | 'notAttacking' | 'menace' | 'cannotBlock'
   | 'makeChoiceFirst' | 'nothingToChoose' | 'badChoice' | 'badX'
@@ -641,6 +650,10 @@ const painfulMana = (perm: Permanent) => manaLifeCost(perm.card) > 0 || triggers
 /** Permanents on the battlefield with a rule-changing static ability. */
 const withRule = (s: GameState, rule: GameRule) => s.battlefield.filter((x) => gameRulesOf(x.card).includes(rule));
 
+/** Pithing Needle: a Needle naming `name` stops its activated abilities other than mana abilities. */
+export const nameStopped = (s: GameState, name: string) =>
+  s.battlefield.some((x) => x.chosenName === name && namesCardToStop(x.card));
+
 /** Clarion Conqueror: no activated abilities (mana abilities included) for artifacts, creatures and planeswalkers. */
 function activationsForbidden(s: GameState, perm: Permanent): boolean {
   if (!withRule(s, 'noActivatedAbilities').length) return false;
@@ -649,6 +662,20 @@ function activationsForbidden(s: GameState, perm: Permanent): boolean {
 }
 
 /** Voice of Victory: `p` can't cast spells during the turn of an opponent who controls it. */
+/**
+ * When `p` may cast `card`: in a priority window, an instant or flash (or a sorcery after Teferi's +1) unless an
+ * opponent's Teferi limits them to sorcery speed; otherwise in their own main phase.
+ */
+function castTimingOk(s: GameState, p: PlayerId, card: Card): boolean {
+  if (!s.priority) return isMainStep(s) && isActivePlayer(s, p);
+  if (sorceryOnly(s, p)) return false;
+  return hasInstantSpeed(card) || (!!s.players[p].sorceryFlash && /\bSorcery\b/.test(card.typeLine.split('//')[0]));
+}
+
+/** Teferi, Time Raveler: an opponent of `p` controls it, so `p` casts spells only at sorcery speed. */
+const sorceryOnly = (s: GameState, p: PlayerId) =>
+  withRule(s, 'opponentsSorcerySpeed').some((x) => teamOf(s, x.controller) !== teamOf(s, p));
+
 const castingForbidden = (s: GameState, p: PlayerId) =>
   withRule(s, 'opponentsCantCastOnYourTurn').some((x) => teamOf(s, x.controller) !== teamOf(s, p) && isActivePlayer(s, x.controller));
 
@@ -688,7 +715,7 @@ export function canUntapForMana(s: GameState, p: PlayerId, perm: Permanent): boo
 /** A card's channel cost ({1} less per legendary creature `p` controls, for Otawara), or null without channel. */
 export function channelCost(s: GameState, p: PlayerId, card: Card): Cost | null {
   const channel = castInfo(card).channel;
-  if (!channel) return null;
+  if (!channel || nameStopped(s, card.name)) return null;
   const cost = parseCost(channel.cost);
   const legends = channel.legendaryDiscount
     ? s.battlefield.filter((x) => x.controller === p && isCreature(x.card) && /\bLegendary\b/.test(x.card.typeLine.split('//')[0])).length
@@ -816,8 +843,7 @@ export const isMainStep = (s: GameState) => s.step === 'main1' || s.step === 'ma
 /** Can `p` legally cast `card` right now (timing and mana; targets aside)? */
 export function canCastNow(s: GameState, p: PlayerId, card: Card): boolean {
   if (isLandCard(card) || s.mulligan || s.pending || actor(s) !== p || castingForbidden(s, p)) return false;
-  const timing = s.priority ? hasInstantSpeed(card) : isMainStep(s) && isActivePlayer(s, p);
-  return timing && canPay(s, p, card);
+  return castTimingOk(s, p, card) && canPay(s, p, card);
 }
 
 /** Where card `iid` is and whether `p` may cast it from there (hand; graveyard with flashback; exile after an adventure). */
@@ -853,8 +879,7 @@ export function castOptions(s: GameState, p: PlayerId, iid: string): CastOption[
   for (const face of faces) {
     const c = faceCard(inst.card, face);
     if (isLand(c)) continue;
-    const timing = s.priority ? hasInstantSpeed(c) : isMainStep(s) && isActivePlayer(s, p);
-    if (!timing) continue;
+    if (!castTimingOk(s, p, c)) continue;
     const info = castInfo(inst.card, face);
     // Additional costs: understood (for a permanent) and payable.
     if (info.unknownCost && !isInstantOrSorcery(c)) continue;
@@ -918,8 +943,9 @@ const sourcesFor = (s: GameState, perm: Permanent, spec: ActivatedSpec) =>
 export function activationProblem(s: GameState, p: PlayerId, perm: Permanent, index: number, x = 0): GameErrorCode | null {
   const spec = activatedOf(perm.card)[index];
   if (!spec || perm.controller !== p) return 'noSuchAbility';
-  if (s.mulligan || s.pending || actor(s) !== p) return 'activateTiming';
   if (activationsForbidden(s, perm)) return 'activationForbidden';
+  if (nameStopped(s, printedCard(perm).name)) return 'nameStopped';
+  if (s.mulligan || s.pending || actor(s) !== p) return 'activateTiming';
   const sorcerySpeed = !s.priority && isMainStep(s) && isActivePlayer(s, p) && !s.stack.length;
   if (spec.sorcery ? !sorcerySpeed : !s.priority && !(isMainStep(s) && isActivePlayer(s, p))) return 'activateTiming';
   if (spec.cost.tap && perm.tapped) return 'alreadyTapped';
@@ -1280,6 +1306,8 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
   d.step = 'main1';
   for (const q of teamPlayers(d, p)) {
     d.players[q].landPlayed = false;
+    // "Until your next turn" ends.
+    delete d.players[q].sorceryFlash;
     d.players[q].turns = (d.players[q].turns ?? 0) + 1;
   }
   for (const ps of d.players) {
@@ -1620,6 +1648,43 @@ function creatureTypeOptions(d: GameState, p: PlayerId): string[] {
   return types.length ? types : ['Human'];
 }
 
+/**
+ * Pithing Needle: the names it may choose, the opponents' first: cards seen in the game (battlefield, graveyards,
+ * exile, the chooser's hand) with activated abilities other than mana abilities.
+ */
+function stoppableNames(d: GameState, p: PlayerId): string[] {
+  const seen = [
+    ...d.battlefield.filter((x) => teamOf(d, x.controller) !== teamOf(d, p)).map((x) => printedCard(x)),
+    ...d.players.flatMap((ps, q) => (teamOf(d, q) !== teamOf(d, p) ? [...ps.graveyard, ...ps.exile] : [])).map((c) => c.card),
+    ...d.battlefield.filter((x) => teamOf(d, x.controller) === teamOf(d, p)).map((x) => printedCard(x)),
+    ...d.players[p].hand.map((c) => c.card),
+    ...d.players.flatMap((ps, q) => (teamOf(d, q) === teamOf(d, p) ? [...ps.graveyard, ...ps.exile] : [])).map((c) => c.card),
+  ];
+  const names: string[] = [];
+  for (const c of seen) {
+    if (names.includes(c.name) || namesCardToStop(c)) continue;
+    if (activatedOf(c).length || castInfo(c).channel) names.push(c.name);
+  }
+  return names.slice(0, 16);
+}
+
+/** Pithing Needle: "As this artifact enters, choose a card name." (asked once nothing else is going on). */
+function askCardName(d: GameState): boolean {
+  const perm = d.battlefield.find((x) => namesCardToStop(x.card) && x.chosenName === undefined);
+  if (!perm) return false;
+  const names = stoppableNames(d, perm.controller);
+  if (!names.length) {
+    perm.chosenName = '';
+    log(d, { k: 'chosenName', card: perm.card.name, name: '' });
+    return false;
+  }
+  d.pending = {
+    choice: { kind: 'mode', player: perm.controller, purpose: 'cardName', min: 1, max: 1, modes: names, params: { card: perm.card.name } },
+    resume: 'cardName', iid: perm.iid,
+  };
+  return true;
+}
+
 /** Cavern of Souls: "As this land enters, choose a creature type." (asked once nothing else is going on). */
 function askCreatureType(d: GameState): boolean {
   const perm = d.battlefield.find((x) => choosesCreatureType(x.card) && !x.chosenType);
@@ -1771,7 +1836,7 @@ function fireCastWithoutMana(d: GameState, item: StackItem) {
 
 /**
  * Ward: a permanent targeted by an opponent's spell or ability triggers "counter it unless its controller
- * pays {N}".
+ * pays {N}" (or "pays N life": Hexing Squelcher).
  */
 function fireWard(d: GameState, item: StackItem) {
   const seen = new Set<string>();
@@ -1780,11 +1845,15 @@ function fireWard(d: GameState, item: StackItem) {
     seen.add(t.iid);
     const perm = findPermanent(d, t.iid);
     if (!perm || perm.controller === item.controller) continue;
-    // Its own ward, and each one granted (Lavaspur Boots): each triggers.
-    for (const n of [wardCost(perm.card), ...(perm.statics?.ward ?? [])].filter((x) => x > 0)) {
+    // Its own ward, and each one granted (Lavaspur Boots, Hexing Squelcher): each triggers.
+    const wards = [
+      ...[wardCost(perm.card), ...(perm.statics?.ward ?? [])].filter((x) => x > 0).map((n) => ({ unlessPays: n })),
+      ...[wardLife(perm.card), ...(perm.statics?.wardLife ?? [])].filter((x) => x > 0).map((n) => ({ unlessPaysLife: n })),
+    ];
+    for (const ward of wards) {
       (d.triggered ??= []).push({
         source: { iid: perm.iid, card: perm.card }, controller: perm.controller,
-        ability: { targets: [{ kind: 'spell', min: 1, max: 1, filter: { abilities: true } }], effects: [{ kind: 'counter', to: { slot: 0 }, unlessPays: n }] },
+        ability: { targets: [{ kind: 'spell', min: 1, max: 1, filter: { abilities: true } }], effects: [{ kind: 'counter', to: { slot: 0 }, ...ward }] },
         targets: [[{ kind: 'spell', iid: item.iid }]],
       });
     }
@@ -1938,6 +2007,7 @@ function refreshStatics(d: GameState) {
         b.power += st.power * times;
         b.toughness += st.toughness * times;
         if (st.ward) b.ward = [...(b.ward ?? []), st.ward];
+        if (st.wardLife) b.wardLife = [...(b.wardLife ?? []), st.wardLife];
         if (st.hexproofFromMonocolored) b.hexproofFromMonocolored = true;
         if (st.doubleDamage) b.doubleDamage = true;
         for (const k of st.keywords) if (!b.keywords.includes(k)) b.keywords.push(k);
@@ -2168,6 +2238,21 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       for (const target of spells) {
         if (!target.ability && /\bThis spell can't be countered\./.test(castCard(target).oracleText)) continue;
         if (target.uncounterable) continue;
+        // Hexing Squelcher: "Spells you control can't be countered."
+        if (!target.ability && d.battlefield.some((x) => x.controller === target.controller && protectsSpells(x.card))) continue;
+        if (e.unlessPaysLife) {
+          // Ward—Pay N life: a player can pay life only if their life total is at least N.
+          const payer = target.controller;
+          const can = d.players[payer].life >= e.unlessPaysLife;
+          if (can && !answer) {
+            return { kind: 'yesNo', player: payer, purpose: 'payLifeOrCounter', params: { card: target.card.name, n: e.unlessPaysLife } };
+          }
+          if (can && answer?.kind === 'yesNo' && answer.yes) {
+            changeLife(d, payer, -e.unlessPaysLife);
+            log(d, { k: 'paidLife', p: payer, n: e.unlessPaysLife, card: target.card.name });
+            continue;
+          }
+        }
         if (e.unlessPays) {
           const payer = target.controller;
           const cost = { generic: e.unlessPays, colored: [] };
@@ -2515,6 +2600,10 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       }
       break;
     }
+    case 'sorceryFlash':
+      d.players[caster].sorceryFlash = true;
+      log(d, { k: 'sorceryFlash', p: caster });
+      break;
     case 'exileFromHand': {
       // Chrome Mox: which card (or none, "you may"); the source remembers it.
       const ps = d.players[caster];
@@ -2785,7 +2874,7 @@ function settle(d: GameState) {
   for (;;) {
     checkStateBased(d);
     if (d.winner !== null || d.pending || d.mulligan) return;
-    if (askLegendRule(d) || askLifeChoice(d) || askCreatureType(d)) return;
+    if (askLegendRule(d) || askLifeChoice(d) || askCreatureType(d) || askCardName(d)) return;
     if (d.triggered?.length) {
       if (!flushTrigger(d)) return;
       continue;
@@ -3087,6 +3176,13 @@ export function apply(state: GameState, action: Action): GameState {
             log(d, { k: 'legendRule', card: perm.card.name });
           }
         }
+      } else if (pending.resume === 'cardName' && action.answer.kind === 'mode') {
+        const perm = findPermanent(d, pending.iid!);
+        const name = (pending.choice as { modes: string[] }).modes[action.answer.modes[0]];
+        if (perm && name) {
+          perm.chosenName = name;
+          log(d, { k: 'chosenName', card: perm.card.name, name });
+        }
       } else if (pending.resume === 'creatureType' && action.answer.kind === 'mode') {
         const perm = findPermanent(d, pending.iid!);
         const type = (pending.choice as { modes: string[] }).modes[action.answer.modes[0]];
@@ -3204,7 +3300,8 @@ export function apply(state: GameState, action: Action): GameState {
       if (isLandCard(card)) throw new IllegalAction('notASpell');
       if (castingForbidden(d, p)) throw new IllegalAction('castingForbidden');
       if (d.priority) {
-        if (!hasInstantSpeed(card)) throw new IllegalAction('sorcerySpeed', { card: card.name });
+        if (sorceryOnly(d, p)) throw new IllegalAction('sorceryOnly');
+        if (!castTimingOk(d, p, card)) throw new IllegalAction('sorcerySpeed', { card: card.name });
       } else if (!isMainStep(d) || !isActivePlayer(d, p)) {
         throw new IllegalAction('castTiming');
       }
@@ -3291,6 +3388,7 @@ export function apply(state: GameState, action: Action): GameState {
       const inst = me.hand.find((c) => c.iid === action.iid);
       const channel = inst && castInfo(inst.card).channel;
       if (!inst || !channel) throw new IllegalAction('noSuchAbility');
+      if (nameStopped(d, inst.card.name)) throw new IllegalAction('nameStopped');
       if (!d.priority && !(isMainStep(d) && isActivePlayer(d, p))) throw new IllegalAction('activateTiming');
       const targets = checkTargets(d, p, inst.card, channel.ability, action.targets ?? []);
       if (!pay(d, p, manaSources(d, p), channelCost(d, p, inst.card)!)) throw new IllegalAction('notEnoughMana', { card: inst.card.name });

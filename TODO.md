@@ -254,7 +254,14 @@ a land card as it enters, or it goes to the graveyard), Chrome Mox (imprint, the
 turn to the player not starting; luck counter, any color). The bot casts Mox Diamond with a spare land, Chrome Mox
 with a colored card to exile, and never pays Mana Vault's upkeep untap.
 
+Then: Hexing Squelcher ("Ward—Pay N life", granted to other creatures; "Spells you control can't be countered"),
+Teferi, Time Raveler (opponents cast spells only at sorcery speed; +1: sorceries as though they had flash until your
+next turn), Pithing Needle (names a card as it enters; its activated abilities other than mana abilities, channel
+included, can't be activated).
+
 Left "not simulated" or found on the way:
+- [ ] Pithing Needle can only name a card seen in the game (battlefield, graveyards, exile, the chooser's hand), not
+  any card name; the bot names the first opposing card with activated abilities
 - [ ] Mox Diamond put onto the battlefield by an effect (Urza's Saga's search) discards the first land card in the
   hand without asking which
 - [ ] Saga chapters still not simulated: transforming ("Exile this Saga, then return it … transformed": Fable of the
@@ -266,9 +273,6 @@ Left "not simulated" or found on the way:
 - [ ] Pain lands' "This land deals 1 damage to you." (Karplusan Forest) is still ignored
 
 Still open, most played first:
-- [ ] Hexing Squelcher (9): "Ward—Pay 2 life", "Spells you control can't be countered", granted ward
-- [ ] Teferi, Time Raveler (7): opponents cast only at sorcery speed; sorceries with flash
-- [ ] Pithing Needle (7): choose a card name, its activated abilities can't be activated
 - [ ] Quantum Riddler (6): draw replacement, Warp; Gene Pollinator (6) and Springleaf Drum (5): "tap an untapped
   permanent/creature you control" as a mana cost
 - [ ] Containment Priest (6), Grafdigger's Cage (5): replacement and casting restrictions

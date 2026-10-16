@@ -991,6 +991,8 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
         return { kind: 'yesNo', yes: !safe && !effects.every((e) => e.kind === 'tap' && e.untap && e.to === 'self') };
       }
       if (choice.purpose === 'reflexivePay') return { kind: 'yesNo', yes: !safe && reflexiveUseful(s, choice.player) && s.players[choice.player].life > Number(choice.params?.life ?? 0) + 5 };
+      // Ward—Pay N life: while life stays comfortable.
+      if (choice.purpose === 'payLifeOrCounter') return { kind: 'yesNo', yes: !safe && s.players[choice.player].life > Number(choice.params?.n ?? 0) + 5 };
       return { kind: 'yesNo', yes: !safe && (choice.purpose === 'payOrCounter' || choice.purpose === 'optional') };
     case 'targets':
       return { kind: 'targets', targets: triggerTargets(s, choice.player, { targets: choice.slots, effects: triggerEffects(s, choice) }, safe, choice.source.card) };
