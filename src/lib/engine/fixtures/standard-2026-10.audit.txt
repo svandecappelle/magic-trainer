@@ -507,6 +507,11 @@ PARTIAL  Heroes' Hangout {R} — Sorcery
       mode not simulated (can't be chosen)
   ✓ • Patrol Night — One or two target creatures each get +1/+0 and gain …
       mode
+PARTIAL  Inevitable Defeat {1}{R}{W}{B} — Instant
+  ✓ This spell can't be countered.
+      can't be countered
+  ✗ Exile target nonland permanent. Its controller loses 3 life and you g…
+      spell not simulated
 PARTIAL  Into the Flood Maw {U} — Instant
   ✗ Gift a tapped Fish
       keyword not simulated: gift
@@ -600,19 +605,10 @@ PARTIAL  Restless Anchorage  — Land
       enters tapped (always)
   ✓ {T}: Add {W} or {U}.
       mana: W/U
-  ✗ {1}{W}{U}: Until end of turn, this land becomes a 2/3 white and blue …
-      activated ability, effect not simulated
+  ✓ {1}{W}{U}: Until end of turn, this land becomes a 2/3 white and blue …
+      activated → animate
   ✗ Whenever this land attacks, create a Map token.
       trigger (attacks), effect not simulated
-PARTIAL  Restless Reef  — Land
-  ✓ This land enters tapped.
-      enters tapped (always)
-  ✓ {T}: Add {U} or {B}.
-      mana: U/B
-  ✗ {2}{U}{B}: Until end of turn, this land becomes a 4/4 blue and black …
-      activated ability, effect not simulated
-  ✓ Whenever this land attacks, target player mills four cards.
-      trigger (attacks) → mill (1 target)
 PARTIAL  Slickshot Show-Off {1}{R} — Creature — Bird Wizard
   ✓ Flying, haste
       keyword
@@ -815,11 +811,6 @@ OK       Hinterland Sanctifier {W} — Creature — Rabbit Cleric
 OK       Impractical Joke {R} — Sorcery
   ✓ Damage can't be prevented this turn. Impractical Joke deals 3 damage …
       spell → damage (1 target)
-OK       Inevitable Defeat {1}{R}{W}{B} — Instant
-  ✓ This spell can't be countered.
-      can't be countered
-  ✓ Exile target nonland permanent. Its controller loses 3 life and you g…
-      spell → destroy+gainLife (1 target)
 OK       Leyline of the Void {2}{B}{B} — Enchantment
   ✓ If this card is in your opening hand, you may begin the game with it …
       begins the game on the battlefield (always)
@@ -864,6 +855,15 @@ OK       Rest in Peace {1}{W} — Enchantment
       trigger (enters) → exileGraveyards
   ✓ If a card or token would be put into a graveyard from anywhere, exile…
       rule for the game: graveyardsExiled
+OK       Restless Reef  — Land
+  ✓ This land enters tapped.
+      enters tapped (always)
+  ✓ {T}: Add {U} or {B}.
+      mana: U/B
+  ✓ {2}{U}{B}: Until end of turn, this land becomes a 4/4 blue and black …
+      activated → animate
+  ✓ Whenever this land attacks, target player mills four cards.
+      trigger (attacks) → mill (1 target)
 OK       Riverpyre Verge  — Land
   ✓ {T}: Add {R}.
       mana: R

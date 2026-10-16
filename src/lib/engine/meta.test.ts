@@ -1059,3 +1059,59 @@ describe('Boros Dwarves, second pass: Thorin, Dáin\'s Company, Iron Man Armor, 
     expect(u.players[1].life).toBe(17);
   });
 });
+
+describe('manlands', () => {
+  const land = (name: string, oracleText: string) => card({ name, typeLine: 'Land', oracleText });
+  const fortress = land('Restless Fortress', 'This land enters tapped.\n{T}: Add {W} or {B}.\n{2}{W}{B}: This land becomes a 1/4 white and black Nightmare creature until end of turn. It\'s still a land.\nWhenever this land attacks, defending player loses 2 life and you gain 2 life.');
+  const mutavault = land('Mutavault', '{T}: Add {C}.\n{1}: This land becomes a 2/2 creature with all creature types until end of turn. It\'s still a land.');
+  const plains = card({ name: 'Plains', typeLine: 'Basic Land — Plains', oracleText: '({T}: Add {W}.)' });
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 10 && (s.stack.length || s.triggered?.length) && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+
+  it('reads the "becomes a creature" abilities, with their colors and types', () => {
+    expect(activatedOf(fortress)[0]?.ability.effects).toEqual([
+      { kind: 'animate', to: 'self', power: 1, toughness: 4, subtypes: ['Nightmare'], keywords: [], colors: ['W', 'B'] },
+    ]);
+    expect(activatedOf(mutavault)[0]?.ability.effects).toMatchObject([{ kind: 'animate', power: 2, toughness: 2, subtypes: [], allTypes: true, colors: [] }]);
+    // Raging Ravine's quoted trigger is understood; Hall of Storm Giants' ward {3} isn't, so it isn't simulated.
+    expect(parseAbilityText('Until end of turn, this land becomes a 3/3 red and green Elemental creature with "Whenever this creature attacks, put a +1/+1 counter on it." It\'s still a land.').effects)
+      .toMatchObject([{ kind: 'animate', text: 'Whenever this creature attacks, put a +1/+1 counter on it.' }]);
+    expect(parseAbilityText('Until end of turn, this land becomes a 7/7 blue Giant creature with ward {3}. It\'s still a land.').effects).toEqual([]);
+  });
+
+  it('Restless Fortress attacks and drains 2, then is only a land again', () => {
+    let s = board({ mine: [fortress, plains, plains, swamp, swamp] });
+    s = resolve(settle(apply(s, { type: 'activate', iid: iidOf(s, 'Restless Fortress'), index: 0 })));
+    const f = perm(s, 'Restless Fortress')!;
+    // Paid with the other lands, not by tapping itself.
+    expect(f.tapped).toBe(false);
+    expect([f.card.typeLine, f.card.colors, powerOf(f), toughnessOf(f)]).toEqual(['Land Creature — Nightmare', ['W', 'B'], 1, 4]);
+    s = settle(apply(s, { type: 'pass' }));
+    s = resolve(apply(s, { type: 'declareAttackers', attackers: [iidOf(s, 'Restless Fortress')] }));
+    for (let i = 0; i < 10 && s.attackers.length; i++) s = s.step === 'block' && !s.priority ? apply(s, { type: 'declareBlockers', blocks: {} }) : apply(s, { type: 'pass' });
+    expect([s.players[0].life, s.players[1].life]).toEqual([22, 17]);
+    for (let i = 0; i < 30 && s.active === 0; i++) s = apply(s, { type: 'pass' });
+    expect(perm(s, 'Restless Fortress')!.card.typeLine).toBe('Land');
+  });
+
+  it('the bot animates a manland and attacks with it, unless a blocker would kill it', () => {
+    let s = board({ mine: [fortress, plains, plains, swamp, swamp] });
+    expect(botAction(s)).toEqual({ type: 'activate', iid: iidOf(s, 'Restless Fortress'), index: 0 });
+    for (let i = 0; i < 20 && s.step !== 'main2'; i++) s = settle(apply(s, botAction(s)));
+    expect(s.log).toContainEqual({ k: 'attack', p: 0, cards: ['Restless Fortress'] });
+    expect(s.players[1].life).toBe(17);
+    const t = board({ mine: [fortress, plains, plains, swamp, swamp], theirs: [creature('Ogre', 4, 4)] });
+    expect(botAction(t)).toEqual({ type: 'pass' });
+  });
+
+  it('Mutavault has all creature types: a Dwarf for Dáin\'s Company', () => {
+    const dains = creature('Dáin\'s Company', 2, 2, { typeLine: 'Creature — Dwarf Warrior', oracleText: 'This creature has lifelink as long as you control another Dwarf.' });
+    let s = board({ mana: 1, mine: [mutavault, dains] });
+    s = apply(s, { type: 'tapForMana', iid: s.battlefield[0].iid });
+    expect(perm(s, 'Dáin\'s Company')!.statics?.keywords ?? []).not.toContain('lifelink');
+    s = resolve(settle(apply(s, { type: 'activate', iid: iidOf(s, 'Mutavault'), index: 0 })));
+    expect(perm(s, 'Dáin\'s Company')!.statics?.keywords).toContain('lifelink');
+  });
+});

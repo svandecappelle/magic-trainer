@@ -567,17 +567,32 @@ export function unitsOf(s: GameState, perm: Permanent, spell?: Card): Color[][] 
   if (pain && s.players[perm.controller].life < pain.life) units = units.map((u) => u.filter((c) => !pain.colors.includes(c)));
   // Sunbillow Verge: "{T}: Add {R}. Activate only if you control a Mountain or a Plains."
   for (const cond of manaConditions(perm.card)) {
-    const met = s.battlefield.some((x) => x.controller === perm.controller && cond.subtypes.some((t) => subtypesOf(x.card).includes(t)));
+    const met = s.battlefield.some((x) => x.controller === perm.controller && cond.subtypes.some((t) => hasSubtype(x.card, t)));
     if (!met) units = units.map((u) => u.filter((c) => !cond.colors.includes(c)));
   }
   return units.filter((u) => u.length);
 }
 
 /** Is the card a creature (spell) of this creature type? (Cavern of Souls) */
-const ofType = (card: Card, type: string) => isCreature(card) && subtypesOf(card).includes(type.toLowerCase());
+const ofType = (card: Card, type: string) => isCreature(card) && hasSubtype(card, type);
 
 /** A card's subtypes (front face), lower case: "Land — Mountain Plains" → mountain, plains. */
 const subtypesOf = (c: Card) => (c.typeLine.split('//')[0].toLowerCase().split('—')[1] ?? '').trim().split(' ');
+
+/** Subtypes that aren't creature types, which a changeling doesn't have. */
+const NONCREATURE_SUBTYPES = new Set([
+  'equipment', 'aura', 'vehicle', 'saga', 'case', 'class', 'room', 'shrine', 'curse', 'background', 'role', 'cartouche', 'rune', 'shard',
+  'food', 'treasure', 'clue', 'map', 'blood', 'gold', 'powerstone', 'incubator', 'attraction', 'contraption', 'fortification', 'spacecraft', 'planet',
+  'plains', 'island', 'swamp', 'mountain', 'forest', 'desert', 'gate', 'cave', 'sphere', 'town', 'lair', 'locus', 'mine', 'tower', 'urza\'s',
+  'adventure', 'arcane', 'lesson', 'trap', 'omen', 'chorus',
+]);
+
+/** Has the card this subtype? Changelings and Mutavault ("all creature types") have every creature type. */
+function hasSubtype(c: Card, type: string): boolean {
+  const t = type.toLowerCase();
+  if (subtypesOf(c).includes(t)) return true;
+  return isCreature(c) && !NONCREATURE_SUBTYPES.has(t) && (c.keywords ?? []).some((k) => k.toLowerCase() === 'changeling');
+}
 
 /** Starting Town: the colors its mana costs life to be spent as, while its controller can pay that life. */
 function painOf(s: GameState, perm: Permanent) {
@@ -862,9 +877,12 @@ export const canPayAbility = (s: GameState, perm: Permanent, index: number, targ
 const freeEquip = (s: GameState, p: PlayerId) =>
   !!s.players[p].enduringStory && !s.players[p].equipsThisTurn && s.battlefield.some((x) => x.controller === p && freeFirstEquip(x.card));
 
-/** Mana sources that can pay for an ability of `perm`: not the permanent itself when it must tap. */
+/**
+ * Mana sources that can pay for an ability of `perm`: not the permanent itself when it must tap, nor a manland
+ * paying to become a creature (it would be tapped to attack or block).
+ */
 const sourcesFor = (s: GameState, perm: Permanent, spec: ActivatedSpec) =>
-  manaSources(s, perm.controller).filter((m) => !(spec.cost.tap && m.iid === perm.iid));
+  manaSources(s, perm.controller).filter((m) => !((spec.cost.tap || spec.ability.effects.some((e) => e.kind === 'animate' && e.to === 'self')) && m.iid === perm.iid));
 
 /** Why `p` can't activate this ability now (timing, tapping, mana, life), or null if they can. */
 export function activationProblem(s: GameState, p: PlayerId, perm: Permanent, index: number, x = 0): GameErrorCode | null {
@@ -953,12 +971,12 @@ const blockerIds = (s: GameState) => Object.values(s.blocks).flat();
 
 /** Supertype and subtype conditions: "basic", "nonbasic land", "Forest or Plains". */
 function fitsTypeLine(card: Card, f: TargetFilter): boolean {
-  const [types, subtypes = ''] = card.typeLine.split('//')[0].toLowerCase().split('—');
+  const [types] = card.typeLine.split('//')[0].toLowerCase().split('—');
   if (f.basic && !types.includes('basic')) return false;
   if (f.nonbasicLands && types.includes('land') && types.includes('basic')) return false;
   if (f.legendary && !types.includes('legendary')) return false;
-  if (f.nonSubtypes?.some((t) => subtypes.split(' ').includes(t))) return false;
-  if (f.subtypes && !f.subtypes.some((t) => subtypes.split(' ').includes(t))) return false;
+  if (f.nonSubtypes?.some((t) => hasSubtype(card, t))) return false;
+  if (f.subtypes && !f.subtypes.some((t) => hasSubtype(card, t))) return false;
   return true;
 }
 
@@ -1496,13 +1514,19 @@ function animate(d: GameState, perm: Permanent, e: Extract<Effect, { kind: 'anim
   if (e.keywords.length) perm.boosts.push({ power: 0, toughness: 0, keywords: e.keywords, until: 'endOfTurn' });
   if (isCreature(perm.card)) return;
   const own = perm.card;
-  const [types, subtypes = ''] = own.typeLine.split(' // ')[0].split(' — ');
-  const typeLine = `${types.replace(/\bArtifact\b/, 'Artifact Creature')}${/\bCreature\b/.test(types.replace(/\bArtifact\b/, 'Artifact Creature')) ? '' : ' Creature'} — ${[subtypes, ...e.subtypes].filter(Boolean).join(' ')}`;
+  const [printed, subtypes = ''] = own.typeLine.split(' // ')[0].split(' — ');
+  // Mishra's Factory: "becomes a 2/2 Assembly-Worker artifact creature".
+  const types = (e.artifact && !/\bArtifact\b/.test(printed) ? `Artifact ${printed}` : printed).replace(/\bArtifact\b/, 'Artifact Creature');
+  const typeLine = `${types}${/\bCreature\b/.test(types) ? '' : ' Creature'} — ${[subtypes, ...e.subtypes].filter(Boolean).join(' ')}`;
   perm.unanimated ??= own;
   perm.card = {
     ...own, typeLine,
     power: String(e.power ?? own.power ?? 0), toughness: String(e.toughness ?? own.toughness ?? 0),
     ...(e.text ? { oracleText: `${own.oracleText}\n${e.text}` } : {}),
+    // Manlands: "a 4/4 blue and black Shark creature".
+    ...(e.colors ? { colors: e.colors } : {}),
+    // Mutavault: "with all creature types".
+    ...(e.allTypes ? { keywords: [...(own.keywords ?? []), 'Changeling'] } : {}),
   };
   log(d, { k: 'becomesCreature', card: own.name });
 }
@@ -1807,7 +1831,7 @@ function refreshStatics(d: GameState) {
           ? (src.attachedTo ? [findPermanent(d, src.attachedTo)].filter((x) => x !== undefined) : [])
           : matching(d, src.controller, st.who.which).filter((x) => !(typeof st.who !== 'string' && st.who.other && x.iid === src.iid));
       // Dáin's Company: "as long as you control another Dwarf".
-      if (st.ifAnother && !d.battlefield.some((x) => x.iid !== src.iid && x.controller === src.controller && isCreature(x.card) && subtypesOf(x.card).includes(st.ifAnother!))) continue;
+      if (st.ifAnother && !d.battlefield.some((x) => x.iid !== src.iid && x.controller === src.controller && isCreature(x.card) && hasSubtype(x.card, st.ifAnother!))) continue;
       // "for each artifact you control", Kellan's "for each Aura and Equipment attached to Kellan", Chainsaw's rev counters.
       const times = st.perEach ? matching(d, src.controller, st.perEach).filter((x) => x.controller === src.controller).length
         : st.perAttached ? d.battlefield.filter((x) => x.attachedTo === src.iid && /\b(?:Aura|Equipment)\b/.test(x.card.typeLine.split('//')[0])).length
@@ -2003,6 +2027,8 @@ function affected(d: GameState, r: Resolving, to: Affected): Affectable[] {
     return src ? [src] : [];
   }
   if (to === 'each-opponent') return opponentsOf(d, r.item.controller);
+  // "defending player": combat is against the first opponent (their team in team games).
+  if (to === 'defending') return [firstOpponent(d, r.item.controller)];
   // Each player, starting with the active player.
   if (to === 'each-player') return turnOrder(d);
   return (r.legal[to.slot] ?? []).flatMap((t): Affectable[] => {

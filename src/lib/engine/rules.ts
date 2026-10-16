@@ -36,7 +36,8 @@ function parseStat(value: string | undefined, fallback: number): number {
 export const power = (card: Card) => parseStat(card.power, 0);
 export const toughness = (card: Card) => parseStat(card.toughness, 1);
 
-export const isCreature = (card: Card) => primaryType(card) === 'Creature';
+/** Has the Creature type (front face), also a land that is one: an animated manland, Dryad Arbor. */
+export const isCreature = (card: Card) => /\bCreature\b/.test(card.typeLine.split('//')[0]);
 export const isLandCard = (card: Card) => primaryType(card) === 'Land';
 
 export const isInstant = (card: Card) => card.typeLine.split('//')[0].includes('Instant');
@@ -367,7 +368,8 @@ export type CounterKind = '+1/+1' | '-1/-1' | 'loyalty' | 'lore' | 'rev';
  * Who an effect applies to: the targets chosen for a slot, the controller, everyone / each opponent,
  * or the ability's own source ("this creature gets +1/+1").
  */
-export type Affected = { slot: number } | 'you' | 'each-opponent' | 'each-player' | 'self';
+/** `defending`: "defending player" in an attack trigger (Restless Fortress). */
+export type Affected = { slot: number } | 'you' | 'each-opponent' | 'each-player' | 'self' | 'defending';
 
 /** A number in rules text; "X" is the value chosen when casting. */
 /** A number, X (paid when cast), or the life its controller gained this turn (Germinate Recruits). */
@@ -448,7 +450,15 @@ export type Effect =
    * artifact creature with flying and \"…\""), crewed Vehicles and Chandra's ("becomes an artifact creature").
    * Without power and toughness, it keeps its own.
    */
-  | { kind: 'animate'; to: Affected; power?: number; toughness?: number; subtypes: string[]; keywords: Keyword[]; text?: string }
+  | {
+    kind: 'animate'; to: Affected; power?: number; toughness?: number; subtypes: string[]; keywords: Keyword[]; text?: string;
+    /** Manlands: its colors as a creature ("a 4/4 blue and black Shark creature"); colorless when none are named. */
+    colors?: Color[];
+    /** Mishra's Factory: "artifact creature" on a land. */
+    artifact?: boolean;
+    /** Mutavault: "with all creature types". */
+    allTypes?: boolean;
+  }
   /** Chandra's −7: "You get an emblem with \"…\"" (the emblem's ability). */
   | { kind: 'emblem'; text: string }
   /**
@@ -763,6 +773,7 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     if (w === 'you') return 'you';
     if (w === 'each opponent') return 'each-opponent';
     if (w === 'each player') return 'each-player';
+    if (w === 'defending player') return 'defending';
     return slotFor(w, (spec) => spec.kind === 'player');
   };
   /** "creatures you don't control" → which permanents an "all"/"each" effect touches. */
@@ -771,7 +782,7 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     if (!spec || (spec.kind !== 'creature' && spec.kind !== 'permanent')) return null;
     return { kind: spec.kind, filter: spec.filter };
   };
-  const PLAYER = '(target player|target opponent|each player|each opponent|you)';
+  const PLAYER = '(target player|target opponent|each player|each opponent|defending player|you)';
 
   scan(new RegExp(`deals (\\d+|X) damage to (each opponent|each player|you|${TARGET})${END}`, 'gi'), (m) => {
     const w = m[2].toLowerCase();
@@ -891,8 +902,26 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     const keywords = keywordList(m[4]);
     if (!keywords.every((k) => (KEYWORDS as readonly string[]).includes(k))) return null;
     const text = m[5] && `${m[5].replace(/\.$/, '')}.`;
-    if (text && !staticsOf({ ...tokenCard({ name: 'x', typeLine: 'Creature', colors: [], keywords: [], oracleText: text }), name: 'This creature' }).length) return null;
+    if (text && !understoodAbilities(text)) return null;
     return { kind: 'animate', to: 'self', power: Number(m[1]), toughness: Number(m[2]), subtypes: m[3].split(' '), keywords, ...(text ? { text } : {}) };
+  });
+  // Manlands: "{2}{U}{B}: Until end of turn, this land becomes a 4/4 blue and black Shark creature with deathtouch. It's
+  // still a land.", Mutavault's "a 2/2 creature with all creature types until end of turn".
+  scan(new RegExp(LAND_BECOMES.source, 'g'), (m) => {
+    if (!m[1] === !m[8]) return null; // "until end of turn" once, before or after
+    const colors = (m[4] ?? '').split(' and ').filter(Boolean).map((c) => COLOR_WORDS[c]);
+    let rest = m[7] ?? '';
+    const text = rest.match(/"([^"]+)"/)?.[1];
+    rest = rest.replace(/"[^"]+"/, '');
+    const allTypes = /\ball creature types\b/.test(rest);
+    rest = rest.replace(/\ball creature types\b/, '').trim().replace(/(?:^|,? and)$/, '').trim();
+    const keywords = keywordList(rest);
+    if (!keywords.every((k) => (KEYWORDS as readonly string[]).includes(k))) return null;
+    if (text && !understoodAbilities(text)) return null;
+    return {
+      kind: 'animate', to: 'self', power: Number(m[2]), toughness: Number(m[3]), subtypes: m[5] ? m[5].split(' ') : [], keywords, colors,
+      ...(m[6] ? { artifact: true } : {}), ...(allTypes ? { allTypes: true } : {}), ...(text ? { text } : {}),
+    };
   });
   // Chandra's −7: "You get an emblem with \"Whenever an artifact you control enters, this emblem deals 3 damage to any target.\""
   scan(/\bYou get an emblem with "([^"]+)"/g, (m) => {
@@ -1069,13 +1098,13 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     if (effect) cover(at, end);
   }
   // The subject before a matched effect ("Lightning Bolt deals…", "Target creature you control gets…") is part of it,
-  // unless it is a condition.
+  // unless it is a condition or another clause ("defending player loses 2 life and you gain 2 life").
   for (const { at } of matches) {
     if (!covered[at]) continue;
     let from = at;
     while (from > 0 && !/[.\n]/.test(text[from - 1])) from--;
     const subject = text.slice(from, at);
-    if (subject.trim().split(/\s+/).length <= 8 && !/\b(?:if|unless|until|when|whenever|as long as|instead|for each)\b/i.test(subject)) cover(from, at);
+    if (subject.trim().split(/\s+/).length <= 8 && !/\b(?:if|unless|until|when|whenever|as long as|instead|for each)\b/i.test(subject) && !OTHER_CLAUSE.test(subject)) cover(from, at);
   }
   // Anything else left in the text ("then return it…", "Its controller loses 3 life") means the ability is only partly
   // understood: it is not simulated rather than simulated wrongly.
@@ -1084,8 +1113,23 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
   return { targets, effects };
 }
 
+/** Verbs of an effect: a "subject" containing one is a clause of its own, not understood. */
+const OTHER_CLAUSE = /\b(?:loses?|gains?|draws?|discards?|mills?|sacrifices?|creates?|destroys?|exiles?|returns?|puts?|searche?s?|counters?|taps?|untaps?|scry|surveil)\b/i;
+
 /** Wordings parseAbilityText handles although they contain words UNSUPPORTED refuses ("if", "that creature", "this way"). */
 const THORIN_ATTACH = /\battach any number of target Equipment you control to (target creature you control)\. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to (up to one target creature)\./;
+/**
+ * Quoted abilities a permanent gains ("with \"…\""): read only when understood, a static ability or triggered and
+ * activated abilities with effects.
+ */
+function understoodAbilities(text: string): boolean {
+  const card = { ...tokenCard({ name: 'x', typeLine: 'Creature', colors: [], keywords: [], oracleText: text }), name: 'This creature' };
+  const abilities = [...triggersOf(card), ...activatedOf(card)];
+  if (abilities.some((a) => !a.ability.effects.length)) return false;
+  return staticsOf(card).length + abilities.length > 0;
+}
+
+const LAND_BECOMES = /\b(Until end of turn, )?[Tt]his land becomes an? (\d+)\/(\d+) ((?:white|blue|black|red|green)(?: and (?:white|blue|black|red|green))?)? ?((?:[A-Z][\w'-]*)(?: [A-Z][\w'-]*)*)? ?(artifact )?creature(?: with (.+?))?( until end of turn)?(?:\.|(?<=")) It's still a land\./;
 const BECOMES_CREATURE = /\bIf this (?:Equipment|artifact) isn't a creature, it becomes an? (\d+)\/(\d+) ([A-Z][a-z]+(?: [A-Z][a-z]+)*) artifact creature(?: with ([a-z ,]+?))?(?: and "([^"]+)")? until end of turn\./;
 const TRADE_FOR_CARD = /\bYou may sacrifice an? (artifact|creature) or discard a card\. If you do, draw a card\./;
 
@@ -1416,7 +1460,7 @@ const UNSUPPORTED_WORDS = /\b(?:if|unless|for each|where|instead|that (?:creatur
 const UNSUPPORTED = {
   test: (text: string) => {
     let rest = text;
-    for (const handled of [CONTROLLER_SEARCH, SURVEIL_TO_HAND, THORIN_ATTACH, BECOMES_CREATURE, TRADE_FOR_CARD]) rest = rest.replace(handled, '');
+    for (const handled of [CONTROLLER_SEARCH, SURVEIL_TO_HAND, THORIN_ATTACH, BECOMES_CREATURE, LAND_BECOMES, TRADE_FOR_CARD]) rest = rest.replace(handled, '');
     return UNSUPPORTED_WORDS.test(rest.replace(/"[^"]*"/g, '""'));
   },
 };
@@ -1755,7 +1799,8 @@ export function activatedOf(card: Card): ActivatedSpec[] {
     text = text.replace(/\s*Activate (?:only|this ability only)[^.]*\./gi, '').trim();
     const optional = /^you may /i.test(text);
     const body = optional ? `you ${text.slice('you may '.length)}` : text;
-    const ability = UNSUPPORTED.test(body) ? NO_EFFECT : parseAbilityText(body, name);
+    // {S} must be paid with mana from a snow source, which the engine doesn't track (Faceless Haven).
+    const ability = UNSUPPORTED.test(body) || cost.mana.includes('{S}') ? NO_EFFECT : parseAbilityText(body, name);
     out.push({ text: line, cost, ability: optional && ability.effects.length ? { ...ability, optional } : ability, sorcery, once, ...(discountPer ? { discountPer } : {}) });
   }
   activatedCache.set(key, out);

@@ -322,7 +322,7 @@ function chooseMainPhaseSpell(s: GameState, me: PlayerId): Action | null {
     const action = castCandidate(s, me, c);
     if (action) return action;
   }
-  return usePlaneswalkers(s, me) ?? useAbility(s, me) ?? crewVehicles(s, me) ?? (s.step === 'main2' ? chooseCycle(s, me) : null);
+  return usePlaneswalkers(s, me) ?? useAbility(s, me) ?? crewVehicles(s, me) ?? animateLands(s, me) ?? (s.step === 'main2' ? chooseCycle(s, me) : null);
 }
 
 /**
@@ -344,6 +344,27 @@ function crewVehicles(s: GameState, me: PlayerId): Action | null {
       if (canAttack(c)) lost += powerOf(c);
     }
     if (power >= n && powerOf(v) > lost) return { type: 'activate', iid: v.iid, index };
+  }
+  return null;
+}
+
+/**
+ * Turn a manland into a creature before combat, with the mana left once spells are cast, when no untapped creature of
+ * the opponents could kill it in a block. (It isn't animated to block.)
+ */
+function animateLands(s: GameState, me: PlayerId): Action | null {
+  if (s.step !== 'main1' || !isActivePlayer(s, me) || s.priority) return null;
+  const blockers = opponentsOf(s, me).flatMap((p) => creaturesOf(s, p)).filter((c) => !c.tapped);
+  for (const land of s.battlefield) {
+    if (land.controller !== me || land.tapped || land.sick || isCreature(land.card)) continue;
+    const index = activatedOf(land.card).findIndex((a) => a.ability.effects.some((e) => e.kind === 'animate' && e.to === 'self'));
+    if (index < 0 || activationProblem(s, me, land, index)) continue;
+    const animate = activatedOf(land.card)[index].ability.effects.find((e) => e.kind === 'animate')!;
+    if (animate.kind !== 'animate' || !animate.power) continue;
+    const flies = animate.keywords.includes('flying');
+    const dangerous = blockers.filter((b) => !flies || hasKw(b, 'flying') || hasKw(b, 'reach'));
+    if (dangerous.some((b) => powerOf(b) >= (animate.toughness ?? 0) || hasKw(b, 'deathtouch'))) continue;
+    return { type: 'activate', iid: land.iid, index };
   }
   return null;
 }

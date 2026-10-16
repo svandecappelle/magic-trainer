@@ -180,7 +180,7 @@ would die this turn".
 
 Still missing, most played first:
 - [ ] "Look at the top N cards …" variants still missing (Consult the Star Charts, Sleight of Hand, Flow State; Stock
-  Up done)
+  Up and Dáin's Company done)
 - [ ] Modal triggers "When … enters, choose one —" (Yuriko) and reflexive triggers "When you do / … this way"
   (Seasoned Cryomancer, Zoraline)
 - [ ] Mill, then "you may return a … card from your graveyard to your hand" (Overlord of the Balemurk); impending
@@ -190,7 +190,17 @@ Still missing, most played first:
 - [ ] Emblems with static abilities (Ajani; triggered emblems work); loyalty counters from triggers (Ajani Resolute)
 - [ ] "Any number of target players each …" (Ral Zarek's −1, Riverchurn Monument)
 - [ ] Lands that choose a basic land type (Multiversal Passage); Theorist's Sanctum entering tapped
-- [ ] Manlands: "becomes a 4/4 … creature until end of turn" (Restless Reef, Restless Anchorage)
+- [x] Manlands: "this land becomes a 4/4 blue and black Shark creature … until end of turn" with its colors,
+  keywords, quoted static or trigger (Raging Ravine), "artifact creature" (Mishra's Factory, Inkmoth Nexus) and "all
+  creature types" (Mutavault: changelings count for every creature type); never paid by tapping itself; the bot
+  animates one before combat when no blocker could kill it (not to block). Lands that are creatures now count as
+  creatures everywhere (Dryad Arbor). Still not simulated: X/X (Lair of the Hydra), {S} costs (Faceless Haven), ward {N}
+  (Hall of Storm Giants), "It can't be blocked this turn" (Creeping Tar Pit), quoted abilities the engine can't do
+  (Den of the Bugbear, Hive of the Eye Tyrant, Lavaclaw Reaches, Restless Spire), Restless Anchorage's Map token,
+  Restless Ridgeline's "another target attacking creature … Untap that creature", Restless Vents' discard then draw,
+  Restless Vinestalk's base power and toughness
+- [ ] "Its controller loses 3 life" after removal (Inevitable Defeat: was read as exile + gain 3 life, now not
+  simulated)
 - [ ] Static power from conditions (Dark Matter Manipulator, Ghitu Lavarunner), "can't block" (Starscape Cleric),
   Moonshadow losing its counters
 - [ ] Manifest dread (Abhorrent Oculus), "becomes a copy of a card in your graveyard" (Likeness Looter)
@@ -233,8 +243,8 @@ Left "not simulated" or found on the way:
   Mirror-Breaker, Kumano Faces Kakkazan, The Legend of Roku), tokens with a triggered ability (Fable's Goblin
   Shaman), reflexive "When you do" (Awaken the Honored Dead III, The Last Ronin II), The Misty Mountains Cold's
   "Then if you control four or more Treasures"; read ahead
-- [ ] Mana with a spending restriction ("Spend this mana only to cast …": Cavern of Souls, Great Hall of the
-  Biblioplex, Tablet of Discovery) is left out: those lands make only their other mana
+- [ ] Mana with a spending restriction ("Spend this mana only to cast …": Great Hall of the Biblioplex,
+  Tablet of Discovery) is left out: those lands make only their other mana (Cavern of Souls done)
 - [ ] Pain lands' "This land deals 1 damage to you." (Karplusan Forest) is still ignored
 
 Still open, most played first:
