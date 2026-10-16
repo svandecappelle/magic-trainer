@@ -10,7 +10,10 @@ import { resolveDecklist } from '../lib/importDeck';
 import { primaryType, TYPE_ORDER } from '../lib/stats';
 import { useT } from '../i18n';
 import { useCardDisplay } from '../lib/cardLocale';
-import { engineGaps, engineStatus } from '../lib/engineStatus';
+import { engineStatus } from '../lib/engineStatus';
+import { useHoverPreview } from '../components/HoverPreview';
+import { Icon } from '../components/Icon';
+import { deckSummary, Pips } from '../components/DeckBits';
 import { useApp } from '../store/useApp';
 import { FORMATS, type Board, type Card } from '../types';
 
@@ -21,7 +24,7 @@ export function DeckEditor() {
   const deck = useApp((s) => s.decks.find((d) => d.id === deckId));
   const collection = useApp((s) => s.collection);
   const { updateDeck, addToDeck, moveBoard } = useApp.getState();
-  const [preview, setPreview] = useState<Card | null>(null);
+  const hover = useHoverPreview();
   const [textMode, setTextMode] = useState<'none' | 'import' | 'export'>('none');
   const [importText, setImportText] = useState('');
   const [importMsg, setImportMsg] = useState('');
@@ -92,31 +95,33 @@ export function DeckEditor() {
             {group.map((e) => {
               const owned = ownedByName.get(e.card.name) ?? 0;
               return (
-                <li key={e.card.id} onMouseEnter={() => setPreview(e.card)}>
-                  <span className="qty">{e.qty}</span>
+                <li key={e.card.id} {...hover.bind(e.card)}>
+                  <span className="qty-stepper">
+                    <button type="button" aria-label={t.editor.removeOne} onClick={() => addToDeck(deck.id, e.card, board, -1)}>−</button>
+                    <span>{e.qty}</span>
+                    <button type="button" aria-label={t.editor.addOne} onClick={() => addToDeck(deck.id, e.card, board, 1)}>+</button>
+                  </span>
                   <span className="card-name">{show.name(e.card)}</span>
                   {engineStatus(e.card) !== 'ok' && (
                     <span className={`engine-badge ${engineStatus(e.card)}`} title={t.game.engineStatus[engineStatus(e.card)]}>{t.game.engineBadge[engineStatus(e.card)]}</span>
                   )}
-                  <ManaCost cost={e.card.manaCost} />
-                  <span className={`owned small ${owned >= e.qty ? 'ok' : 'missing'}`} title={t.editor.owned}>
-                    {owned}/{e.qty}
-                  </span>
                   <span className="entry-actions">
-                    <button className="icon" title={t.editor.addOne} onClick={() => addToDeck(deck.id, e.card, board, 1)}>+</button>
-                    <button className="icon" title={t.editor.removeOne} onClick={() => addToDeck(deck.id, e.card, board, -1)}>−</button>
                     {board !== 'commander' && (
                       <button className="icon" title={board === 'main' ? t.editor.toSide : t.editor.toMain} onClick={() => moveBoard(deck.id, e.card.id, board)}>
                         {board === 'main' ? t.editor.toSideShort : t.editor.toMainShort}
                       </button>
                     )}
                     {board === 'main' && deck.format === 'commander' && canBeCommander(e.card) && (
-                      <button className="icon" title={t.editor.toCommander} onClick={() => moveBoard(deck.id, e.card.id, 'main', 'commander')}>👑</button>
+                      <button className="icon" title={t.editor.toCommander} onClick={() => moveBoard(deck.id, e.card.id, 'main', 'commander')}><Icon name="command" /></button>
                     )}
                     {board === 'commander' && (
                       <button className="icon" title={t.editor.toMain} onClick={() => moveBoard(deck.id, e.card.id, 'commander', 'main')}>↓</button>
                     )}
                   </span>
+                  <span className={`owned small ${owned >= e.qty ? 'ok' : 'missing'}`} title={t.editor.owned}>
+                    {owned}/{e.qty}
+                  </span>
+                  <ManaCost cost={e.card.manaCost} />
                 </li>
               );
             })}
@@ -126,31 +131,55 @@ export function DeckEditor() {
     });
   };
 
-  return (
-    <div className="page">
-      <div className="deck-header">
-        <input
-          className="deck-name-input"
-          value={deck.name}
-          onChange={(e) => updateDeck(deck.id, { name: e.target.value })}
-        />
-        <select value={deck.format} onChange={(e) => updateDeck(deck.id, { format: e.target.value })}>
-          {FORMATS.map((f) => <option key={f} value={f}>{t.formats[f] ?? f}</option>)}
-        </select>
-        <button className="secondary" onClick={() => setTextMode(textMode === 'import' ? 'none' : 'import')}>{t.editor.import}</button>
-        <button className="secondary" onClick={() => setTextMode(textMode === 'export' ? 'none' : 'export')}>{t.editor.export}</button>
-        <Link to={`/goldfish/${deck.id}`} className="button">{t.editor.goldfish}</Link>
-      </div>
+  const main = deck.entries.filter((e) => e.board === 'main');
+  const count = (list: typeof main) => list.reduce((n, e) => n + e.qty, 0);
+  // How much of the main deck the rules engine simulates, counting copies.
+  const engine = { ok: 0, partial: 0, none: 0 };
+  for (const e of main) {
+    const st = engineStatus(e.card);
+    engine[st === 'ok' ? 'ok' : st === 'partial' ? 'partial' : 'none'] += e.qty;
+  }
+  const engineTotal = engine.ok + engine.partial + engine.none;
+  const formatName = t.formats[deck.format as keyof typeof t.formats] ?? deck.format;
+  const inDeck = (card: Card) => count(deck.entries.filter((e) => e.card.name === card.name && e.board !== 'side'));
 
-      {deck.format !== 'casual' && (
-        <div className={`legality ${issues.length ? 'bad' : 'ok'}`}>
-          {issues.length === 0 ? (
-            <span>✓ {t.editor.legalIn(t.formats[deck.format as keyof typeof t.formats] ?? deck.format)}</span>
-          ) : (
-            <ul>
-              {issues.map((i, k) => <li key={k}>{issueText(i)}</li>)}
-            </ul>
-          )}
+  return (
+    <div className="page editor">
+      <header className="editor-head">
+        <div className="editor-title">
+          <Link to="/decks" className="small">← {t.editor.back}</Link>
+          <div className="editor-name">
+            <input className="deck-name-input" aria-label={t.editor.deckName} value={deck.name} onChange={(e) => updateDeck(deck.id, { name: e.target.value })} />
+            <Pips colors={deckSummary(deck).colors} />
+          </div>
+          <div className="chips">
+            <select className="chip-select" aria-label={t.editor.format} value={deck.format} onChange={(e) => updateDeck(deck.id, { format: e.target.value })}>
+              {FORMATS.map((f) => <option key={f} value={f}>{t.formats[f] ?? f}</option>)}
+            </select>
+            {deck.format !== 'casual' && (
+              <span className={`chip ${issues.length ? 'warn' : 'info'}`}>{issues.length ? t.editor.issuesN(issues.length) : t.editor.legalIn(formatName)}</span>
+            )}
+            <span className="chip">{t.editor.counts(count(main), count(deck.entries.filter((e) => e.board === 'side')))}</span>
+            {engineTotal > 0 && (
+              <span className={`chip ${engine.ok === engineTotal ? 'ok' : 'warn'}`} title={t.editor.engineSummary(engine.ok, engine.partial, engine.none)}>
+                {t.home.simulated(engine.ok, engineTotal)}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="editor-actions">
+          <button className="secondary" onClick={() => setTextMode(textMode === 'import' ? 'none' : 'import')}>{t.editor.import}</button>
+          <button className="secondary" onClick={() => setTextMode(textMode === 'export' ? 'none' : 'export')}>{t.editor.export}</button>
+          <Link to={`/goldfish/${deck.id}`} className="button secondary">{t.editor.goldfishShort}</Link>
+          <Link to={`/play?deck=${deck.id}`} className="button">{t.home.playBot}</Link>
+        </div>
+      </header>
+
+      {deck.format !== 'casual' && issues.length > 0 && (
+        <div className="legality bad">
+          <ul>
+            {issues.map((i, k) => <li key={k}>{issueText(i)}</li>)}
+          </ul>
           <span className="spacer" />
           <button className="secondary small" onClick={refreshCards} title={t.editor.refreshHelp}>{t.editor.refresh}</button>
           {refreshMsg && <span className="small muted">{refreshMsg}</span>}
@@ -175,20 +204,36 @@ export function DeckEditor() {
       )}
 
       <div className="editor-layout">
-        <section className="panel">
-          <h3>{t.editor.addCards}</h3>
+        <section className="panel editor-search" aria-label={t.editor.addCards}>
           <CardSearch
-            onPreview={setPreview}
+            layout="grid"
+            format={deck.format}
+            bindCard={hover.bind}
+            info={(card) => {
+              const n = inDeck(card);
+              return n ? <span className="in-deck">{t.editor.inDeck(n)}</span> : <span className="muted">{t.editor.notInDeck}</span>;
+            }}
             actions={(card) => (
               <>
-                <button className="icon" title={t.editor.addMainTitle} onClick={() => addToDeck(deck.id, card, 'main', 1)}>{t.editor.addMain}</button>
+                <button className="secondary small" title={t.editor.addMainTitle} onClick={() => addToDeck(deck.id, card, 'main', 1)}>{t.editor.add}</button>
                 <button className="icon" title={t.editor.addSideTitle} onClick={() => addToDeck(deck.id, card, 'side', 1)}>{t.editor.addSide}</button>
               </>
             )}
           />
         </section>
 
-        <section className="panel">
+        <aside className="panel editor-deck">
+          <DeckStats entries={deck.entries} compact />
+          {engineTotal > 0 && engine.ok < engineTotal && (
+            <div className="small">
+              <div className="engine-bar" aria-hidden="true">
+                <span className="ok" style={{ flex: engine.ok }} />
+                <span className="partial" style={{ flex: engine.partial }} />
+                <span className="none" style={{ flex: engine.none }} />
+              </div>
+              <p className="muted" style={{ margin: '6px 0 0' }}>{t.editor.engineSummary(engine.ok, engine.partial, engine.none)}</p>
+            </div>
+          )}
           {(deck.format === 'commander' || deck.entries.some((e) => e.board === 'commander')) && (
             <>
               <h3>{t.editor.commander}</h3>
@@ -199,51 +244,9 @@ export function DeckEditor() {
           {renderBoard('main')}
           <h3>{t.editor.sideboard}</h3>
           {renderBoard('side')}
-        </section>
-
-        <aside className="panel side-column">
-          {preview?.imageNormal ? (
-            <img className="card-preview" src={show.imageNormal(preview)} alt={show.name(preview)} />
-          ) : (
-            <div className="card-preview placeholder muted small">{t.common.hoverPreview}</div>
-          )}
-          {preview && (
-            <div className="small">
-              <span className={`engine-status ${engineStatus(preview)}`}>{t.game.engineStatus[engineStatus(preview)]}</span>
-              {engineGaps(preview).length > 0 && (
-                <>
-                  <div className="muted" style={{ marginTop: 6 }}>{t.editor.engineGapsTitle}</div>
-                  <ul className="engine-gaps">
-                    {engineGaps(preview).map((l, i) => <li key={i}>{l.text}</li>)}
-                  </ul>
-                </>
-              )}
-            </div>
-          )}
-          {(() => {
-            // How much of the main deck the rules engine simulates, counting copies.
-            const count = { ok: 0, partial: 0, none: 0 };
-            for (const e of deck.entries.filter((x) => x.board === 'main')) {
-              const st = engineStatus(e.card);
-              count[st === 'ok' ? 'ok' : st === 'partial' ? 'partial' : 'none'] += e.qty;
-            }
-            const total = count.ok + count.partial + count.none;
-            if (!total) return null;
-            return (
-              <div className="small">
-                <h4>{t.editor.engineTitle}</h4>
-                <div className="engine-bar" aria-hidden="true">
-                  <span className="ok" style={{ flex: count.ok }} />
-                  <span className="partial" style={{ flex: count.partial }} />
-                  <span className="none" style={{ flex: count.none }} />
-                </div>
-                <p className="muted" style={{ margin: '6px 0 0' }}>{t.editor.engineSummary(count.ok, count.partial, count.none)}</p>
-              </div>
-            );
-          })()}
-          <DeckStats entries={deck.entries} />
         </aside>
       </div>
+      {hover.node}
     </div>
   );
 }

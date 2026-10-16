@@ -8,6 +8,7 @@ import {
 } from '../lib/engine/engine';
 import { errorText, logText, useT, type AppError } from '../i18n';
 import { Icon } from './Icon';
+import { useHoverPreview } from './HoverPreview';
 import { useCardDisplay } from '../lib/cardLocale';
 import {
   activatedOf, castInfo, castSpec, faceCard, faceName, modeSimulated, findPayment, isCreature, isLandCard, isPlaneswalker, parseCost, type AbilitySpec,
@@ -66,9 +67,10 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   // Under 1000px the side panel goes below the table and has no room for a large preview: start on the log.
   const [sideTab, setSideTab] = useState<SideTab>('log');
   /** The card under the mouse and where it is: shown large next to it (screens with a mouse). */
-  const [hover, setHover] = useState<{ card: Card; rect: DOMRect } | null>(null);
+  const hoverPreview = useHoverPreview();
   // A card that moves (played, resolved, covered by a panel) never reports the mouse leaving it.
-  useEffect(() => setHover(null), [g]);
+  const hideHover = hoverPreview.hide;
+  useEffect(() => hideHover(), [g, hideHover]);
   const [zoneView, setZoneView] = useState<{ p: PlayerId; zone: 'graveyard' | 'exile' | 'command' } | null>(null);
   const zoneCards = (p: PlayerId, z: 'graveyard' | 'exile' | 'command') => (z === 'command' ? g.players[p].command ?? [] : g.players[p][z]);
   /** A card shown large after a long press (touch screens have no hover preview) or a right click. */
@@ -163,12 +165,11 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
 
   /** Handlers that make `card` zoomable: hold it ~0.45 s, or right click it. Hovering still previews it. */
   const zoomable = (card: Card) => ({
+    ...hoverPreview.bind(card),
     onMouseEnter: (e: ReactMouseEvent) => {
       setPreview(card);
-      setHover({ card, rect: e.currentTarget.getBoundingClientRect() });
+      hoverPreview.bind(card).onMouseEnter(e);
     },
-    onMouseLeave: () => setHover(null),
-    onMouseDown: () => setHover(null),
     onContextMenu: (e: ReactMouseEvent) => {
       e.preventDefault();
       setZoom(card);
@@ -1053,20 +1054,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
       </aside>
 
       {/* The hovered card, large, next to it (screens with a mouse; touch screens hold a card to zoom it). */}
-      {hover && (() => {
-        const w = 250;
-        const h = w * 1.4 + 34;
-        const right = hover.rect.right + 14 + w < window.innerWidth;
-        const left = right ? hover.rect.right + 14 : Math.max(8, hover.rect.left - 14 - w);
-        const top = Math.min(Math.max(8, hover.rect.top + hover.rect.height / 2 - h / 2), window.innerHeight - h - 8);
-        const status = engineStatus(hover.card);
-        return (
-          <div className="hover-preview" style={{ left, top, width: w }} aria-hidden="true">
-            <img src={show.imageNormal(hover.card)} alt="" />
-            <span className={`engine-pill ${status}`}>{t.game.engineStatus[status]}</span>
-          </div>
-        );
-      })()}
+      {hoverPreview.node}
     </div>
   );
 }

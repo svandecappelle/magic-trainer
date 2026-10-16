@@ -414,6 +414,8 @@ main:has(> .page.play) { padding: 0 10px 10px; }
   animation: pop 0.12s ease-out;
 }
 .hover-preview img { width: 100%; border-radius: 4.75% / 3.5%; box-shadow: 0 18px 44px rgba(0, 0, 0, 0.75); }
+.hover-gaps { margin: 0; padding: 8px 12px 8px 26px; border-radius: 10px; background: rgba(12, 15, 20, 0.95); border: 1px solid var(--border); color: var(--muted); }
+.hover-gaps li { margin: 2px 0; }
 .engine-pill { padding: 4px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 500; border: 1px solid; background: #15241b; color: #9fd3ae; border-color: #2f5a3e; }
 .engine-pill.partial { background: #241e12; color: #f0c46a; border-color: #5a4a26; }
 .engine-pill.none, .engine-pill.refused { background: #2a1615; color: #f2b4ae; border-color: #6b2e2e; }

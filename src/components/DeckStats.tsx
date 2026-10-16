@@ -5,7 +5,8 @@ import {
 import { useT } from '../i18n';
 import type { DeckEntry } from '../types';
 
-export function DeckStats({ entries }: { entries: DeckEntry[] }) {
+/** `compact`: the curve, colors and opening hand only (the deck editor shows the counts and types elsewhere). */
+export function DeckStats({ entries, compact = false }: { entries: DeckEntry[]; compact?: boolean }) {
   const t = useT();
   const [minLands, setMinLands] = useState(2);
   const size = countCards(entries);
@@ -18,14 +19,17 @@ export function DeckStats({ entries }: { entries: DeckEntry[] }) {
 
   return (
     <div className="deck-stats">
-      <div className="stat-row">
+      {!compact && <div className="stat-row">
         <div><strong>{size}</strong> {t.stats.cards}</div>
         <div><strong>{countCards(entries, 'side')}</strong> {t.stats.sideboard}</div>
         <div>{t.stats.avgMv} <strong>{t.num(averageManaValue(entries))}</strong></div>
         <div><strong>{t.price(deckPrice(entries))}</strong></div>
-      </div>
+      </div>}
 
-      <h4>{t.stats.curve}</h4>
+      <div className="stats-head">
+        <h4>{t.stats.curve}</h4>
+        <span className="small muted">{t.stats.avgMv} {t.num(averageManaValue(entries))}</span>
+      </div>
       <div className="curve">
         {curve.map((n, mv) => (
           <div key={mv} className="curve-col" title={t.stats.curveTitle(n)}>
@@ -56,14 +60,16 @@ export function DeckStats({ entries }: { entries: DeckEntry[] }) {
         </div>
       )}
 
-      <h4>{t.stats.types}</h4>
-      <ul className="type-list small">
-        {TYPE_ORDER.filter((type) => types[type] > 0).map((type) => (
-          <li key={type}>
-            {t.types[type]} <strong>{types[type]}</strong>
-          </li>
-        ))}
-      </ul>
+      {!compact && <>
+        <h4>{t.stats.types}</h4>
+        <ul className="type-list small">
+          {TYPE_ORDER.filter((type) => types[type] > 0).map((type) => (
+            <li key={type}>
+              {t.types[type]} <strong>{types[type]}</strong>
+            </li>
+          ))}
+        </ul>
+      </>}
 
       <h4>{t.stats.openingHand}</h4>
       {size >= 7 ? (

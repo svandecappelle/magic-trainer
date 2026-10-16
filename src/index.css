@@ -104,16 +104,42 @@ footer { padding: 16px 20px; border-top: 1px solid #1f2530; color: var(--faint);
 
 .editor-layout {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.3fr) 280px;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
+  gap: 20px;
   align-items: start;
 }
-.editor-layout .panel { margin: 0; }
+.editor-layout .panel { margin: 0; padding: 20px; border-radius: 18px; }
 .side-column { position: sticky; top: 10px; }
 @media (max-width: 1000px) {
   .editor-layout { grid-template-columns: 1fr; }
   .side-column { position: static; }
 }
+/* Deck editor */
+.page.editor { display: flex; flex-direction: column; gap: 20px; padding-top: 20px; }
+.editor-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px 24px; }
+.editor-title { flex: 1 1 360px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.editor-name { display: flex; align-items: center; gap: 14px; }
+.editor-name .pips { font-size: 1rem; }
+/* The name input as wide as the name (where the browser can size it to its text). */
+.editor-name .deck-name-input { flex: 0 1 auto; min-width: 6ch; max-width: 100%; field-sizing: content; }
+.editor-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.editor-actions .button, .editor-actions button { min-height: 44px; display: inline-flex; align-items: center; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 12px; border-radius: 999px; background: var(--panel); border: 1px solid var(--border); color: var(--muted); font-size: 0.82rem; font-weight: 500; }
+.chip.ok { color: #9fd3ae; border-color: #2f5a3e; background: #15241b; }
+.chip.info { color: #9dc8ff; border-color: #2b4566; background: #131d2b; }
+.chip.warn { color: #f0c46a; border-color: #5a4a26; background: #241e12; }
+.chip-select { min-height: 28px; padding: 0 10px; border-radius: 999px; font-size: 0.82rem; }
+.editor-deck { position: sticky; top: 12px; max-height: calc(100dvh - 24px); overflow: auto; display: flex; flex-direction: column; gap: 14px; }
+.editor-deck h3 { margin: 6px 0 0; font-size: 1.15rem; }
+.editor-deck .type-group h4 { display: flex; justify-content: space-between; margin: 10px 0 4px; }
+.stats-head { display: flex; justify-content: space-between; align-items: baseline; }
+.stats-head h4 { margin: 0 0 8px; }
+.qty-stepper { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; flex: none; }
+.qty-stepper button { width: 28px; height: 30px; padding: 0; border: none; border-radius: 0; background: var(--panel-2); color: var(--muted); box-shadow: none; font-size: 1rem; }
+.qty-stepper button:hover { filter: none; color: var(--text); background: #2a3140; }
+.qty-stepper span { min-width: 26px; text-align: center; font-weight: 700; font-size: 0.9rem; }
+@media (max-width: 1000px) { .editor-deck { position: static; max-height: none; } }
 
 /* Home */
 .home { display: flex; flex-direction: column; gap: 28px; padding-top: 20px; }
@@ -166,7 +192,28 @@ footer { padding: 16px 20px; border-top: 1px solid #1f2530; color: var(--faint);
 .mana-symbol { width: 15px; height: 15px; }
 
 /* Search */
-.card-search input[type='search'] { width: 100%; }
+.card-search { display: flex; flex-direction: column; gap: 12px; }
+.search-box { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 14px; border-radius: 12px; background: var(--bg); border: 1px solid var(--border); color: var(--faint); }
+.search-box:focus-within { border-color: var(--accent); }
+.search-box input { flex: 1; min-width: 0; background: transparent; border: none; padding: 0; font-size: 1rem; }
+.search-box input:focus { outline: none; }
+.search-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.search-filters select { min-height: 44px; }
+.search-filters .check { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.9rem; }
+.color-filter { display: flex; gap: 6px; }
+.pip-toggle { display: inline-grid; place-items: center; width: 44px; height: 44px; padding: 0; background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; box-shadow: none; }
+.pip-toggle .pip { opacity: 0.55; }
+.pip-toggle:hover { filter: none; border-color: #3a4254; }
+.pip-toggle.on { border-color: var(--accent); background: #221d13; }
+.pip-toggle.on .pip { opacity: 1; }
+.result-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 20px 16px; }
+.result-card { margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.result-card img { width: 100%; border-radius: 4.75% / 3.5%; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.55); transition: transform 0.15s; }
+@media (hover: hover) { .result-card img:hover { transform: translateY(-3px); } }
+.result-card figcaption { display: flex; flex-direction: column; gap: 6px; }
+.result-card .result-actions { display: flex; gap: 6px; }
+.result-card .result-actions button:first-child { flex: 1; min-height: 36px; }
+.result-card .in-deck { color: var(--accent); }
 .result-list, .deck-list { list-style: none; padding: 0; margin: 6px 0; }
 .result-list { max-height: 65vh; overflow-y: auto; }
 .result-list li {
@@ -186,8 +233,12 @@ footer { padding: 16px 20px; border-top: 1px solid #1f2530; color: var(--faint);
 .legality.bad { border-color: var(--danger); }
 .legality ul { margin: 0; padding-left: 18px; color: #ffb3ad; }
 .deck-header { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 14px 0 4px; }
-.deck-name-input { font-size: 1.4rem; font-weight: 700; flex: 1; min-width: 200px; }
-.deck-list li { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-radius: 4px; }
+.deck-name-input {
+  flex: 1; min-width: 200px; padding: 2px 6px; margin-left: -6px; background: transparent; border-color: transparent;
+  font-family: var(--font-display); font-size: clamp(1.8rem, 3vw, 2.5rem); font-weight: 700;
+}
+.deck-name-input:hover { border-color: var(--border); }
+.deck-list li { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 2px 4px; border-radius: 8px; }
 .deck-list .qty { width: 22px; text-align: right; color: var(--muted); }
 .deck-list .card-name { flex: 1; }
 .entry-actions { display: flex; gap: 2px; opacity: 0.25; }
