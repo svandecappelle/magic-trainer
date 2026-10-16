@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
 import { activationProblem, actor, apply, canBlock, canCastNow, castCost, canTapForMana, type Answer, castOptions, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
 import { botAction } from './bot';
-import { activatedOf, castInfo, castSpec, finalChapter, manaUnits, parseAbilityText, spellSpec, triggersOf } from './rules';
+import { activatedOf, castInfo, castSpec, finalChapter, hasKeyword, manaUnits, parseAbilityText, spellSpec, triggersOf } from './rules';
 
 // Cards from Standard decks on mtgtop8 (Oct 2026), with their Oracle text.
 let n = 0;
@@ -1702,5 +1702,116 @@ describe('Metagame audit 2026-10-16: Drum, Borrower, Channeler, Academy, Gemston
     expect(s.pending?.choice).toMatchObject({ kind: 'yesNo', player: 0, purpose: 'payOrDraw', params: { n: 1 } });
     s = run(apply(s, { type: 'choose', answer: { kind: 'yesNo', yes: false } }));
     expect(s.players[1].hand).toHaveLength(theirHand + 1);
+  });
+});
+
+describe('Metagame audit 2026-10-16, second batch', () => {
+  const thrull = creature('Doorkeeper Thrull', 1, 1, { typeLine: 'Creature — Thrull', manaCost: '{1}{W}', cmc: 2, keywords: ['Flash', 'Flying'], oracleText: 'Flash\nFlying\nArtifacts and creatures entering don\'t cause abilities to trigger.' });
+  const noon = card({ name: 'High Noon', typeLine: 'Enchantment', manaCost: '{1}{W}', cmc: 2, oracleText: 'Each player can\'t cast more than one spell each turn.\n{4}{R}, Sacrifice this enchantment: It deals 5 damage to any target.' });
+  const remora = card({
+    name: 'Mystic Remora', typeLine: 'Enchantment', manaCost: '{U}', cmc: 1,
+    oracleText: 'Cumulative upkeep {1} (At the beginning of your upkeep, put an age counter on this permanent, then sacrifice it unless you pay its upkeep cost for each age counter on it.)\nWhenever an opponent casts a noncreature spell, you may draw a card unless that player pays {4}.',
+  });
+  const yavimaya = card({ name: 'Yavimaya, Cradle of Growth', typeLine: 'Legendary Land', oracleText: 'Each land is a Forest in addition to its other land types.' });
+  const pool = card({ name: 'Reflecting Pool', typeLine: 'Land', oracleText: '{T}: Add one mana of any type that a land you control could produce.' });
+  const halfling = creature('Delighted Halfling', 1, 2, { typeLine: 'Creature — Halfling Citizen', manaCost: '{G}', oracleText: '{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a legendary spell, and that spell can\'t be countered.' });
+  const mycospawn = creature('Sowing Mycospawn', 3, 3, {
+    typeLine: 'Creature — Eldrazi Fungus', manaCost: '{3}{G}', cmc: 4, keywords: ['Devoid', 'Kicker'],
+    oracleText: 'Devoid (This card has no color.)\nKicker {1}{C} (You may pay an additional {1}{C} as you cast this spell.)\nWhen you cast this spell, search your library for a land card, put it onto the battlefield, then shuffle.\nWhen you cast this spell, if it was kicked, exile target land.',
+  });
+  const mockingbird = creature('Mockingbird', 1, 1, {
+    typeLine: 'Creature — Bird Bard', manaCost: '{X}{U}', cmc: 1, keywords: ['Flying'],
+    oracleText: 'Flying\nYou may have this creature enter as a copy of any creature on the battlefield with mana value less than or equal to the amount of mana spent to cast this creature, except it\'s a Bird in addition to its other types and it has flying.',
+  });
+  const mountain = card({ name: 'Mountain', typeLine: 'Basic Land — Mountain' });
+  const run = (s: GameState) => {
+    for (let i = 0; i < 12 && !s.pending && (s.stack.length || s.triggered?.length); i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+
+  it('Doorkeeper Thrull: creatures entering trigger nothing', () => {
+    const healer = creature('Healer', 1, 1, { oracleText: 'When this creature enters, you gain 3 life.' });
+    let s = board({ mana: 1, hand: [healer], theirs: [thrull] });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    expect(perm(s, 'Healer')).toBeDefined();
+    expect(s.players[0].life).toBe(20);
+  });
+
+  it('High Noon: one spell each turn', () => {
+    const shock = spell('Shock', '{B}', 'Shock deals 2 damage to any target.');
+    let s = board({ mana: 2, hand: [shock, shock], theirs: [noon] });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'player', player: 1 }]] })));
+    expect(s.players[1].life).toBe(18);
+    expect(canCastNow(s, 0, shock)).toBe(false);
+  });
+
+  it('Mystic Remora: cumulative upkeep, then sacrificed', () => {
+    let s = board({ mana: 3, mine: [remora] });
+    const toMyUpkeep = (t: GameState) => {
+      const turn = t.turn;
+      for (let i = 0; i < 60 && !(t.pending?.choice.purpose === 'cumulativeUpkeep') && t.turn <= turn + 2; i++) {
+        t = t.pending ? apply(t, { type: 'choose', answer: { kind: 'cards', iids: [] } }) : !t.priority && t.step === 'attack' ? apply(t, { type: 'declareAttackers', attackers: [] }) : apply(t, { type: 'pass' });
+      }
+      return t;
+    };
+    s = toMyUpkeep(s);
+    expect(s.pending?.choice).toMatchObject({ kind: 'yesNo', player: 0, purpose: 'cumulativeUpkeep', params: { cost: '{1}', n: 1 } });
+    s = run(apply(s, { type: 'choose', answer: { kind: 'yesNo', yes: true } }));
+    expect(perm(s, 'Mystic Remora')!.counters.age).toBe(1);
+    s = toMyUpkeep(s);
+    expect(s.pending?.choice).toMatchObject({ purpose: 'cumulativeUpkeep', params: { cost: '{2}', n: 2 } });
+    s = run(apply(s, { type: 'choose', answer: { kind: 'yesNo', yes: false } }));
+    expect(perm(s, 'Mystic Remora')).toBeUndefined();
+  });
+
+  it('Yavimaya and Reflecting Pool', () => {
+    let s = board({ mine: [yavimaya, mountain] });
+    expect(unitsOf(s, perm(s, 'Mountain')!)).toEqual([['R', 'G']]);
+    s = board({ mine: [pool, island] });
+    expect(unitsOf(s, perm(s, 'Reflecting Pool')!)).toEqual([['U']]);
+    s = board({ mana: 1, mine: [pool, island] });
+    expect(unitsOf(s, perm(s, 'Reflecting Pool')!)).toEqual([['B', 'U']]);
+  });
+
+  it('Delighted Halfling: any color for a legendary spell, which can\'t be countered', () => {
+    const legend = creature('Legend', 2, 2, { typeLine: 'Legendary Creature — Elf', manaCost: '{R}', colors: ['R'] });
+    const bear = creature('Bear', 2, 2, { manaCost: '{R}', colors: ['R'] });
+    const counter = spell('Counterspell', '{U}', 'Counter target spell.');
+    let s = board({ mine: [halfling], hand: [legend, bear], oppHand: [counter], oppMana: 1 });
+    const h = perm(s, 'Delighted Halfling')!;
+    expect(unitsOf(s, h, bear)).toEqual([['C']]);
+    expect(unitsOf(s, h, legend)).toEqual([['C', 'W', 'U', 'B', 'R', 'G']]);
+    expect(castOptions(s, 0, 'h1')).toEqual([]);
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    expect(s.stack[0]?.uncounterable).toBe(true);
+    // The opponent's Counterspell does nothing to it.
+    s = apply(s, { type: 'cast', iid: 'o0', targets: [[{ kind: 'spell', iid: s.stack[0].iid }]] });
+    s = run(settle(s));
+    expect(perm(s, 'Legend')).toBeDefined();
+  });
+
+  it('Sowing Mycospawn: a land when cast; the kicked trigger only when kicked', () => {
+    const forest = card({ name: 'Forest', typeLine: 'Basic Land — Forest' });
+    let s = board({ mine: [forest, forest, forest, forest], hand: [mycospawn] });
+    s = settle(apply(s, { type: 'cast', iid: 'h0' }));
+    // One trigger (not kicked), resolving above the creature spell: the search.
+    expect(s.log.filter((e) => e.k === 'triggers')).toHaveLength(1);
+    expect(s.stack.map((x) => x.card.name)).toEqual(['Sowing Mycospawn']);
+    expect(s.pending?.choice).toMatchObject({ kind: 'cards', purpose: 'search' });
+    const lands = s.battlefield.length;
+    s = run(apply(s, { type: 'choose', answer: { kind: 'cards', iids: [(s.pending!.choice as { options: { iid: string }[] }).options[0].iid] } }));
+    expect(s.battlefield.length).toBe(lands + 2);
+  });
+
+  it('Mockingbird copies a creature with mana value up to the mana spent, as a flying Bird', () => {
+    const ogre = creature('Ogre', 4, 4, { manaCost: '{3}{R}', cmc: 4 });
+    let s = board({ mine: [island, island, creature('Bear', 2, 2, { typeLine: 'Creature — Bear' })], theirs: [ogre], hand: [mockingbird] });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0', x: 1 })));
+    expect(s.pending?.choice).toMatchObject({ kind: 'cards', purpose: 'clone' });
+    expect((s.pending!.choice as { options: { card: Card }[] }).options.map((c) => c.card.name)).toEqual(['Bear']);
+    s = apply(s, { type: 'choose', answer: { kind: 'cards', iids: [iidOf(s, 'Bear')] } });
+    const copy = s.battlefield.filter((p) => p.card.name === 'Bear').find((p) => p.iid === 'h0')!;
+    expect(copy.card.typeLine).toBe('Creature — Bear Bird');
+    expect(hasKeyword(copy.card, 'flying')).toBe(true);
   });
 });

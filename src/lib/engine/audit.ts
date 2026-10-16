@@ -1,7 +1,7 @@
 import type { Card } from '../../types';
 import {
   activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, entersCounters, entersTappedRule, beginsWithLuck, discardsLandInstead, manaConditions, stateMana, doesntUntap, frontText, gameRulesOf, isInstantOrSorcery,
-  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, blocksOnlyFlyers, type AbilitySpec,
+  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, type AbilitySpec,
 } from './rules';
 
 /**
@@ -71,6 +71,8 @@ function keywordLine(card: Card, line: string, one: Card): LineReport | null {
     if (k === 'mobilize') return triggersOf(one).length > 0;
     if (k === 'storied') return isStoried(one);
     if (k === 'crew') return activatedOf(one).some((a) => a.cost.crew !== undefined);
+    if (k === 'cumulative upkeep') return triggersOf(one).some((tr) => tr.ability.effects.some((x) => x.kind === 'cumulativeUpkeep'));
+    if (k === 'devoid') return true; // the card's colors are already none
     if (k === 'metalcraft') return manaConditions(one).some((c) => 'artifacts' in c);
     return false;
   };
@@ -120,13 +122,14 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
     return { text: line, status: 'ok', how: 'chooses a basic land type (its mana); pay 2 life or it enters tapped' };
   }
   if (blocksOnlyFlyers(one)) return { text: line, status: 'ok', how: 'blocks only creatures with flying' };
+  if (legendaryMana(one)) return { text: line, status: 'ok', how: 'mana: any color for a legendary spell (it can\'t be countered)' };
   const tapsOther = tapsAnotherForMana(one);
   if (tapsOther) return { text: line, status: 'ok', how: `mana: any color, tapping another untapped ${tapsOther} that makes no mana (chosen automatically)` };
   const fromHand = handMana(one);
   if (fromHand) return { text: line, status: 'ok', how: `mana: ${fromHand}, exiling it from the hand (spent last)` };
   const state = stateMana(one);
   if (state) {
-    const how = { imprinted: 'the colors of the exiled card', legends: 'the colors of your legendary creatures and planeswalkers', luck: 'C, any color with a luck counter', perArtifact: 'U for each artifact you control', mining: 'any color, removing a mining counter (sacrificed after the last)' }[state];
+    const how = { imprinted: 'the colors of the exiled card', legends: 'the colors of your legendary creatures and planeswalkers', luck: 'C, any color with a luck counter', perArtifact: 'U for each artifact you control', mining: 'any color, removing a mining counter (sacrificed after the last)', reflect: 'one mana of a type your other lands could make' }[state];
     return { text: line, status: 'ok', how: `mana: ${how}` };
   }
   if (/\bAdd \{|\bAdd (?:one|two|three) mana\b/.test(line) && !spell) {
@@ -160,6 +163,7 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   if (counters) return { text: line, status: 'ok', how: `enters with ${counters.n} ${counters.counter} counters` };
   const tapped = entersTappedRule(one);
   if (tapped) return { text: line, status: 'ok', how: `enters tapped (${tapped.kind})` };
+  if (entersAsBirdCopy(one)) return { text: line, status: 'ok', how: 'enters as a copy (mana value up to the mana spent), a Bird with flying' };
   if (entersAsCopy(one)) return { text: line, status: 'ok', how: 'enters as a copy' };
   // Handled by the counter effect itself (engine.ts), on any spell.
   if (/^This spell can't be countered\.$/.test(line)) return { text: line, status: 'ok', how: 'can\'t be countered' };

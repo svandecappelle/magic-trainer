@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, blocksOnlyFlyers, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -112,10 +112,14 @@ export interface PoolMana {
   pain?: { life: number; colors: Color[] };
   /** Cavern of Souls: these colors only for a creature spell of that type. */
   forType?: { type: string; colors: Color[] };
+  /** Delighted Halfling: these colors only for a legendary spell (which then can't be countered). */
+  forLegendary?: Color[];
 }
 
 export interface PlayerState {
   name: string;
+  /** Spells cast this turn (High Noon). */
+  spellsThisTurn?: number;
   /** Cards drawn this turn (Faerie Mastermind: "their second card each turn"). */
   drawnThisTurn?: number;
   /** Teferi, Time Raveler's +1: may cast sorceries as though they had flash until their next turn. */
@@ -192,6 +196,7 @@ export type ChoicePurpose =
   | 'payOrCounter' // "counter target spell unless its controller pays {N}"
   | 'payLifeOrCounter' // Ward—Pay N life: pay, or the spell or ability is countered
   | 'payOrDraw' // Rhystic Study: pay {N}, or its controller draws
+  | 'cumulativeUpkeep' // pay the cumulative upkeep, or sacrifice the permanent
   | 'discard' // "discard a card": the discarding player chooses
   | 'discardChosen' // Duress: the spell's controller chooses from a revealed hand
   | 'scry'
@@ -593,11 +598,19 @@ const protectedFrom = (perm: Permanent, source: Card) => protectionsOf(perm.card
 export function unitsOf(s: GameState, perm: Permanent, spell?: Card): Color[][] {
   const identity = s.players[perm.controller]?.identity;
   let units = manaUnits(perm.card, identity);
+  // Yavimaya, Cradle of Growth: each land is a Forest too ({G} as one more choice for a single-ability land).
+  if (isLandCard(perm.card) && withRule(s, 'landsAreForests').length && units.length <= 1) units = [[...new Set([...(units[0] ?? []), 'G' as Color])]];
   // Springleaf Drum, Gene Pollinator: any color, with another untapped permanent to tap.
   if (tapsAnotherForMana(perm.card)) units = manaHelpers(s, perm).length ? [['W', 'U', 'B', 'R', 'G']] : [];
   // Chrome Mox: the imprinted card's colors; Mox Amber: the colors of legendary creatures and planeswalkers.
   const state = stateMana(perm.card);
-  if (state === 'mining') {
+  if (state === 'reflect') {
+    // Reflecting Pool: the types the other lands could make (other Pools aside: they add nothing new).
+    const types = s.battlefield
+      .filter((x) => x.controller === perm.controller && isLandCard(x.card) && stateMana(x.card) !== 'reflect')
+      .flatMap((x) => unitsOf(s, x).flat());
+    units = types.length ? [[...new Set(types)]] : [];
+  } else if (state === 'mining') {
     units = perm.counters.mining ? [['W', 'U', 'B', 'R', 'G']] : [];
   } else if (state === 'perArtifact') {
     const n = s.battlefield.filter((x) => x.controller === perm.controller && cardTypes(x.card).includes('artifact')).length;
@@ -613,18 +626,25 @@ export function unitsOf(s: GameState, perm: Permanent, spell?: Card): Color[][] 
   // Cavern of Souls: its colored mana for a creature spell of the chosen type.
   const typed = chosenTypeMana(perm.card);
   if (typed && spell && perm.chosenType && ofType(spell, perm.chosenType)) units = [[...new Set([...(units[0] ?? []), ...typed])]];
+  // Delighted Halfling: any color for a legendary spell.
+  const legend = legendaryMana(perm.card);
+  if (legend && spell && isLegendary(spell)) units = [[...new Set([...(units[0] ?? []), ...legend])]];
   const pain = manaPain(perm.card, identity);
   if (pain && s.players[perm.controller].life < pain.life) units = units.map((u) => u.filter((c) => !pain.colors.includes(c)));
   // Sunbillow Verge: "{T}: Add {R}. Activate only if you control a Mountain or a Plains."
   for (const cond of manaConditions(perm.card)) {
     const mine = s.battlefield.filter((x) => x.controller === perm.controller);
     const met = 'subtypes' in cond
-      ? mine.some((x) => cond.subtypes.some((t) => hasSubtype(x.card, t)))
+      ? mine.some((x) => cond.subtypes.some((t) => landHasType(s, x.card, t)))
       : mine.filter((x) => /\bArtifact\b/.test(x.card.typeLine)).length >= cond.artifacts;
     if (!met) units = units.map((u) => u.filter((c) => !cond.colors.includes(c)));
   }
   return units.filter((u) => u.length);
 }
+
+/** A subtype, counting Yavimaya, Cradle of Growth: "Each land is a Forest in addition to its other land types." */
+const landHasType = (s: GameState, card: Card, type: string) =>
+  hasSubtype(card, type) || (type === 'forest' && isLandCard(card) && withRule(s, 'landsAreForests').length > 0);
 
 /** Is the card a creature (spell) of this creature type? (Cavern of Souls) */
 const ofType = (card: Card, type: string) => isCreature(card) && hasSubtype(card, type);
@@ -720,7 +740,9 @@ const sorceryOnly = (s: GameState, p: PlayerId) =>
   withRule(s, 'opponentsSorcerySpeed').some((x) => teamOf(s, x.controller) !== teamOf(s, p));
 
 const castingForbidden = (s: GameState, p: PlayerId) =>
-  withRule(s, 'opponentsCantCastOnYourTurn').some((x) => teamOf(s, x.controller) !== teamOf(s, p) && isActivePlayer(s, x.controller));
+  withRule(s, 'opponentsCantCastOnYourTurn').some((x) => teamOf(s, x.controller) !== teamOf(s, p) && isActivePlayer(s, x.controller))
+  // High Noon: one spell each turn.
+  || ((s.players[p].spellsThisTurn ?? 0) >= 1 && withRule(s, 'oneSpellEachTurn').length > 0);
 
 /** Rest in Peace / Leyline of the Void: cards that would go to `owner`'s graveyard are exiled instead. */
 const graveyardExiled = (s: GameState, owner: PlayerId) =>
@@ -733,6 +755,8 @@ export function manaSources(s: GameState, p: PlayerId, spell?: Card): ManaSource
   const pool = (s.players[p].pool ?? []).map((m, i): ManaSource => {
     // Cavern of Souls' mana kept in the pool: its colors only for a creature spell of the chosen type.
     if (m.forType && !(spell && ofType(spell, m.forType.type))) return { iid: `pool:${i}`, colors: m.colors.filter((c) => !m.forType!.colors.includes(c)) };
+    // Delighted Halfling's mana kept in the pool: its colors only for a legendary spell.
+    if (m.forLegendary && !(spell && isLegendary(spell))) return { iid: `pool:${i}`, colors: m.colors.filter((c) => !m.forLegendary!.includes(c)) };
     // Starting Town's mana kept in the pool: its colors that cost life only while that life can be paid.
     if (m.pain && life < m.pain.life) return { iid: `pool:${i}`, colors: m.colors.filter((c) => !m.pain!.colors.includes(c)) };
     return { iid: `pool:${i}`, colors: m.colors, ...(m.pain ? { pain: m.pain } : {}) };
@@ -1048,6 +1072,13 @@ function finishCast(d: GameState, item: StackItem, named: LogTarget[]) {
   log(d, {
     k: 'cast', p, card: faceName(item.card, item.face ?? 0), ...(named.length ? { targets: named } : {}), ...(item.kicked ? { kicked: true } : {}), ...(item.from ? { from: item.from } : {}),
   });
+  if (!item.copy) d.players[p].spellsThisTurn = (d.players[p].spellsThisTurn ?? 0) + 1;
+  // Sowing Mycospawn: "When you cast this spell, …" (a copy isn't cast).
+  if (!item.copy) {
+    for (const t of triggersOf(card)) {
+      if (t.event.on === 'castSelf' && (!t.event.kicked || item.kicked)) queueTrigger(d, { iid: item.iid, card }, p, t.ability);
+    }
+  }
   fireCast(d, p, card);
   if (item.noMana) fireCastWithoutMana(d, item);
   fireWard(d, item);
@@ -1394,6 +1425,7 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
   }
   for (const ps of d.players) {
     delete ps.drawnThisTurn;
+    delete ps.spellsThisTurn;
     delete ps.gainedThisTurn;
     delete ps.lostThisTurn;
     delete ps.equipsThisTurn;
@@ -1655,7 +1687,7 @@ function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, op
   else if (rule?.kind === 'unlessSubtypes') {
     // Land types, or The Lonely Mountain's Equipment: any other permanent its controller has.
     const others = d.battlefield.filter((x) => x.controller === controller);
-    perm.tapped = !others.some((x) => rule.subtypes.some((t) => subtypesOf(x.card).includes(t)));
+    perm.tapped = !others.some((x) => rule.subtypes.some((t) => subtypesOf(x.card).includes(t) || landHasType(d, x.card, t)));
   } else if (rule?.kind === 'unlessEarlyTurn') {
     perm.tapped = !(isActivePlayer(d, controller) && (d.players[controller].turns ?? 0) <= rule.n);
   } else if (rule?.kind === 'unlessBasic') perm.tapped = !otherLands.some((x) => /\bBasic\b/.test(x.card.typeLine));
@@ -1893,6 +1925,8 @@ function fits(d: GameState, viewer: PlayerId, which: Selector, perm: Permanent):
  * for it. A creature that died still sees its own death ("When this creature dies").
  */
 function fireObject(d: GameState, on: ObjectEvent, perm: Permanent) {
+  // Doorkeeper Thrull: artifacts and creatures entering trigger nothing.
+  if (on === 'enters' && withRule(d, 'noEntersTriggers').length && (isCreature(perm.card) || cardTypes(perm.card).includes('artifact'))) return;
   const watchers = [...(d.battlefield.some((x) => x.iid === perm.iid) ? d.battlefield : [...d.battlefield, perm]), ...emblemSources(d)];
   for (const x of watchers) {
     triggersOf(x.card).forEach((t, i) => {
@@ -2760,6 +2794,25 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       log(d, { k: 'counters', card: army.card.name, counter: '+1/+1', n: e.n });
       break;
     }
+    case 'cumulativeUpkeep': {
+      // An age counter, then pay the cost for each one, or sacrifice it.
+      const src = item.source ? findPermanent(d, item.source) : undefined;
+      if (!src) break;
+      if (answer === undefined) src.counters = { ...src.counters, age: (src.counters.age ?? 0) + 1 };
+      const age = src.counters.age ?? 1;
+      const once = parseCost(e.mana);
+      const cost = { generic: once.generic * age, colored: Array.from({ length: age }, () => once.colored).flat() };
+      const costText = `{${cost.generic}}${cost.colored.map((c) => `{${c.join('/')}}`).join('')}`.replace(/^\{0\}(?=\{)/, '');
+      if (findPayment(manaSources(d, caster), cost)) {
+        if (answer?.kind !== 'yesNo') return { kind: 'yesNo', player: caster, purpose: 'cumulativeUpkeep', params: { card: src.card.name, cost: costText, n: age } };
+        if (answer.yes) {
+          pay(d, caster, manaSources(d, caster), cost);
+          break;
+        }
+      }
+      sacrifice(d, src);
+      break;
+    }
     case 'drawUnlessPays': {
       // Rhystic Study: the player who cast the spell may pay; if they don't, its controller draws.
       const t = r.legal[0]?.[0];
@@ -2950,8 +3003,11 @@ function resolvePermanentSpell(d: GameState, item: StackItem, reason: WindowReas
     return;
   }
   // A clone asks what to copy before it enters.
-  const others = d.battlefield.filter((x) => isCreature(x.card));
-  if (entersAsCopy(card) && others.length) {
+  // Mockingbird: a creature with mana value at most the mana spent.
+  const bird = entersAsBirdCopy(card);
+  const spent = (() => { const c = costWithX(card, item.x ?? 0); return c.generic + c.colored.length; })();
+  const others = d.battlefield.filter((x) => isCreature(x.card) && (!bird || printedCard(x).cmc <= spent));
+  if ((entersAsCopy(card) || bird) && others.length) {
     d.pending = {
       choice: { kind: 'cards', player: item.controller, purpose: 'clone', min: 0, max: 1, options: others, params: { card: card.name } },
       resume: 'clone', activation: { item, named: [] }, reason,
@@ -3427,7 +3483,15 @@ export function apply(state: GameState, action: Action): GameState {
         const item = pending.activation!.item;
         const model = action.answer.iids[0] ? findPermanent(d, action.answer.iids[0]) : undefined;
         const own = castCard(item);
-        const copy = model ? { ...(printedCard(model)), id: model.card.id } : own;
+        let copy = model ? { ...(printedCard(model)), id: model.card.id } : own;
+        // Mockingbird: "except it's a Bird in addition to its other types and it has flying".
+        if (model && entersAsBirdCopy(own)) {
+          const [types, subtypes] = copy.typeLine.split(' // ')[0].split(' — ');
+          copy = {
+            ...copy, typeLine: `${types} — ${[subtypes, 'Bird'].filter(Boolean).join(' ')}`,
+            keywords: [...new Set([...(copy.keywords ?? []), 'Flying'])], oracleText: `Flying\n${copy.oracleText}`,
+          };
+        }
         log(d, { k: 'enters', card: own.name });
         if (model) log(d, { k: 'copied', card: own.name, as: model.card.name });
         const perm = enterBattlefield(d, { iid: item.iid, card: copy, ...(item.commander ? { commander: true } : {}) }, item.controller, { x: item.x });
@@ -3526,12 +3590,14 @@ export function apply(state: GameState, action: Action): GameState {
       const plan = planPayment(castSources(d, p, inst.card, inst.iid, face), castCost(d, p, inst.card, { face, kicked, from, iid: inst.iid }, x));
       if (!plan) throw new IllegalAction('notEnoughMana', { card: card.name });
       // Cavern of Souls' mana spent on a creature spell of the chosen type: it can't be countered.
+      // Delighted Halfling's mana spent on a legendary spell: the same (counted for any of its mana).
       const uncounterable = plan.some((m) => {
         if (m.iid.startsWith('pool:')) {
-          const forType = me.pool?.[Number(m.iid.slice(5))]?.forType;
-          return !!forType && ofType(card, forType.type);
+          const entry = me.pool?.[Number(m.iid.slice(5))];
+          return (!!entry?.forType && ofType(card, entry.forType.type)) || (!!entry?.forLegendary && isLegendary(card));
         }
         const src = findPermanent(d, m.iid);
+        if (src && legendaryMana(src.card) && isLegendary(card)) return true;
         return !!src?.chosenType && !!chosenTypeMana(src.card) && ofType(card, src.chosenType);
       });
       payMana(d, p, plan);
@@ -3650,11 +3716,12 @@ export function apply(state: GameState, action: Action): GameState {
       if (!perm || perm.controller !== p) throw new IllegalAction('noSuchAbility');
       if (!canTapForMana(d, perm)) throw new IllegalAction(perm.tapped ? 'alreadyTapped' : 'summoningSick', { card: perm.card.name });
       const typed = perm.chosenType ? chosenTypeMana(perm.card) : null;
-      // Cavern of Souls: the mana keeps both choices until spent ({C}, or a color for a creature of the chosen type).
-      const units = typed ? [[...new Set([...(unitsOf(d, perm)[0] ?? []), ...typed])]] : unitsOf(d, perm);
+      const legend = legendaryMana(perm.card);
+      // Cavern of Souls, Delighted Halfling: the mana keeps both choices until spent ({C}, or a color for the right spell).
+      const units = typed || legend ? [[...new Set([...(unitsOf(d, perm)[0] ?? []), ...(typed ?? legend!)])]] : unitsOf(d, perm);
       const pain = painOf(d, perm);
       const forType = typed ? { type: perm.chosenType!, colors: typed } : undefined;
-      d.players[p].pool = [...(d.players[p].pool ?? []), ...units.map((colors) => ({ colors, source: perm.iid, ...(pain ? { pain } : {}), ...(forType ? { forType } : {}) }))];
+      d.players[p].pool = [...(d.players[p].pool ?? []), ...units.map((colors) => ({ colors, source: perm.iid, ...(pain ? { pain } : {}), ...(forType ? { forType } : {}), ...(legend ? { forLegendary: legend } : {}) }))];
       tapForManaOnly(d, perm);
       break;
     }

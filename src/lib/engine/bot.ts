@@ -1008,6 +1008,8 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
       }
       if (choice.purpose === 'reflexivePay') return { kind: 'yesNo', yes: !safe && reflexiveUseful(s, choice.player) && s.players[choice.player].life > Number(choice.params?.life ?? 0) + 5 };
       // Ward—Pay N life: while life stays comfortable.
+      // Cumulative upkeep: kept while it costs at most {2}.
+      if (choice.purpose === 'cumulativeUpkeep') return { kind: 'yesNo', yes: !safe && Number(choice.params?.n ?? 0) <= 2 };
       // Rhystic Study: pay the tax when the mana isn't needed for anything else in hand.
       if (choice.purpose === 'payOrDraw') return { kind: 'yesNo', yes: !safe && castable(s, choice.player).length === 0 };
       if (choice.purpose === 'payLifeOrCounter') return { kind: 'yesNo', yes: !safe && s.players[choice.player].life > Number(choice.params?.n ?? 0) + 5 };

@@ -208,8 +208,8 @@ NONE     Roaring Furnace // Steaming Sauna {1}{R} // {3}{U}{U} — Enchantment �
   ? When you unlock this door, this Room deals damage equal to the number…
       not read by the engine
 NONE     Sage of the Skies {2}{W} — Creature — Human Monk
-  ? When you cast this spell, if you've cast another spell this turn, cop…
-      not read by the engine
+  ✗ When you cast this spell, if you've cast another spell this turn, cop…
+      trigger (castSelf), effect not simulated
   ✓ Flying, lifelink
       keyword
 NONE     Sanar, Unfinished Genius // Wild Idea {U}{R} // {3}{U}{R} — Legendary Creature — Goblin Sorcerer // Sorcery (other faces not audited)

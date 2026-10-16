@@ -160,6 +160,17 @@ export function chosenTypeMana(card: Card): Color[] | null {
   return units?.length === 1 ? units[0] : null;
 }
 
+/**
+ * Delighted Halfling: "{T}: Add one mana of any color. Spend this mana only to cast a legendary spell, and that spell
+ * can't be countered." → its colors, or null.
+ */
+export function legendaryMana(card: Card): Color[] | null {
+  return /^\{T\}: Add one mana of any color\. Spend this mana only to cast a legendary spell, and that spell can't be countered\.$/m.test(frontText(card))
+    ? ['W', 'U', 'B', 'R', 'G'] : null;
+}
+
+export const isLegendary = (card: Card) => /\bLegendary\b/.test(card.typeLine.split('//')[0]);
+
 /** A mana ability "{T}: Add …" (or a basic land type) without a life cost. */
 const freeMana = (card: Card) =>
   /^\{T\}(?:, Sacrifice [^:]*)?:\s*Add /m.test(frontText(card)) || BASIC_TYPES.some(([type]) => card.typeLine.split('//')[0].includes(type));
@@ -376,7 +387,7 @@ export interface TargetSpec {
 // ---------- Effects ----------
 
 /** Counter kinds placed on permanents. */
-export type CounterKind = '+1/+1' | '-1/-1' | 'loyalty' | 'lore' | 'rev' | 'luck' | 'mining';
+export type CounterKind = '+1/+1' | '-1/-1' | 'loyalty' | 'lore' | 'rev' | 'luck' | 'mining' | 'age';
 
 /**
  * Who an effect applies to: the targets chosen for a slot, the controller, everyone / each opponent,
@@ -455,6 +466,10 @@ export type Effect =
    * Army you control.
    */
   | { kind: 'amass'; subtype: string; n: number }
+  /**
+   * Cumulative upkeep {1}: an age counter, then pay the cost once for each age counter on it, or sacrifice it.
+   */
+  | { kind: 'cumulativeUpkeep'; mana: string }
   /** Rhystic Study: "you may draw a card unless that player pays {1}" (that player: the ability's slot 0). */
   | { kind: 'drawUnlessPays'; n: number; mana: number }
   /** Teferi, Time Raveler's +1: "Until your next turn, you may cast sorcery spells as though they had flash." */
@@ -1511,6 +1526,8 @@ export type TriggerEvent =
   | { on: 'opponentDraws'; nth?: number; notFirstInDrawStep?: boolean }
   /** City of Traitors: "When you play another land, …" */
   | { on: 'youPlayLand' }
+  /** Sowing Mycospawn: "When you cast this spell, …" (`kicked`: "if it was kicked"). */
+  | { on: 'castSelf'; kicked?: boolean }
   /** Rhystic Study: "Whenever an opponent casts a spell, …" (the ability's slot 0 is that player). */
   | { on: 'opponentCasts'; filter: TargetFilter };
 
@@ -1694,6 +1711,13 @@ export function triggersOf(card: Card): TriggerSpec[] {
     // Drop reminder text and ability words ("Landfall — Whenever…").
     const line = raw.replace(/\s*\([^)]*\)/g, '').replace(/^[A-Z][A-Za-z' ]+ — /, '').trim();
 
+    // Cumulative upkeep {1}: "At the beginning of your upkeep, put an age counter on this permanent, then sacrifice it
+    // unless you pay its upkeep cost for each age counter on it."
+    const cumulative = line.match(/^Cumulative upkeep ((?:\{(?:\d+|[WUBRGC])\})+)$/i);
+    if (cumulative) {
+      out.push({ event: { on: 'upkeep', whose: 'you' }, ability: { targets: [], effects: [{ kind: 'cumulativeUpkeep', mana: cumulative[1] }] } });
+      continue;
+    }
     // Mobilize N: "Whenever this creature attacks, create N tapped and attacking 1/1 red Warrior creature tokens.
     // Sacrifice them at the beginning of the next end step."
     const mobilize = line.match(/^Mobilize (\d+)$/i);
@@ -1722,6 +1746,12 @@ export function triggersOf(card: Card): TriggerSpec[] {
     if (bowmasters && selves.includes(bowmasters[1].toLowerCase())) {
       const ability = triggerAbility(bowmasters[2], name, true);
       out.push({ event: { on: 'enters', self: true }, ability }, { event: { on: 'opponentDraws', notFirstInDrawStep: true }, ability });
+      continue;
+    }
+    // Sowing Mycospawn: "When you cast this spell, search …", "When you cast this spell, if it was kicked, exile target land."
+    const castSelf = line.match(/^When you cast this spell, (if it was kicked, )?(.+)$/i);
+    if (castSelf) {
+      out.push({ event: { on: 'castSelf', ...(castSelf[1] ? { kicked: true } : {}) }, ability: triggerAbility(castSelf[2], name, true) });
       continue;
     }
     // Rhystic Study: "Whenever an opponent casts a spell, you may draw a card unless that player pays {1}."
@@ -1990,8 +2020,10 @@ export function doublesEquippedTriggers(card: Card): boolean {
  * Amber "{T}: Add one mana of any color among legendary creatures and planeswalkers you control." (legends),
  * Gemstone Caverns (luck: any color with a luck counter, otherwise {C}).
  */
-export function stateMana(card: Card): 'imprinted' | 'legends' | 'luck' | 'perArtifact' | 'mining' | null {
+export function stateMana(card: Card): 'imprinted' | 'legends' | 'luck' | 'perArtifact' | 'mining' | 'reflect' | null {
   const text = frontText(card);
+  // Reflecting Pool: "{T}: Add one mana of any type that a land you control could produce."
+  if (/^\{T\}: Add one mana of any type that a land you control could produce\.$/m.test(text)) return 'reflect';
   // Gemstone Mine: "{T}, Remove a mining counter from this land: Add one mana of any color. If there are no mining
   // counters on this land, sacrifice it."
   if (/^\{T\}, Remove a mining counter from this land: Add one mana of any color\. If there are no mining counters on this land, sacrifice it\.$/m.test(text)) return 'mining';
@@ -2326,7 +2358,13 @@ export type GameRule =
   /** Grafdigger's Cage: "Players can't cast spells from graveyards or libraries." */
   | 'noCastingFromGraveyardsLibraries'
   /** Defense Grid: "Each spell costs {3} more to cast except during its controller's turn." */
-  | 'offTurnSpellsCost3';
+  | 'offTurnSpellsCost3'
+  /** Doorkeeper Thrull: "Artifacts and creatures entering don't cause abilities to trigger." */
+  | 'noEntersTriggers'
+  /** High Noon: "Each player can't cast more than one spell each turn." */
+  | 'oneSpellEachTurn'
+  /** Yavimaya, Cradle of Growth: "Each land is a Forest in addition to its other land types." */
+  | 'landsAreForests';
 
 const GAME_RULES: [RegExp, GameRule][] = [
   [/^Your opponents can't cast spells during your turn\.$/m, 'opponentsCantCastOnYourTurn'],
@@ -2338,6 +2376,9 @@ const GAME_RULES: [RegExp, GameRule][] = [
   [/^Creature cards in graveyards and libraries can't enter the battlefield\.$/m, 'noCreaturesFromGraveyardsLibraries'],
   [/^Players can't cast spells from graveyards or libraries\.$/m, 'noCastingFromGraveyardsLibraries'],
   [/^Each spell costs \{3\} more to cast except during its controller's turn\.$/m, 'offTurnSpellsCost3'],
+  [/^Artifacts and creatures entering don't cause abilities to trigger\.$/m, 'noEntersTriggers'],
+  [/^Each player can't cast more than one spell each turn\.$/m, 'oneSpellEachTurn'],
+  [/^Each land is a Forest in addition to its other land types\.$/m, 'landsAreForests'],
 ];
 
 export const gameRulesOf = (card: Card): GameRule[] => GAME_RULES.filter(([re]) => re.test(frontText(card))).map(([, rule]) => rule);
@@ -2349,5 +2390,13 @@ export function toxicOf(card: Card): number {
 }
 
 /** Clones: "You may have this creature enter as a copy of any creature on the battlefield." */
+/**
+ * Mockingbird: "You may have this creature enter as a copy of any creature on the battlefield with mana value less than
+ * or equal to the amount of mana spent to cast this creature, except it's a Bird in addition to its other types and it
+ * has flying."
+ */
+export const entersAsBirdCopy = (card: Card) =>
+  /^You may have this creature enter as a copy of any creature on the battlefield with mana value less than or equal to the amount of mana spent to cast this creature, except it's a Bird in addition to its other types and it has flying\.$/m.test(frontText(card));
+
 export const entersAsCopy = (card: Card) =>
   /you may have (?:this creature|[^.]+?) enter(?: the battlefield)? as a copy of (?:any|a) creature on the battlefield\./i.test(frontText(card));

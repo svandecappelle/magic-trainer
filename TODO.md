@@ -298,15 +298,22 @@ permanents), Rhystic Study ("unless that player pays {1}").
 Approximations: Rhystic Study's "you may draw" always draws.
 
 Still open, playing wrongly, most played first (see `audit-reports/2026-10-16/report.md`):
-- [ ] Delighted Halfling (6): mana only for legendary spells, which can't be countered
-- [ ] Seasoned Cryomancer (5): "draw two, then discard two", reflexive trigger on discarding nonland cards
+- [ ] Seasoned Cryomancer (5): stun counters; "When you discard one or more nonland cards this way"
 - [ ] Parallax Wave (5): fading, exile until it leaves
-- [ ] Mockingbird (5): enters as a copy of a creature with a smaller mana value, with flying
-- [ ] Mystic Remora (5): cumulative upkeep; "unless that player pays {4}"
-- [ ] Yavimaya, Cradle of Growth (5): each land is a Forest
-- [ ] Doorkeeper Thrull (4): entering artifacts and creatures don't trigger abilities
-- [ ] Sowing Mycospawn (4): "when you cast this spell" triggers
-- [ ] Bilbo, Thief in the Night (4), Reflecting Pool (4), Anointed Peacekeeper (4), Badgermole Cub (4), High Noon (4)
+- [ ] Bilbo, Thief in the Night (4): cost reduction for spells cast from anywhere but the hand; casting from the
+  graveyard when it attacks
+- [ ] Anointed Peacekeeper (4): look at a hand, any card name, costs {2} more
+- [ ] Badgermole Cub (4): earthbend; "Whenever you tap a creature for mana, add an additional {G}"
+
+Second batch: Delighted Halfling (any color only for a legendary spell, which can't be countered), Mystic Remora
+(cumulative upkeep: age counters, pay or sacrifice; "unless that player pays {4}"), Yavimaya, Cradle of Growth (each
+land is also a Forest: {G} and Forest checks), Reflecting Pool (the mana types of your other lands), Doorkeeper Thrull
+(artifacts and creatures entering trigger nothing), High Noon (one spell each turn), Sowing Mycospawn ("When you cast
+this spell" triggers, kicked or not), Mockingbird (a copy with mana value up to the mana spent, a Bird with flying).
+
+Approximations: Delighted Halfling makes the legendary spell uncounterable whichever of its two abilities paid;
+Yavimaya's {G} replaces nothing for a land with several mana per tap (City of Traitors); Mockingbird counts the mana
+spent as its mana cost with X.
 
 ## Standard: Boros Dwarves (mtgtop8 deck 899948)
 
