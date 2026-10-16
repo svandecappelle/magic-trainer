@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as Rea
 import {
   activatable, activationProblem, abilityMaxX, actor, apply, canAttack, canTapForMana, canUntapForMana, castCost, castOptions, castSources, channelCost, manaSources,
   landFaces, findInGraveyard, legalTargets, canBlock, findPermanent, hasKw, IllegalAction, isActivePlayer, mulliganBottom, isLegalTarget, isMainStep, firstOpponent, opponentsOf, teammatesOf, teamPlayers, wonBy,
-  powerOf, toughnessOf, xCount,
+  powerOf, toughnessOf, unitsOf, xCount,
   type Action, type CardInst, type CastOption, type GameState, type Permanent, type PlayerId, type Target,
 } from '../lib/engine/engine';
 import { errorText, logText, useT, type AppError } from '../i18n';
@@ -47,7 +47,7 @@ const targetKey = (t: Target) => (t.kind === 'player' ? `player:${t.player}` : t
 
 // A player with an empty name (the human in Play vs Bot) is shown as "You" in the current language.
 
-type SideTab = 'card' | 'settings';
+type SideTab = 'log' | 'card' | 'settings';
 
 /** The two-player game table, shared by Play vs Bot and online multiplayer. */
 export function GameBoard({ game: g, me, onAction, endControls, notice }: Props) {
@@ -64,7 +64,11 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   const [error, setError] = useState<AppError | null>(null);
   const [preview, setPreview] = useState<Card | null>(null);
   // Under 1000px the side panel goes below the table and has no room for a large preview: start on the log.
-  const [sideTab, setSideTab] = useState<SideTab>('card');
+  const [sideTab, setSideTab] = useState<SideTab>('log');
+  /** The card under the mouse and where it is: shown large next to it (screens with a mouse). */
+  const [hover, setHover] = useState<{ card: Card; rect: DOMRect } | null>(null);
+  // A card that moves (played, resolved, covered by a panel) never reports the mouse leaving it.
+  useEffect(() => setHover(null), [g]);
   const [zoneView, setZoneView] = useState<{ p: PlayerId; zone: 'graveyard' | 'exile' | 'command' } | null>(null);
   const zoneCards = (p: PlayerId, z: 'graveyard' | 'exile' | 'command') => (z === 'command' ? g.players[p].command ?? [] : g.players[p][z]);
   /** A card shown large after a long press (touch screens have no hover preview) or a right click. */
@@ -159,7 +163,12 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
 
   /** Handlers that make `card` zoomable: hold it ~0.45 s, or right click it. Hovering still previews it. */
   const zoomable = (card: Card) => ({
-    onMouseEnter: () => setPreview(card),
+    onMouseEnter: (e: ReactMouseEvent) => {
+      setPreview(card);
+      setHover({ card, rect: e.currentTarget.getBoundingClientRect() });
+    },
+    onMouseLeave: () => setHover(null),
+    onMouseDown: () => setHover(null),
     onContextMenu: (e: ReactMouseEvent) => {
       e.preventDefault();
       setZoom(card);
@@ -731,6 +740,18 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
           {isActivePlayer(g, p) && <span className="turn-dot" title={t.game.turnOf(ours(p), teamName(p))} />}
         </div>
         <div className="life" key={ps.life}>{ps.life}{floatsFor(`player:${p}`)}</div>
+        {(() => {
+          // Mana still open: one dot per mana its untapped sources make (several colors: a multicolor dot).
+          const open = g.battlefield
+            .filter((x) => x.controller === p && canTapForMana(g, x))
+            .flatMap((x) => unitsOf(g, x).map((u) => (u.length === 1 ? u[0] : 'any')));
+          return open.length > 0 && (
+            <div className="open-mana" title={t.game.manaOpen(open.length)}>
+              {open.slice(0, 10).map((c, i) => <span key={i} className={`mana-dot mana-${c}`}>{c === 'any' ? '' : c}</span>)}
+              <span className="small muted">{t.game.manaOpen(open.length)}</span>
+            </div>
+          );
+        })()}
         {ps.pool && ps.pool.length > 0 && (
           <div className="pool" title={t.game.manaPool}>
             {ps.pool.map((m, i) => (
@@ -907,7 +928,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
             </div>
           )}
           <div className="my-hand">
-            {myHand.map(({ iid, card }) => {
+            {myHand.map(({ iid, card }, handIndex) => {
               const playable = (landFaces(card).length > 0 && canPlayLand) || castOptions(g, me, iid).length > 0;
               const selected = targeting?.iid === iid || xPick?.iid === iid || modePick?.iid === iid || bottomSel.includes(iid);
               const status = engineStatus(card);
@@ -916,6 +937,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
                   key={iid}
                   ref={reg(`hand:${iid}`)}
                   className={`hand-card ${playable ? 'playable' : ''} ${selected ? 'selected' : ''}`}
+                  style={{ '--i': handIndex - (myHand.length - 1) / 2 } as CSSProperties}
                   onClick={() => onHandClick(iid, card)}
                   {...zoomable(card)}
                 >
@@ -974,13 +996,14 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
       <aside className="game-side">
         {notice && <div className="small play-notice">{notice}</div>}
         <div className="side-tabs" role="tablist" aria-label={t.game.sideTabs.label}>
-          {(['card', 'settings'] as SideTab[]).map((tab) => (
+          {(['log', 'card', 'settings'] as SideTab[]).map((tab) => (
             <button key={tab} type="button" role="tab" aria-selected={sideTab === tab} className={sideTab === tab ? 'on' : ''} onClick={() => setSideTab(tab)}>
               {t.game.sideTabs[tab]}
             </button>
           ))}
         </div>
         {sideTab === 'card' && (() => {
+          // The last card hovered; when it's in your hand, the ways to play it now.
           // The hovered card, large; when it's in your hand, its engine status and the ways to play it now.
           const inHand = preview ? g.players[me].hand.find((c) => c.card.id === preview.id) : undefined;
           const items = inHand && iAct && !g.pending && !targeting ? playItems(inHand.iid, inHand.card) : [];
@@ -1004,6 +1027,15 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
             </div>
           );
         })()}
+        {sideTab === 'log' && (
+          <section className="game-log" aria-label={t.common.log}>
+            <ol className="log small" reversed>
+              {[...g.log].reverse().map((l, i) => (
+                <li key={g.log.length - i} className={`${i < fx.freshLog ? 'fresh' : ''} ${l.k === 'turn' ? 'log-turn' : ''}`}>{logText(t, l, names, me, show.nameOf)}</li>
+              ))}
+            </ol>
+          </section>
+        )}
         {sideTab === 'settings' && g.winner === null && (
           <div className="game-options">
             <label className="full-control small" title={t.game.fullControlHint(fullControl)}>
@@ -1020,15 +1052,21 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
         )}
       </aside>
 
-      {/* The log stays visible: under the card on medium screens, in its own column on wide ones. */}
-      <section className="game-log" aria-label={t.common.log}>
-        <h4 className="small muted">{t.common.log}</h4>
-        <ol className="log small" reversed>
-          {[...g.log].reverse().map((l, i) => (
-            <li key={g.log.length - i} className={`${i < fx.freshLog ? 'fresh' : ''} ${l.k === 'turn' ? 'log-turn' : ''}`}>{logText(t, l, names, me, show.nameOf)}</li>
-          ))}
-        </ol>
-      </section>
+      {/* The hovered card, large, next to it (screens with a mouse; touch screens hold a card to zoom it). */}
+      {hover && (() => {
+        const w = 250;
+        const h = w * 1.4 + 34;
+        const right = hover.rect.right + 14 + w < window.innerWidth;
+        const left = right ? hover.rect.right + 14 : Math.max(8, hover.rect.left - 14 - w);
+        const top = Math.min(Math.max(8, hover.rect.top + hover.rect.height / 2 - h / 2), window.innerHeight - h - 8);
+        const status = engineStatus(hover.card);
+        return (
+          <div className="hover-preview" style={{ left, top, width: w }} aria-hidden="true">
+            <img src={show.imageNormal(hover.card)} alt="" />
+            <span className={`engine-pill ${status}`}>{t.game.engineStatus[status]}</span>
+          </div>
+        );
+      })()}
     </div>
   );
 }
