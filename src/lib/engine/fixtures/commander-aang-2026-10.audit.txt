@@ -7,17 +7,6 @@ NONE     Aang, Swift Savior // Aang and La, Ocean's Fury {1}{W}{U} — Legendary
       trigger (enters), effect not simulated
   ✗ Waterbend {8}: Transform Aang.
       keyword not simulated: waterbend
-NONE     Brainstorm {U} — Instant
-  ✗ Draw three cards, then put two cards from your hand on top of your li…
-      spell not simulated
-NONE     Consult the Star Charts {1}{U} — Instant
-  ✓ Kicker {1}{U}
-      keyword
-  ✗ Look at the top X cards of your library, where X is the number of lan…
-      spell not simulated
-NONE     Enlightened Tutor {W} — Instant
-  ✗ Search your library for an artifact or enchantment card, reveal it, t…
-      spell not simulated
 NONE     Malcolm, Alluring Scoundrel {1}{U} — Legendary Creature — Siren Pirate
   ✓ Flash
       keyword
@@ -40,11 +29,6 @@ NONE     Phelia, Exuberant Shepherd {1}{W} — Legendary Creature — Dog
       keyword
   ✗ Whenever Phelia attacks, exile up to one other target nonland permane…
       trigger (attacks), effect not simulated
-NONE     Ponder {U} — Sorcery
-  ✗ Look at the top three cards of your library, then put them back in an…
-      spell not simulated
-  ✗ Draw a card.
-      spell not simulated
 NONE     Reverent Mantra {3}{W} — Instant
   ✗ You may exile a white card from your hand rather than pay this spell'…
       spell not simulated
@@ -62,11 +46,6 @@ NONE     Snapcaster Mage {1}{U} — Creature — Human Wizard
       keyword
   ✗ When this creature enters, target instant or sorcery card in your gra…
       trigger (enters), effect not simulated
-NONE     Step Through {3}{U}{U} — Sorcery
-  ✗ Wizardcycling {2}
-      keyword not simulated: wizardcycling
-  ✗ Return two target creatures to their owners' hands.
-      spell not simulated
 NONE     Swift Reconfiguration {W} — Enchantment — Aura
   ✓ Flash
       keyword
@@ -107,11 +86,6 @@ PARTIAL  Pre-War Formalwear {2}{W} — Artifact — Equipment
       static ability
   ✓ Equip {3}
       keyword
-PARTIAL  Stoneforge Mystic {1}{W} — Creature — Kor Artificer
-  ✓ When this creature enters, you may search your library for an Equipme…
-      trigger (enters) → search, optional
-  ✗ {1}{W}, {T}: You may put an Equipment card from your hand onto the ba…
-      activated ability, effect not simulated
 OK       Adarkar Wastes  — Land
   ✓ {T}: Add {C}.
       mana: C
@@ -127,6 +101,9 @@ OK       Agna Qel'a  — Land
 OK       Arid Mesa  — Land
   ✓ {T}, Pay 1 life, Sacrifice this land: Search your library for a Mount…
       activated → search
+OK       Brainstorm {U} — Instant
+  ✓ Draw three cards, then put two cards from your hand on top of your li…
+      spell → draw+putBack
 OK       Brazen Borrower // Petty Theft {1}{U}{U} // {1}{U} — Creature — Faerie Rogue // Instant — Adventure (other faces not audited)
   ✓ Flash
       keyword
@@ -161,6 +138,11 @@ OK       Cloud, Midgar Mercenary {W}{W} — Legendary Creature — Human Soldier
 OK       Command Tower  — Land
   ✓ {T}: Add one mana of any color in your commander's color identity.
       mana: W/U/B/R/G
+OK       Consult the Star Charts {1}{U} — Instant
+  ✓ Kicker {1}{U}
+      keyword
+  ✓ Look at the top X cards of your library, where X is the number of lan…
+      spell → dig
 OK       Counterspell {U}{U} — Instant
   ✓ Counter target spell.
       spell → counter (1 target)
@@ -193,6 +175,9 @@ OK       Eiganjo, Seat of the Empire  — Legendary Land
       mana: W
   ✓ Channel — {2}{W}, Discard this card: It deals 4 damage to target atta…
       channel (from hand) → damage (1 target), {1} less per legendary creature
+OK       Enlightened Tutor {W} — Instant
+  ✓ Search your library for an artifact or enchantment card, reveal it, t…
+      spell → search
 OK       Erode {W} — Instant
   ✓ Destroy target creature or planeswalker. Its controller may search th…
       spell → destroy+search (1 target)
@@ -291,6 +276,11 @@ OK       Parallax Wave {2}{W}{W} — Enchantment
 OK       Polluted Delta  — Land
   ✓ {T}, Pay 1 life, Sacrifice this land: Search your library for an Isla…
       activated → search
+OK       Ponder {U} — Sorcery
+  ✓ Look at the top three cards of your library, then put them back in an…
+      spell → reorderTop+mayShuffle+draw
+  ✓ Draw a card.
+      spell → reorderTop+mayShuffle+draw
 OK       Preordain {U} — Sorcery
   ✓ Scry 2, then draw a card.
       spell → scry+draw
@@ -368,9 +358,19 @@ OK       Spider-Sense {1}{U} — Instant
       keyword
   ✓ Counter target instant spell, sorcery spell, or triggered ability.
       spell → counter (1 target)
+OK       Step Through {3}{U}{U} — Sorcery
+  ✓ Wizardcycling {2}
+      keyword
+  ✓ Return two target creatures to their owners' hands.
+      spell → bounce (1 target)
 OK       Stern Scolding {U} — Instant
   ✓ Counter target creature spell with power or toughness 2 or less.
       spell → counter (1 target)
+OK       Stoneforge Mystic {1}{W} — Creature — Kor Artificer
+  ✓ When this creature enters, you may search your library for an Equipme…
+      trigger (enters) → search, optional
+  ✓ {1}{W}, {T}: You may put an Equipment card from your hand onto the ba…
+      activated → putFromHand
 OK       Subtlety {2}{U}{U} — Creature — Elemental Incarnation
   ✓ Flash
       keyword
@@ -434,5 +434,5 @@ OK       Witch Enchanter // Witch-Blessed Meadow {3}{W} — Creature — Human W
   ✓ When this creature enters, destroy target artifact or enchantment an …
       trigger (enters) → destroy (1 target)
 
-91 cards: 71 ok, 6 partial, 14 not simulated, 0 can't be cast
+91 cards: 77 ok, 5 partial, 9 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

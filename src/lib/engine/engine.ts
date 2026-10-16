@@ -211,6 +211,10 @@ export type ChoicePurpose =
   | 'payOrCounter' // "counter target spell unless its controller pays {N}"
   | 'payLifeOrCounter' // Ward—Pay N life: pay, or the spell or ability is countered
   | 'payOrDraw' // Rhystic Study: pay {N}, or its controller draws
+  | 'reorder' // Ponder: the order of the top cards of your library
+  | 'mayShuffle' // Ponder: "You may shuffle."
+  | 'putBack' // Brainstorm: cards from your hand on top of your library (the first chosen on top)
+  | 'putFromHand' // Stoneforge Mystic: an Equipment card from your hand onto the battlefield, or none
   | 'returnLandCost' // Daze: which Island to return to its owner's hand
   | 'exileFromHandCost' // Force of Negation, evoke: which card to exile from your hand
   | 'returnCreatureCost' // web-slinging: which tapped creature to return to its owner's hand
@@ -346,6 +350,9 @@ export type LogEntry =
   | { k: 'sorceryFlash'; p: PlayerId }
   | { k: 'exiledInstead'; card: string }
   | { k: 'losesAbilities'; card: string }
+  | { k: 'reordered'; p: PlayerId; n: number }
+  | { k: 'shuffled'; p: PlayerId }
+  | { k: 'putBack'; p: PlayerId; n: number }
   | { k: 'looksAtHand'; p: PlayerId; of: PlayerId; cards: string[] }
   | { k: 'tucked'; card: string; top: boolean }
   | { k: 'paidTax'; p: PlayerId; n: number; card: string }
@@ -395,7 +402,7 @@ export type LogEntry =
   /** Rest in Peace: `card` exiled these players' graveyards. */
   | { k: 'exiledGraveyards'; card: string }
   /** `dest`: hand cards are not named (hidden); found cards put onto the battlefield are logged as entering. */
-  | { k: 'search'; p: PlayerId; n: number; dest: 'hand' | 'battlefield' }
+  | { k: 'search'; p: PlayerId; n: number; dest: 'hand' | 'battlefield' | 'top' }
   | { k: 'emptyLibrary'; p: PlayerId }
   | { k: 'concede'; p: PlayerId }
   /** An online player ran out of time: the server played the default action for them. */
@@ -2801,10 +2808,13 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       ps.library = ps.library.filter((c) => !chosen.includes(c));
       log(d, { k: 'search', p: searcher, n: chosen.length, dest: e.dest });
       for (const inst of chosen) {
+        if (e.dest === 'top') continue;
         if (e.dest === 'hand') ps.hand.push(inst);
         else putOntoBattlefield(d, inst, searcher, { tapped: e.tapped });
       }
       ps.library = shuffle(ps.library, () => random(d));
+      // Enlightened Tutor: "then shuffle and put that card on top".
+      if (e.dest === 'top') ps.library.unshift(...chosen);
       break;
     }
     case 'destroyAll':
@@ -2932,6 +2942,50 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       log(d, { k: 'gainLife', p: who, n });
       break;
     }
+    case 'reorderTop': {
+      // Ponder: the top cards back in the order chosen (first on top).
+      const ps = d.players[caster];
+      const top = ps.library.slice(0, e.n);
+      if (top.length < 2) break;
+      if (answer?.kind !== 'arrange') return { kind: 'arrange', player: caster, purpose: 'reorder', cards: top, zones: ['top'], params: { n: top.length } };
+      const order = (answer.zones.top ?? []).map((iid) => top.find((c) => c.iid === iid)!).filter(Boolean);
+      ps.library = [...order, ...top.filter((c) => !order.includes(c)), ...ps.library.slice(top.length)];
+      log(d, { k: 'reordered', p: caster, n: top.length });
+      break;
+    }
+    case 'mayShuffle':
+      if (answer?.kind !== 'yesNo') return { kind: 'yesNo', player: caster, purpose: 'mayShuffle', params: { card: item.card.name } };
+      if (answer.yes) {
+        d.players[caster].library = shuffle(d.players[caster].library, () => random(d));
+        log(d, { k: 'shuffled', p: caster });
+      }
+      break;
+    case 'putBack': {
+      // Brainstorm: cards from the hand on top of the library, the first chosen on top.
+      const ps = d.players[caster];
+      const n = Math.min(e.n, ps.hand.length);
+      if (!n) break;
+      if (answer?.kind !== 'cards') return { kind: 'cards', player: caster, purpose: 'putBack', min: n, max: n, options: [...ps.hand], params: { n } };
+      const back = answer.iids.map((iid) => ps.hand.find((c) => c.iid === iid)!).filter(Boolean);
+      ps.hand = ps.hand.filter((c) => !back.includes(c));
+      ps.library = [...back, ...ps.library];
+      log(d, { k: 'putBack', p: caster, n: back.length });
+      break;
+    }
+    case 'putFromHand': {
+      // Stoneforge Mystic: an Equipment card from the hand onto the battlefield, or none.
+      const ps = d.players[caster];
+      const options = ps.hand.filter((c) => cardMatches(c.card, e.filter));
+      if (!options.length) break;
+      if (answer?.kind !== 'cards') return { kind: 'cards', player: caster, purpose: 'putFromHand', min: 0, max: 1, options, params: { card: item.card.name } };
+      const picked = answer.iids[0];
+      const inst = options.find((c) => c.iid === picked);
+      if (!inst) break;
+      ps.hand = ps.hand.filter((c) => c !== inst);
+      log(d, { k: 'enters', card: inst.card.name });
+      putOntoBattlefield(d, inst, caster);
+      break;
+    }
     case 'lookAtHand':
       for (const q of players) log(d, { k: 'looksAtHand', p: caster, of: q, cards: d.players[q].hand.map((c) => c.card.name) });
       break;
@@ -3008,7 +3062,9 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
     case 'dig': {
       // "Look at the top N cards …": the chosen ones into the hand, the rest on the bottom in a random order.
       const ps = d.players[caster];
-      const top = ps.library.slice(0, e.n);
+      // Consult the Star Charts: X is the number of lands you control.
+      const n = e.n === 'lands' ? d.battlefield.filter((x) => x.controller === caster && isLandCard(x.card)).length : e.n;
+      const top = ps.library.slice(0, n);
       const options = e.filter ? top.filter((c) => cardMatches(c.card, e.filter!)) : top;
       const max = Math.min(e.take, options.length);
       if (max && answer?.kind !== 'cards') {

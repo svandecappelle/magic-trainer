@@ -35,11 +35,6 @@ NONE     Colorstorm Stallion {1}{U}{R} — Creature — Elemental Horse
       keyword
   ✗ Opus — Whenever you cast an instant or sorcery spell, this creature g…
       trigger (cast), effect not simulated
-NONE     Consult the Star Charts {1}{U} — Instant
-  ✓ Kicker {1}{U}
-      keyword
-  ✗ Look at the top X cards of your library, where X is the number of lan…
-      spell not simulated
 NONE     Dawn's Truce {1}{W} — Instant
   ✗ Gift a card
       keyword not simulated: gift
@@ -680,6 +675,11 @@ OK       Concealed Courtyard  — Land
       enters tapped (unlessOtherLands)
   ✓ {T}: Add {W} or {B}.
       mana: W/B
+OK       Consult the Star Charts {1}{U} — Instant
+  ✓ Kicker {1}{U}
+      keyword
+  ✓ Look at the top X cards of your library, where X is the number of lan…
+      spell → dig
 OK       Countersculpt {U}{U} — Instant
   ✓ As an additional cost to cast this spell, behold a Jace or pay {1}.
       additional cost: mana
@@ -961,5 +961,5 @@ OK       Watery Grave  — Land — Island Swamp
   ✓ As this land enters, you may pay 2 life. If you don't, it enters tapp…
       enters tapped (payLife)
 
-178 cards: 77 ok, 40 partial, 61 not simulated, 0 can't be cast
+178 cards: 78 ok, 40 partial, 60 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

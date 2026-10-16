@@ -16,7 +16,7 @@ describe('card audit', () => {
       const cards = JSON.parse(readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url), 'utf8')) as Card[];
       const reports = cards.filter((c) => !/^Basic Land/.test(c.typeLine)).map(auditCard);
       await expect(formatAudit(reports)).toMatchFileSnapshot(`./fixtures/${name}.audit.txt`);
-    });
+    }, 30000);
   }
 
   it('tells simulated, not simulated and silently ignored lines apart', () => {

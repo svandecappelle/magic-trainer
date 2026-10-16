@@ -50,6 +50,9 @@ const log: LogMessages = {
   cantEnter: (e, c) => `${c.card(e.card)} can't enter the battlefield from there`,
   paidTax: (e, c) => `${c.isMe(e.p) ? 'You pay' : `${c.name(e.p)} pays`} {${e.n}} for ${c.card(e.card)}`,
   looksAtHand: (e, c) => `${c.isMe(e.p) ? 'You look' : `${c.name(e.p)} looks`} at ${c.isMe(e.of) ? 'your' : `${c.name(e.of)}'s`} hand: ${e.cards.length ? e.cards.map((n) => c.card(n)).join(', ') : 'empty'}`,
+  reordered: (e, c) => `${c.isMe(e.p) ? 'You put' : `${c.name(e.p)} puts`} the top ${e.n} cards back in a chosen order`,
+  shuffled: (e, c) => `${c.isMe(e.p) ? 'You shuffle' : `${c.name(e.p)} shuffles`} their library`,
+  putBack: (e, c) => `${c.isMe(e.p) ? 'You put' : `${c.name(e.p)} puts`} ${e.n} cards from the hand on top of the library`,
   losesAbilities: (e, c) => `${c.card(e.card)} loses all abilities`,
   tucked: (e, c) => `${c.card(e.card)} is put on the ${e.top ? 'top' : 'bottom'} of its owner's library`,
   sorceryFlash: (e, c) => `${c.isMe(e.p) ? 'You' : c.name(e.p)} may cast sorceries as though they had flash until ${c.isMe(e.p) ? 'your' : 'their'} next turn`,
@@ -93,7 +96,7 @@ const log: LogMessages = {
     const me = c.isMe(e.p);
     const who = me ? 'You search your library' : `${c.name(e.p)} searches their library`;
     if (!e.n) return `${who} and find${me ? '' : 's'} nothing`;
-    return `${who} and put${me ? '' : 's'} ${plural(e.n, 'card', 'cards')} ${e.dest === 'hand' ? 'into hand' : 'onto the battlefield'}`;
+    return `${who} and put${me ? '' : 's'} ${plural(e.n, 'card', 'cards')} ${e.dest === 'hand' ? 'into hand' : e.dest === 'top' ? 'on top of the library' : 'onto the battlefield'}`;
   },
   token: (e, c) => `${c.isMe(e.p) ? 'You create' : `${c.name(e.p)} creates`} ${e.n === 1 ? `a ${e.card} token` : `${e.n} ${e.card} tokens`}`,
   activate: (e, c) => {
@@ -598,6 +601,10 @@ export const en = {
       payLifeOrCounter: (p: { card: string; n: number }) => `Ward: pay ${p.n} life, or ${p.card} is countered?`,
       payOrDraw: (p: { card: string; n: number }) => `${p.card}: pay {${p.n}}, or its controller draws a card?`,
       tuckTop: (p: { card: string }) => `${p.card}: put it on the top of your library? (No: the bottom)`,
+      reorder: (p: { n: number }) => `Put the top ${p.n} cards of your library back in the order you want (first on top).`,
+      mayShuffle: (p: { card: string }) => `${p.card}: shuffle your library?`,
+      putBack: (p: { n: number }) => `Put ${p.n} cards from your hand on top of your library (the first chosen goes on top).`,
+      putFromHand: (p: { card: string }) => `${p.card}: put an Equipment card from your hand onto the battlefield (or choose nothing).`,
       cumulativeUpkeep: (p: { card: string; cost: string; n: number }) => `${p.card}: cumulative upkeep (${p.n} age counters). Pay ${p.cost}, or sacrifice it?`,
       discard: (p: { n: number }) => `Discard ${plural(p.n, 'card', 'cards')}.`,
       discardChosen: (p: { n: number; who: string }) => `${p.who} reveals their hand: choose ${plural(p.n, 'card', 'cards')} for them to discard.`,

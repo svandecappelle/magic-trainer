@@ -482,7 +482,16 @@ export type Effect =
   | { kind: 'addMana'; units: Color[][] }
   /** Search your library for up to `n` matching cards, then shuffle. */
   /** `searcher`: the controller of the permanent in that target slot searches instead of you (Path to Exile, Boseiju). */
-  | { kind: 'search'; n: number; filter: TargetFilter; dest: 'hand' | 'battlefield'; tapped: boolean; searcher?: { slot: number } }
+  /** `top`: Enlightened Tutor's "then shuffle and put that card on top". */
+  | { kind: 'search'; n: number; filter: TargetFilter; dest: 'hand' | 'battlefield' | 'top'; tapped: boolean; searcher?: { slot: number } }
+  /** Ponder: "Look at the top three cards of your library, then put them back in any order." */
+  | { kind: 'reorderTop'; n: number }
+  /** Ponder: "You may shuffle." */
+  | { kind: 'mayShuffle' }
+  /** Brainstorm: "put two cards from your hand on top of your library in any order". */
+  | { kind: 'putBack'; n: number }
+  /** Stoneforge Mystic: "put an Equipment card from your hand onto the battlefield" (or none). */
+  | { kind: 'putFromHand'; filter: TargetFilter }
   /** Equip: attach the ability's source to the target. */
   | { kind: 'attach'; to: Affected }
   /** Chrome Mox: "you may exile a nonartifact, nonland card from your hand" (remembered by the source: imprint). */
@@ -514,7 +523,8 @@ export type Effect =
    * "Look at the top N cards of your library. You may reveal a Dwarf or Equipment card from among them and put it into
    * your hand. Put the rest on the bottom of your library in a random order." (`take` cards, `filter` to reveal.)
    */
-  | { kind: 'dig'; n: number; take: number; optional: boolean; filter?: TargetFilter }
+  /** `n`: a number, or the lands you control (Consult the Star Charts). */
+  | { kind: 'dig'; n: number | 'lands'; take: number; optional: boolean; filter?: TargetFilter }
   /**
    * Until end of turn, a noncreature permanent becomes a creature: Iron Man Armor ("becomes a 0/0 Construct Hero
    * artifact creature with flying and \"…\""), crewed Vehicles and Chandra's ("becomes an artifact creature").
@@ -1032,6 +1042,22 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     if (m[4]) filter.manaCosts = m[4].split(' or ');
     return { kind: 'search', n: toNumber(count), filter, dest: m[5].toLowerCase() === 'into your hand' ? 'hand' : 'battlefield', tapped: !!m[6] };
   });
+  // Enlightened Tutor: "Search your library for an artifact or enchantment card, reveal it, then shuffle and put that
+  // card on top."
+  scan(/\bsearch your library for an? ([a-z ,-]+?) card, reveal it, then shuffle and put that card on top(?=\.|$)/gi, (m) => {
+    const filter = librarySearchFilter(m[1]);
+    return filter && { kind: 'search', n: 1, filter, dest: 'top', tapped: false };
+  });
+  // Ponder: "Look at the top three cards of your library, then put them back in any order. You may shuffle."
+  scan(new RegExp(`\\blook at the top (${NUMBER}) cards of your library, then put them back in any order(?=\\.|$)`, 'gi'), (m) => ({ kind: 'reorderTop', n: toNumber(m[1]) }));
+  scan(/(?:^|[.] *)You may shuffle(?=\.|$)/g, () => ({ kind: 'mayShuffle' }));
+  // Brainstorm: "then put two cards from your hand on top of your library in any order".
+  scan(new RegExp(`\\bput (${NUMBER}) cards from your hand on top of your library in any order(?=\\.|$)`, 'gi'), (m) => ({ kind: 'putBack', n: toNumber(m[1]) }));
+  // Stoneforge Mystic: "put an Equipment card from your hand onto the battlefield".
+  scan(/\bput an? ([A-Za-z ]+?) card from your hand onto the battlefield(?=\.|$)/g, (m) => {
+    const filter = revealFilter(m[1]);
+    return filter && { kind: 'putFromHand', filter };
+  });
   // Path to Exile: "Its controller may search their library for a basic land card, put it onto the battlefield tapped,
   // then shuffle."; Boseiju: "That player may search their library for a land card with a basic land type, …".
   // Dáin's Company: "Look at the top four cards of your library. You may reveal a Dwarf or Equipment card from among them
@@ -1494,7 +1520,8 @@ export function castInfo(card: Card, face = 0): CastInfo {
     } else if ((m = line.match(/^Kicker ((?:\{[^}]+\})+)$/))) info.kicker = m[1];
     else if ((m = line.match(/^Flashback ((?:\{[^}]+\})+)$/))) info.flashback = m[1];
     else if ((m = line.match(/^Cycling ((?:\{[^}]+\})+)$/))) info.cycling = { cost: m[1] };
-    else if ((m = line.match(/^(Basic land|Plains|Island|Swamp|Mountain|Forest)cycling ((?:\{[^}]+\})+)$/))) {
+    else if ((m = line.match(/^(Basic land|[A-Z][a-z]+)cycling ((?:\{[^}]+\})+)$/))) {
+      // Landcycling and other typecycling (Step Through's "Wizardcycling {2}": search for a Wizard card).
       info.cycling = { cost: m[2], search: m[1] === 'Basic land' ? { basic: true, types: ['land'] } : { subtypes: [m[1].toLowerCase()] } };
     } else if ((m = line.match(/^(?:Channel — )?((?:\{[^}]+\})+), Discard this card: (.+)$/))) {
       // Also Mjölnir's "{2}{R}, Discard this card: It deals 2 damage to each creature." (from the hand, like channel).
@@ -1591,6 +1618,12 @@ export interface CastChoice {
  */
 function castSpecRaw(card: Card, choice: CastChoice): AbilitySpec {
   const c = faceCard(card, choice.face ?? 0);
+  // Consult the Star Charts: "Look at the top X cards of your library, where X is the number of lands you control. Put
+  // one of those cards into your hand. If this spell was kicked, put two of those cards into your hand instead. Put the
+  // rest on the bottom of your library in a random order."
+  if (/^Look at the top X cards of your library, where X is the number of lands you control\. Put one of those cards into your hand\. If this spell was kicked, put two of those cards into your hand instead\. Put the rest on the bottom of your library in a random order\.$/m.test(frontText(c))) {
+    return { targets: [], effects: [{ kind: 'dig', n: 'lands', take: choice.kicked ? 2 : 1, optional: false }] };
+  }
   const aura = auraTarget(c);
   if (aura) return { targets: [aura], effects: [] };
   if (!isInstantOrSorcery(c)) return { targets: [], effects: [] };
@@ -1600,7 +1633,7 @@ function castSpecRaw(card: Card, choice: CastChoice): AbilitySpec {
     .split('\n')
     // Other ways to cast it that are never used here (Harmonize, Web-slinging, Paradigm), and options never taken
     // (a gift never promised, a spell never bargained).
-    .filter((l) => !/^(Kicker|Flashback|Cycling|Convoke|Delve|Affinity for|(Basic land|Plains|Island|Swamp|Mountain|Forest)cycling|Harmonize|Web-slinging|Cleave|Warp|Evoke|Paradigm|Bargain$|Gift an? )\b/.test(l.trim()))
+    .filter((l) => !/^(Kicker|Flashback|Cycling|Convoke|Delve|Affinity for|(Basic land|[A-Z][a-z]+)cycling|Harmonize|Web-slinging|Cleave|Warp|Evoke|Paradigm|Bargain$|Gift an? )\b/.test(l.trim()))
     // Alternative costs ("You may return an Island you control … rather than pay this spell's mana cost.").
     .filter((l) => !/rather than pay this spell's mana cost\.$/.test(l.trim()))
     .join('\n')
@@ -2184,7 +2217,9 @@ export function activatedOf(card: Card): ActivatedSpec[] {
     // Parallax Wave: "When this enchantment leaves the battlefield, each player returns to the battlefield all cards
     // they own exiled with it." → its exile lasts until it leaves.
     if (returnsExiledWhenLeaving(card)) ability = { ...ability, effects: ability.effects.map((x) => (x.kind === 'destroy' && x.exile ? { ...x, untilLeaves: true } : x)) };
-    out.push({ text: line, cost, ability: optional && ability.effects.length ? { ...ability, optional } : ability, sorcery, once, ...(discountPer ? { discountPer } : {}) });
+    // Stoneforge Mystic: choosing no card is the "may".
+    const choosesNone = ability.effects.length === 1 && ability.effects[0].kind === 'putFromHand';
+    out.push({ text: line, cost, ability: optional && ability.effects.length && !choosesNone ? { ...ability, optional } : ability, sorcery, once, ...(discountPer ? { discountPer } : {}) });
   }
   activatedCache.set(key, out);
   return out;

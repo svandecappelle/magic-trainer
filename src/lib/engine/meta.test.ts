@@ -2320,3 +2320,101 @@ describe('Aang deck, batch 2: alternative and additional costs', () => {
     expect(castSource(s, 0, inExile.iid)).toBeNull();
   });
 });
+
+describe('Aang deck, batch 3: library mechanics', () => {
+  const brainstorm = spell('Brainstorm', '{U}', 'Draw three cards, then put two cards from your hand on top of your library in any order.');
+  const ponder = spell('Ponder', '{U}', 'Look at the top three cards of your library, then put them back in any order. You may shuffle.\nDraw a card.', 'Sorcery');
+  const consult = spell('Consult the Star Charts', '{1}{U}', 'Kicker {1}{U} (You may pay an additional {1}{U} as you cast this spell.)\nLook at the top X cards of your library, where X is the number of lands you control. Put one of those cards into your hand. If this spell was kicked, put two of those cards into your hand instead. Put the rest on the bottom of your library in a random order.');
+  const tutor = spell('Enlightened Tutor', '{W}', 'Search your library for an artifact or enchantment card, reveal it, then shuffle and put that card on top.');
+  const stoneforge = creature('Stoneforge Mystic', 1, 2, {
+    typeLine: 'Creature — Kor Artificer', manaCost: '{1}{W}', cmc: 2,
+    oracleText: 'When this creature enters, you may search your library for an Equipment card, reveal it, put it into your hand, then shuffle.\n{1}{W}, {T}: You may put an Equipment card from your hand onto the battlefield.',
+  });
+  const step = card({
+    name: 'Step Through', typeLine: 'Sorcery', manaCost: '{3}{U}{U}', cmc: 5, keywords: ['Wizardcycling', 'Typecycling', 'Cycling'],
+    oracleText: 'Return two target creatures to their owners\' hands.\nWizardcycling {2} ({2}, Discard this card: Search your library for a Wizard card, reveal it, put it into your hand, then shuffle.)',
+  });
+  const clamp = card({ name: 'Skullclamp', typeLine: 'Artifact — Equipment', manaCost: '{1}', cmc: 1, oracleText: 'Equipped creature gets +1/-1.\nWhenever equipped creature dies, draw two cards.\nEquip {1}' });
+  const wizard = creature('Wizard', 1, 1, { typeLine: 'Creature — Human Wizard' });
+  const named = (name: string) => card({ name, typeLine: 'Sorcery', manaCost: '{1}', cmc: 1 });
+  const library = (s: GameState, cards: Card[]) => {
+    s.players[0].library = [...cards.map((c, i) => ({ iid: `l${i}`, card: c })), ...s.players[0].library];
+  };
+  const names = (cs: { card: Card }[]) => cs.map((c) => c.card.name);
+  const lands = (type: string, n: number) => Array.from({ length: n }, () => card({ name: type, typeLine: `Basic Land — ${type}` }));
+  const run = (s: GameState) => {
+    for (let i = 0; i < 12 && !s.pending && (s.stack.length || s.triggered?.length); i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+
+  it('Brainstorm draws three, then puts two cards from the hand back on top (the first chosen on top)', () => {
+    let s = board({ mine: lands('Island', 1), hand: [brainstorm, named('Kept')] });
+    library(s, [named('A'), named('B'), named('C')]);
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    expect(s.pending?.choice).toMatchObject({ kind: 'cards', purpose: 'putBack', min: 2, max: 2 });
+    const iid = (n: string) => s.players[0].hand.find((c) => c.card.name === n)!.iid;
+    s = run(apply(s, { type: 'choose', answer: { kind: 'cards', iids: [iid('C'), iid('Kept')] } }));
+    expect(names(s.players[0].hand).sort()).toEqual(['A', 'B']);
+    expect(names(s.players[0].library.slice(0, 2))).toEqual(['C', 'Kept']);
+  });
+
+  it('Ponder: the top three in any order, may shuffle, then draw', () => {
+    let s = board({ mine: lands('Island', 1), hand: [ponder] });
+    library(s, [named('A'), named('B'), named('C')]);
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    expect(s.pending?.choice).toMatchObject({ kind: 'arrange', purpose: 'reorder' });
+    s = apply(s, { type: 'choose', answer: { kind: 'arrange', zones: { top: ['l2', 'l0', 'l1'] } } });
+    expect(s.pending?.choice).toMatchObject({ kind: 'yesNo', purpose: 'mayShuffle' });
+    s = run(apply(s, { type: 'choose', answer: { kind: 'yesNo', yes: false } }));
+    expect(names(s.players[0].hand)).toEqual(['C']);
+    expect(names(s.players[0].library.slice(0, 2))).toEqual(['A', 'B']);
+  });
+
+  it('Consult the Star Charts looks at X cards (X = lands); two into the hand when kicked', () => {
+    let s = board({ mine: lands('Island', 4), hand: [consult] });
+    library(s, [named('A'), named('B'), named('C'), named('D'), named('E')]);
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0', kicked: true })));
+    const choice = s.pending?.choice as { kind: string; min: number; max: number; options: { iid: string; card: Card }[] };
+    expect(choice).toMatchObject({ kind: 'cards', min: 2, max: 2 });
+    expect(names(choice.options)).toEqual(['A', 'B', 'C', 'D']);
+    s = run(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['l1', 'l3'] } }));
+    expect(names(s.players[0].hand).sort()).toEqual(['B', 'D']);
+    expect(names(s.players[0].library.slice(0, 1))).toEqual(['E']);
+    expect(names(s.players[0].library.slice(-2)).sort()).toEqual(['A', 'C']);
+  });
+
+  it('Enlightened Tutor puts the artifact on top after shuffling', () => {
+    let s = board({ mine: lands('Plains', 1), hand: [tutor] });
+    library(s, [named('A'), clamp]);
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    expect(s.pending?.choice).toMatchObject({ kind: 'cards', purpose: 'search' });
+    expect(names((s.pending!.choice as { options: { card: Card }[] }).options)).toEqual(['Skullclamp']);
+    s = run(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['l1'] } }));
+    expect(names(s.players[0].library.slice(0, 1))).toEqual(['Skullclamp']);
+    expect(s.players[0].hand).toHaveLength(0);
+  });
+
+  it('Stoneforge Mystic puts an Equipment card from the hand onto the battlefield', () => {
+    let s = board({ mine: [...lands('Plains', 2), stoneforge], hand: [clamp, named('A')] });
+    s = run(settle(apply(s, { type: 'activate', iid: iidOf(s, 'Stoneforge Mystic'), index: 0 })));
+    expect(s.pending?.choice).toMatchObject({ kind: 'cards', purpose: 'putFromHand', min: 0, max: 1 });
+    expect(names((s.pending!.choice as { options: { card: Card }[] }).options)).toEqual(['Skullclamp']);
+    s = run(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['h0'] } }));
+    expect(perm(s, 'Skullclamp')?.controller).toBe(0);
+    expect(names(s.players[0].hand)).toEqual(['A']);
+  });
+
+  it('Step Through returns two creatures; Wizardcycling finds a Wizard', () => {
+    const bear = creature('Bear', 2, 2);
+    expect(spellSpec(step).targets).toHaveLength(1);
+    expect(spellSpec(step).targets[0]).toMatchObject({ min: 2, max: 2 });
+    let s = board({ mana: 2, hand: [step], theirs: [bear] });
+    library(s, [named('A'), wizard]);
+    s = run(settle(apply(s, { type: 'cycle', iid: 'h0' })));
+    expect(s.pending?.choice).toMatchObject({ kind: 'cards', purpose: 'search' });
+    expect(names((s.pending!.choice as { options: { card: Card }[] }).options)).toEqual(['Wizard']);
+    s = run(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['l1'] } }));
+    expect(names(s.players[0].hand)).toEqual(['Wizard']);
+    expect(names(s.players[0].graveyard)).toEqual(['Step Through']);
+  });
+});

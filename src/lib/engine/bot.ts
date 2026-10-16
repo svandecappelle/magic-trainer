@@ -447,6 +447,7 @@ function withX(spec: AbilitySpec, x: number): AbilitySpec {
   const n = (a: Amount) => (a === 'X' ? x : a === 'lifeGained' ? 0 : a);
   const effects = spec.effects.map((e): Effect => {
     if (e.kind === 'damage' || e.kind === 'damageAll') return { ...e, amount: n(e.amount) };
+    if (e.kind === 'dig') return e;
     if ('n' in e) return { ...e, n: n(e.n) } as Effect;
     return e;
   });
@@ -898,6 +899,10 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
         options.sort((a, b) => cardWorth(b.card) - cardWorth(a.card));
         return { kind: 'cards', iids: options.slice(0, choice.max).map((c) => c.iid) };
       }
+      // Brainstorm: the cards worth least go back on top.
+      if (choice.purpose === 'putBack') return { kind: 'cards', iids: [...options].sort((a, b) => cardWorth(a.card) - cardWorth(b.card)).slice(0, choice.min).map((c) => c.iid) };
+      // Stoneforge Mystic: the most expensive Equipment.
+      if (choice.purpose === 'putFromHand') return { kind: 'cards', iids: [...options].sort((a, b) => b.card.cmc - a.card.cmc).slice(0, 1).map((c) => c.iid) };
       // Gemstone Caverns: a spare land, or the card worth least with a full hand.
       if (choice.purpose === 'gemstoneCaverns') {
         const hand = s.players[choice.player].hand;
@@ -994,6 +999,8 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
       if (choice.purpose === 'triggerMode' && s.pending?.trigger?.ability.modal) return { kind: 'mode', modes: triggerModes(s, choice.player, s.pending.trigger) };
       return { kind: 'mode', modes: Array.from({ length: choice.min }, (_, i) => i) };
     case 'yesNo':
+      // Ponder: the top cards were just arranged, keep them.
+      if (choice.purpose === 'mayShuffle') return { kind: 'yesNo', yes: false };
       // Paying to keep our spell is worth it; our own "you may" abilities are used.
       // Shock lands: pay while life is comfortable.
       if (choice.purpose === 'payLife') return { kind: 'yesNo', yes: !safe && s.players[choice.player].life > 10 };
