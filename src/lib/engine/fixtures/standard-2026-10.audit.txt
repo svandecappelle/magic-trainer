@@ -233,9 +233,6 @@ NONE     Spider-Sense {1}{U} — Instant
       keyword not simulated: web-slinging
   ✗ Counter target instant spell, sorcery spell, or triggered ability.
       spell not simulated
-NONE     Springleaf Drum {1} — Artifact
-  ? {T}, Tap an untapped creature you control: Add one mana of any color.
-      mana ability not understood
 NONE     Starfield Shepherd {3}{W}{W} — Creature — Angel
   ✓ Flying
       keyword
@@ -916,6 +913,9 @@ OK       Spirebluff Canal  — Land
       enters tapped (unlessOtherLands)
   ✓ {T}: Add {U} or {R}.
       mana: U/R
+OK       Springleaf Drum {1} — Artifact
+  ✓ {T}, Tap an untapped creature you control: Add one mana of any color.
+      mana: any color, tapping another untapped creature that makes no mana (chosen automatically)
 OK       Starting Town  — Land — Town
   ✓ This land enters tapped unless it's your first, second, or third turn…
       enters tapped (unlessEarlyTurn)
@@ -961,5 +961,5 @@ OK       Watery Grave  — Land — Island Swamp
   ✓ As this land enters, you may pay 2 life. If you don't, it enters tapp…
       enters tapped (payLife)
 
-178 cards: 71 ok, 43 partial, 64 not simulated, 0 can't be cast
+178 cards: 72 ok, 43 partial, 63 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

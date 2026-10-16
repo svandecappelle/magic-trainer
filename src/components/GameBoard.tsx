@@ -128,7 +128,8 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     setAbilityMenu(null);
     setCastMenu(null);
     setModePick(null);
-    setAttackSel([]);
+    // "attacks each combat if able": already chosen.
+    setAttackSel(g.step === 'attack' ? g.battlefield.filter((x) => x.controller === me && x.statics?.mustAttack && canAttack(x)).map((x) => x.iid) : []);
     setAttackAt({});
     setBlockerSel(null);
     setBlocks({});

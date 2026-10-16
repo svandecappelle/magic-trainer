@@ -376,7 +376,7 @@ export interface TargetSpec {
 // ---------- Effects ----------
 
 /** Counter kinds placed on permanents. */
-export type CounterKind = '+1/+1' | '-1/-1' | 'loyalty' | 'lore' | 'rev' | 'luck';
+export type CounterKind = '+1/+1' | '-1/-1' | 'loyalty' | 'lore' | 'rev' | 'luck' | 'mining';
 
 /**
  * Who an effect applies to: the targets chosen for a slot, the controller, everyone / each opponent,
@@ -455,6 +455,8 @@ export type Effect =
    * Army you control.
    */
   | { kind: 'amass'; subtype: string; n: number }
+  /** Rhystic Study: "you may draw a card unless that player pays {1}" (that player: the ability's slot 0). */
+  | { kind: 'drawUnlessPays'; n: number; mana: number }
   /** Teferi, Time Raveler's +1: "Until your next turn, you may cast sorcery spells as though they had flash." */
   | { kind: 'sorceryFlash' }
   /**
@@ -1508,7 +1510,9 @@ export type TriggerEvent =
    */
   | { on: 'opponentDraws'; nth?: number; notFirstInDrawStep?: boolean }
   /** City of Traitors: "When you play another land, …" */
-  | { on: 'youPlayLand' };
+  | { on: 'youPlayLand' }
+  /** Rhystic Study: "Whenever an opponent casts a spell, …" (the ability's slot 0 is that player). */
+  | { on: 'opponentCasts'; filter: TargetFilter };
 
 export interface TriggerSpec {
   event: TriggerEvent;
@@ -1718,6 +1722,22 @@ export function triggersOf(card: Card): TriggerSpec[] {
     if (bowmasters && selves.includes(bowmasters[1].toLowerCase())) {
       const ability = triggerAbility(bowmasters[2], name, true);
       out.push({ event: { on: 'enters', self: true }, ability }, { event: { on: 'opponentDraws', notFirstInDrawStep: true }, ability });
+      continue;
+    }
+    // Rhystic Study: "Whenever an opponent casts a spell, you may draw a card unless that player pays {1}."
+    const taxed = line.match(/^Whenever an opponent casts an? ([a-z ]*?)spell, you may draw (a|two) cards? unless that player pays \{(\d+)\}\.$/i);
+    const taxedFilter = taxed && (taxed[1].trim() ? cardWordsFilter(taxed[1].trim()) : {});
+    if (taxed && taxedFilter) {
+      out.push({
+        event: { on: 'opponentCasts', filter: taxedFilter },
+        ability: { targets: [{ kind: 'player', min: 1, max: 1, filter: {} }], effects: [{ kind: 'drawUnlessPays', n: taxed[2] === 'two' ? 2 : 1, mana: Number(taxed[3]) }] },
+      });
+      continue;
+    }
+    // Nihil Spellbomb: "When this artifact is put into a graveyard from the battlefield, …" (like dying).
+    const toGrave = line.match(/^When (.+?) is put into a graveyard from the battlefield, (.+)$/i);
+    if (toGrave && selves.includes(toGrave[1].toLowerCase())) {
+      out.push({ event: { on: 'dies', self: true }, ability: triggerAbility(toGrave[2], name, true) });
       continue;
     }
     // City of Traitors: "When you play another land, sacrifice this land."
@@ -1970,8 +1990,13 @@ export function doublesEquippedTriggers(card: Card): boolean {
  * Amber "{T}: Add one mana of any color among legendary creatures and planeswalkers you control." (legends),
  * Gemstone Caverns (luck: any color with a luck counter, otherwise {C}).
  */
-export function stateMana(card: Card): 'imprinted' | 'legends' | 'luck' | null {
+export function stateMana(card: Card): 'imprinted' | 'legends' | 'luck' | 'perArtifact' | 'mining' | null {
   const text = frontText(card);
+  // Gemstone Mine: "{T}, Remove a mining counter from this land: Add one mana of any color. If there are no mining
+  // counters on this land, sacrifice it."
+  if (/^\{T\}, Remove a mining counter from this land: Add one mana of any color\. If there are no mining counters on this land, sacrifice it\.$/m.test(text)) return 'mining';
+  // Tolarian Academy: "{T}: Add {U} for each artifact you control."
+  if (/^\{T\}: Add \{U\} for each artifact you control\.$/m.test(text)) return 'perArtifact';
   // Gemstone Caverns: "{T}: Add {C}. If Gemstone Caverns has a luck counter on it, instead add one mana of any color."
   if (/^\{T\}: Add \{C\}\. If (?:this land|.+) has a luck counter on it, instead add one mana of any color\.$/m.test(text)) return 'luck';
   if (/^\{T\}: Add one mana of any of the exiled card's colors\.$/m.test(text)) return 'imprinted';
@@ -2000,8 +2025,11 @@ export const beginsOnBattlefield = (card: Card) =>
 // ---------- Entering the battlefield ----------
 
 /** "This creature enters with N +1/+1 counters on it" (X: the value paid when cast); Moonshadow: "six -1/-1 counters". */
-export function entersCounters(card: Card): { counter: '+1/+1' | '-1/-1'; n: Amount } | null {
+export function entersCounters(card: Card): { counter: '+1/+1' | '-1/-1' | 'mining'; n: Amount } | null {
   const selves = selfWords(card.name).map(escapeRe).join('|');
+  // Gemstone Mine: "This land enters with three mining counters on it."
+  const mining = frontText(card).match(new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)? with (${AMOUNT}) mining counters? on it\\.`, 'i'));
+  if (mining) return { counter: 'mining', n: toAmount(mining[1]) };
   const m = frontText(card).match(new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)? with (${AMOUNT}) ([+-]1\\/[+-]1) counters? on (?:it|him|her|them)\\.`, 'i'));
   return m && (m[2] === '+1/+1' || m[2] === '-1/-1') ? { counter: m[2], n: toAmount(m[1]) } : null;
 }
@@ -2042,6 +2070,10 @@ export interface StaticSpec {
   perCounter?: CounterKind;
   /** Dáin's Company: "as long as you control another Dwarf" (a creature type, lower case). */
   ifAnother?: string;
+  /** Delirium: "as long as there are four or more card types among cards in your graveyard". */
+  delirium?: boolean;
+  /** "attacks each combat if able". */
+  mustAttack?: boolean;
   keywords: Keyword[];
   /** "has … ward {2}" (Lavaspur Boots, Sheltered by Ghosts). */
   ward?: number;
@@ -2128,6 +2160,13 @@ export function staticsOf(card: Card): StaticSpec[] {
       out.push({ who: 'self', power: Number(each[1]), toughness: Number(each[2]), keywords: [], perEach: { kind: counted.kind, filter: counted.filter } });
       continue;
     }
+    // Dragon's Rage Channeler: "Delirium — As long as there are four or more card types among cards in your graveyard,
+    // this creature gets +2/+2, has flying, and attacks each combat if able."
+    const delirium = line.match(new RegExp(`^Delirium — As long as there are four or more card types among cards in your graveyard, (?:${selves}) gets \\+(\\d+)\\/\\+(\\d+)(?:, has ${KEYWORD_LIST},)?( and attacks each combat if able)?\\.$`, 'i'));
+    if (delirium) {
+      out.push({ who: 'self', power: Number(delirium[1]), toughness: Number(delirium[2]), keywords: kws(delirium[3]), delirium: true, ...(delirium[4] ? { mustAttack: true } : {}) });
+      continue;
+    }
     // Dáin's Company: "This creature has lifelink as long as you control another Dwarf."
     const ifAnother = line.match(new RegExp(`^(?:${selves}) has ${KEYWORD_LIST} as long as you control another ([A-Z][a-z]+)\\.$`, 'i'));
     if (ifAnother) {
@@ -2196,6 +2235,19 @@ export function namesCardToStop(card: Card): boolean {
  */
 export const drawsOneMore = (card: Card) =>
   /^As long as you have one or fewer cards in hand, if you would draw one or more cards, you draw that many cards plus one instead\.$/m.test(frontText(card));
+
+/**
+ * Springleaf Drum: "{T}, Tap an untapped creature you control: Add one mana of any color." (creature); Gene Pollinator:
+ * "{T}, Tap an untapped permanent you control: …" (permanent). Null for other cards.
+ */
+export function tapsAnotherForMana(card: Card): 'creature' | 'permanent' | null {
+  const m = frontText(card).match(/^\{T\}, Tap an untapped (creature|permanent) you control: Add one mana of any color\.$/m);
+  return m ? (m[1] as 'creature' | 'permanent') : null;
+}
+
+/** Brazen Borrower: "This creature can block only creatures with flying." */
+export const blocksOnlyFlyers = (card: Card) =>
+  new RegExp(`^(?:${selfWords(card.name).map(escapeRe).join('|')}) can block only creatures with flying\\.$`, 'im').test(frontText(card));
 
 /** Elvish Spirit Guide: "Exile this card from your hand: Add {G}." (the color), or null. */
 export function handMana(card: Card): Color | null {

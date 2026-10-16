@@ -283,9 +283,30 @@ Left "not simulated" or found on the way:
 
 Still open, most played first:
 - [ ] Quantum Riddler (6): Warp (cast for its warp cost, exiled at the end step, cast again later from exile)
-- [ ] Gene Pollinator (6) and Springleaf Drum (5): "tap an untapped permanent/creature you control" as a mana cost
 - [ ] Talon Gates of Madara (6): "{1}, {T}: Add one mana of any color" (mana costing mana), "up to one target creature
   phases out", "{4}: Put this card from your hand onto the battlefield" (it makes only {C} for now)
+
+## Metagame audit 2026-10-16
+
+`npm run audit-meta` again (896 cards to fix, 385 playing wrongly). Fixed, most played first: Gene Pollinator and
+Springleaf Drum (mana by tapping another untapped permanent or creature: one that makes no mana, chosen
+automatically), Brazen Borrower (blocks only creatures with flying), Dragon's Rage Channeler (delirium: +2/+2, flying,
+attacks each combat if able, a rule now checked when attackers are declared), Tolarian Academy ({U} for each artifact),
+Gemstone Mine (mining counters), Nihil Spellbomb ("put into a graveyard from the battlefield" triggers of noncreature
+permanents), Rhystic Study ("unless that player pays {1}").
+
+Approximations: Rhystic Study's "you may draw" always draws.
+
+Still open, playing wrongly, most played first (see `audit-reports/2026-10-16/report.md`):
+- [ ] Delighted Halfling (6): mana only for legendary spells, which can't be countered
+- [ ] Seasoned Cryomancer (5): "draw two, then discard two", reflexive trigger on discarding nonland cards
+- [ ] Parallax Wave (5): fading, exile until it leaves
+- [ ] Mockingbird (5): enters as a copy of a creature with a smaller mana value, with flying
+- [ ] Mystic Remora (5): cumulative upkeep; "unless that player pays {4}"
+- [ ] Yavimaya, Cradle of Growth (5): each land is a Forest
+- [ ] Doorkeeper Thrull (4): entering artifacts and creatures don't trigger abilities
+- [ ] Sowing Mycospawn (4): "when you cast this spell" triggers
+- [ ] Bilbo, Thief in the Night (4), Reflecting Pool (4), Anointed Peacekeeper (4), Badgermole Cub (4), High Noon (4)
 
 ## Standard: Boros Dwarves (mtgtop8 deck 899948)
 

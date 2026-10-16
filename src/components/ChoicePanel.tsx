@@ -12,6 +12,7 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
   switch (choice.purpose) {
     case 'cleanupDiscard': return t.game.choice.cleanupDiscard({ n });
     case 'payOrCounter': return t.game.choice.payOrCounter({ card: card(String(p.card)), n });
+    case 'payOrDraw': return t.game.choice.payOrDraw({ card: card(String(p.card)), n });
     case 'payLifeOrCounter': return t.game.choice.payLifeOrCounter({ card: card(String(p.card)), n });
     case 'discard': return t.game.choice.discard({ n });
     case 'discardChosen': return t.game.choice.discardChosen({ n, who: names[Number(p.p) as 0 | 1] });
@@ -104,6 +105,7 @@ export function ChoicePanel({ choice, onAnswer, onPreview, title }: Props) {
     const [yes, no] =
       choice.purpose === 'payOrCounter' ? [t.game.payN(n), t.game.dontPay]
       : choice.purpose === 'payLifeOrCounter' ? [t.game.payLifeN(n), t.game.dontPay]
+      : choice.purpose === 'payOrDraw' ? [t.game.payN(n), t.game.dontPay]
       : choice.purpose === 'payLife' ? [t.game.payLifeN(n), t.game.enterTapped]
       : choice.purpose === 'costChoice' ? [costLabel(t, String(choice.params?.yes)), costLabel(t, String(choice.params?.no))]
       : [t.game.yes, t.game.no];

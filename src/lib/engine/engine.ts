@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, blocksOnlyFlyers, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -57,7 +57,7 @@ export interface Permanent extends CardInst {
   /** A noncreature permanent that is a creature until end of turn (crewed Vehicle, Iron Man Armor): its own card. */
   unanimated?: Card;
   /** What static abilities (anthems, Auras, Equipment) give it right now; recomputed by the engine. */
-  statics?: { power: number; toughness: number; keywords: Keyword[]; cantAttack?: boolean; cantBlock?: boolean; ward?: number[]; wardLife?: number[]; hexproofFromMonocolored?: boolean; doubleDamage?: boolean };
+  statics?: { power: number; toughness: number; keywords: Keyword[]; cantAttack?: boolean; cantBlock?: boolean; mustAttack?: boolean; ward?: number[]; wardLife?: number[]; hexproofFromMonocolored?: boolean; doubleDamage?: boolean };
 }
 
 export interface StackItem extends CardInst {
@@ -191,6 +191,7 @@ export type ChoicePurpose =
   | 'cleanupDiscard' // discard down to seven at end of turn
   | 'payOrCounter' // "counter target spell unless its controller pays {N}"
   | 'payLifeOrCounter' // Ward—Pay N life: pay, or the spell or ability is countered
+  | 'payOrDraw' // Rhystic Study: pay {N}, or its controller draws
   | 'discard' // "discard a card": the discarding player chooses
   | 'discardChosen' // Duress: the spell's controller chooses from a revealed hand
   | 'scry'
@@ -316,6 +317,7 @@ export type LogEntry =
   | { k: 'paidLife'; p: PlayerId; n: number; card: string }
   | { k: 'sorceryFlash'; p: PlayerId }
   | { k: 'exiledInstead'; card: string }
+  | { k: 'paidTax'; p: PlayerId; n: number; card: string }
   | { k: 'cantEnter'; card: string }
   | { k: 'paid'; p: PlayerId; n: number; card: string }
   | { k: 'fizzles'; card: string }
@@ -478,7 +480,7 @@ export type Action =
 /** Why an action was refused. Rendered in the player's language (src/i18n). */
 export type GameErrorCode =
   | 'gameOver' | 'keepFirst' | 'notMulliganTime' | 'noMoreMulligans' | 'chooseBottom' | 'notInHand'
-  | 'landTiming' | 'landAlreadyPlayed' | 'notALand' | 'notASpell' | 'sorcerySpeed' | 'castTiming' | 'sorceryOnly' | 'nameStopped'
+  | 'landTiming' | 'landAlreadyPlayed' | 'notALand' | 'notASpell' | 'sorcerySpeed' | 'castTiming' | 'sorceryOnly' | 'nameStopped' | 'mustAttack'
   | 'needsTarget' | 'tooManyTargets' | 'targetMustBe' | 'illegalTarget' | 'notEnoughMana' | 'declareBlockersFirst'
   | 'notAttackStep' | 'cannotAttack' | 'notBlockStep' | 'notAttacking' | 'menace' | 'cannotBlock'
   | 'makeChoiceFirst' | 'nothingToChoose' | 'badChoice' | 'badX'
@@ -591,9 +593,16 @@ const protectedFrom = (perm: Permanent, source: Card) => protectionsOf(perm.card
 export function unitsOf(s: GameState, perm: Permanent, spell?: Card): Color[][] {
   const identity = s.players[perm.controller]?.identity;
   let units = manaUnits(perm.card, identity);
+  // Springleaf Drum, Gene Pollinator: any color, with another untapped permanent to tap.
+  if (tapsAnotherForMana(perm.card)) units = manaHelpers(s, perm).length ? [['W', 'U', 'B', 'R', 'G']] : [];
   // Chrome Mox: the imprinted card's colors; Mox Amber: the colors of legendary creatures and planeswalkers.
   const state = stateMana(perm.card);
-  if (state === 'luck') {
+  if (state === 'mining') {
+    units = perm.counters.mining ? [['W', 'U', 'B', 'R', 'G']] : [];
+  } else if (state === 'perArtifact') {
+    const n = s.battlefield.filter((x) => x.controller === perm.controller && cardTypes(x.card).includes('artifact')).length;
+    units = Array.from({ length: n }, () => ['U'] as Color[]);
+  } else if (state === 'luck') {
     if (perm.counters.luck) units = [['W', 'U', 'B', 'R', 'G']];
   } else if (state) {
     const from = state === 'imprinted' ? (perm.imprinted ? [perm.imprinted] : [])
@@ -644,13 +653,35 @@ function painOf(s: GameState, perm: Permanent) {
   return pain && s.players[perm.controller].life >= pain.life ? pain : undefined;
 }
 
+/** Delirium: four or more card types among the cards in `p`'s graveyard. */
+export function delirium(s: GameState, p: PlayerId): boolean {
+  const types = new Set(s.players[p].graveyard.flatMap((c) => cardTypes(c.card)));
+  return types.size >= 4;
+}
+
+/** A card with a mana ability of its own (then it's never tapped to pay for Springleaf Drum's mana). */
+const makesMana = (card: Card) => manaUnits(card).length > 0 || !!tapsAnotherForMana(card) || !!stateMana(card) || !!chosenTypeMana(card);
+
+/**
+ * Springleaf Drum, Gene Pollinator: the untapped permanents (creatures for the Drum) `perm` may tap along with itself:
+ * ones that make no mana, so no other mana is lost; the cheapest first (noncreatures, then the smallest creatures).
+ */
+function manaHelpers(s: GameState, perm: Permanent): Permanent[] {
+  const kind = tapsAnotherForMana(perm.card);
+  if (!kind) return [];
+  return s.battlefield
+    .filter((x) => x.controller === perm.controller && x.iid !== perm.iid && !x.tapped && (kind === 'permanent' || isCreature(x.card)) && !makesMana(x.card))
+    .sort((a, b) => Number(isCreature(a.card)) - Number(isCreature(b.card)) || powerOf(a) - powerOf(b));
+}
+
 /** Can this permanent be tapped for mana now? */
 export const canTapForMana = (s: GameState, perm: Permanent) =>
   !perm.tapped && !(isCreature(perm.card) && perm.sick && !hasKw(perm, 'haste')) && unitsOf(s, perm).length > 0 && !activationsForbidden(s, perm) &&
   s.players[perm.controller].life >= manaLifeCost(perm.card);
 
 /** Tapping it for mana costs life (Mana Confluence) or deals damage (City of Brass): tapped last, and can't be undone. */
-const painfulMana = (perm: Permanent) => manaLifeCost(perm.card) > 0 || triggersOf(perm.card).some((t) => t.event.on === 'becomesTapped');
+const painfulMana = (perm: Permanent) =>
+  manaLifeCost(perm.card) > 0 || !!tapsAnotherForMana(perm.card) || triggersOf(perm.card).some((t) => t.event.on === 'becomesTapped');
 
 /** Permanents on the battlefield with a rule-changing static ability. */
 const withRule = (s: GameState, rule: GameRule) => s.battlefield.filter((x) => gameRulesOf(x.card).includes(rule));
@@ -715,12 +746,21 @@ export function manaSources(s: GameState, p: PlayerId, spell?: Card): ManaSource
         iid: x.iid, colors: [...new Set(units.flat())], ...(units.length > 1 ? { units } : {}), ...(painfulMana(x) ? { last: true } : {}), ...(pain ? { pain } : {}),
       };
     });
+  // Springleaf Drum, Gene Pollinator: each one needs its own permanent to tap.
+  const helpersUsed = new Set<string>();
+  const usable = perms.filter((src) => {
+    const perm = s.battlefield.find((x) => x.iid === src.iid);
+    if (!perm || !tapsAnotherForMana(perm.card)) return true;
+    const helper = manaHelpers(s, perm).find((h) => !helpersUsed.has(h.iid));
+    if (helper) helpersUsed.add(helper.iid);
+    return !!helper;
+  });
   // Elvish / Simian Spirit Guide: exiled from the hand for one mana, spent last.
   const fromHand = s.players[p].hand.flatMap((c): ManaSource[] => {
     const color = handMana(c.card);
     return color ? [{ iid: `hand:${c.iid}`, colors: [color], last: true }] : [];
   });
-  return [...pool, ...perms, ...fromHand];
+  return [...pool, ...usable, ...fromHand];
 }
 
 /** Can the permanent's mana be taken back (all of it still unspent in the pool)? */
@@ -853,6 +893,8 @@ export function canAttack(perm: Permanent): boolean {
 export function canBlock(blocker: Permanent, attacker: Permanent): boolean {
   if (!isCreature(blocker.card) || blocker.tapped || blocker.statics?.cantBlock) return false;
   if (protectedFrom(attacker, blocker.card)) return false;
+  // Brazen Borrower: "can block only creatures with flying".
+  if (blocksOnlyFlyers(blocker.card) && !hasKw(attacker, 'flying')) return false;
   if (hasKw(attacker, 'flying')) return hasKw(blocker, 'flying') || hasKw(blocker, 'reach');
   return true;
 }
@@ -1493,7 +1535,8 @@ function removePermanent(d: GameState, perm: Permanent, zone: 'graveyard' | 'exi
   returnExiledUntil(d, perm);
   // A token that leaves the battlefield ceases to exist (it still "dies").
   if (!isToken(printedCard(perm))) putInZone(d, perm.owner ?? perm.controller, { iid: perm.iid, card: printedCard(perm), ...(perm.commander ? { commander: true } : {}) }, zone);
-  if (zone === 'graveyard' && isCreature(perm.card)) fireObject(d, 'dies', perm);
+  // A creature dies; an artifact's "When this artifact is put into a graveyard from the battlefield" too.
+  if (zone === 'graveyard' && (isCreature(perm.card) || triggersOf(perm.card).some((t) => t.event.on === 'dies' && t.event.self))) fireObject(d, 'dies', perm);
 }
 
 /**
@@ -1547,7 +1590,15 @@ function tapPermanent(d: GameState, perm: Permanent) {
 
 /** Taps a mana source (sacrificing a Treasure); the caller deals with its mana. */
 function tapForManaOnly(d: GameState, perm: Permanent) {
+  // Springleaf Drum: "Tap an untapped creature you control" too.
+  const helper = manaHelpers(d, perm)[0];
+  if (helper) tapPermanent(d, helper);
   tapPermanent(d, perm);
+  // Gemstone Mine: a mining counter removed; sacrificed when none is left.
+  if (stateMana(perm.card) === 'mining') {
+    perm.counters = { ...perm.counters, mining: Math.max(0, (perm.counters.mining ?? 0) - 1) };
+    if (!perm.counters.mining) sacrifice(d, perm);
+  }
   const life = manaLifeCost(perm.card);
   if (life) changeLife(d, perm.controller, -life);
   if (/\{T\}, Sacrifice [^:]*: Add/i.test(perm.card.oracleText)) sacrifice(d, perm);
@@ -1890,6 +1941,15 @@ function fireStep(d: GameState, on: StepEvent) {
 
 /** `p` cast `card`: "whenever you cast …" and prowess. */
 function fireCast(d: GameState, p: PlayerId, card: Card) {
+  // Rhystic Study: "Whenever an opponent casts a spell, …" (aimed at that player).
+  for (const x of d.battlefield) {
+    if (teamOf(d, x.controller) === teamOf(d, p)) continue;
+    for (const t of triggersOf(x.card)) {
+      if (t.event.on === 'opponentCasts' && cardMatches(card, t.event.filter)) {
+        (d.triggered ??= []).push({ source: { iid: x.iid, card: x.card }, controller: x.controller, ability: t.ability, targets: [[{ kind: 'player', player: p }]] });
+      }
+    }
+  }
   for (const x of [...d.battlefield, ...emblemSources(d)]) {
     if (x.controller !== p) continue;
     for (const t of triggersOf(x.card)) {
@@ -2070,6 +2130,8 @@ function refreshStatics(d: GameState) {
           ? (src.attachedTo ? [findPermanent(d, src.attachedTo)].filter((x) => x !== undefined) : [])
           : matching(d, src.controller, st.who.which).filter((x) => !(typeof st.who !== 'string' && st.who.other && x.iid === src.iid));
       // Dáin's Company: "as long as you control another Dwarf".
+      // Delirium: four or more card types among cards in its controller's graveyard.
+      if (st.delirium && !delirium(d, src.controller)) continue;
       if (st.ifAnother && !d.battlefield.some((x) => x.iid !== src.iid && x.controller === src.controller && isCreature(x.card) && hasSubtype(x.card, st.ifAnother!))) continue;
       // "for each artifact you control", Kellan's "for each Aura and Equipment attached to Kellan", Chainsaw's rev counters.
       const times = st.perEach ? matching(d, src.controller, st.perEach).filter((x) => x.controller === src.controller).length
@@ -2088,6 +2150,7 @@ function refreshStatics(d: GameState) {
         for (const k of st.keywords) if (!b.keywords.includes(k)) b.keywords.push(k);
         if (st.cantAttack) b.cantAttack = true;
         if (st.cantBlock) b.cantBlock = true;
+        if (st.mustAttack) b.mustAttack = true;
       }
     }
   }
@@ -2697,6 +2760,22 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       log(d, { k: 'counters', card: army.card.name, counter: '+1/+1', n: e.n });
       break;
     }
+    case 'drawUnlessPays': {
+      // Rhystic Study: the player who cast the spell may pay; if they don't, its controller draws.
+      const t = r.legal[0]?.[0];
+      const payer = t?.kind === 'player' ? t.player : undefined;
+      const cost = { generic: e.mana, colored: [] };
+      if (payer !== undefined && findPayment(manaSources(d, payer), cost)) {
+        if (answer?.kind !== 'yesNo') return { kind: 'yesNo', player: payer, purpose: 'payOrDraw', params: { card: item.card.name, n: e.mana } };
+        if (answer.yes) {
+          pay(d, payer, manaSources(d, payer), cost);
+          log(d, { k: 'paidTax', p: payer, n: e.mana, card: item.card.name });
+          break;
+        }
+      }
+      draw(d, caster, e.n);
+      break;
+    }
     case 'sorceryFlash':
       d.players[caster].sorceryFlash = true;
       log(d, { k: 'sorceryFlash', p: caster });
@@ -3076,6 +3155,9 @@ function nextHead(d: GameState, p: PlayerId): PlayerId | undefined {
  * team), so the attack triggers of both boards see every attacker, and the attack window opens.
  */
 function declareAttacks(d: GameState, p: PlayerId, ids: string[], pw: Record<string, string>) {
+  // "attacks each combat if able" (Dragon's Rage Channeler with delirium).
+  const must = creaturesOf(d, p).find((x) => x.statics?.mustAttack && canAttack(x) && !ids.includes(x.iid));
+  if (must) throw new IllegalAction('mustAttack', { card: must.card.name });
   const attackers = [...new Set(ids)].map((iid) => {
     const perm = findPermanent(d, iid);
     if (!perm || perm.controller !== p || !canAttack(perm)) throw new IllegalAction('cannotAttack');

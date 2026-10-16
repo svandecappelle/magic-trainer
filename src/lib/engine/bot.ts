@@ -26,7 +26,9 @@ export function botAction(s: GameState): Action {
   if (s.priority) return respond(s, me) ?? { type: 'pass' };
   if (s.step === 'block') return { type: 'declareBlockers', blocks: chooseBlocks(s, me) };
   if (s.step === 'attack') {
-    const attackers = chooseAttackers(s, me);
+    // "attacks each combat if able" (Dragon's Rage Channeler with delirium) joins in any case.
+    const must = creaturesOf(s, me).filter((x) => x.statics?.mustAttack && canAttack(x)).map((x) => x.iid);
+    const attackers = [...new Set([...chooseAttackers(s, me), ...must])];
     const targets = chooseAttackTargets(s, me, attackers);
     return { type: 'declareAttackers', attackers, ...(Object.keys(targets).length ? { targets } : {}) };
   }
@@ -219,7 +221,13 @@ function chooseLand(s: GameState, me: PlayerId): { iid: string; face: number } |
   const player = s.players[me];
   if (player.landPlayed) return null;
   // Urza's Saga makes {C} from its chapter I; Multiversal Passage becomes the basic land type it needs.
-  const colorsOf = (c: Card): string[] => (choosesBasicType(c) ? ['W', 'U', 'B', 'R', 'G'] : isSaga(c) && !manaColors(c).length ? ['C'] : manaColors(c, player.identity));
+  // Gemstone Mine, Gemstone Caverns and Tolarian Academy: their mana depends on counters and artifacts.
+  const colorsOf = (c: Card): string[] => {
+    const state = stateMana(c);
+    if (choosesBasicType(c) || state === 'mining') return ['W', 'U', 'B', 'R', 'G'];
+    if (state === 'perArtifact') return ['U'];
+    return isSaga(c) && !manaColors(c).length ? ['C'] : manaColors(c, player.identity);
+  };
   const lands = player.hand.filter((c) => isLandCard(c.card) && colorsOf(c.card).length);
   if (!lands.length) {
     // A modal double-faced card with a land on its back, when there's no other land to play.
@@ -1000,6 +1008,8 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
       }
       if (choice.purpose === 'reflexivePay') return { kind: 'yesNo', yes: !safe && reflexiveUseful(s, choice.player) && s.players[choice.player].life > Number(choice.params?.life ?? 0) + 5 };
       // Ward—Pay N life: while life stays comfortable.
+      // Rhystic Study: pay the tax when the mana isn't needed for anything else in hand.
+      if (choice.purpose === 'payOrDraw') return { kind: 'yesNo', yes: !safe && castable(s, choice.player).length === 0 };
       if (choice.purpose === 'payLifeOrCounter') return { kind: 'yesNo', yes: !safe && s.players[choice.player].life > Number(choice.params?.n ?? 0) + 5 };
       return { kind: 'yesNo', yes: !safe && (choice.purpose === 'payOrCounter' || choice.purpose === 'optional') };
     case 'targets':

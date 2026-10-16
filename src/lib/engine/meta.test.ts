@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
-import { activationProblem, actor, apply, canCastNow, castCost, canTapForMana, type Answer, castOptions, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
+import { activationProblem, actor, apply, canBlock, canCastNow, castCost, canTapForMana, type Answer, castOptions, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
 import { botAction } from './bot';
 import { activatedOf, castInfo, castSpec, finalChapter, manaUnits, parseAbilityText, spellSpec, triggersOf } from './rules';
 
@@ -1608,5 +1608,99 @@ describe('City of Traitors, Defense Grid, Spirit Guides, Multiversal Passage', (
     expect(p.tapped).toBe(false);
     expect(s.players[0].life).toBe(18);
     expect(unitsOf(s, p)).toEqual([['U']]);
+  });
+});
+
+describe('Metagame audit 2026-10-16: Drum, Borrower, Channeler, Academy, Gemstone Mine, Spellbomb, Rhystic Study', () => {
+  const drum = card({ name: 'Springleaf Drum', typeLine: 'Artifact', manaCost: '{1}', cmc: 1, oracleText: '{T}, Tap an untapped creature you control: Add one mana of any color.' });
+  const borrower = creature('Brazen Borrower', 3, 1, {
+    typeLine: 'Creature — Faerie Rogue // Instant — Adventure', manaCost: '{1}{U}{U} // {1}{U}', cmc: 3, colors: ['U'], keywords: ['Flash', 'Flying'],
+    oracleText: 'Flash\nFlying\nThis creature can block only creatures with flying.\n//\nReturn target nonland permanent an opponent controls to its owner\'s hand.',
+  });
+  const drc = creature('Dragon\'s Rage Channeler', 1, 1, {
+    typeLine: 'Creature — Human Shaman', manaCost: '{R}', colors: ['R'],
+    oracleText: 'Whenever you cast a noncreature spell, surveil 1. (Look at the top card of your library. You may put that card into your graveyard.)\nDelirium — As long as there are four or more card types among cards in your graveyard, this creature gets +2/+2, has flying, and attacks each combat if able.',
+  });
+  const academy = card({ name: 'Tolarian Academy', typeLine: 'Legendary Land', oracleText: '{T}: Add {U} for each artifact you control.' });
+  const mine = card({ name: 'Gemstone Mine', typeLine: 'Land', oracleText: 'This land enters with three mining counters on it.\n{T}, Remove a mining counter from this land: Add one mana of any color. If there are no mining counters on this land, sacrifice it.' });
+  const spellbomb = card({
+    name: 'Nihil Spellbomb', typeLine: 'Artifact', manaCost: '{1}', cmc: 1,
+    oracleText: '{T}, Sacrifice this artifact: Exile target player\'s graveyard.\nWhen this artifact is put into a graveyard from the battlefield, you may pay {B}. If you do, draw a card.',
+  });
+  const rhystic = card({ name: 'Rhystic Study', typeLine: 'Enchantment', manaCost: '{2}{U}', cmc: 3, oracleText: 'Whenever an opponent casts a spell, you may draw a card unless that player pays {1}.' });
+  const run = (s: GameState) => {
+    for (let i = 0; i < 12 && !s.pending && (s.stack.length || s.triggered?.length); i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+
+  it('Springleaf Drum: any color by tapping a creature that makes no mana', () => {
+    let s = board({ mine: [drum] });
+    expect(canTapForMana(s, perm(s, 'Springleaf Drum')!)).toBe(false);
+    s = board({ mine: [drum, creature('Bear', 2, 2)] });
+    expect(unitsOf(s, perm(s, 'Springleaf Drum')!)).toEqual([['W', 'U', 'B', 'R', 'G']]);
+    s = apply(s, { type: 'tapForMana', iid: iidOf(s, 'Springleaf Drum') });
+    expect(perm(s, 'Bear')!.tapped).toBe(true);
+    expect(s.players[0].pool).toHaveLength(1);
+  });
+
+  it('Brazen Borrower can block only creatures with flying', () => {
+    const s = board({ mine: [creature('Bear', 2, 2), creature('Bird', 1, 1, { keywords: ['Flying'] })], theirs: [borrower] });
+    expect(canBlock(perm(s, 'Brazen Borrower')!, perm(s, 'Bear')!)).toBe(false);
+    expect(canBlock(perm(s, 'Brazen Borrower')!, perm(s, 'Bird')!)).toBe(true);
+  });
+
+  it('Dragon\'s Rage Channeler: delirium makes it a 3/3 flier that must attack', () => {
+    const types = [swamp, creature('Bear', 2, 2), spell('Shock', '{R}', 'Shock deals 2 damage to any target.'), card({ name: 'Rock', typeLine: 'Artifact' })];
+    const toAttack = (grave: Card[]) => {
+      let s = settle(apply(board({ mine: [drc], grave }), { type: 'pass' }));
+      for (let i = 0; i < 6 && s.step !== 'attack'; i++) s = apply(s, { type: 'pass' });
+      return s;
+    };
+    // Three card types: no delirium, no attack needed.
+    let s = toAttack(types.slice(0, 3));
+    expect(powerOf(perm(s, 'Dragon\'s Rage Channeler')!)).toBe(1);
+    expect(errorOf(() => apply(s, { type: 'declareAttackers', attackers: [] }))).toBeNull();
+    s = toAttack(types);
+    expect(s.step).toBe('attack');
+    const channeler = perm(s, 'Dragon\'s Rage Channeler')!;
+    expect([powerOf(channeler), toughnessOf(channeler)]).toEqual([3, 3]);
+    expect(errorOf(() => apply(s, { type: 'declareAttackers', attackers: [] }))).toBe('mustAttack');
+    expect(errorOf(() => apply(s, { type: 'declareAttackers', attackers: [channeler.iid] }))).toBeNull();
+  });
+
+  it('Tolarian Academy makes {U} for each artifact you control', () => {
+    const s = board({ mine: [academy, drum, spellbomb] });
+    expect(unitsOf(s, perm(s, 'Tolarian Academy')!)).toEqual([['U'], ['U']]);
+  });
+
+  it('Gemstone Mine: three mining counters, one each time, sacrificed after the last', () => {
+    let s = board({ hand: [mine] });
+    s = apply(s, { type: 'playLand', iid: 'h0' });
+    expect(perm(s, 'Gemstone Mine')!.counters.mining).toBe(3);
+    perm(s, 'Gemstone Mine')!.counters.mining = 1;
+    s = apply(s, { type: 'tapForMana', iid: iidOf(s, 'Gemstone Mine') });
+    expect(perm(s, 'Gemstone Mine')).toBeUndefined();
+    expect(s.players[0].pool?.[0].colors).toEqual(['W', 'U', 'B', 'R', 'G']);
+  });
+
+  it('Nihil Spellbomb: pay {B} to draw when it goes to the graveyard', () => {
+    let s = board({ mana: 1, mine: [spellbomb] });
+    const hand = s.players[0].hand.length;
+    s = settle(apply(s, { type: 'activate', iid: iidOf(s, 'Nihil Spellbomb'), index: 0, targets: [[{ kind: 'player', player: 1 }]] }));
+    s = run(s);
+    expect(s.pending?.choice).toMatchObject({ kind: 'yesNo', purpose: 'mayPay', params: { cost: '{B}' } });
+    s = run(apply(s, { type: 'choose', answer: { kind: 'yesNo', yes: true } }));
+    expect(s.players[0].hand).toHaveLength(hand + 1);
+  });
+
+  it('Rhystic Study: the opponent pays {1}, or its controller draws', () => {
+    // The Study is the opponent's: player 0 casts, player 0 is asked to pay.
+    let s = board({ theirs: [rhystic], hand: [spell('Shock', '{B}', 'Shock deals 2 damage to any target.')], mana: 2 });
+    const theirHand = s.players[1].hand.length;
+    s = settle(apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'player', player: 1 }]] }));
+    for (let i = 0; i < 6 && !(s.pending?.choice.player === 0); i++) s = settle(apply(s, { type: 'pass' }));
+    expect(s.pending?.choice).toMatchObject({ kind: 'yesNo', player: 0, purpose: 'payOrDraw', params: { n: 1 } });
+    s = run(apply(s, { type: 'choose', answer: { kind: 'yesNo', yes: false } }));
+    expect(s.players[1].hand).toHaveLength(theirHand + 1);
   });
 });
