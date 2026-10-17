@@ -6,6 +6,7 @@ import { Collection } from './pages/Collection';
 import { DeckEditor } from './pages/DeckEditor';
 import { Decks } from './pages/Decks';
 import { Goldfish } from './pages/Goldfish';
+import { History } from './pages/History';
 import { Home } from './pages/Home';
 import { LifeTracker } from './pages/LifeTracker';
 import { Online } from './pages/Online';
@@ -50,6 +51,7 @@ export function App() {
         <NavLink to="/play">{t.nav.play}</NavLink>
         <NavLink to="/online">{t.nav.online}</NavLink>
         <NavLink to="/life">{t.nav.life}</NavLink>
+        <NavLink to="/history">{t.nav.history}</NavLink>
         <span className="spacer" />
         <select className="lang-select" aria-label={t.common.language} value={lang} onChange={(e) => setLang(e.target.value as Lang)}>
           {LANGS.map((l) => <option key={l} value={l}>{messagesFor(l).langName}</option>)}
@@ -77,6 +79,8 @@ export function App() {
           <Route path="/play/:gameId?" element={<Play />} />
           <Route path="/online/:roomId?" element={<Online />} />
           <Route path="/life" element={<LifeTracker />} />
+          <Route path="/history" element={<History />} />
+          <Route path="/history/replay/:replayId" element={<History />} />
         </Routes>
       </main>
       <footer className="muted small">

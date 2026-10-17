@@ -98,7 +98,9 @@ export function useGameSocket(roomId?: string) {
   const [players, setPlayers] = useState<LobbyPlayer[]>([]);
   const [game, setGame] = useState<GameState | null>(null);
   /** Your cards in this room: main deck for the current game, and the rest (sideboard). */
-  const [deck, setDeck] = useState<{ main: Card[]; side: Card[] } | null>(null);
+  const [deck, setDeck] = useState<{ main: Card[]; side: Card[]; name?: string } | null>(null);
+  /** The replays of the match just finished, as the server sent them (see the 'replays' message). */
+  const [replays, setReplays] = useState<{ match: string; packed: string } | null>(null);
   const [error, setError] = useState<AppError | null>(null);
   const [match, setMatch] = useState<MatchScore | null>(null);
   /** Seats in the room: 2, or 4 in Two-Headed Giant. */
@@ -200,11 +202,14 @@ export function useGameSocket(roomId?: string) {
             setAccountRooms(msg.rooms);
             break;
           case 'deck':
-            setDeck({ main: msg.main, side: msg.side });
+            setDeck({ main: msg.main, side: msg.side, name: msg.name });
             break;
           case 'state':
             setGame(msg.state);
             setError(null);
+            break;
+          case 'replays':
+            setReplays({ match: msg.match, packed: msg.packed });
             break;
           case 'clock':
             setClock(msg.clock ? { player: msg.clock.player, kind: msg.clock.kind, deadline: Date.now() + msg.clock.ms } : null);
@@ -266,5 +271,5 @@ export function useGameSocket(roomId?: string) {
     else setError({ code: 'notConnected' });
   }, []);
 
-  return { status, room, watching, watchers, watch, info, gone, accountRooms, players, game, deck, error, setError, clock, match, size, send, outdated };
+  return { replays, status, room, watching, watchers, watch, info, gone, accountRooms, players, game, deck, error, setError, clock, match, size, send, outdated };
 }

@@ -1,6 +1,7 @@
 import { STATE_VERSION, type GameState, type PlayerId } from './engine/engine';
 import type { MatchScore } from './match';
 import { packState, unpackState } from './packState';
+import type { Replay } from './replay';
 import type { Card } from '../types';
 
 /**
@@ -30,6 +31,16 @@ export interface BotGame {
   commanders: Card[][];
   between: boolean;
   current: { first: PlayerId; scored: boolean };
+  /** The current game's replay so far. */
+  replay?: Replay;
+  /** The match: its id (in the history), the replays of its finished games, its result saved. */
+  matchInfo?: MatchInfo;
+}
+
+export interface MatchInfo {
+  id: string;
+  replays: string[];
+  recorded: boolean;
 }
 
 /** A line of the list of saved games. */

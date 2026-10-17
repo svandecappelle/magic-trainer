@@ -14,6 +14,16 @@ const MODE_ICONS = {
   commander: 'M4 21h20M6 21l-2-11 6 4 4-7 4 7 6-4-2 11',
 };
 
+/** The name of a deck or a preset deck, by id (in the current language for presets). */
+export function useDeckName(): (id: string) => string {
+  const t = useT();
+  const decks = useApp((s) => s.decks);
+  return (id) => {
+    const preset = PRESET_DECKS.find((p) => p.id === id);
+    return decks.find((d) => d.id === id)?.name ?? (preset ? (t.presets[preset.id] ?? preset.name) : id);
+  };
+}
+
 /** A game mode as a tile: duel or Two-Headed Giant (one of them), Commander rules (on or off, with either). */
 export function ModeTile({ mode, text: [title, text], on, onClick }: { mode: keyof typeof MODE_ICONS; text: [string, string]; on: boolean; onClick: () => void }) {
   return (

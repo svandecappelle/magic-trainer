@@ -70,7 +70,9 @@ players reconnect by themselves (their browser keeps their seat's secret for 3 d
 Rooms nobody touched for a day are deleted. Logged in with Discord, a player gets their seat back from any device
 (`/online` lists their games). Anyone else with the address can watch the game (up to 20 spectators, no hand
 shown). Players can turn on browser notifications for their turn, and the tab's title changes when the game needs
-them. Without a database, rooms live in memory and a restart ends them. Games
+them. Without a database, rooms live in memory and a restart ends them. Finished matches go in the history
+(`/history`: results per deck and opponent, replays of each game, downloadable as a file); logged in, the results are
+kept in the account too. Against the bot, your last actions can be taken back (Undo, Ctrl+Z). Games
 against the bot are saved in the browser (`/play/<id>`, the last 10).
 
 The database password is in `.env` next to `docker-compose.yml`: `make app` creates it with a random value the first
@@ -150,6 +152,7 @@ and open `http://<server>:8787`.
 | `src/lib/goldfish.ts` | Pure game-state reducer for solo practice (zones, mulligan, turns) |
 | `src/lib/engine/` | Simplified two-player rules engine with London mulligans, a stack and Arena-style priority windows with an optional per-player full control mode (`engine.ts`), card rules parsing (`rules.ts`), heuristic bot (`bot.ts`), preset decks |
 | `src/lib/multiplayer/` | Client/server message types, hidden-information redaction, WebSocket hook |
+| `src/lib/replay.ts`, `src/lib/history.ts` | Game replays (first state + steps), match results and their stats; `server/history.ts` keeps them per account |
 | `server/` | Node WebSocket game server: rooms, seats, reconnection (`rooms.ts`), HTTP/static wiring (`index.ts`) |
 | `server/auth.ts`, `server/http.ts` | Login with Discord, sessions, `/api/me`; cookie, JSON body and rate-limit helpers |
 | `server/decks.ts` | Saved decks and collection API (`/api/decks`, `/api/collection`): versions, conflicts, tombstones, limits |

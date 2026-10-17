@@ -27,7 +27,7 @@ describe.skipIf(!testDbUrl)('database', () => {
     expect(await migrate(pool)).toContain('001_accounts.sql');
     expect(await migrate(pool)).toEqual([]);
     const { rows } = await pool.query(`SELECT table_name FROM information_schema.tables WHERE table_schema = $1 ORDER BY 1`, [schema]);
-    expect(rows.map((r) => r.table_name)).toEqual(['cards', 'collection_cards', 'deck_cards', 'decks', 'identities', 'rooms', 'schema_migrations', 'sessions', 'users']);
+    expect(rows.map((r) => r.table_name)).toEqual(['cards', 'collection_cards', 'deck_cards', 'decks', 'identities', 'match_results', 'rooms', 'schema_migrations', 'sessions', 'users']);
   });
 
   it('enforces the constraints of the data model', async () => {

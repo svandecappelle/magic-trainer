@@ -3,6 +3,9 @@ import { actor, type GameState } from '../src/lib/engine/engine';
 import type { ServerMessage } from '../src/lib/multiplayer/protocol';
 import type { Card } from '../src/types';
 import { scryfallDeckCheck } from './cards';
+import type { StoredResult } from './history';
+import { replayStates, type Replay } from '../src/lib/replay';
+import { unpackState } from '../src/lib/packState';
 import { RoomManager, type Conn } from './rooms';
 
 class FakeConn implements Conn {
@@ -214,6 +217,42 @@ describe('spectators', () => {
     rooms.handle(alice, { t: 'leave' });
     rooms.handle(bob, { t: 'leave' });
     expect(eve.last('error')).toMatchObject({ code: 'gameGone', lostRoom: true });
+  });
+});
+
+describe('replays and results', () => {
+  it('records every game of the match, given once the match is over, and the results of logged-in players', async () => {
+    vi.useFakeTimers();
+    const saved: [string, StoredResult][] = [];
+    const rooms = new RoomManager({ rng: () => 0.1, decisionMs: 1000, history: { add: async (user, rs) => void saved.push(...rs.map((r): [string, StoredResult] => [user, r])) } });
+    const alice = Object.assign(new FakeConn(), { userId: 'u-alice' });
+    const bob = new FakeConn();
+    rooms.handle(alice, { t: 'create', name: 'Alice', deckName: 'Red', deck, bestOf: 3 });
+    rooms.handle(bob, { t: 'join', code: alice.last('joined')!.code, name: 'Bob', deckName: 'Mono Bob', deck });
+    // Game 1: Alice keeps (in time), Bob runs out of time once, then concedes.
+    rooms.handle(alice, { t: 'action', action: { type: 'keep', bottom: [] } });
+    vi.advanceTimersByTime(1000);
+    vi.useRealTimers();
+    rooms.handle(bob, { t: 'action', action: { type: 'concede', player: 1 } });
+    const game1 = alice.state;
+    // Not before the match is over.
+    rooms.handle(alice, { t: 'replays' });
+    expect(alice.last('error')!.code).toBe('gameNotOver');
+    rooms.handle(alice, { t: 'rematch' });
+    rooms.handle(bob, { t: 'rematch' });
+    rooms.handle(bob, { t: 'action', action: { type: 'concede', player: 1 } });
+    expect(saved).toEqual([['u-alice', expect.objectContaining({ kind: 'online', deck: 'Red', opponent: 'Bob', result: 'win', wins: 2, losses: 0, bestOf: 3 })]]);
+
+    rooms.handle(bob, { t: 'replays' });
+    const { match, packed } = bob.last('replays')!;
+    expect(match).toBe(saved[0][1].id);
+    const replays = unpackState<Replay[]>(packed);
+    expect(replays).toHaveLength(2);
+    // The first game played again: the same end as the players saw (Alice's view hides Bob's hand and the libraries).
+    const end = replayStates({ replay: replays[0], end: { log: game1.log.length, winner: game1.winner } });
+    expect(end.diverged).toBe(false);
+    expect(end.states.at(-1)!.log).toEqual(game1.log);
+    expect(end.states.at(-1)!.log).toContainEqual({ k: 'timedOut', p: 1 });
   });
 });
 

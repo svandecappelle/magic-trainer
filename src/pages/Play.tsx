@@ -1,14 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { BetweenGames } from '../components/BetweenGames';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { DeckPicker, EngineSummary, LifeChoice, ModeTile, Segmented } from '../components/Setup';
+import { DeckPicker, EngineSummary, LifeChoice, ModeTile, Segmented, useDeckName } from '../components/Setup';
 import { GameBoard } from '../components/GameBoard';
 import { botAction, fallbackAction } from '../lib/engine/bot';
-import { actor, apply, IllegalAction, newGame, teamOf, teamsOf, type GameState, type PlayerId } from '../lib/engine/engine';
+import { actor, apply, IllegalAction, newGame, teamOf, teamsOf, type Action, type GameState, type PlayerId } from '../lib/engine/engine';
 import { loadDeck75 } from '../lib/loadDeck';
-import { deleteBotGame, listBotGames, loadBotGame, saveBotGame, type BotGame, type BotSetup } from '../lib/botGames';
-import { PRESET_DECKS } from '../lib/engine/presets';
-import { matchWinner, newMatch, nextFirst, recordGame, type MatchScore } from '../lib/match';
+import { deleteBotGame, listBotGames, loadBotGame, saveBotGame, type BotGame, type BotSetup, type MatchInfo } from '../lib/botGames';
+import { newReplay, saveReplay, type Replay, type ReplayFile } from '../lib/replay';
+import { saveResult, syncResults } from '../lib/history';
+import { useAccount } from '../store/useAccount';
+import { matchOver, matchWinner, newMatch, nextFirst, recordGame, type MatchScore } from '../lib/match';
 import type { Card } from '../types';
 import { errorText, useT, type AppError } from '../i18n';
 import { useApp } from '../store/useApp';
@@ -18,6 +20,8 @@ const ME: PlayerId = 0;
 const BOT_DELAY_MS = 650;
 /** Wait for the game to settle before saving it (the bot plays several actions in a row). */
 const SAVE_DELAY_MS = 300;
+/** Your actions that can be taken back, the most recent ones. */
+const UNDO_KEEP = 30;
 
 export function Play() {
   const t = useT();
@@ -56,6 +60,12 @@ export function Play() {
   const [between, setBetween] = useState(false);
   /** Who played first in the current game, and whether its result is already in the score. */
   const current = useRef<{ first: PlayerId; scored: boolean }>({ first: ME, scored: true });
+  /** The current game's replay, and the match (its id, its games' replays, its result saved). */
+  const replay = useRef<Replay | null>(null);
+  const matchInfo = useRef<MatchInfo>({ id: '', replays: [], recorded: true });
+  /** The states before your last actions, to take them back (the bot's answers with them). */
+  const undoStack = useRef<{ game: GameState; steps: number }[]>([]);
+  const loggedIn = useAccount((s) => !!s.user);
 
   // ---------- The game's own address: /play/<id>, saved in this browser (lib/botGames.ts) ----------
   const { gameId } = useParams();
@@ -83,45 +93,97 @@ export function Play() {
     setMatch(saved.match); setMyCards(saved.myCards); setBotCards(saved.botCards); setCommanders(saved.commanders);
     setBetween(saved.between);
     current.current = saved.current;
+    replay.current = saved.replay ?? null;
+    matchInfo.current = saved.matchInfo ?? { id: gameId!, replays: [], recorded: false };
+    undoStack.current = [];
     setGame(saved.game);
   }, [gameId]);
   // Saved after each change, once the game is still for a moment.
   useEffect(() => {
     if (!game || !gameId || loadedId.current !== gameId) return;
     const timer = setTimeout(() => {
-      const saved: BotGame = { setup: setup(), game, match, myCards, botCards, commanders, between, current: current.current };
+      const saved: BotGame = {
+        setup: setup(), game, match, myCards, botCards, commanders, between, current: current.current,
+        ...(replay.current ? { replay: replay.current } : {}), matchInfo: matchInfo.current,
+      };
       const opponents = twoHeaded ? [botDeck, botDeck2] : [botDeck];
       saveBotGame(gameId, saved, [deckName(myDeck), opponents.map(deckName).join(' & ')]);
     }, SAVE_DELAY_MS);
     return () => clearTimeout(timer);
   });
-  function deckName(id: string) {
-    const preset = PRESET_DECKS.find((p) => p.id === id);
-    return decks.find((d) => d.id === id)?.name ?? (preset ? (t.presets[preset.id] ?? preset.name) : id);
-  }
+  const deckName = useDeckName();
 
-  // Count each finished game once in the match score.
+  /** "Mono Red vs Elves": the match's title in the history and the replays. */
+  const opponentTitle = () => (twoHeaded ? [botDeck, botDeck2] : [botDeck]).map(deckName).join(' & ');
+
+  // Count each finished game once in the match score, and keep its replay.
   useEffect(() => {
     if (!game || game.winner === null || current.current.scored) return;
     current.current.scored = true;
+    undoStack.current = [];
+    if (replay.current) {
+      const file: ReplayFile = {
+        id: crypto.randomUUID(), at: Date.now(), title: `${deckName(myDeck)} vs ${opponentTitle()}`, me: ME,
+        replay: replay.current, end: { log: game.log.length, winner: game.winner },
+      };
+      if (saveReplay(file)) matchInfo.current.replays.push(file.id);
+    }
     // The score is kept per team.
     setMatch((m) => (m ? recordGame(m, game.winner === 'draw' ? 'draw' : teamOf(game, game.winner!), teamOf(game, current.current.first)) : m));
   }, [game]);
+
+  // A finished match goes in the history (and the account's, logged in).
+  useEffect(() => {
+    const info = matchInfo.current;
+    if (!match || !matchOver(match) || info.recorded || !info.id) return;
+    info.recorded = true;
+    const winner = matchWinner(match);
+    saveResult({
+      id: info.id, at: Date.now(), kind: 'bot', twoHeaded, commander, bestOf: match.bestOf, deck: deckName(myDeck), opponent: opponentTitle(),
+      result: winner === null ? 'draw' : winner === 0 ? 'win' : 'loss', wins: match.wins[0], losses: match.wins[1], replays: [...info.replays],
+    });
+    if (loggedIn) syncResults().catch(() => {}); // sent later from the History page otherwise
+  }, [match]);
+
+  /** Plays an action, recorded in the replay; `mine`: yours, which can be taken back. Throws IllegalAction. */
+  function play(from: GameState, action: Action, mine: boolean) {
+    const next = apply(from, action);
+    if (mine) undoStack.current = [...undoStack.current.slice(1 - UNDO_KEEP), { game: from, steps: replay.current?.steps.length ?? 0 }];
+    replay.current?.steps.push({ a: action });
+    setGame(next);
+  }
+
+  /** Takes back your last action, and what the bot did after it. Not once the game is over. */
+  const canUndo = !!game && game.winner === null && undoStack.current.length > 0;
+  function undo() {
+    const last = undoStack.current.at(-1);
+    if (!last || !game || game.winner !== null) return;
+    undoStack.current = undoStack.current.slice(0, -1);
+    if (replay.current) replay.current.steps.length = last.steps;
+    setGame(last.game);
+  }
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z' || e.shiftKey) return;
+      if ((e.target as HTMLElement)?.closest('input, textarea, select')) return;
+      e.preventDefault();
+      undo();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   // The bot acts on a timer so the human can follow what it does.
   useEffect(() => {
     const bot = (g: GameState) => { const a = actor(g); return a !== null && a !== ME; };
     if (!game || !bot(game)) return;
     const timer = setTimeout(() => {
-      setGame((g) => {
-        if (!g || !bot(g)) return g;
-        try {
-          return apply(g, botAction(g));
-        } catch (e) {
-          if (!(e instanceof IllegalAction)) throw e;
-          return apply(g, fallbackAction(g));
-        }
-      });
+      try {
+        play(game, botAction(game), false);
+      } catch (e) {
+        if (!(e instanceof IllegalAction)) throw e;
+        play(game, fallbackAction(game), false);
+      }
     }, BOT_DELAY_MS);
     return () => clearTimeout(timer);
   }, [game]);
@@ -129,15 +191,18 @@ export function Play() {
   function startGame(firstPlayer: PlayerId, mine: Card[], others: Card[][], cmd: Card[][] = commanders) {
     current.current = { first: firstPlayer, scored: false };
     setBetween(false);
+    undoStack.current = [];
     // An empty name is displayed as "You" in the current language.
     const names = others.length === 3 ? ['', t.play.allyName, t.play.botName1, t.play.botName2] : ['', t.play.botName];
-    setGame(newGame({
+    const started = newGame({
       decks: [mine, ...others], names, first: firstPlayer,
       mode: { twoHeaded: others.length === 3, commander, ...(commander && others.length === 1 && duelLife === 20 ? { duelCommander: true } : {}) },
       ...(commander ? { commanders: cmd } : {}),
       // A rematch keeps the full control setting.
       fullControl: game?.fullControl?.length === others.length + 1 ? game.fullControl : undefined,
-    }));
+    });
+    replay.current = newReplay(started);
+    setGame(started);
   }
 
   /** A new match (one game, or the first game of a best of 3) with the chosen decks. */
@@ -152,6 +217,7 @@ export function Play() {
       const them: PlayerId = twoHeaded ? 2 : 1;
       const firstPlayer: PlayerId = first === 'me' ? ME : first === 'bot' ? them : Math.random() < 0.5 ? ME : them;
       const cmd = [mine, ...others].map((d) => d.commander);
+      matchInfo.current = { id: crypto.randomUUID(), replays: [], recorded: false };
       setMatch(newMatch(bestOf));
       setMyCards(mine);
       setBotCards(others.map((d) => d.main));
@@ -178,6 +244,7 @@ export function Play() {
         <h1>{t.play.title}</h1>
         {missing && <div className="banner">{t.play.gameMissing}</div>}
         <SavedGames />
+        <p className="small history-link"><Link to="/history">{t.history.title} →</Link></p>
 
         <section className="setup-section">
           <h4>{t.play.gameType}</h4>
@@ -259,10 +326,20 @@ export function Play() {
       <GameBoard
         game={game}
         me={ME}
-        onAction={(action) => setGame(apply(game, action))}
-        notice={bo3 && match ? <div className="muted">{t.match.inGame(match.games + (game.winner === null ? 1 : 0), t.match.score(names[0], match.wins[0], match.wins[1], names[1]))}</div> : undefined}
+        onAction={(action) => play(game, action, true)}
+        notice={
+          <>
+            {bo3 && match && <div className="muted">{t.match.inGame(match.games + (game.winner === null ? 1 : 0), t.match.score(names[0], match.wins[0], match.wins[1], names[1]))}</div>}
+            {game.winner === null && (
+              <button type="button" className="icon undo-button" disabled={!canUndo} title={t.play.undoHint} onClick={undo}>↶ {t.play.undo}</button>
+            )}
+          </>
+        }
         endControls={
           <>
+            {matchInfo.current.replays.length > 0 && (
+              <Link className="button secondary" to={`/history/replay/${matchInfo.current.replays.at(-1)}`}>{t.history.watchReplay}</Link>
+            )}
             {bo3 && !over && <button onClick={() => setBetween(true)}>{t.match.nextGame}</button>}
             {bo3 && over && <button onClick={() => setBetween(true)}>{t.match.score(names[0], match!.wins[0], match!.wins[1], names[1])}</button>}
             <button className={bo3 && !over ? 'secondary' : ''} onClick={start}>{bo3 ? t.match.newMatch : t.play.rematch}</button>

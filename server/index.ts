@@ -9,6 +9,7 @@ import { deckRoutes, purgeDeletedDecks } from './decks';
 import { storedLookup } from './db/cards';
 import { migrate, openDb, waitForDb } from './db/index';
 import { ROOM_KEEP_HOURS, roomStore } from './db/roomStore';
+import { historyRoutes, historyStore } from './history';
 import { sendJson } from './http';
 import { RoomManager, type Conn } from './rooms';
 
@@ -85,6 +86,7 @@ const server = createServer(async (req, res) => {
   try {
     if (await account.handle(req, res, url)) return;
     if (await decks.handle(req, res, url)) return;
+    if (await history.handle(req, res, url)) return;
     if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { error: 'notFound' });
     serveStatic(res, url);
   } catch (e) {
@@ -98,6 +100,9 @@ const server = createServer(async (req, res) => {
 const cardCheck = parseCardCheck(process.env.CARD_CHECK);
 const lookup = db ? storedLookup(db, fetchCardsById) : fetchCardsById;
 const decks = deckRoutes({ pool: db, account, lookup });
+// Results of finished matches, per account.
+const results = db ? historyStore(db) : null;
+const history = historyRoutes({ store: results, account });
 // Online rooms are saved in the database (when there is one), so a restart doesn't end the games.
 const store = db ? roomStore(db) : null;
 if (db && store) {
@@ -113,6 +118,7 @@ const rooms = new RoomManager({
   // Players can come back to a room (its address) for a day.
   emptyRoomTtlMs: ROOM_KEEP_HOURS * 3600_000,
   ...(store ? { store } : {}),
+  ...(results ? { history: results } : {}),
 });
 if (store) {
   try {

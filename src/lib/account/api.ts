@@ -1,4 +1,5 @@
 import type { Board, CollectionEntry, Deck } from '../../types';
+import type { MatchResult } from '../history';
 
 /** Client of the account API (server/auth.ts, server/decks.ts; docs/accounts.md). */
 
@@ -78,6 +79,8 @@ export const accountApi = {
   deleteDeck: (id: string) => request<DeletedDeck>('DELETE', `/api/decks/${id}`),
   collection: (since: number | null) => request<CollectionChanges>('GET', `/api/collection${since === null ? '' : `?since=${since}`}`),
   patchCollection: (changes: { cardId: string; qty: number; foilQty: number }[]) => request<{ count: number }>('PATCH', '/api/collection', changes),
+  history: () => request<{ results: MatchResult[] }>('GET', '/api/history'),
+  postHistory: (results: MatchResult[]) => request<{ count: number }>('POST', '/api/history', results),
 };
 
 export type AccountApi = typeof accountApi;

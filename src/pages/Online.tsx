@@ -2,9 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { BetweenGames } from '../components/BetweenGames';
 import { GameBoard } from '../components/GameBoard';
-import { DeckPicker, EngineSummary, LifeChoice, ModeTile, Segmented } from '../components/Setup';
+import { DeckPicker, EngineSummary, LifeChoice, ModeTile, Segmented, useDeckName } from '../components/Setup';
 import { loadDeck75 } from '../lib/loadDeck';
-import { matchWinner } from '../lib/match';
+import { matchOver, matchWinner } from '../lib/match';
+import { hasResult, saveResult } from '../lib/history';
+import { replayStates, saveReplay, type Replay } from '../lib/replay';
+import { unpackState } from '../lib/packState';
 import { teamOf, teamsOf } from '../lib/engine/engine';
 import type { Card } from '../types';
 import { MIN_DECK_SIZE } from '../lib/multiplayer/protocol';
@@ -30,7 +33,7 @@ export function Online() {
   // /online/<id>: a room's own address (an invite link, or the room you are in).
   const { roomId } = useParams();
   const navigate = useNavigate();
-  const { status, room, watching, watchers, watch, info, gone, accountRooms, players, game, deck, error, setError, send, clock, match, size, outdated } = useGameSocket(roomId);
+  const { replays, status, room, watching, watchers, watch, info, gone, accountRooms, players, game, deck, error, setError, send, clock, match, size, outdated } = useGameSocket(roomId);
   // Seated in a room: its address in the URL (after creating or joining one).
   useEffect(() => {
     if (room && !roomId) navigate(`/online/${room.id}`, { replace: true });
@@ -47,6 +50,7 @@ export function Online() {
   const [commander, setCommander] = useState(false);
   const [duelLife, setDuelLife] = useState<40 | 20>(40);
   const [deckId, setDeckId] = useState(decks[0]?.id ?? 'preset-red');
+  const nameOfDeck = useDeckName();
   const chosen = decks.find((d) => d.id === deckId);
   useEffect(() => {
     if (chosen?.format === 'commander') setCommander(true);
@@ -91,6 +95,45 @@ export function Online() {
     const timer = setTimeout(() => setPresence(null), 8000);
     return () => clearTimeout(timer);
   }, [players, room, t]);
+  // ---------- A finished match: its replays and its result in this browser's history ----------
+  /** This match's replays kept in this browser. */
+  const [replayIds, setReplayIds] = useState<string[]>([]);
+  const finished = !!game && game.winner !== null && !!match && matchOver(match) && !!room;
+  const askedReplays = useRef<string | null>(null);
+  useEffect(() => {
+    if (!finished || status !== 'open') return;
+    const key = `${room!.id}/${match!.games}/${match!.wins.join('-')}`;
+    if (askedReplays.current === key) return;
+    askedReplays.current = key;
+    send({ t: 'replays' });
+  }, [finished, status, room, match, send]);
+  useEffect(() => {
+    if (!replays || !room || !game || !match || hasResult(replays.match)) return;
+    const team = teamOf(game, room.seat);
+    const opponents = players.filter((_, i) => teamOf(game, i) !== team).map((p) => p.name).join(' & ');
+    const mine = deck?.name || players[room.seat]?.name || '';
+    let list: Replay[] = [];
+    try {
+      list = unpackState<Replay[]>(replays.packed);
+    } catch {
+      // no replay, the result is still kept
+    }
+    const ids: string[] = [];
+    list.forEach((replay, i) => {
+      const last = replayStates({ replay, end: { log: 0, winner: null } }).states.at(-1)!;
+      const id = crypto.randomUUID();
+      const title = `${mine} vs ${opponents}${list.length > 1 ? ` · ${t.history.gameN(i + 1)}` : ''}`;
+      if (saveReplay({ id, at: Date.now(), title, me: room.seat, replay, end: { log: last.log.length, winner: last.winner } })) ids.push(id);
+    });
+    const winner = matchWinner(match);
+    saveResult({
+      id: replays.match, at: Date.now(), kind: 'online', twoHeaded: size === 4, commander: !!game.mode?.commander,
+      bestOf: match.bestOf, deck: mine, opponent: opponents, result: winner === null ? 'draw' : winner === team ? 'win' : 'loss',
+      wins: match.wins[team], losses: match.wins[1 - team], replays: ids,
+    });
+    setReplayIds(ids);
+  }, [replays]);
+
   const myMove = !!game && !!room && (!roomId || room.id === roomId) && game.winner === null && actor(game) === room.seat;
   useCallBack(myMove ? t.online.alertYourMove : presence, notify.on);
 
@@ -107,10 +150,11 @@ export function Online() {
       const { main: deck, side, commander: commanders } = await loadDeck75(deckId, decks);
       if (deck.length < MIN_DECK_SIZE) return setError({ code: 'deckTooSmall', params: { n: MIN_DECK_SIZE } });
       const sideboard = side.slice(0, 30);
+      const deckName = nameOfDeck(deckId);
       send(kind === 'create'
-        ? { t: 'create', name, deck, sideboard, commanders, bestOf, size: twoHeaded ? 4 : 2, commander, duelCommander: commander && !twoHeaded && duelLife === 20 }
-        : kind === 'joinLink' ? { t: 'join', room: roomId, name, deck, sideboard, commanders }
-        : { t: 'join', code: code.trim().toUpperCase(), name, deck, sideboard, commanders });
+        ? { t: 'create', name, deckName, deck, sideboard, commanders, bestOf, size: twoHeaded ? 4 : 2, commander, duelCommander: commander && !twoHeaded && duelLife === 20 }
+        : kind === 'joinLink' ? { t: 'join', room: roomId, name, deckName, deck, sideboard, commanders }
+        : { t: 'join', code: code.trim().toUpperCase(), name, deckName, deck, sideboard, commanders });
     } catch (e) {
       setError({ code: 'loadFailed', params: { message: e instanceof Error ? e.message : String(e) } });
     } finally {
@@ -308,6 +352,7 @@ export function Online() {
         {busy && <div className="small muted">{t.common.loadingCards}</div>}
         {error && <div className="error small">{errorText(t, error)}</div>}
 
+        <p className="small history-link"><Link to="/history">{t.history.title} →</Link></p>
         <EngineSummary deck={chosen} />
       </div>
     );
@@ -439,6 +484,9 @@ export function Online() {
               <button disabled={iWantRematch || !allHere} onClick={() => send({ t: 'rematch' })}>
                 {iWantRematch ? t.online.waitingFor(waitingOn?.name ?? t.online.opponent) : bo3 ? t.match.newMatch : t.play.rematch}
               </button>
+            )}
+            {finished && replayIds.length > 0 && (
+              <Link className="button secondary" to={`/history/replay/${replayIds.at(-1)}`}>{t.history.watchReplay}</Link>
             )}
             <button className="secondary" onClick={() => leave()}>{t.online.leave}</button>
           </>

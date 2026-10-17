@@ -239,6 +239,8 @@ All JSON. Routes under `/api` need a session (401 otherwise), except `/api/me`.
 | DELETE | `/api/decks/:id`              | Marks the deck deleted (tombstone); returns `{ id, version, deletedAt }` |
 | GET    | `/api/collection?since=<cursor>` | `{ cards: [{ card, qty, foilQty }], removed: [cardId], cursor }`: the collection, or what changed since the cursor (`removed`: cards now at 0 and 0) |
 | PATCH  | `/api/collection`             | `[{ cardId, qty, foilQty }]`, absolute values (0 and 0 removes); returns `{ count }` |
+| GET    | `/api/history`                | `{ results }`: the account's match results, most recent first (the last 1 000) |
+| POST   | `/api/history`                | `[result]` of matches against the bot (up to 200); a match already there is left as it is; returns `{ count }` |
 
 - Decks come back with full card data (`cards.data`), in the client's `Deck` shape.
 - Unknown card ids are fetched from Scryfall before saving. If Scryfall is unreachable, the API answers 503 and
@@ -294,6 +296,21 @@ for a day, or saved by another `STATE_VERSION` of the engine, are deleted.
 A seat taken while logged in remembers the account: the same account opening the room's address on another device
 gets the seat back (with a new secret), and `/online` lists the account's rooms (`myRooms`, sent after `hello`). The
 WebSocket's user is read from the session cookie only for connections whose `Origin` is `PUBLIC_URL`.
+
+## Match history and replays
+
+Finished matches go in the history (`/history`, `src/lib/history.ts`): `{ id, at, kind: 'bot'|'online', twoHeaded,
+commander, bestOf, deck, opponent, result: 'win'|'loss'|'draw', wins, losses }`. The browser keeps the last 500
+(`mt.history`). Logged in, they also go in the `match_results` table (`005_match_results.sql`, key `(user_id, id)`):
+the server records online matches itself (for each seat taken while logged in; the deck's name comes with `create` /
+`join`), the browser sends the bot matches (`POST /api/history`, then marks them sent). The id is the match's, shared
+by both players of an online match, so the browser's list and the account's merge without doubles.
+
+A replay is a game's first state and every step since (actions, and log lines the server adds); the engine is
+deterministic, so playing the steps again gives every state (`src/lib/replay.ts`). The server records each game of
+the match in the room and sends them (`replays`) once the match is over, not before (they show hands and libraries).
+The browser keeps the last 30 replays (`mt.replay.<id>`); they can be downloaded as a file and opened again (same
+`STATE_VERSION` only). A replay that plays differently with the current rules is flagged.
 
 ## Security
 

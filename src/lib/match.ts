@@ -26,6 +26,11 @@ export function matchWinner(m: MatchScore): PlayerId | null {
   return m.wins[0] >= needed ? 0 : m.wins[1] >= needed ? 1 : null;
 }
 
+/** No game left to play: someone won the match, or the single game of a best of 1 ended (a draw too). */
+export function matchOver(m: MatchScore): boolean {
+  return matchWinner(m) !== null || (m.bestOf === 1 && m.games >= 1);
+}
+
 /** The loser of the last game plays first in the next one (after a draw, the other player does). */
 export function nextFirst(lastWinner: PlayerId | 'draw', lastFirst: PlayerId): PlayerId {
   if (lastWinner === 'draw') return lastFirst === 0 ? 1 : 0;

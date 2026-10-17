@@ -7,11 +7,11 @@ export type ClientMessage =
   /**
    * `bestOf`: a single game or a best of 3; `size`: 2 players, or 4 for Two-Headed Giant (seats 0+1 against 2+3);
    * `commander`: Commander rules, `duelCommander`: its 20 life in a duel (all chosen by the room's creator). `sideboard`: for sideboarding between games;
-   * `commanders`: the deck's commanders.
+   * `commanders`: the deck's commanders; `deckName`: for the match history.
    */
-  | { t: 'create'; name: string; deck: Card[]; sideboard?: Card[]; commanders?: Card[]; bestOf?: 1 | 3; size?: 2 | 4; commander?: boolean; duelCommander?: boolean }
+  | { t: 'create'; name: string; deckName?: string; deck: Card[]; sideboard?: Card[]; commanders?: Card[]; bestOf?: 1 | 3; size?: 2 | 4; commander?: boolean; duelCommander?: boolean }
   /** Join a room by its address (`room`, the id in /online/<id>) or its code. */
-  | { t: 'join'; room?: string; code?: string; name: string; deck: Card[]; sideboard?: Card[]; commanders?: Card[] }
+  | { t: 'join'; room?: string; code?: string; name: string; deckName?: string; deck: Card[]; sideboard?: Card[]; commanders?: Card[] }
   /** The page /online/<id> is open: back to the seat (`token`: the seat's secret), or what is needed to join. */
   | { t: 'open'; room: string; token?: string }
   /** Watch the room's game without a seat (no hand is shown); `leave` stops watching. */
@@ -19,7 +19,9 @@ export type ClientMessage =
   | { t: 'action'; action: Action }
   /** Ready for the next game; `deck`: the main deck after sideboarding (cards from your main deck and sideboard). */
   | { t: 'rematch'; deck?: Card[] }
-  | { t: 'leave' };
+  | { t: 'leave' }
+  /** The replays of the match's games, once it is over. */
+  | { t: 'replays' };
 
 export interface LobbyPlayer {
   name: string;
@@ -46,11 +48,13 @@ export type ServerMessage =
   | { t: 'watching'; room: string; code: string }
   /** After hello, for a logged-in account: the rooms where it has a seat (to come back from any device). */
   | { t: 'myRooms'; rooms: { room: string; code: string; players: string[]; over: boolean }[] }
-  /** Your main deck for the current game, and the other cards you brought (to sideboard between games). */
-  | { t: 'deck'; main: Card[]; side: Card[] }
+  /** Your main deck for the current game, and the other cards you brought (to sideboard between games); its name. */
+  | { t: 'deck'; main: Card[]; side: Card[]; name?: string }
   /** A room opened by its address without holding a seat in it: who is there, and whether a seat is free. */
   | { t: 'roomInfo'; room: string; code: string; size: number; mode: GameMode; bestOf: 1 | 3; players: string[]; started: boolean }
   | { t: 'state'; state: GameState }
+  /** The replays of a finished match's games (Replay[], packed with packState); `match`: its id. */
+  | { t: 'replays'; match: string; packed: string }
   | { t: 'left' }
   /**
    * Who is on the clock and how long they have left (ms): to make a decision ("turn"), or to come back
