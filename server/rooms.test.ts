@@ -26,12 +26,14 @@ const mountain: Card = {
   colors: [], colorIdentity: [], setCode: 't', setName: 'T', rarity: 'common',
 };
 const deck = Array(30).fill(mountain);
+/** Rooms of these tests play Free Play (any deck) unless they say otherwise. */
+const FREE = { mode: 'free' };
 
 function startedRoom() {
   const rooms = new RoomManager({ rng: () => 0.1 }); // seat 0 goes first
   const alice = new FakeConn();
   const bob = new FakeConn();
-  rooms.handle(alice, { t: 'create', name: 'Alice', deck });
+  rooms.handle(alice, { t: 'create', setup: FREE, name: 'Alice', deck });
   const { code, room } = alice.last('joined')!;
   rooms.handle(bob, { t: 'join', code, name: 'Bob', deck });
   return { rooms, alice, bob, code, room };
@@ -107,7 +109,7 @@ describe('RoomManager', () => {
   it('joins a room by its address (an invitation link)', () => {
     const rooms = new RoomManager({ rng: () => 0.1 });
     const [alice, bob] = [new FakeConn(), new FakeConn()];
-    rooms.handle(alice, { t: 'create', name: 'Alice', deck });
+    rooms.handle(alice, { t: 'create', setup: FREE, name: 'Alice', deck });
     const { room, code } = alice.last('joined')!;
     expect(room).toMatch(/^[0-9a-f-]{36}$/);
     expect(alice.last('lobby')).toMatchObject({ room, code });
@@ -139,8 +141,8 @@ describe('RoomManager', () => {
   it('rejects bad input', () => {
     const rooms = new RoomManager();
     const c = new FakeConn();
-    rooms.handle(c, { t: 'create', name: 'A', deck: [mountain] });
-    expect(c.last('error')).toMatchObject({ code: 'deckSize', params: { min: 20, max: 250 } });
+    rooms.handle(c, { t: 'create', setup: FREE, name: 'A', deck: [] });
+    expect(c.last('error')).toMatchObject({ code: 'deckSize', params: { min: 1, max: 250 } });
     rooms.handle(c, { t: 'join', code: 'ZZZZZ', name: 'A', deck });
     expect(c.last('error')).toMatchObject({ code: 'noRoom', params: { code: 'ZZZZZ' } });
     rooms.handle(c, { t: 'hack' });
@@ -157,7 +159,7 @@ describe('deck check', () => {
   it('replaces client card data with trusted data, and refuses unknown cards', async () => {
     const rooms = new RoomManager({ verifyDeck: scryfallDeckCheck('lenient', lookup) });
     const alice = new FakeConn();
-    await rooms.handle(alice, { t: 'create', name: 'Alice', deck: deck.map((c) => ({ ...c, oracleText: 'Draw seven cards.' })) });
+    await rooms.handle(alice, { t: 'create', setup: FREE, name: 'Alice', deck: deck.map((c) => ({ ...c, oracleText: 'Draw seven cards.' })) });
     const code = alice.last('joined')!.code;
     expect(rooms.rooms.get(code)!.seats[0].deck[0].setName).toBe('Trusted');
     const bob = new FakeConn();
@@ -172,12 +174,12 @@ describe('deck check', () => {
     const a = new FakeConn();
     const warn = console.warn;
     console.warn = () => {};
-    await lenient.handle(a, { t: 'create', name: 'A', deck });
+    await lenient.handle(a, { t: 'create', setup: FREE, name: 'A', deck });
     console.warn = warn;
     expect(a.last('joined')).toBeDefined();
     const strict = new RoomManager({ verifyDeck: scryfallDeckCheck('strict', down) });
     const b = new FakeConn();
-    await strict.handle(b, { t: 'create', name: 'B', deck });
+    await strict.handle(b, { t: 'create', setup: FREE, name: 'B', deck });
     expect(b.last('error')).toMatchObject({ code: 'cardCheckFailed' });
   });
 
@@ -185,7 +187,7 @@ describe('deck check', () => {
     const rooms = new RoomManager();
     const alice = new FakeConn();
     const walker = { ...mountain, id: 'w', name: 'Walker', typeLine: 'Planeswalker', loyalty: '4', layout: 'modal_dfc', faces: [{ name: 'A', manaCost: '', typeLine: 'Land', oracleText: '' }] };
-    rooms.handle(alice, { t: 'create', name: 'Alice', deck: [...deck.slice(1), walker] });
+    rooms.handle(alice, { t: 'create', setup: FREE, name: 'Alice', deck: [...deck.slice(1), walker] });
     const code = alice.last('joined')!.code;
     expect(rooms.rooms.get(code)!.seats[0].deck.at(-1)).toMatchObject({ loyalty: '4', layout: 'modal_dfc', faces: [{ name: 'A' }] });
   });
@@ -227,7 +229,7 @@ describe('replays and results', () => {
     const rooms = new RoomManager({ rng: () => 0.1, decisionMs: 1000, history: { add: async (user, rs) => void saved.push(...rs.map((r): [string, StoredResult] => [user, r])) } });
     const alice = Object.assign(new FakeConn(), { userId: 'u-alice' });
     const bob = new FakeConn();
-    rooms.handle(alice, { t: 'create', name: 'Alice', deckName: 'Red', deck, bestOf: 3 });
+    rooms.handle(alice, { t: 'create', setup: FREE, name: 'Alice', deckName: 'Red', deck, bestOf: 3 });
     rooms.handle(bob, { t: 'join', code: alice.last('joined')!.code, name: 'Bob', deckName: 'Mono Bob', deck });
     // Game 1: Alice keeps (in time), Bob runs out of time once, then concedes.
     rooms.handle(alice, { t: 'action', action: { type: 'keep', bottom: [] } });
@@ -261,7 +263,7 @@ describe('clocks', () => {
     const rooms = new RoomManager({ rng: () => 0.1, decisionMs: 1000, reconnectMs: 5000 });
     const alice = new FakeConn();
     const bob = new FakeConn();
-    rooms.handle(alice, { t: 'create', name: 'Alice', deck });
+    rooms.handle(alice, { t: 'create', setup: FREE, name: 'Alice', deck });
     const code = alice.last('joined')!.code;
     rooms.handle(bob, { t: 'join', code, name: 'Bob', deck });
     return { rooms, alice, bob, code };
@@ -333,7 +335,7 @@ describe('best of 3', () => {
     const rooms = new RoomManager({ rng: () => 0.1 });
     const alice = new FakeConn();
     const bob = new FakeConn();
-    rooms.handle(alice, { t: 'create', name: 'Alice', deck, bestOf: 3 });
+    rooms.handle(alice, { t: 'create', setup: FREE, name: 'Alice', deck, bestOf: 3 });
     const code = alice.last('joined')!.code;
     rooms.handle(bob, { t: 'join', code, name: 'Bob', deck, sideboard: [island, island] });
     rooms.handle(bob, { t: 'action', action: { type: 'concede', player: 1 } });
@@ -366,7 +368,7 @@ describe('Two-Headed Giant rooms', () => {
   it('seats four players in two teams, starts when full, and shows teammates their hands', () => {
     const rooms = new RoomManager({ rng: () => 0.1 });
     const conns = [0, 1, 2, 3].map(() => new FakeConn());
-    rooms.handle(conns[0], { t: 'create', name: 'A', deck, size: 4, commander: true });
+    rooms.handle(conns[0], { t: 'create', name: 'A', deck, setup: { mode: 'commander', twoHeaded: true } });
     const code = conns[0].last('joined')!.code;
     rooms.handle(conns[1], { t: 'join', code, name: 'A', deck });
     rooms.handle(conns[2], { t: 'join', code, name: 'C', deck });
@@ -392,24 +394,40 @@ describe('Commander rooms', () => {
   it('starts a Duel Commander room at 20 life, with each command zone shown to the opponent', () => {
     const rooms = new RoomManager({ rng: () => 0.1 });
     const [alice, bob] = [new FakeConn(), new FakeConn()];
-    rooms.handle(alice, { t: 'create', name: 'A', deck, commanders: [deck[0]], commander: true, duelCommander: true });
+    rooms.handle(alice, { t: 'create', name: 'A', deck, commanders: [deck[0]], setup: { mode: 'duelCommander' } });
     rooms.handle(bob, { t: 'join', code: alice.last('joined')!.code, name: 'B', deck });
     expect(bob.last('lobby')).toMatchObject({ mode: { commander: true, duelCommander: true } });
     expect(bob.state.players.map((p) => p.life)).toEqual([20, 20]);
     expect(bob.state.players[0].command!.map((c) => c.card.name)).toEqual([deck[0].name]);
   });
 
-  it('ignores Duel Commander without Commander rules or with four players', () => {
+  it('plays Duel Commander one against one only', () => {
     const rooms = new RoomManager({ rng: () => 0.1 });
-    const a = new FakeConn();
-    rooms.handle(a, { t: 'create', name: 'A', deck, duelCommander: true });
-    const b = new FakeConn();
-    rooms.handle(b, { t: 'join', code: a.last('joined')!.code, name: 'B', deck });
-    expect(b.last('lobby')!.mode).toEqual({});
-    expect(b.state.players.map((p) => p.life)).toEqual([20, 20]);
     const c = new FakeConn();
-    rooms.handle(c, { t: 'create', name: 'C', deck, size: 4, commander: true, duelCommander: true });
-    expect(c.last('lobby')!.mode).toEqual({ twoHeaded: true, commander: true });
+    rooms.handle(c, { t: 'create', name: 'C', deck, setup: { mode: 'duelCommander', twoHeaded: true } });
+    expect(c.last('lobby')).toMatchObject({ size: 2, mode: { commander: true, duelCommander: true }, setup: { mode: 'duelCommander', twoHeaded: false } });
+  });
+});
+
+describe('Constructed rooms', () => {
+  const legal = (c: Card, modern: string): Card => ({ ...c, legalities: { modern, legacy: 'legal' } });
+  const land = legal(mountain, 'legal');
+  const guide = legal({ ...mountain, id: 'g', name: 'Simian Spirit Guide', typeLine: 'Creature — Ape Spirit' }, 'banned');
+  const modern = { mode: 'constructed', format: 'modern' };
+
+  it('refuses decks not legal in the format, for the host and for those who join', () => {
+    const rooms = new RoomManager({ rng: () => 0.1 });
+    const [alice, bob] = [new FakeConn(), new FakeConn()];
+    rooms.handle(alice, { t: 'create', name: 'A', deck, setup: modern });
+    expect(alice.last('error')).toMatchObject({ code: 'deckNotLegal', params: { format: 'modern', issue: 'tooFew', n: 30, min: 60 } });
+    rooms.handle(alice, { t: 'create', name: 'A', deck: Array(60).fill(land), setup: modern });
+    const { room } = alice.last('joined')!;
+    rooms.handle(bob, { t: 'join', room, name: 'B', deck: [...Array(59).fill(land), guide] });
+    expect(bob.last('error')).toMatchObject({ code: 'deckNotLegal', params: { issue: 'banned', card: 'Simian Spirit Guide' } });
+    expect(bob.last('joined')).toBeUndefined();
+    rooms.handle(bob, { t: 'join', room, name: 'B', deck: Array(60).fill(land) });
+    expect(bob.state.players.map((p) => p.life)).toEqual([20, 20]);
+    expect(bob.last('lobby')!.setup).toEqual({ mode: 'constructed', format: 'modern', twoHeaded: false });
   });
 });
 
@@ -426,7 +444,7 @@ describe('saved rooms', () => {
       const store = memoryStore();
       const rooms = new RoomManager({ rng: () => 0.1, store, reconnectMs: 5000 });
       const [alice, bob] = [new FakeConn(), new FakeConn()];
-      rooms.handle(alice, { t: 'create', name: 'Alice', deck });
+      rooms.handle(alice, { t: 'create', setup: FREE, name: 'Alice', deck });
       const { room, token } = alice.last('joined')!;
       rooms.handle(bob, { t: 'join', room, name: 'Bob', deck });
       rooms.handle(alice, { t: 'action', action: { type: 'keep', bottom: [] } });
@@ -465,7 +483,7 @@ describe('saved rooms', () => {
     const store = memoryStore();
     const rooms = new RoomManager({ store });
     const alice = new FakeConn();
-    rooms.handle(alice, { t: 'create', name: 'Alice', deck });
+    rooms.handle(alice, { t: 'create', setup: FREE, name: 'Alice', deck });
     await rooms.flush();
     const [saved] = store.rows.values();
     expect(saved).toBeDefined();
@@ -481,7 +499,7 @@ describe('seats of logged-in players', () => {
   it('lets a player come back from another device logged in to the same account, and lists their rooms', () => {
     const rooms = new RoomManager({ rng: () => 0.1 });
     const [alice, bob] = [user('u-alice'), user()];
-    rooms.handle(alice, { t: 'create', name: 'Alice', deck });
+    rooms.handle(alice, { t: 'create', setup: FREE, name: 'Alice', deck });
     const { room, token } = alice.last('joined')!;
     rooms.handle(bob, { t: 'join', room, name: 'Bob', deck });
 
@@ -510,7 +528,7 @@ describe('seats of logged-in players', () => {
   it('forgets the account of a seat given up', () => {
     const rooms = new RoomManager({ rng: () => 0.1 });
     const alice = user('u-alice');
-    rooms.handle(alice, { t: 'create', name: 'Alice', deck });
+    rooms.handle(alice, { t: 'create', setup: FREE, name: 'Alice', deck });
     const { room } = alice.last('joined')!;
     rooms.handle(new FakeConn(), { t: 'join', room, name: 'Bob', deck });
     rooms.handle(alice, { t: 'leave' });

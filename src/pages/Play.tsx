@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { BetweenGames } from '../components/BetweenGames';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { DeckPicker, EngineSummary, LifeChoice, ModeTile, Segmented, useDeckName } from '../components/Setup';
+import { CheckedDeckPicker, EngineSummary, ModePicker, Segmented, setupName, useBlockedDecks, useDeckName, useGameSetup } from '../components/Setup';
+import { CONSTRUCTED_FORMATS, deckProblems, gameModeOf, type ConstructedFormat } from '../lib/gameModes';
 import { GameBoard } from '../components/GameBoard';
 import { botAction, fallbackAction } from '../lib/engine/bot';
 import { actor, apply, IllegalAction, newGame, teamOf, teamsOf, type Action, type GameState, type PlayerId } from '../lib/engine/engine';
@@ -35,17 +36,19 @@ export function Play() {
   });
   const [botDeck, setBotDeck] = useState('preset-green');
   // Two-Headed Giant: your bot teammate's deck and the second opponent's.
-  const [twoHeaded, setTwoHeaded] = useState(false);
-  const [commander, setCommander] = useState(false);
-  // A Commander duel: 40 life (the official rules) or 20 (Duel Commander).
-  const [duelLife, setDuelLife] = useState<40 | 20>(40);
+  // The game mode (Constructed in a format, Free Play, Commander, Duel Commander), Duel or Two-Headed Giant.
+  const [gameSetup, setGameSetup] = useGameSetup();
+  const twoHeaded = gameSetup.twoHeaded;
+  const commander = !!gameModeOf(gameSetup).commander;
+  const blocked = useBlockedDecks();
   const [allyDeck, setAllyDeck] = useState('preset-red');
-  // A Commander deck turns Commander rules on; without a commander in it, say how to set one.
+  // Picking a Commander deck turns Commander on; a deck of a Constructed format picks that format.
   const chosen = decks.find((d) => d.id === myDeck);
   useEffect(() => {
-    if (chosen?.format === 'commander') setCommander(true);
-  }, [chosen?.format]);
-  const missingCommander = commander && !!chosen && !chosen.entries.some((e) => e.board === 'commander');
+    if (!chosen || game) return;
+    if (chosen.format === 'commander' && !commander) setGameSetup({ ...gameSetup, mode: 'commander' });
+    if (gameSetup.mode === 'constructed' && CONSTRUCTED_FORMATS.includes(chosen.format as ConstructedFormat)) setGameSetup({ ...gameSetup, format: chosen.format as ConstructedFormat });
+  }, [chosen?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [botDeck2, setBotDeck2] = useState('preset-red');
   const [first, setFirst] = useState<'random' | 'me' | 'bot'>('random');
   const [loading, setLoading] = useState(false);
@@ -74,7 +77,7 @@ export function Play() {
   const loadedId = useRef<string | null>(null);
   /** /play/<id> of a game this browser no longer has. */
   const [missing, setMissing] = useState(false);
-  const setup = (): BotSetup => ({ myDeck, botDeck, allyDeck, botDeck2, twoHeaded, commander, duelLife, first, bestOf });
+  const setup = (): BotSetup => ({ myDeck, botDeck, allyDeck, botDeck2, setup: gameSetup, first, bestOf });
   // Before the first paint: a reload shows the game, not the setup for a moment.
   useLayoutEffect(() => {
     if ((gameId ?? null) === loadedId.current) return;
@@ -89,7 +92,7 @@ export function Play() {
     }
     const { setup: su } = saved;
     setMyDeck(su.myDeck); setBotDeck(su.botDeck); setAllyDeck(su.allyDeck); setBotDeck2(su.botDeck2);
-    setTwoHeaded(su.twoHeaded); setCommander(su.commander); setDuelLife(su.duelLife); setFirst(su.first); setBestOf(su.bestOf);
+    setGameSetup(su.setup); setFirst(su.first); setBestOf(su.bestOf);
     setMatch(saved.match); setMyCards(saved.myCards); setBotCards(saved.botCards); setCommanders(saved.commanders);
     setBetween(saved.between);
     current.current = saved.current;
@@ -196,7 +199,7 @@ export function Play() {
     const names = others.length === 3 ? ['', t.play.allyName, t.play.botName1, t.play.botName2] : ['', t.play.botName];
     const started = newGame({
       decks: [mine, ...others], names, first: firstPlayer,
-      mode: { twoHeaded: others.length === 3, commander, ...(commander && others.length === 1 && duelLife === 20 ? { duelCommander: true } : {}) },
+      mode: gameModeOf({ ...gameSetup, twoHeaded: others.length === 3 }),
       ...(commander ? { commanders: cmd } : {}),
       // A rematch keeps the full control setting.
       fullControl: game?.fullControl?.length === others.length + 1 ? game.fullControl : undefined,
@@ -212,7 +215,15 @@ export function Play() {
     try {
       const seats = twoHeaded ? [allyDeck, botDeck, botDeck2] : [botDeck];
       const [mine, ...others] = await Promise.all([loadDeck75(myDeck, decks), ...seats.map((id) => loadDeck75(id, decks))]);
-      if ([mine, ...others].some((d) => d.main.length < 20)) return setError({ code: 'decksTooSmall', params: { n: 20 } });
+      if ([mine, ...others].some((d) => d.main.length === 0)) return setError({ code: 'decksTooSmall', params: { n: 1 } });
+      // Constructed: every deck must be legal in the format.
+      for (const d of [mine, ...others]) {
+        const issue = deckProblems(d, gameSetup).blocking[0];
+        if (issue) {
+          const { kind, ...rest } = issue;
+          return setError({ code: 'deckNotLegal', params: { format: gameSetup.format, issue: kind, ...rest } });
+        }
+      }
       // The opponents' first player: seat 1 in a duel, seat 2 in Two-Headed Giant.
       const them: PlayerId = twoHeaded ? 2 : 1;
       const firstPlayer: PlayerId = first === 'me' ? ME : first === 'bot' ? them : Math.random() < 0.5 ? ME : them;
@@ -238,7 +249,6 @@ export function Play() {
   }
 
   if (!game) {
-    const mode = twoHeaded ? 'twoHeaded' : 'duel';
     return (
       <div className="page setup">
         <h1>{t.play.title}</h1>
@@ -246,40 +256,27 @@ export function Play() {
         <SavedGames />
         <p className="small history-link"><Link to="/history">{t.history.title} →</Link></p>
 
-        <section className="setup-section">
-          <h4>{t.play.gameType}</h4>
-          <div className="mode-tiles">
-            {(['duel', 'twoHeaded'] as const).map((m) => (
-              <ModeTile key={m} mode={m} text={t.play.modes[m]} on={mode === m} onClick={() => setTwoHeaded(m === 'twoHeaded')} />
-            ))}
-            <ModeTile mode="commander" text={t.play.modes.commander} on={commander} onClick={() => setCommander(!commander)} />
-          </div>
-        </section>
-
-        <section className="deck-pickers">
-          <DeckPicker label={t.play.yourDeck} value={myDeck} onChange={setMyDeck} />
-          {twoHeaded && <DeckPicker label={t.play.allyDeck} value={allyDeck} onChange={setAllyDeck} />}
-          <DeckPicker label={twoHeaded ? t.play.botDeck1 : t.play.botDeck} value={botDeck} onChange={setBotDeck} />
-          {twoHeaded && <DeckPicker label={t.play.botDeck2} value={botDeck2} onChange={setBotDeck2} />}
-        </section>
-
-        <section className="setup-options">
-          <Segmented
-            label={t.match.format}
-            value={bestOf}
-            options={[[1, t.match.single], [3, t.match.bo3]]}
-            onChange={setBestOf}
-          />
-          {commander && !twoHeaded && <LifeChoice value={duelLife} onChange={setDuelLife} />}
+        <ModePicker setup={gameSetup} onChange={setGameSetup}>
+          <Segmented label={t.match.format} value={bestOf} options={[[1, t.match.single], [3, t.match.bo3]]} onChange={setBestOf} />
           <Segmented
             label={t.play.first}
             value={first}
             options={[['random', t.play.firstOptions.random], ['me', t.play.firstOptions.me], ['bot', t.play.firstOptions.bot]]}
             onChange={setFirst}
           />
-          <button className="start-button" onClick={start} disabled={loading}>{loading ? t.common.loadingCards : t.play.start}</button>
+        </ModePicker>
+
+        <section className="deck-pickers">
+          <CheckedDeckPicker label={t.play.yourDeck} value={myDeck} onChange={setMyDeck} setup={gameSetup} onBlocked={blocked.report('mine')} />
+          {twoHeaded && <CheckedDeckPicker label={t.play.allyDeck} value={allyDeck} onChange={setAllyDeck} setup={gameSetup} onBlocked={blocked.report('ally')} />}
+          <CheckedDeckPicker label={twoHeaded ? t.play.botDeck1 : t.play.botDeck} value={botDeck} onChange={setBotDeck} setup={gameSetup} onBlocked={blocked.report('bot')} />
+          {twoHeaded && <CheckedDeckPicker label={t.play.botDeck2} value={botDeck2} onChange={setBotDeck2} setup={gameSetup} onBlocked={blocked.report('bot2')} />}
         </section>
-        {missingCommander && <div className="error small">{t.game.noCommanderInDeck(chosen!.name)}</div>}
+
+        <section className="setup-options start-row">
+          <span className="small muted">{setupName(t, gameSetup)} · {twoHeaded ? t.modes.twoHeaded : t.modes.duel}</span>
+          <button className="start-button" onClick={start} disabled={loading || blocked.any}>{loading ? t.common.loadingCards : t.play.start}</button>
+        </section>
         {error && <div className="error small">{errorText(t, error)}</div>}
 
         <EngineSummary deck={chosen} />

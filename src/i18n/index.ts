@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { LogEntry, PlayerId } from '../lib/engine/engine';
+import type { DeckIssue } from '../lib/legality';
 import { en, type Messages } from './en';
 import { fr } from './fr';
 import type { AppError, LogContext } from './types';
@@ -36,6 +37,12 @@ export function useT(): Messages {
 
 /** Render an error code (engine, server or browser) in the current language. */
 export function errorText(t: Messages, e: AppError): string {
+  // A deck refused by a Constructed room: the format, then the issue as the deck editor says it.
+  if (e.code === 'deckNotLegal' && e.params?.format && e.params.issue) {
+    const { format, issue, ...rest } = e.params;
+    const why = issueText(t, { kind: issue, ...rest } as DeckIssue);
+    if (why) return t.play.notLegalIn(t.formats[String(format)] ?? String(format), why);
+  }
   const render = t.errors[e.code];
   return render ? render(e.params ?? {}) : e.code;
 }
@@ -48,4 +55,21 @@ export function logText(
   const render = t.log[entry.k] as ((e: LogEntry, c: LogContext) => string) | undefined;
   // An entry this version doesn't know (a newer server): show its kind rather than break the page.
   return render ? render(entry, ctx) : entry.k;
+}
+
+/** A deck's legality issue (lib/legality.ts) in words; `card` localizes card names. */
+export function issueText(t: Messages, i: DeckIssue, card: (englishName: string) => string = (n) => n): string {
+  switch (i.kind) {
+    case 'tooFew': return t.editor.issues.tooFew(i.n, i.min);
+    case 'tooMany': return t.editor.issues.tooMany(i.n, i.max);
+    case 'sideboard': return t.editor.issues.sideboard(i.n, i.max);
+    case 'copies': return t.editor.issues.copies(card(i.card), i.n, i.max);
+    case 'banned': return t.editor.issues.banned(card(i.card));
+    case 'notLegal': return t.editor.issues.notLegal(card(i.card));
+    case 'unknown': return t.editor.issues.unknown(i.n);
+    case 'noCommander': return t.editor.issues.noCommander;
+    case 'notCommander': return t.editor.issues.notCommander(card(i.card));
+    case 'identity': return t.editor.issues.identity(card(i.card));
+    default: return '';
+  }
 }

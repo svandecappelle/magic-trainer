@@ -1,15 +1,16 @@
 import type { Card } from '../../types';
 import type { MatchScore } from '../match';
+import type { GameSetup } from '../gameModes';
 import { teamOf, type Action, type CardInst, type ErrorParams, type GameErrorCode, type GameMode, type GameState, type PlayerId, type PlayerState } from '../engine/engine';
 
 /** Messages the browser sends to the server. */
 export type ClientMessage =
   /**
-   * `bestOf`: a single game or a best of 3; `size`: 2 players, or 4 for Two-Headed Giant (seats 0+1 against 2+3);
-   * `commander`: Commander rules, `duelCommander`: its 20 life in a duel (all chosen by the room's creator). `sideboard`: for sideboarding between games;
-   * `commanders`: the deck's commanders; `deckName`: for the match history.
+   * `setup`: the game mode (lib/gameModes.ts; Two-Headed Giant: seats 0+1 against 2+3); `bestOf`: a single game or a
+   * best of 3 (both chosen by the room's creator). `sideboard`: for sideboarding between games; `commanders`: the
+   * deck's commanders; `deckName`: for the match history.
    */
-  | { t: 'create'; name: string; deckName?: string; deck: Card[]; sideboard?: Card[]; commanders?: Card[]; bestOf?: 1 | 3; size?: 2 | 4; commander?: boolean; duelCommander?: boolean }
+  | { t: 'create'; name: string; deckName?: string; deck: Card[]; sideboard?: Card[]; commanders?: Card[]; bestOf?: 1 | 3; setup: GameSetup }
   /** Join a room by its address (`room`, the id in /online/<id>) or its code. */
   | { t: 'join'; room?: string; code?: string; name: string; deckName?: string; deck: Card[]; sideboard?: Card[]; commanders?: Card[] }
   /** The page /online/<id> is open: back to the seat (`token`: the seat's secret), or what is needed to join. */
@@ -32,7 +33,7 @@ export interface LobbyPlayer {
 /** Errors specific to the server; rule violations use the engine's codes. */
 export type ServerErrorCode =
   | 'invalidMessage' | 'unknownMessage' | 'enterName' | 'deckSize' | 'invalidCard' | 'cardCheckFailed' | 'noRoom' | 'roomFull'
-  | 'gameGone' | 'tooManyWatchers' | 'notStarted' | 'invalidAction' | 'notYourTurn' | 'gameNotOver' | 'opponentLeft' | 'notInRoom';
+  | 'deckNotLegal' | 'gameGone' | 'tooManyWatchers' | 'notStarted' | 'invalidAction' | 'notYourTurn' | 'gameNotOver' | 'opponentLeft' | 'notInRoom';
 
 export type ErrorCode = GameErrorCode | ServerErrorCode;
 
@@ -43,7 +44,7 @@ export type ServerMessage =
   /** Seated in a room: `room` is its id (its address), `token` the secret to come back to this seat. */
   | { t: 'joined'; room: string; code: string; seat: PlayerId; token: string }
   /** `size`: seats in the room (2, or 4 in Two-Headed Giant); `mode`: its rules; `watchers`: spectators. */
-  | { t: 'lobby'; room: string; code: string; players: LobbyPlayer[]; match?: MatchScore; size?: number; mode?: GameMode; watchers?: number }
+  | { t: 'lobby'; room: string; code: string; players: LobbyPlayer[]; match?: MatchScore; size?: number; mode?: GameMode; setup?: GameSetup; watchers?: number }
   /** Watching the room's game as a spectator. */
   | { t: 'watching'; room: string; code: string }
   /** After hello, for a logged-in account: the rooms where it has a seat (to come back from any device). */
@@ -51,7 +52,7 @@ export type ServerMessage =
   /** Your main deck for the current game, and the other cards you brought (to sideboard between games); its name. */
   | { t: 'deck'; main: Card[]; side: Card[]; name?: string }
   /** A room opened by its address without holding a seat in it: who is there, and whether a seat is free. */
-  | { t: 'roomInfo'; room: string; code: string; size: number; mode: GameMode; bestOf: 1 | 3; players: string[]; started: boolean }
+  | { t: 'roomInfo'; room: string; code: string; size: number; mode: GameMode; setup: GameSetup; bestOf: 1 | 3; players: string[]; started: boolean }
   | { t: 'state'; state: GameState }
   /** The replays of a finished match's games (Replay[], packed with packState); `match`: its id. */
   | { t: 'replays'; match: string; packed: string }
@@ -64,7 +65,8 @@ export type ServerMessage =
   /** `lostRoom`: the room or seat is gone (e.g. after a server restart); forget it. */
   | { t: 'error'; code: ErrorCode; params?: ErrorParams; lostRoom?: boolean };
 
-export const MIN_DECK_SIZE = 20;
+/** Free Play has no rule on the deck's size; the other modes check theirs (lib/gameModes.ts). */
+export const MIN_DECK_SIZE = 1;
 export const MAX_DECK_SIZE = 250;
 
 export const HIDDEN_CARD: Card = {

@@ -51,7 +51,7 @@ describe('i18n', () => {
 
   it.each(LANGS)('renders every error code in %s', (lang) => {
     const t = messagesFor(lang);
-    const params = { n: 2, card: 'Bolt', kind: 'creature', filter: 'noncreature', blocker: 'A', attacker: 'B', min: 20, max: 250, code: 'ABCDE', message: 'x' };
+    const params = { n: 2, card: 'Bolt', format: 'modern', issue: 'banned', kind: 'creature', filter: 'noncreature', blocker: 'A', attacker: 'B', min: 20, max: 250, code: 'ABCDE', message: 'x' };
     for (const code of Object.keys(t.errors) as (keyof typeof t.errors)[]) {
       const text = errorText(t, { code, params });
       expect(text).toBeTruthy();

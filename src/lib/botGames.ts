@@ -2,6 +2,7 @@ import { STATE_VERSION, type GameState, type PlayerId } from './engine/engine';
 import type { MatchScore } from './match';
 import { packState, unpackState } from './packState';
 import type { Replay } from './replay';
+import { cleanSetup, type GameSetup } from './gameModes';
 import type { Card } from '../types';
 
 /**
@@ -15,9 +16,7 @@ export interface BotSetup {
   botDeck: string;
   allyDeck: string;
   botDeck2: string;
-  twoHeaded: boolean;
-  commander: boolean;
-  duelLife: 40 | 20;
+  setup: GameSetup;
   first: 'random' | 'me' | 'bot';
   bestOf: 1 | 3;
 }
@@ -76,7 +75,14 @@ export function loadBotGame(id: string): BotGame | null {
     const raw = localStorage.getItem(gameKey(id));
     if (!raw) return null;
     const { v, game } = unpackState<{ v: number; game: BotGame }>(raw);
-    if (v === STATE_VERSION && game?.game?.players) return game;
+    if (v === STATE_VERSION && game?.game?.players) {
+      // Saved before game modes: the mode from its rules.
+      const old = game.setup as BotSetup & { twoHeaded?: boolean; commander?: boolean; duelLife?: number };
+      if (!old.setup) {
+        old.setup = cleanSetup({ mode: old.commander ? (old.duelLife === 20 ? 'duelCommander' : 'commander') : 'free', twoHeaded: old.twoHeaded });
+      }
+      return game;
+    }
   } catch {
     // unreadable: dropped below
   }

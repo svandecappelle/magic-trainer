@@ -8,7 +8,7 @@ import { canBeCommander, checkDeck, type DeckIssue } from '../lib/legality';
 import { fetchCardsById } from '../lib/scryfall';
 import { resolveDecklist } from '../lib/importDeck';
 import { primaryType, TYPE_ORDER } from '../lib/stats';
-import { useT } from '../i18n';
+import { issueText as issueOf, useT } from '../i18n';
 import { useCardDisplay } from '../lib/cardLocale';
 import { engineStatus } from '../lib/engineStatus';
 import { useHoverPreview } from '../components/HoverPreview';
@@ -51,20 +51,7 @@ export function DeckEditor() {
   }
 
   const issues = checkDeck(deck);
-  const issueText = (i: DeckIssue) => {
-    switch (i.kind) {
-      case 'tooFew': return t.editor.issues.tooFew(i.n, i.min);
-      case 'tooMany': return t.editor.issues.tooMany(i.n, i.max);
-      case 'sideboard': return t.editor.issues.sideboard(i.n, i.max);
-      case 'copies': return t.editor.issues.copies(show.nameOf(i.card), i.n, i.max);
-      case 'banned': return t.editor.issues.banned(show.nameOf(i.card));
-      case 'notLegal': return t.editor.issues.notLegal(show.nameOf(i.card));
-      case 'unknown': return t.editor.issues.unknown(i.n);
-      case 'noCommander': return t.editor.issues.noCommander;
-      case 'notCommander': return t.editor.issues.notCommander(show.nameOf(i.card));
-      case 'identity': return t.editor.issues.identity(show.nameOf(i.card));
-    }
-  };
+  const issueText = (i: DeckIssue) => issueOf(t, i, show.nameOf);
 
   async function runImport() {
     const lines = parseDeckText(importText);

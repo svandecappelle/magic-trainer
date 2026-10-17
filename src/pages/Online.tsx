@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { BetweenGames } from '../components/BetweenGames';
 import { GameBoard } from '../components/GameBoard';
-import { DeckPicker, EngineSummary, LifeChoice, ModeTile, Segmented, useDeckName } from '../components/Setup';
+import { CheckedDeckPicker, EngineSummary, ModePicker, Segmented, setupName, useBlockedDecks, useDeckName, useGameSetup } from '../components/Setup';
+import { CONSTRUCTED_FORMATS, type ConstructedFormat } from '../lib/gameModes';
 import { loadDeck75 } from '../lib/loadDeck';
 import { matchOver, matchWinner } from '../lib/match';
 import { hasResult, saveResult } from '../lib/history';
@@ -46,16 +47,18 @@ export function Online() {
     navigate('/online');
   };
   const [bestOf, setBestOf] = useState<1 | 3>(1);
-  const [twoHeaded, setTwoHeaded] = useState(false);
-  const [commander, setCommander] = useState(false);
-  const [duelLife, setDuelLife] = useState<40 | 20>(40);
+  // The game mode of a room to create (the room's own when joining one).
+  const [gameSetup, setGameSetup] = useGameSetup();
+  const blocked = useBlockedDecks();
   const [deckId, setDeckId] = useState(decks[0]?.id ?? 'preset-red');
   const nameOfDeck = useDeckName();
   const chosen = decks.find((d) => d.id === deckId);
+  // Picking a Commander deck turns Commander on; a deck of a Constructed format picks that format.
   useEffect(() => {
-    if (chosen?.format === 'commander') setCommander(true);
-  }, [chosen?.format]);
-  const missingCommander = !!chosen && !chosen.entries.some((e) => e.board === 'commander') && (commander || chosen.format === 'commander');
+    if (!chosen) return;
+    if (chosen.format === 'commander' && gameSetup.mode !== 'commander' && gameSetup.mode !== 'duelCommander') setGameSetup({ ...gameSetup, mode: 'commander' });
+    if (gameSetup.mode === 'constructed' && CONSTRUCTED_FORMATS.includes(chosen.format as ConstructedFormat)) setGameSetup({ ...gameSetup, format: chosen.format as ConstructedFormat });
+  }, [chosen?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   // Your deck and sideboard for this match: the server's (it sends them when you sit down or come back), then
   // changed here by sideboarding.
   const [cards, setCards] = useState<{ main: Card[]; side: Card[] } | null>(null);
@@ -149,10 +152,11 @@ export function Online() {
     try {
       const { main: deck, side, commander: commanders } = await loadDeck75(deckId, decks);
       if (deck.length < MIN_DECK_SIZE) return setError({ code: 'deckTooSmall', params: { n: MIN_DECK_SIZE } });
+      // The server checks the deck against the room's mode too.
       const sideboard = side.slice(0, 30);
       const deckName = nameOfDeck(deckId);
       send(kind === 'create'
-        ? { t: 'create', name, deckName, deck, sideboard, commanders, bestOf, size: twoHeaded ? 4 : 2, commander, duelCommander: commander && !twoHeaded && duelLife === 20 }
+        ? { t: 'create', name, deckName, deck, sideboard, commanders, bestOf, setup: gameSetup }
         : kind === 'joinLink' ? { t: 'join', room: roomId, name, deckName, deck, sideboard, commanders }
         : { t: 'join', code: code.trim().toUpperCase(), name, deckName, deck, sideboard, commanders });
     } catch (e) {
@@ -259,11 +263,10 @@ export function Online() {
                     <h4>{t.online.yourName}</h4>
                     <input value={name} maxLength={24} onChange={(e) => setName(e.target.value)} placeholder={t.online.namePlaceholder} />
                   </label>
-                  <DeckPicker label={t.play.yourDeck} value={deckId} onChange={setDeckId} />
+                  <CheckedDeckPicker label={t.play.yourDeck} value={deckId} onChange={setDeckId} setup={info.setup} onBlocked={blocked.report('join')} />
                 </section>
-                {missingCommander && info.mode.commander && <div className="error small">{t.game.noCommanderInDeck(chosen!.name)}</div>}
                 <section className="setup-options">
-                  <button className="start-button" disabled={busy || status !== 'open'} onClick={() => enter('joinLink')}>{t.online.joinButton}</button>
+                  <button className="start-button" disabled={busy || status !== 'open' || blocked.any} onClick={() => enter('joinLink')}>{t.online.joinButton}</button>
                   {watchButton}
                 </section>
               </>
@@ -311,24 +314,16 @@ export function Online() {
             <h4>{t.online.yourName}</h4>
             <input value={name} maxLength={24} onChange={(e) => setName(e.target.value)} placeholder={t.online.namePlaceholder} />
           </label>
-          <DeckPicker label={t.play.yourDeck} value={deckId} onChange={setDeckId} />
+          <CheckedDeckPicker label={t.play.yourDeck} value={deckId} onChange={setDeckId} setup={gameSetup} onBlocked={blocked.report('host')} />
         </section>
-        {missingCommander && <div className="error small">{t.game.noCommanderInDeck(chosen!.name)}</div>}
 
-        <section className="setup-section">
-          <h4>{t.online.host}</h4>
-          <div className="mode-tiles">
-            {(['duel', 'twoHeaded'] as const).map((m) => (
-              <ModeTile key={m} mode={m} text={t.online.modes[m]} on={(twoHeaded ? 'twoHeaded' : 'duel') === m} onClick={() => setTwoHeaded(m === 'twoHeaded')} />
-            ))}
-            <ModeTile mode="commander" text={t.play.modes.commander} on={commander} onClick={() => setCommander(!commander)} />
-          </div>
-        </section>
-        <section className="setup-options">
+        <h2 className="setup-heading">{t.online.host}</h2>
+        <ModePicker setup={gameSetup} onChange={setGameSetup}>
           <Segmented label={t.match.format} value={bestOf} options={[[1, t.match.single], [3, t.match.bo3]]} onChange={setBestOf} />
-          {commander && !twoHeaded && <LifeChoice value={duelLife} onChange={setDuelLife} />}
-          <p className="small muted host-hint">{t.online.hostHint}</p>
-          <button className="start-button" disabled={offline} onClick={() => enter('create')}>{t.online.createRoom}</button>
+        </ModePicker>
+        <section className="setup-options start-row">
+          <span className="small muted host-hint">{setupName(t, gameSetup)} · {gameSetup.twoHeaded ? t.modes.twoHeaded : t.modes.duel}. {t.online.hostHint}</span>
+          <button className="start-button" disabled={offline || blocked.any} onClick={() => enter('create')}>{t.online.createRoom}</button>
         </section>
 
         <section className="panel join-panel">
@@ -507,11 +502,11 @@ function NotifyToggle({ on, toggle, available }: ReturnType<typeof useNotifyPref
   );
 }
 
-/** What a room plays: "Duel · Commander · best of 3 · 1/2 players". */
+/** What a room plays: "Constructed · Modern · Duel · 1 vs 1 · best of 3 · 1/2 players". */
 function roomSummary(t: ReturnType<typeof useT>, info: RoomInfo): string {
   const parts = [
-    t.play.modes[info.mode.twoHeaded ? 'twoHeaded' : 'duel'][0],
-    ...(info.mode.commander ? [info.mode.duelCommander ? t.play.lifeDuel : t.play.modes.commander[0]] : []),
+    setupName(t, info.setup),
+    info.setup.twoHeaded ? t.modes.twoHeaded : t.modes.duel,
     t.match.bestOf(info.bestOf),
     t.online.seatsTaken(info.players.length, info.size),
   ];

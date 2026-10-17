@@ -2,6 +2,7 @@ import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { fallbackAction } from '../src/lib/engine/bot';
 import { actor, apply, IllegalAction, newGame, STATE_VERSION, teamOf, teamsOf, type Action, type ErrorParams, type GameMode, type GameState, type LogEntry, type PlayerId } from '../src/lib/engine/engine';
 import { newReplay, type Replay } from '../src/lib/replay';
+import { cleanSetup, deckProblems, gameModeOf, type GameSetup } from '../src/lib/gameModes';
 import type { HistoryStore } from './history';
 import { packState, unpackState } from '../src/lib/packState';
 import type { RoomStore } from './db/roomStore';
@@ -53,6 +54,8 @@ interface Room {
   replays?: Replay[];
   /** 2 seats, or 4 in Two-Headed Giant (seats 0+1 against 2+3). */
   size: 2 | 4;
+  /** The game mode chosen (what decks may be played), and the engine's mode for it. */
+  setup?: GameSetup;
   mode: GameMode;
   /** Who played first in the current game, and whether its result is in the score. */
   first?: PlayerId;
@@ -176,15 +179,12 @@ export class RoomManager {
         case 'create': {
           const name = cleanName(msg.name);
           const bestOf = msg.bestOf === 3 ? 3 : 1;
-          const size = msg.size === 4 ? 4 : 2;
-          const mode: GameMode = {
-            ...(size === 4 ? { twoHeaded: true } : {}),
-            ...(msg.commander === true ? { commander: true } : {}),
-            // Duel Commander's 20 life: Commander duels only.
-            ...(msg.commander === true && size === 2 && msg.duelCommander === true ? { duelCommander: true } : {}),
-          };
+          const setup = cleanSetup(msg.setup);
           const deckName = cleanDeckName(msg.deckName);
-          return this.withDeck(conn, msg.deck, msg.sideboard, msg.commanders, (deck, side, commanders) => this.create(conn, name, deckName, deck, side, commanders, bestOf, size, mode));
+          return this.withDeck(conn, msg.deck, msg.sideboard, msg.commanders, (deck, side, commanders) => {
+            checkLegal(setup, deck, side, commanders);
+            this.create(conn, name, deckName, deck, side, commanders, bestOf, setup);
+          });
         }
         case 'join': {
           const name = cleanName(msg.name);
@@ -192,7 +192,10 @@ export class RoomManager {
           const room = typeof msg.room === 'string' ? this.byId.get(msg.room) : this.rooms.get(String(msg.code ?? '').toUpperCase().trim());
           if (!room) throw new ClientError('noRoom', { code: String(msg.code ?? '') });
           const deckName = cleanDeckName(msg.deckName);
-          return this.withDeck(conn, msg.deck, msg.sideboard, msg.commanders, (deck, side, commanders) => this.join(conn, room, name, deckName, deck, side, commanders));
+          return this.withDeck(conn, msg.deck, msg.sideboard, msg.commanders, (deck, side, commanders) => {
+            checkLegal(room.setup, deck, side, commanders);
+            this.join(conn, room, name, deckName, deck, side, commanders);
+          });
         }
         case 'open': return this.open(conn, String(msg.room ?? ''), typeof msg.token === 'string' ? msg.token : '');
         case 'watch': return this.watch(conn, String(msg.room ?? ''));
@@ -272,13 +275,15 @@ export class RoomManager {
 
   // ---------- Handlers ----------
 
-  private create(conn: Conn, name: string, deckName: string | undefined, deck: Card[], side: Card[], commanders: Card[], bestOf: 1 | 3, size: 2 | 4, mode: GameMode) {
+  private create(conn: Conn, name: string, deckName: string | undefined, deck: Card[], side: Card[], commanders: Card[], bestOf: 1 | 3, setup: GameSetup) {
+    const size = setup.twoHeaded ? 4 : 2;
+    const mode = gameModeOf(setup);
     this.unwatch(conn);
     this.leave(conn, true);
     let code: string;
     do code = Array.from({ length: 5 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
     while (this.rooms.has(code));
-    const room: Room = { id: randomUUID(), code, seats: [], game: null, match: newMatch(bestOf), matchId: randomUUID(), replays: [], size, mode };
+    const room: Room = { id: randomUUID(), code, seats: [], game: null, match: newMatch(bestOf), matchId: randomUUID(), replays: [], size, setup, mode };
     this.rooms.set(code, room);
     this.byId.set(room.id, room);
     this.seat(conn, room, name, deckName, deck, side, commanders);
@@ -327,7 +332,7 @@ export class RoomManager {
     }
     if (seat < 0) {
       conn.send({
-        t: 'roomInfo', room: room.id, code: room.code, size: room.size, mode: room.mode, bestOf: room.match.bestOf,
+        t: 'roomInfo', room: room.id, code: room.code, size: room.size, mode: room.mode, setup: setupOf(room), bestOf: room.match.bestOf,
         players: room.seats.map((s) => s.name), started: !!room.game,
       });
       return;
@@ -597,7 +602,7 @@ export class RoomManager {
   private sendLobby(room: Room) {
     this.persist(room);
     const players = room.seats.map((s) => ({ name: s.name, connected: !!s.conn, wantsRematch: s.wantsRematch }));
-    const lobby: ServerMessage = { t: 'lobby', room: room.id, code: room.code, players, match: room.match, size: room.size, mode: room.mode, watchers: room.watchers?.size ?? 0 };
+    const lobby: ServerMessage = { t: 'lobby', room: room.id, code: room.code, players, match: room.match, size: room.size, mode: room.mode, setup: setupOf(room), watchers: room.watchers?.size ?? 0 };
     for (const s of room.seats) s.conn?.send(lobby);
     for (const w of room.watchers ?? []) w.send(lobby);
   }
@@ -624,7 +629,32 @@ export class RoomManager {
   }
 }
 
+/** A room's game mode (rooms saved before modes existed: from their engine mode, any deck). */
+function setupOf(room: Room): GameSetup {
+  if (room.setup) return room.setup;
+  const m = room.mode;
+  return cleanSetup({ mode: m.duelCommander ? 'duelCommander' : m.commander ? 'commander' : 'free', twoHeaded: !!m.twoHeaded });
+}
+
+/** A deck the room's mode doesn't allow (Constructed: not legal in the format) is refused. */
+function checkLegal(setup: GameSetup | undefined, main: Card[], side: Card[], commander: Card[]) {
+  if (!setup) return;
+  const issue = deckProblems({ main, side, commander }, setup).blocking[0];
+  if (issue) {
+    const { kind, ...rest } = issue;
+    throw new ClientError('deckNotLegal', { format: setup.format, issue: kind, ...rest });
+  }
+}
+
 // ---------- Input validation (messages come from untrusted clients) ----------
+
+/** A card's legality per format ("legal", "banned"…), checked by Constructed rooms. */
+function cleanLegalities(v: unknown): Card['legalities'] {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [k, x] of Object.entries(v as Record<string, unknown>).slice(0, 20)) if (typeof x === 'string') out[k.slice(0, 20)] = x.slice(0, 20);
+  return out;
+}
 
 function cleanDeckName(name: unknown): string | undefined {
   return typeof name === 'string' && name.trim() ? name.trim().slice(0, 100) : undefined;
@@ -663,6 +693,7 @@ function cleanCards(deck: unknown, min: number, max: number): Card[] {
       power: optStr(c.power), toughness: optStr(c.toughness),
       keywords: Array.isArray(c.keywords) ? c.keywords.map(String).slice(0, 30) : undefined,
       lang: optStr(c.lang)?.slice(0, 8),
+      legalities: cleanLegalities(c.legalities),
       printedName: optStr(c.printedName),
       printedTypeLine: optStr(c.printedTypeLine),
       loyalty: optStr(c.loyalty)?.slice(0, 4),
