@@ -74,6 +74,12 @@ export function Segmented<V extends string | number>({ label, value, options, on
   );
 }
 
+/** A Commander duel's starting life: 40 (the official rules) or 20 (the Duel Commander format). */
+export function LifeChoice({ value, onChange }: { value: 40 | 20; onChange: (v: 40 | 20) => void }) {
+  const t = useT();
+  return <Segmented label={t.play.commanderLife} value={value} options={[[40, t.play.lifeOfficial], [20, t.play.lifeDuel]]} onChange={onChange} />;
+}
+
 /** What the rules engine plays, with links to the chosen deck in the editor and to the decks. */
 export function EngineSummary({ deck }: { deck?: Deck }) {
   const t = useT();

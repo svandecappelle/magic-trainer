@@ -514,10 +514,9 @@ export const en = {
 
   play: {
     gameType: 'Game',
-    duel: 'Duel (1 vs 1)',
-    twoHeaded: 'Two-Headed Giant (2 vs 2)',
-    commander: 'Commander',
-    commanderHint: 'Commander rules: 40 life (60 per team in Two-Headed Giant), commanders cast from the command zone, 21 commander damage. Decks without a commander play without one.',
+    commanderLife: 'Commander life',
+    lifeOfficial: '40 (official)',
+    lifeDuel: '20 (Duel Commander)',
     allyDeck: 'Your teammate (bot)',
     botDeck1: 'Opponent 1 (bot)',
     botDeck2: 'Opponent 2 (bot)',
@@ -541,7 +540,7 @@ export const en = {
     modes: {
       duel: ['Duel', 'You against one bot. 20 life, London mulligan.'],
       twoHeaded: ['Two-Headed Giant', 'You and a bot ally against two bots. Shared life; you see your ally\'s hand.'],
-      commander: ['Commander', 'Commander rules: 40 life, the command zone, 21 commander damage. With either game.'],
+      commander: ['Commander', 'Commander rules: 40 life (or 20 in Duel Commander), the command zone, 21 commander damage. With either game.'],
     } as Record<'duel' | 'twoHeaded' | 'commander', [string, string]>,
     preset: 'Preset',
     engineTitle: 'What the engine plays',

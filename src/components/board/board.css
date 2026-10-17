@@ -54,6 +54,12 @@ main:has(> .page.play) { padding: 0 10px 10px; }
 .hud.ally { width: auto; min-width: 110px; padding: 4px 8px; opacity: 0.9; }
 .hud.ally .life { font-size: 1.2rem; }
 /* Two-Headed Giant: the teammate's hand, face up and small, under its life. */
+/* Other players' command zones, face up next to their panel. */
+.seat-command { display: flex; gap: 4px; flex: none; padding-top: 6px; }
+.seat-command-card { position: relative; cursor: zoom-in; }
+.seat-command-card img { width: calc(var(--hand-w) * 0.62); max-width: none; display: block; border-radius: 4px; box-shadow: 0 3px 8px rgba(0, 0, 0, 0.55); }
+.seat-command-card .crown { top: -9px; font-size: 0.85rem; }
+.seat-command-card .tax { right: 2px; top: 2px; padding: 0 4px; font-size: 0.7rem; }
 .ally-seat { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; flex: 0 1 auto; }
 .ally-hand { display: flex; padding-left: 14px; max-width: 260px; }
 .ally-card { flex: 0 1 44px; min-width: 12px; margin-left: -14px; transition: transform 0.15s; cursor: zoom-in; }
@@ -218,9 +224,9 @@ main:has(> .page.play) { padding: 0 10px 10px; }
 /* Command zone, next to the hand. */
 .command-zone { display: flex; gap: 6px; align-items: flex-end; padding-top: 10px; flex: 0 0 auto; }
 .command-zone .hand-card { flex: 0 0 var(--hand-w); margin: 0; }
-.hand-card .crown, .perm .crown { position: absolute; top: -8px; left: 50%; translate: -50% 0; font-size: 1rem; filter: drop-shadow(0 0 2px #000); }
+.hand-card .crown, .perm .crown, .seat-command-card .crown { position: absolute; top: -8px; left: 50%; translate: -50% 0; font-size: 1rem; filter: drop-shadow(0 0 2px #000); }
 .perm .crown { top: -6px; font-size: 0.85rem; z-index: 2; }
-.hand-card .tax {
+.hand-card .tax, .seat-command-card .tax {
   position: absolute; right: 4px; top: 4px; padding: 0 6px; border-radius: 10px;
   background: #b5544f; color: #fff; font-size: 0.8rem; font-weight: 800; box-shadow: 0 1px 4px #000;
 }

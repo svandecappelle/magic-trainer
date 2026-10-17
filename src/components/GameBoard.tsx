@@ -927,6 +927,25 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     );
   };
 
+  /** Another player's command zone, face up: commanders are public (hover or hold one to read it). */
+  const commandZone = (p: PlayerId) => {
+    const cards = g.players[p].command ?? [];
+    return cards.length > 0 && (
+      <div className="seat-command" aria-label={`${t.game.zoneNames.command}: ${names[p]}`}>
+        {cards.map((c) => {
+          const tax = 2 * (g.players[p].commanderCasts?.[c.iid] ?? 0);
+          return (
+            <div key={c.iid} className="seat-command-card" {...zoomable(c.card)}>
+              <img src={show.imageSmall(c.card)} alt={show.name(c.card)} draggable={false} />
+              <span className="crown" title={t.game.zoneNames.command}>👑</span>
+              {tax > 0 && <span className="tax" title={t.game.commanderTax(tax)}>+{tax}</span>}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   const phase = currentPhase(g);
   const myHand = g.players[me].hand;
 
@@ -938,6 +957,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
           {opponents.map((o) => (
             <div key={o} className="seat">
               {hud(o)}
+              {commandZone(o)}
               <div className="opp-hand">
                 {g.players[o].hand.map((c, i) => (
                   <div key={c.iid} className="card-back" style={{ '--i': i - (g.players[o].hand.length - 1) / 2 } as CSSProperties} />
@@ -1047,6 +1067,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
           {mates.map((m) => (
             <div key={m} className="ally-seat">
               {hud(m)}
+              {commandZone(m)}
               {g.players[m].hand.length > 0 && (
                 <div className="ally-hand" aria-label={t.game.allyHand(names[m])}>
                   {g.players[m].hand.map((c) => (

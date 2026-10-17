@@ -522,10 +522,9 @@ export const fr: Messages = {
 
   play: {
     gameType: 'Partie',
-    duel: 'Duel (1 contre 1)',
-    twoHeaded: 'Géant bicéphale (2 contre 2)',
-    commander: 'Commander',
-    commanderHint: 'Règles Commander : 40 points de vie (60 par équipe en Géant bicéphale), commandants lancés depuis la zone de commandement, 21 blessures de commandant. Un deck sans commandant joue sans.',
+    commanderLife: 'Vie en Commander',
+    lifeOfficial: '40 (officiel)',
+    lifeDuel: '20 (Duel Commander)',
     allyDeck: 'Votre coéquipier (bot)',
     botDeck1: 'Adversaire 1 (bot)',
     botDeck2: 'Adversaire 2 (bot)',
@@ -549,7 +548,7 @@ export const fr: Messages = {
     modes: {
       duel: ['Duel', 'Vous contre un bot. 20 points de vie, mulligan London.'],
       twoHeaded: ['Géant bicéphale', 'Vous et un bot allié contre deux bots. Points de vie partagés ; vous voyez la main de votre allié.'],
-      commander: ['Commander', 'Règles Commander : 40 points de vie, la zone de commandement, 21 blessures de commandant. Dans les deux parties.'],
+      commander: ['Commander', 'Règles Commander : 40 points de vie (ou 20 en Duel Commander), la zone de commandement, 21 blessures de commandant. Dans les deux parties.'],
     },
     preset: 'Prédéfini',
     engineTitle: 'Ce que joue le moteur',

@@ -274,3 +274,28 @@ describe('Two-Headed Giant rooms', () => {
     expect(conns[0].last('lobby')!.match).toMatchObject({ wins: [1, 0] });
   });
 });
+
+describe('Commander rooms', () => {
+  it('starts a Duel Commander room at 20 life, with each command zone shown to the opponent', () => {
+    const rooms = new RoomManager({ rng: () => 0.1 });
+    const [alice, bob] = [new FakeConn(), new FakeConn()];
+    rooms.handle(alice, { t: 'create', name: 'A', deck, commanders: [deck[0]], commander: true, duelCommander: true });
+    rooms.handle(bob, { t: 'join', code: alice.last('joined')!.code, name: 'B', deck });
+    expect(bob.last('lobby')).toMatchObject({ mode: { commander: true, duelCommander: true } });
+    expect(bob.state.players.map((p) => p.life)).toEqual([20, 20]);
+    expect(bob.state.players[0].command!.map((c) => c.card.name)).toEqual([deck[0].name]);
+  });
+
+  it('ignores Duel Commander without Commander rules or with four players', () => {
+    const rooms = new RoomManager({ rng: () => 0.1 });
+    const a = new FakeConn();
+    rooms.handle(a, { t: 'create', name: 'A', deck, duelCommander: true });
+    const b = new FakeConn();
+    rooms.handle(b, { t: 'join', code: a.last('joined')!.code, name: 'B', deck });
+    expect(b.last('lobby')!.mode).toEqual({});
+    expect(b.state.players.map((p) => p.life)).toEqual([20, 20]);
+    const c = new FakeConn();
+    rooms.handle(c, { t: 'create', name: 'C', deck, size: 4, commander: true, duelCommander: true });
+    expect(c.last('lobby')!.mode).toEqual({ twoHeaded: true, commander: true });
+  });
+});

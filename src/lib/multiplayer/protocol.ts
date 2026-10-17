@@ -6,10 +6,10 @@ import { teamOf, type Action, type CardInst, type ErrorParams, type GameErrorCod
 export type ClientMessage =
   /**
    * `bestOf`: a single game or a best of 3; `size`: 2 players, or 4 for Two-Headed Giant (seats 0+1 against 2+3);
-   * `commander`: Commander rules (all chosen by the room's creator). `sideboard`: for sideboarding between games;
+   * `commander`: Commander rules, `duelCommander`: its 20 life in a duel (all chosen by the room's creator). `sideboard`: for sideboarding between games;
    * `commanders`: the deck's commanders.
    */
-  | { t: 'create'; name: string; deck: Card[]; sideboard?: Card[]; commanders?: Card[]; bestOf?: 1 | 3; size?: 2 | 4; commander?: boolean }
+  | { t: 'create'; name: string; deck: Card[]; sideboard?: Card[]; commanders?: Card[]; bestOf?: 1 | 3; size?: 2 | 4; commander?: boolean; duelCommander?: boolean }
   | { t: 'join'; code: string; name: string; deck: Card[]; sideboard?: Card[]; commanders?: Card[] }
   | { t: 'rejoin'; code: string; token: string }
   | { t: 'action'; action: Action }

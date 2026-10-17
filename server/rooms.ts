@@ -133,7 +133,12 @@ export class RoomManager {
           const name = cleanName(msg.name);
           const bestOf = msg.bestOf === 3 ? 3 : 1;
           const size = msg.size === 4 ? 4 : 2;
-          const mode: GameMode = { ...(size === 4 ? { twoHeaded: true } : {}), ...(msg.commander === true ? { commander: true } : {}) };
+          const mode: GameMode = {
+            ...(size === 4 ? { twoHeaded: true } : {}),
+            ...(msg.commander === true ? { commander: true } : {}),
+            // Duel Commander's 20 life: Commander duels only.
+            ...(msg.commander === true && size === 2 && msg.duelCommander === true ? { duelCommander: true } : {}),
+          };
           return this.withDeck(conn, msg.deck, msg.sideboard, msg.commanders, (deck, side, commanders) => this.create(conn, name, deck, side, commanders, bestOf, size, mode));
         }
         case 'join': {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { BetweenGames } from '../components/BetweenGames';
 import { GameBoard } from '../components/GameBoard';
-import { DeckPicker, EngineSummary, ModeTile, Segmented } from '../components/Setup';
+import { DeckPicker, EngineSummary, LifeChoice, ModeTile, Segmented } from '../components/Setup';
 import { loadDeck75 } from '../lib/loadDeck';
 import { matchWinner } from '../lib/match';
 import { teamOf, teamsOf } from '../lib/engine/engine';
@@ -30,6 +30,7 @@ export function Online() {
   const [bestOf, setBestOf] = useState<1 | 3>(1);
   const [twoHeaded, setTwoHeaded] = useState(false);
   const [commander, setCommander] = useState(false);
+  const [duelLife, setDuelLife] = useState<40 | 20>(40);
   const [deckId, setDeckId] = useState(decks[0]?.id ?? 'preset-red');
   const chosen = decks.find((d) => d.id === deckId);
   useEffect(() => {
@@ -88,7 +89,7 @@ export function Online() {
       const sideboard = side.slice(0, 30);
       setCards({ main: deck, side: sideboard });
       send(kind === 'create'
-        ? { t: 'create', name, deck, sideboard, commanders, bestOf, size: twoHeaded ? 4 : 2, commander }
+        ? { t: 'create', name, deck, sideboard, commanders, bestOf, size: twoHeaded ? 4 : 2, commander, duelCommander: commander && !twoHeaded && duelLife === 20 }
         : { t: 'join', code: code.trim().toUpperCase(), name, deck, sideboard, commanders });
     } catch (e) {
       setError({ code: 'loadFailed', params: { message: e instanceof Error ? e.message : String(e) } });
@@ -148,6 +149,7 @@ export function Online() {
         </section>
         <section className="setup-options">
           <Segmented label={t.match.format} value={bestOf} options={[[1, t.match.single], [3, t.match.bo3]]} onChange={setBestOf} />
+          {commander && !twoHeaded && <LifeChoice value={duelLife} onChange={setDuelLife} />}
           <p className="small muted host-hint">{t.online.hostHint}</p>
           <button className="start-button" disabled={offline} onClick={() => enter('create')}>{t.online.createRoom}</button>
         </section>

@@ -607,6 +607,8 @@ export interface GameMode {
   twoHeaded?: boolean;
   /** Commander rules (command zone, tax, commander damage, more life). */
   commander?: boolean;
+  /** Duel Commander (a 1 vs 1 format apart from the official rules): 20 life instead of 40. Duels only. */
+  duelCommander?: boolean;
 }
 
 // ---------- Players and teams ----------
@@ -1652,8 +1654,9 @@ export interface NewGameOptions {
   publicStops?: boolean;
 }
 
-/** Starting life: 20, Commander 40; a Two-Headed Giant team shares 30 (Commander 60). */
-export const startingLife = (mode?: GameMode) => (mode?.twoHeaded ? 30 : 20) * (mode?.commander ? 2 : 1);
+/** Starting life: 20, Commander 40 (Duel Commander 20); a Two-Headed Giant team shares 30 (Commander 60). */
+export const startingLife = (mode?: GameMode) =>
+  (mode?.twoHeaded ? 30 : 20) * (mode?.commander && !(mode.duelCommander && !mode.twoHeaded) ? 2 : 1);
 
 export function newGame({ decks, names, first, mode, commanders, rng = Math.random, mulligans = true, fullControl, publicStops }: NewGameOptions): GameState {
   const twoHeaded = !!mode?.twoHeaded && decks.length === 4;

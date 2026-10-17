@@ -193,6 +193,17 @@ describe('Commander', () => {
     expect(t.players.map((p) => p.life)).toEqual([60, 60, 60, 60]);
   });
 
+  it('starts a Duel Commander game at 20 life; the option does nothing in Two-Headed Giant', () => {
+    const duel = newGame({
+      decks: [Array(40).fill(mountain), Array(40).fill(mountain)], names: ['A', 'B'], first: 0, mulligans: false,
+      mode: { commander: true, duelCommander: true }, commanders: [[boss], []],
+    });
+    expect(duel.players.map((p) => p.life)).toEqual([20, 20]);
+    expect(duel.players[0].command).toHaveLength(1);
+    const t = newGame({ decks: [0, 1, 2, 3].map(() => Array(40).fill(mountain)), names: ['A', 'B', 'C', 'D'], first: 0, mulligans: false, mode: { twoHeaded: true, commander: true, duelCommander: true } });
+    expect(t.players.map((p) => p.life)).toEqual([60, 60, 60, 60]);
+  });
+
   it('casts the commander from the command zone, back there when it dies, then pays the tax', () => {
     let s = commanderDuel();
     lands(s, 0, 4);

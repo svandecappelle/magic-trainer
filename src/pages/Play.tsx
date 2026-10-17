@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { BetweenGames } from '../components/BetweenGames';
 import { useSearchParams } from 'react-router-dom';
-import { DeckPicker, EngineSummary, ModeTile, Segmented } from '../components/Setup';
+import { DeckPicker, EngineSummary, LifeChoice, ModeTile, Segmented } from '../components/Setup';
 import { GameBoard } from '../components/GameBoard';
 import { botAction, fallbackAction } from '../lib/engine/bot';
 import { actor, apply, IllegalAction, newGame, teamOf, teamsOf, type GameState, type PlayerId } from '../lib/engine/engine';
@@ -29,6 +29,8 @@ export function Play() {
   // Two-Headed Giant: your bot teammate's deck and the second opponent's.
   const [twoHeaded, setTwoHeaded] = useState(false);
   const [commander, setCommander] = useState(false);
+  // A Commander duel: 40 life (the official rules) or 20 (Duel Commander).
+  const [duelLife, setDuelLife] = useState<40 | 20>(40);
   const [allyDeck, setAllyDeck] = useState('preset-red');
   // A Commander deck turns Commander rules on; without a commander in it, say how to set one.
   const chosen = decks.find((d) => d.id === myDeck);
@@ -84,7 +86,7 @@ export function Play() {
     const names = others.length === 3 ? ['', t.play.allyName, t.play.botName1, t.play.botName2] : ['', t.play.botName];
     setGame(newGame({
       decks: [mine, ...others], names, first: firstPlayer,
-      mode: { twoHeaded: others.length === 3, commander },
+      mode: { twoHeaded: others.length === 3, commander, ...(commander && others.length === 1 && duelLife === 20 ? { duelCommander: true } : {}) },
       ...(commander ? { commanders: cmd } : {}),
       // A rematch keeps the full control setting.
       fullControl: game?.fullControl?.length === others.length + 1 ? game.fullControl : undefined,
@@ -145,6 +147,7 @@ export function Play() {
             options={[[1, t.match.single], [3, t.match.bo3]]}
             onChange={setBestOf}
           />
+          {commander && !twoHeaded && <LifeChoice value={duelLife} onChange={setDuelLife} />}
           <Segmented
             label={t.play.first}
             value={first}
