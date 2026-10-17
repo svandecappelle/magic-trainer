@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
 import { activationProblem, actor, apply, findPermanent, hasKw, paymentFor, canBlock, canCastNow, castCost, castSource, canTapForMana, type Answer, castOptions, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
 import { botAction } from './bot';
-import { activatedOf, castInfo, entersTappedRule, gameRulesOf, castSpec, finalChapter, hasKeyword, isCreature, PREDEFINED_TOKENS, tokenCard, type TargetSpec, manaUnits, parseAbilityText, spellSpec, triggersOf } from './rules';
+import { activatedOf, castInfo, cloneOf, entersTappedRule, gameRulesOf, castSpec, finalChapter, hasKeyword, isCreature, PREDEFINED_TOKENS, tokenCard, type TargetSpec, manaUnits, parseAbilityText, spellSpec, triggersOf } from './rules';
 
 // Cards from Standard decks on mtgtop8 (Oct 2026), with their Oracle text.
 let n = 0;
@@ -3391,5 +3391,28 @@ describe('metagame audit 2026-10-17', () => {
       s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
       expect(s.pending?.choice).toMatchObject({ purpose: 'taxName', modes: ['Bolt', 'Swamp'] });
     });
+  });
+
+  it('clones of a creature you control, of any nonland permanent, of an enchantment', () => {
+    const mimic = creature('Glasspool Mimic', 0, 0, { typeLine: 'Creature — Shapeshifter Rogue', manaCost: '{B}', cmc: 1, oracleText: 'You may have this creature enter as a copy of a creature you control, except it\'s a Shapeshifter Rogue in addition to its other types.' });
+    const impersonator = creature('Clever Impersonator', 0, 0, { manaCost: '{B}', cmc: 1, oracleText: 'You may have this creature enter as a copy of any nonland permanent on the battlefield.' });
+    const copyEnchantment = card({ name: 'Copy Enchantment', typeLine: 'Enchantment', manaCost: '{B}', cmc: 1, oracleText: 'You may have this enchantment enter as a copy of any enchantment on the battlefield.' });
+    expect(cloneOf(mimic)).toEqual({ filter: { types: ['creature'] }, mine: true, subtypes: ['Shapeshifter', 'Rogue'] });
+    const bear = creature('Bear', 2, 2, { typeLine: 'Creature — Bear' });
+    const ogre = creature('Ogre', 3, 3);
+    const anthem = card({ name: 'Anthem', typeLine: 'Enchantment', oracleText: 'Creatures you control get +1/+1.' });
+    const options = (c: Card) => {
+      const s = resolve(apply(board({ mana: 1, hand: [c], mine: [bear], theirs: [ogre, anthem] }), { type: 'cast', iid: 'h0' }));
+      return (s.pending!.choice as { options: { card: Card }[] }).options.map((o) => o.card.name);
+    };
+    expect(options(mimic)).toEqual(['Bear']);
+    expect(options(impersonator)).toEqual(['Bear', 'Ogre', 'Anthem']);
+    expect(options(copyEnchantment)).toEqual(['Anthem']);
+    // The Mimic copies the Bear and is a Shapeshifter Rogue too.
+    let s = resolve(apply(board({ mana: 1, hand: [mimic], mine: [bear] }), { type: 'cast', iid: 'h0' }));
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: [iidOf(s, 'Bear')] } }));
+    const copy = s.battlefield.filter((x) => x.card.name === 'Bear')[1];
+    expect(copy.card.typeLine).toBe('Creature — Bear Shapeshifter Rogue');
+    expect(powerOf(copy)).toBe(2);
   });
 });

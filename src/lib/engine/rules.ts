@@ -3046,5 +3046,17 @@ export function toxicOf(card: Card): number {
 export const entersAsBirdCopy = (card: Card) =>
   /^You may have this creature enter as a copy of any creature on the battlefield with mana value less than or equal to the amount of mana spent to cast this creature, except it's a Bird in addition to its other types and it has flying\.$/m.test(frontText(card));
 
-export const entersAsCopy = (card: Card) =>
-  /you may have (?:this creature|[^.]+?) enter(?: the battlefield)? as a copy of (?:any|a) creature on the battlefield\./i.test(frontText(card));
+/**
+ * Clones: "You may have this creature enter as a copy of any creature on the battlefield." What may be copied
+ * (Glasspool Mimic: "a creature you control"; Clever Impersonator: "any nonland permanent"; Copy Enchantment: "any
+ * enchantment"), and the creature types added by "except it's a Shapeshifter Rogue in addition to its other types".
+ */
+export function cloneOf(card: Card): { filter: TargetFilter; mine: boolean; subtypes: string[] } | null {
+  const m = frontText(card).match(/^You may have (?:this (?:creature|artifact|enchantment)|[^.]+?) enter(?: the battlefield)? as a copy of (any creature|a creature you control|any nonland permanent|any artifact|any enchantment)(?: on the battlefield)?(?:, except (?:it's|they're) an? ([A-Z][a-z]+(?: [A-Z][a-z]+)*) in addition to (?:its|their) other types)?\.$/m);
+  if (!m) return null;
+  const what = m[1];
+  const filter: TargetFilter = what === 'any nonland permanent' ? { nonTypes: ['land'] } : { types: [what.split(' ').pop() === 'enchantment' ? 'enchantment' : what.split(' ').pop() === 'artifact' ? 'artifact' : 'creature'] };
+  return { filter, mine: what === 'a creature you control', subtypes: m[2] ? m[2].split(' ') : [] };
+}
+
+export const entersAsCopy = (card: Card) => !!cloneOf(card);

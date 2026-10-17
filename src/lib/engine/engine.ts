@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type AltCost, type CastInfo, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -3971,8 +3971,12 @@ function resolvePermanentSpell(d: GameState, item: StackItem, reason: WindowReas
   // Mockingbird: a creature with mana value at most the mana spent.
   const bird = entersAsBirdCopy(card);
   const spent = (() => { const c = costWithX(card, item.x ?? 0); return c.generic + c.colored.length; })();
-  const others = d.battlefield.filter((x) => isCreature(x.card) && (!bird || printedCard(x).cmc <= spent));
-  if ((entersAsCopy(card) || bird) && others.length) {
+  const clone = cloneOf(card);
+  const others = d.battlefield.filter((x) => (clone
+    // Not an Aura: it would need something to enchant.
+    ? cardMatches(x.card, clone.filter) && !(clone.mine && x.controller !== item.controller) && !/\bAura\b/.test(x.card.typeLine)
+    : isCreature(x.card) && (!bird || printedCard(x).cmc <= spent)));
+  if ((clone || bird) && others.length) {
     d.pending = {
       choice: { kind: 'cards', player: item.controller, purpose: 'clone', min: 0, max: 1, options: others, params: { card: card.name } },
       resume: 'clone', activation: { item, named: [] }, reason,
@@ -4480,6 +4484,12 @@ export function apply(state: GameState, action: Action): GameState {
             ...copy, typeLine: `${types} — ${[subtypes, 'Bird'].filter(Boolean).join(' ')}`,
             keywords: [...new Set([...(copy.keywords ?? []), 'Flying'])], oracleText: `Flying\n${copy.oracleText}`,
           };
+        }
+        // Glasspool Mimic: "except it's a Shapeshifter Rogue in addition to its other types".
+        const added = model ? cloneOf(own)?.subtypes ?? [] : [];
+        if (added.length) {
+          const [types, subtypes] = copy.typeLine.split(' // ')[0].split(' — ');
+          copy = { ...copy, typeLine: `${types} — ${[subtypes, ...added].filter(Boolean).join(' ')}` };
         }
         log(d, { k: 'enters', card: own.name });
         if (model) log(d, { k: 'copied', card: own.name, as: model.card.name });

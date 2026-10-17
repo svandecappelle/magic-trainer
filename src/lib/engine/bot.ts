@@ -1023,8 +1023,9 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
       let options = [...choice.options];
       if (choice.purpose === 'clone') {
         if (safe) return { kind: 'cards', iids: [] };
-        // Copy the best creature on the battlefield.
-        const best = [...options].sort((a, b) => creatureValue(b.card) - creatureValue(a.card))[0];
+        // Copy the best creature on the battlefield (Clever Impersonator: the best permanent).
+        const worth = (c: Card) => (isCreature(c) ? creatureValue(c) : cardWorth(c));
+        const best = [...options].sort((a, b) => worth(b.card) - worth(a.card))[0];
         return { kind: 'cards', iids: best ? [best.iid] : [] };
       }
       if (choice.purpose === 'crewCost') {

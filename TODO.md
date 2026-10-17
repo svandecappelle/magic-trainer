@@ -365,8 +365,9 @@ Still open, playing wrongly, most played first (see `audit-reports/2026-10-17/re
 - [ ] Seasoned Cryomancer (5): stun counters; "When you discard one or more nonland cards this way"
 - [ ] Badgermole Cub (4): earthbend; "Whenever you tap a creature for mana, add an additional {G}"
 - [ ] Lion's Eye Diamond (4), Arena of Glory (exert), Wall of Roots (a -0/-1 counter as a mana cost)
-- [ ] Clones of anything but "any creature": Phantasmal Image (sacrificed when targeted), Flesh Duplicate (vanishing),
-  Glasspool Mimic (a creature you control), Clever Impersonator (any nonland permanent), Superior Spider-Man
+- [ ] Clones with more than added types: Phantasmal Image (sacrificed when targeted), Flesh Duplicate (vanishing),
+  Gigantoplasm, Superior Spider-Man (a creature card in a graveyard) — Glasspool Mimic, Clever Impersonator and Copy
+  Enchantment done (third batch)
 - [ ] Kinnan, Nyxbloom Ancient, Wild Growth, Badgermole Cub: extra mana when a permanent is tapped for mana
 - [ ] Hypnotic Specter: "deals damage to an opponent, that player discards a card at random"
 
