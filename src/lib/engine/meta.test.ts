@@ -2879,3 +2879,49 @@ describe('online: stops decided from public information', () => {
   });
 });
 
+describe('bot mana planning', () => {
+  const land = (type: string, n: number) => Array.from({ length: n }, () => card({ name: type, typeLine: `Basic Land — ${type}` }));
+  const toMain2 = (s: GameState) => {
+    s.step = 'main2';
+    return s;
+  };
+
+  it('casts a ritual when its mana makes a spell in hand affordable', () => {
+    const ritual = spell('Dark Ritual', '{B}', 'Add {B}{B}{B}.');
+    const ogre = creature('Ogre', 4, 4, { manaCost: '{3}{B}', cmc: 4 });
+    let s = toMain2(board({ mana: 2, hand: [ritual, ogre] }));
+    expect(botAction(s)).toMatchObject({ type: 'cast', iid: 'h0' });
+    // Nothing to enable: the ritual stays in hand.
+    s = toMain2(board({ mana: 2, hand: [ritual, creature('Bear', 2, 2, { manaCost: '{1}{B}', cmc: 2 })] }));
+    expect(botAction(s)).toMatchObject({ type: 'cast', iid: 'h1' });
+  });
+
+  it('keeps mana for a counterspell unless the play is bigger', () => {
+    const counter = spell('Counterspell', '{U}{U}', 'Counter target spell.');
+    const bear = creature('Bear', 2, 2, { manaCost: '{1}{U}', cmc: 2 });
+    const sphinx = creature('Sphinx', 4, 4, { manaCost: '{2}{U}{U}', cmc: 4 });
+    // Three Islands: the Bear would leave {U}: held.
+    let s = toMain2(board({ mine: land('Island', 3), hand: [counter, bear], oppHand: [bear] }));
+    expect(botAction(s)).toEqual({ type: 'pass' });
+    // Four Islands: Bear and Counterspell both fit.
+    s = toMain2(board({ mine: land('Island', 4), hand: [counter, bear], oppHand: [bear] }));
+    expect(botAction(s)).toMatchObject({ type: 'cast', iid: 'h1' });
+    // The Sphinx costs more than the counter: cast.
+    s = toMain2(board({ mine: land('Island', 4), hand: [counter, sphinx], oppHand: [bear] }));
+    expect(botAction(s)).toMatchObject({ type: 'cast', iid: 'h1' });
+    // The opponent has no cards: nothing to counter.
+    s = toMain2(board({ mine: land('Island', 3), hand: [counter, bear] }));
+    expect(botAction(s)).toMatchObject({ type: 'cast', iid: 'h1' });
+  });
+
+  it('holds flash creatures for the end of the opponent\'s turn', () => {
+    const flash = creature('Snapcaster', 2, 1, { manaCost: '{1}{U}', cmc: 2, keywords: ['Flash'], oracleText: 'Flash' });
+    let s = toMain2(board({ mine: land('Island', 2), hand: [flash] }));
+    expect(botAction(s)).toEqual({ type: 'pass' });
+    // The opponent's end step: cast.
+    s = board({ theirs: land('Island', 2), oppHand: [flash] });
+    s.priority = { player: 1, passes: 0, reason: 'end' };
+    expect(botAction(s)).toMatchObject({ type: 'cast', iid: 'o0' });
+  });
+});
+

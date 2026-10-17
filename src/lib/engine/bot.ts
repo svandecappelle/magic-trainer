@@ -5,7 +5,7 @@ import {
 } from './engine';
 import {
   activatedOf, auraTarget, castInfo, castSpec, creatureValue, modeSets, faceCard, findPayment, hasInstantSpeed, isAdventure, isPlaneswalker, isSaga, isToken, staticsOf, hasKeyword, isCreature, isInstantOrSorcery, isLandCard, manaColors,
-  cardColors, reconfiguresEnchanted, choosesBasicType, discardsLandInstead, parseCost, spellSpec, stateMana, type AbilitySpec, type Amount, type Color, type Effect,
+  cardColors, reconfiguresEnchanted, choosesBasicType, discardsLandInstead, parseCost, spellSpec, stateMana, planPayment, type AbilitySpec, type Amount, type Color, type Effect, type ManaSource,
 } from './rules';
 import type { Card } from '../../types';
 
@@ -328,10 +328,75 @@ function castable(s: GameState, me: PlayerId) {
     .sort((a, b) => b.card.cmc - a.card.cmc);
 }
 
+// ---------- Mana planning ----------
+
+/** What would be left to pay with after paying for `c` (null: it can't be paid). */
+function sourcesAfter(s: GameState, me: PlayerId, c: Candidate): ManaSource[] | null {
+  const sources = castSources(s, me, c.card, c.iid, c.opt.face);
+  const plan = planPayment(sources, castCost(s, me, c.card, c.opt));
+  if (!plan) return null;
+  const used = new Set(plan.map((m) => m.iid));
+  // A source with several mana (Sol Ring) keeps its unspent mana in the pool.
+  const spent = new Set(plan.map((m) => `${m.iid}#${m.index}`));
+  return sources.flatMap((m): ManaSource[] => {
+    if (!used.has(m.iid)) return [m];
+    return (m.units ?? [m.colors]).flatMap((colors, i) => (spent.has(`${m.iid}#${i}`) ? [] : [{ iid: `left:${m.iid}#${i}`, colors }]));
+  });
+}
+
+/** Instants to keep mana up for during our turn: counterspells (from the hand), when an opponent has cards to cast. */
+function heldInstants(s: GameState, me: PlayerId): CardInst[] {
+  if (!opponentsOf(s, me).some((o) => s.players[o].hand.length)) return [];
+  return s.players[me].hand.filter((c) => isInstantOrSorcery(c.card) && hasInstantSpeed(c.card) && spellSpec(c.card).effects.some((e) => e.kind === 'counter'));
+}
+
+/**
+ * Casting `c` now leaves mana for the instant we hold (or `c` is the bigger play: it costs more than that instant).
+ */
+function keepsInstantMana(s: GameState, me: PlayerId, c: Candidate): boolean {
+  const held = heldInstants(s, me).filter((h) => h.iid !== c.iid);
+  if (!held.length) return true;
+  const cheapest = held.reduce((a, b) => (b.card.cmc < a.card.cmc ? b : a));
+  if (c.face.cmc > cheapest.card.cmc) return true;
+  // The counter can't be paid now anyway: nothing to keep.
+  if (!findPayment(manaSources(s, me, cheapest.card), castCost(s, me, cheapest.card, { iid: cheapest.iid }))) return true;
+  const left = sourcesAfter(s, me, c);
+  return !!left && !!findPayment(left, castCost(s, me, cheapest.card, { iid: cheapest.iid }));
+}
+
+/** A ritual (only mana: Dark Ritual) worth casting: its mana makes a spell in hand affordable that isn't now. */
+function ritualFor(s: GameState, me: PlayerId, all: Candidate[]): Candidate | null {
+  for (const ritual of all) {
+    const effects = spellSpec(ritual.face).effects;
+    if (!isInstantOrSorcery(ritual.face) || !effects.length || !effects.every((e) => e.kind === 'addMana')) continue;
+    const left = sourcesAfter(s, me, ritual);
+    if (!left) continue;
+    const made = effects.flatMap((e) => (e.kind === 'addMana' ? e.units : [])).map((colors, i): ManaSource => ({ iid: `ritual:${i}`, colors }));
+    const ps = s.players[me];
+    const enabled = ps.hand.some((c) => c.iid !== ritual.iid && !isLandCard(c.card) && !canCastNow(s, me, c.card)
+      && spellSpec(c.card).effects.length + Number(!isInstantOrSorcery(c.card)) > 0
+      && !!findPayment([...left, ...made], castCost(s, me, c.card, { iid: c.iid })));
+    if (enabled) return ritual;
+  }
+  return null;
+}
+
+/** Flash creatures wait for the end of the opponent's turn (they still block, and dodge sorcery-speed removal). */
+const waitsForEndStep = (s: GameState, me: PlayerId, card: Card) =>
+  isCreature(card) && hasInstantSpeed(card) && !hasKeyword(card, 'haste') && opponentsOf(s, me).length > 0;
+
 function chooseMainPhaseSpell(s: GameState, me: PlayerId): Action | null {
-  for (const c of candidates(s, me)) {
+  const all = candidates(s, me);
+  // A ritual first when its mana makes another spell castable (cast once the mana is in the pool): in the second main
+  // phase, where creatures are cast too.
+  const ritual = isActivePlayer(s, me) && !s.priority && s.step === 'main2' ? ritualFor(s, me, all) : null;
+  if (ritual) return castAction(ritual);
+  for (const c of all) {
     const card = c.face;
+    // Counterspell mana stays up for the opponent's turn unless this is the bigger play.
+    if (!hasInstantSpeed(card) && !keepsInstantMana(s, me, c)) continue;
     if (!isInstantOrSorcery(card)) {
+      if (waitsForEndStep(s, me, card)) continue;
       // Creatures and other permanents: before combat only if they can attack right away.
       const aura = auraTarget(card);
       if (aura) {
@@ -862,7 +927,9 @@ function respond(s: GameState, me: PlayerId): Action | null {
     }
   }
   if (reason === 'end' && !isActivePlayer(s, me)) {
-    // End of the opponent's turn: use mana that would otherwise go to waste.
+    // End of the opponent's turn: flash creatures held back, then mana that would otherwise go to waste.
+    const flash = candidates(s, me).find((c) => waitsForEndStep(s, me, c.face) && !auraTarget(c.face));
+    if (flash) return castAction(flash);
     for (const c of spells) {
       const action = castWithGoodTarget(s, me, c);
       if (action) return action;

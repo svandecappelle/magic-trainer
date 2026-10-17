@@ -161,8 +161,10 @@ get each face's cost and image (their text is rebuilt from the joined faces mean
   a commander always goes back to the command zone. More than two teams (free-for-all) is not supported.
 - [x] Turn timer, reconnect timeout — online: TURN_SECONDS per decision (default action on timeout, conceding after
   3 in a row), RECONNECT_SECONDS to come back (concede otherwise); countdown shown to both players
-- [ ] Bot: mana planning (rituals, holding mana for instants). Done: multi-blocks (double blocks, menace), logic for
-  each mechanic added in steps 1–6
+- [x] Bot: mana planning — a ritual when its mana makes a spell in hand castable (second main phase); counterspell
+  mana kept up during its turn when the opponent has cards (unless the play costs more than the counter); flash
+  creatures held for the end of the opponent's turn. Also: multi-blocks (double blocks, menace), logic for each
+  mechanic added in steps 1–6. Not planned: mana for removal held back, sequencing two spells in one turn
 
 ## Standard decks audit (mtgtop8, Oct 2026)
 
