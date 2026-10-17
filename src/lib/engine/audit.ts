@@ -76,7 +76,7 @@ function keywordLine(card: Card, line: string, one: Card): LineReport | null {
     if (k === 'crew') return activatedOf(one).some((a) => a.cost.crew !== undefined);
     if (k === 'fading') return fadingOf(one) > 0;
     // Alternative costs: evoke, warp, web-slinging, cleave.
-    if (k === 'evoke' || k === 'warp' || k === 'web-slinging' || k === 'cleave') return castInfo(card).alts.length > 0;
+    if (k === 'evoke' || k === 'warp' || k === 'web-slinging' || k === 'cleave' || k === 'impending') return castInfo(card).alts.length > 0;
     if (k === 'cumulative upkeep') return triggersOf(one).some((tr) => tr.ability.effects.some((x) => x.kind === 'cumulativeUpkeep'));
     if (k === 'devoid') return true; // the card's colors are already none
     if (k === 'metalcraft') return manaConditions(one).some((c) => 'artifacts' in c);

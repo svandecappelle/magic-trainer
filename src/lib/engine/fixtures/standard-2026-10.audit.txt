@@ -136,11 +136,6 @@ NONE     Oildeep Gearhulk {U}{U}{B}{B} — Artifact Creature — Construct
 NONE     Outrageous Robbery {X}{B}{B} — Instant
   ✗ Target opponent exiles the top X cards of their library face down. Yo…
       spell not simulated
-NONE     Overlord of the Balemurk {3}{B}{B} — Enchantment Creature — Avatar Horror
-  ✗ Impending 5—{1}{B}
-      keyword not simulated: impending
-  ✗ Whenever this permanent enters or attacks, mill four cards, then you …
-      trigger (enters/attacks), effect not simulated
 NONE     Pinnacle Starcage {1}{W}{W} — Artifact
   ✗ When this artifact enters, exile all artifacts and creatures with man…
       trigger (enters), effect not simulated
@@ -795,6 +790,11 @@ OK       No More Lies {W}{U} — Instant
 OK       Octopus Form {U} — Instant — Lesson
   ✓ Target creature you control gets +1/+1 and gains hexproof until end o…
       spell → pump+untap (1 target)
+OK       Overlord of the Balemurk {3}{B}{B} — Enchantment Creature — Avatar Horror
+  ✓ Impending 5—{1}{B}
+      keyword
+  ✓ Whenever this permanent enters or attacks, mill four cards, then you …
+      trigger (enters/attacks) → mill+returnFromGraveyard | mill+returnFromGraveyard
 OK       Pinecone Strike {1}{R} — Instant
   ✓ Choose one or both —
       modal: choose 1–2
@@ -961,5 +961,5 @@ OK       Zoraline, Cosmos Caller {1}{W}{B} — Legendary Creature — Bat Cleric
   ✓ Whenever Zoraline enters or attacks, you may pay {W}{B} and 2 life. W…
       trigger (enters/attacks) → reflexive | reflexive
 
-178 cards: 87 ok, 40 partial, 51 not simulated, 0 can't be cast
+178 cards: 88 ok, 40 partial, 50 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

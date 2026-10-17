@@ -405,7 +405,7 @@ export interface TargetSpec {
 /** Counter kinds placed on permanents. */
 export type CounterKind = '+1/+1' | '-1/-1' | 'loyalty' | 'lore' | 'rev' | 'luck' | 'mining' | 'age' | 'fade' | 'chorus'
   // Stun (Snaremaster Sprite): it doesn't untap, a counter is removed instead. Finality (Zoraline): exiled if it would die.
-  | 'stun' | 'finality'
+  | 'stun' | 'finality' | 'time'
   // Keyword counters (Ghost Vacuum's flying, Leatherhead's hexproof): the permanent has that keyword.
   | 'flying' | 'hexproof' | 'indestructible' | 'lifelink' | 'trample' | 'deathtouch' | 'menace' | 'reach' | 'vigilance' | 'first strike';
 
@@ -603,6 +603,9 @@ export type Effect =
   | { kind: 'castDiscarded'; minCounters: number; counter: CounterKind }
   // "Transform Aang.": the permanent turns to its other face.
   | { kind: 'transform' }
+  // Overlord of the Balemurk: "you may return a non-Avatar creature card or a planeswalker card from your graveyard to
+  // your hand" (chosen as it resolves: not a target). A card matching any of the filters.
+  | { kind: 'returnFromGraveyard'; filters: TargetFilter[]; optional: boolean }
   // All Aboard: "Exile target non-Pilot creature you control, then return that card to the battlefield under its owner's control."
   | { kind: 'flicker'; to: Affected }
   // Multiply by Zero: "Target creature has base power and toughness 0/0 until end of turn." (layer 7b)
@@ -1114,6 +1117,16 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     const n = toNumber(m[1]);
     return n ? { kind: 'castDiscarded', minCounters: n, counter: 'chorus' } : null;
   });
+  scan(/\b(?:then )?(you may )?return an? ([A-Za-z -]+?) card(?: or an? ([A-Za-z -]+?) card)? from your graveyard to your hand(?=\.)/g, (m) => {
+    const filters = [m[2], m[3]].filter(Boolean).map((words) => {
+      // "non-Avatar creature": a subtype excluded, then card words.
+      const non = words.match(/^non-([A-Z][a-z]+) (.+)$/);
+      const f = cardWordsFilter(non ? non[2] : words);
+      return f && non ? { ...f, nonSubtypes: [non[1].toLowerCase()] } : f;
+    });
+    if (!filters.length || filters.some((f) => !f)) return null;
+    return { kind: 'returnFromGraveyard', filters: filters as TargetFilter[], optional: !!m[1] };
+  });
   scan(/\bPut each creature card exiled with this artifact onto the battlefield under your control with a flying counter on it\. Each of them is a 1\/1 Spirit in addition to its other types(?=\.)/g, () => ({ kind: 'returnExiledSpirits' }));
   scan(/\bThen if you have the city's blessing, for each token you control that entered (?:the battlefield )?this turn, create a token that's a copy of it(?=\.)/g, () => ({ kind: 'copyNewTokens' }));
   scan(/\bPrevent all combat damage that would be dealt this turn\./gi, () => ({ kind: 'preventCombat' }));
@@ -1600,7 +1613,8 @@ export type AltCost =
    */
   | { kind: 'exileCard'; color: Color; notYourTurn?: boolean; evoke?: boolean }
   /** Cleave (the words in brackets removed), warp (exiled at the next end step), web-slinging (and a tapped creature you control returned). */
-  | { kind: 'mana'; cost: string; name: 'cleave' | 'warp' | 'webSlinging' }
+  /** Impending N: enters with N time counters, not a creature until the last is removed (one each end step). */
+  | { kind: 'mana'; cost: string; name: 'cleave' | 'warp' | 'webSlinging' | 'impending'; counters?: number }
   /** Phyrexian mana ({U/P}): 2 life for each one instead of its mana. */
   | { kind: 'phyrexian'; n: number };
 
@@ -1655,6 +1669,8 @@ export function castInfo(card: Card, face = 0): CastInfo {
       info.alts.push({ kind: 'exileCard', color: COLOR_WORDS[m[1].toLowerCase()], evoke: true });
     } else if ((m = line.match(/^(Cleave|Warp|Web-slinging) ((?:\{[^}]+\})+)$/))) {
       info.alts.push({ kind: 'mana', cost: m[2], name: m[1] === 'Cleave' ? 'cleave' : m[1] === 'Warp' ? 'warp' : 'webSlinging' });
+    } else if ((m = line.match(/^Impending (\d+)—((?:\{[^}]+\})+)$/))) {
+      info.alts.push({ kind: 'mana', cost: m[2], name: 'impending', counters: Number(m[1]) });
     } else if ((m = line.match(/^Kicker ((?:\{[^}]+\})+)$/))) info.kicker = m[1];
     else if ((m = line.match(/^Flashback ((?:\{[^}]+\})+)$/))) info.flashback = m[1];
     else if ((m = line.match(/^Cycling ((?:\{[^}]+\})+)$/))) info.cycling = { cost: m[1] };

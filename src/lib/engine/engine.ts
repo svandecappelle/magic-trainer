@@ -77,6 +77,8 @@ export interface Permanent extends CardInst {
   unanimated?: Card;
   /** Transformed: showing its back face (Aang and La, Black Panther). */
   transformed?: boolean;
+  /** Impending: not a creature while it has time counters (its card is the printed one again after the last). */
+  impending?: boolean;
   /** Skycoach Conductor: a copy of its other face's spell can still be cast. */
   prepared?: boolean;
   /** Swift Reconfiguration: its card before it became a Vehicle artifact (restored when the Aura leaves). */
@@ -266,6 +268,7 @@ export type ChoicePurpose =
   | 'basicType' // Multiversal Passage: "choose a basic land type"
   | 'color' // Mother of Runes: "protection from the color of your choice"
   | 'exploreMill' // explore: put the revealed nonland card into the graveyard?
+  | 'returnFromGraveyard' // Overlord of the Balemurk: a card from the graveyard to the hand
   | 'reflexiveSacrifice' // Ruthless Lawbringer: "you may sacrifice another creature. When you do, …"
   | 'reflexiveRemoveCounter' // Leatherhead: "you may remove a counter from her. When you do, …"
   | 'chosenPlayer' // True-Name Nemesis: "choose a player"
@@ -2408,6 +2411,19 @@ function fireStep(d: GameState, on: StepEvent) {
     }
     delete d.warpAtEnd;
   }
+  // Impending: "At the beginning of your end step, remove a time counter from it." The last one: it is a creature.
+  if (on === 'endStep') {
+    for (const perm of d.battlefield.filter((x) => x.impending && isActivePlayer(d, x.controller))) {
+      const left = Math.max(0, (perm.counters.time ?? 0) - 1);
+      perm.counters = { ...perm.counters, time: left };
+      log(d, { k: 'counterRemoved', card: perm.card.name, counter: 'time' });
+      if (!left) {
+        perm.card = perm.printed ?? perm.card;
+        delete perm.impending;
+        log(d, { k: 'becomesCreature', card: perm.card.name });
+      }
+    }
+  }
   // Phelia: "At the beginning of the next end step, return that card to the battlefield under its owner's control."
   if (on === 'endStep' && d.returnAtEnd?.length) {
     for (const x of d.returnAtEnd) {
@@ -3641,6 +3657,20 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         log(d, { k: 'token', p: caster, card: model.name, n: 1 });
       }
       break;
+    case 'returnFromGraveyard': {
+      // Overlord of the Balemurk: chosen as it resolves, after the mill.
+      const ps = d.players[caster];
+      const options = ps.graveyard.filter((c) => e.filters.some((f) => cardMatches(c.card, f)));
+      if (!options.length) break;
+      if (answer?.kind !== 'cards') return { kind: 'cards', player: caster, purpose: 'returnFromGraveyard', min: e.optional ? 0 : 1, max: 1, options, params: { card: item.card.name } };
+      const picked = answer.iids[0];
+      const inst = options.find((c) => c.iid === picked);
+      if (!inst) break;
+      ps.graveyard = ps.graveyard.filter((c) => c !== inst);
+      ps.hand.push(inst);
+      log(d, { k: 'returned', card: inst.card.name, dest: 'hand' });
+      break;
+    }
     case 'transform': {
       // The permanent turns to its other face (counters, damage and attachments stay).
       const perm = item.source ? findPermanent(d, item.source) : undefined;
@@ -3873,6 +3903,13 @@ function resolvePermanentSpell(d: GameState, item: StackItem, reason: WindowReas
   const paid = item.alt === undefined ? undefined : castInfo(item.card, item.face ?? 0).alts[item.alt];
   if (paid?.kind === 'exileCard' && paid.evoke) queueTrigger(d, perm, perm.controller, { targets: [], effects: [{ kind: 'sacrificeSelf' }] });
   if (paid?.kind === 'mana' && paid.name === 'warp') (d.warpAtEnd ??= []).push(perm.iid);
+  // Impending: time counters, and not a creature until the last one is removed.
+  if (paid?.kind === 'mana' && paid.name === 'impending' && paid.counters) {
+    perm.counters = { ...perm.counters, time: paid.counters };
+    perm.printed ??= perm.card;
+    perm.impending = true;
+    perm.card = { ...perm.card, typeLine: perm.card.typeLine.replace(/\s*\bCreature\b/, '') };
+  }
   if (aura && host?.kind === 'permanent') {
     perm.attachedTo = host.iid;
     log(d, { k: 'attached', card: perm.card.name, to: findPermanent(d, host.iid)!.card.name });

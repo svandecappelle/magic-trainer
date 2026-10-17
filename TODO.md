@@ -200,7 +200,8 @@ Still missing, most played first:
 - [ ] Still missing: energy (Guide of Souls), Leatherhead's "target artifact or enchantment that player controls" (the
   damaged player), "When you discard one or more nonland cards this way" (Seasoned Cryomancer), Ty Lee ("doesn't untap
   for as long as you control Ty Lee"), Inti's "Whenever you discard one or more cards" (impulse draw)
-- [ ] Mill, then "you may return a … card from your graveyard to your hand" (Overlord of the Balemurk); impending
+- [x] Mill, then "you may return a … card from your graveyard to your hand" (Overlord of the Balemurk); impending (time
+  counters, not a creature until the last is removed; the counter is removed at once, not by a trigger on the stack)
 - [ ] Spree and Tiered (Three Steps Ahead, Requisition Raid, Return the Favor, Fire Magic): modes with extra costs
 - [ ] Blink "with a +1/+1 counter on it" (Daydream); "exile … until this leaves the battlefield" for Deep-Cavern Bat
   and Pinnacle Starcage (plain blink: All Aboard; Seam Rip done)

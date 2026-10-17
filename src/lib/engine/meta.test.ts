@@ -3023,3 +3023,41 @@ describe('reflexive costs, stun and finality counters', () => {
   });
 });
 
+describe('Overlord of the Balemurk: impending, mill then return a card', () => {
+  const overlord = creature('Overlord of the Balemurk', 5, 5, {
+    typeLine: 'Enchantment Creature — Avatar Horror', manaCost: '{3}{B}{B}', cmc: 5, keywords: ['Impending', 'Mill'],
+    oracleText: 'Impending 5—{1}{B} (If you cast this spell for its impending cost, it enters with five time counters and isn\'t a creature until the last is removed. At the beginning of your end step, remove a time counter from it.)\nWhenever this permanent enters or attacks, mill four cards, then you may return a non-Avatar creature card or a planeswalker card from your graveyard to your hand.',
+  });
+
+  it('cast for {1}{B}: five time counters, not a creature; mills four and returns a creature card', () => {
+    let s = board({ mana: 2, hand: [overlord] });
+    const ogre = creature('Ogre', 3, 3);
+    const avatar = creature('Avatar', 3, 3, { typeLine: 'Creature — Avatar' });
+    s.players[0].library = [ogre, avatar, spell('Opt', '{U}', 'Draw a card.'), swamp].map((c, i) => ({ iid: `l${i}`, card: c }));
+    expect(castOptions(s, 0, 'h0').map((o) => o.alt)).toEqual([0]);
+    s = settle(apply(s, { type: 'cast', iid: 'h0', alt: 0 }));
+    for (let i = 0; i < 8 && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    const o = perm(s, 'Overlord of the Balemurk')!;
+    expect(o.counters.time).toBe(5);
+    expect(isCreature(o.card)).toBe(false);
+    expect(s.players[0].graveyard).toHaveLength(4);
+    // Only the Ogre: the Avatar is excluded, the others aren't creatures or planeswalkers.
+    expect(s.pending?.choice).toMatchObject({ kind: 'cards', purpose: 'returnFromGraveyard', min: 0, max: 1 });
+    expect((s.pending!.choice as { options: { card: Card }[] }).options.map((c) => c.card.name)).toEqual(['Ogre']);
+    s = apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['l0'] } });
+    expect(s.players[0].hand.map((c) => c.card.name)).toEqual(['Ogre']);
+    // The end step: a time counter removed.
+    for (let i = 0; i < 20 && s.step !== 'main2'; i++) s = !s.priority && s.step === 'attack' ? apply(s, { type: 'declareAttackers', attackers: [] }) : apply(s, { type: 'pass' });
+    s = apply(s, { type: 'pass' });
+    expect(perm(s, 'Overlord of the Balemurk')!.counters.time).toBe(4);
+    // The last one: a creature again.
+    const last = perm(s, 'Overlord of the Balemurk')!;
+    last.counters.time = 1;
+    s.active = 0;
+    s.step = 'main2';
+    s.priority = null;
+    s = apply(s, { type: 'pass' });
+    expect(isCreature(perm(s, 'Overlord of the Balemurk')!.card)).toBe(true);
+  });
+});
+

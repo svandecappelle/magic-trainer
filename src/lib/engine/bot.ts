@@ -1059,6 +1059,11 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
       }
       // Mox Diamond: a land, always (it goes to the graveyard otherwise).
       if (choice.purpose === 'discardLandInstead') return { kind: 'cards', iids: options.slice(0, 1).map((c) => c.iid) };
+      // Overlord of the Balemurk: the best card back.
+      if (choice.purpose === 'returnFromGraveyard') {
+        const best = [...options].sort((a, b) => cardWorth(b.card) - cardWorth(a.card))[0];
+        return { kind: 'cards', iids: best ? [best.iid] : [] };
+      }
       // Ruthless Lawbringer: a creature worth less than what the "When you do" part destroys.
       if (!safe && choice.purpose === 'reflexiveSacrifice') {
         const victim = [...options].sort((a, b) => creatureValue(a.card) - creatureValue(b.card))[0];
