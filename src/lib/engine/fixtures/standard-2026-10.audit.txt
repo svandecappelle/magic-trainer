@@ -67,15 +67,6 @@ NONE     Emptiness {4}{W/B}{W/B} — Creature — Elemental Incarnation
 NONE     Fiery Annihilation {2}{R} — Instant
   ✗ Fiery Annihilation deals 5 damage to target creature. Exile up to one…
       spell not simulated
-NONE     Fire Magic {R} — Instant
-  ✗ Tiered
-      keyword not simulated: tiered
-  ✗ • Fire — {0} — Fire Magic deals 1 damage to each creature.
-      spell not simulated
-  ✗ • Fira — {2} — Fire Magic deals 2 damage to each creature.
-      spell not simulated
-  ✗ • Firaga — {5} — Fire Magic deals 3 damage to each creature.
-      spell not simulated
 NONE     Ghitu Lavarunner {R} — Creature — Human Wizard
   ? As long as there are two or more instant and/or sorcery cards in your…
       not read by the engine
@@ -151,22 +142,13 @@ NONE     Qarsi Revenant {1}{B}{B} — Creature — Vampire
       keyword
   ? Renew — {2}{B}, Exile this card from your graveyard: Put a flying cou…
       activated ability with a cost or restriction not understood
-NONE     Requisition Raid {W} — Sorcery
-  ✗ Spree
-      keyword not simulated: spree
-  ✗ + {1} — Destroy target artifact.
-      spell not simulated
-  ✗ + {1} — Destroy target enchantment.
-      spell not simulated
-  ✗ + {1} — Put a +1/+1 counter on each creature target player controls.
-      spell not simulated
 NONE     Return the Favor {R}{R} — Instant
-  ✗ Spree
-      keyword not simulated: spree
+  ✓ Spree
+      keyword
   ✗ + {1} — Copy target instant spell, sorcery spell, activated ability, …
-      spell not simulated
+      mode not simulated (can't be chosen)
   ✗ + {1} — Change the target of target spell or ability with a single ta…
-      spell not simulated
+      mode not simulated (can't be chosen)
 NONE     Riverchurn Monument {1}{U} — Artifact
   ✗ {1}, {T}: Any number of target players each mill two cards.
       activated ability, effect not simulated
@@ -227,15 +209,6 @@ NONE     Theorist's Sanctum  — Land — Island
       not read by the engine
   ✗ {2}{U}, {T}: Empower Jace 2.
       activated ability, effect not simulated
-NONE     Three Steps Ahead {U} — Instant
-  ✗ Spree
-      keyword not simulated: spree
-  ✗ + {1}{U} — Counter target spell.
-      spell not simulated
-  ✗ + {3} — Create a token that's a copy of target artifact or creature y…
-      spell not simulated
-  ✗ + {2} — Draw two cards, then discard a card.
-      spell not simulated
 NONE     Together as One {6} — Sorcery
   ✗ Converge — Target player draws X cards, Together as One deals X damag…
       spell not simulated
@@ -498,6 +471,15 @@ PARTIAL  Ral, Crackling Wit {2}{U}{R} — Legendary Planeswalker — Ral
       loyalty ability → draw+discard
   ✗ −10: Draw three cards. You get an emblem with "Instant and sorcery sp…
       activated ability, effect not simulated
+PARTIAL  Requisition Raid {W} — Sorcery
+  ✓ Spree
+      keyword
+  ✓ + {1} — Destroy target artifact.
+      mode
+  ✓ + {1} — Destroy target enchantment.
+      mode
+  ✗ + {1} — Put a +1/+1 counter on each creature target player controls.
+      mode not simulated (can't be chosen)
 PARTIAL  Restless Anchorage  — Land
   ✓ This land enters tapped.
       enters tapped (always)
@@ -693,6 +675,15 @@ OK       Fatehold Charm {W}{U} — Instant
   ✓ • Return target spell or creature to its owner's hand.
       mode
   ✓ • Creatures you control get +1/+2 until end of turn.
+      mode
+OK       Fire Magic {R} — Instant
+  ✓ Tiered
+      keyword
+  ✓ • Fire — {0} — Fire Magic deals 1 damage to each creature.
+      mode
+  ✓ • Fira — {2} — Fire Magic deals 2 damage to each creature.
+      mode
+  ✓ • Firaga — {5} — Fire Magic deals 3 damage to each creature.
       mode
 OK       Firebending Lesson {R} — Instant — Lesson
   ✓ Kicker {4}
@@ -939,6 +930,15 @@ OK       Theorix Charm {U}{B} — Instant
       mode
   ✓ • Mill three cards, then draw a card.
       mode
+OK       Three Steps Ahead {U} — Instant
+  ✓ Spree
+      keyword
+  ✓ + {1}{U} — Counter target spell.
+      mode
+  ✓ + {3} — Create a token that's a copy of target artifact or creature y…
+      mode
+  ✓ + {2} — Draw two cards, then discard a card.
+      mode
 OK       Traumatic Critique {X}{U}{R} — Instant
   ✓ Traumatic Critique deals X damage to any target. Draw two cards, then…
       spell → damage+draw+discard (1 target)
@@ -961,5 +961,5 @@ OK       Zoraline, Cosmos Caller {1}{W}{B} — Legendary Creature — Bat Cleric
   ✓ Whenever Zoraline enters or attacks, you may pay {W}{B} and 2 life. W…
       trigger (enters/attacks) → reflexive | reflexive
 
-178 cards: 88 ok, 40 partial, 50 not simulated, 0 can't be cast
+178 cards: 90 ok, 41 partial, 47 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

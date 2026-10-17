@@ -75,7 +75,7 @@ describe('partly understood texts are not simulated', () => {
     expect(parseAbilityText('Return target creature to its owner\'s hand. Its controller reveals their hand.').effects).toEqual([]);
     // An emblem with an ability the engine can't do isn't created.
     expect(parseAbilityText('You get an emblem with "Creatures you control get +1/+1 and have trample as long as you control a Dragon."').effects).toEqual([]);
-    // Spree modes have their own costs: not all modes for the base cost.
+    // Spree modes have their own costs: no mode chosen, nothing (the modes are chosen when casting).
     const threeSteps = spell('Three Steps Ahead', '{U}', 'Spree\n+ {1}{U} — Counter target spell.\n+ {3} — Create a token that\'s a copy of target artifact or creature you control.\n+ {2} — Draw two cards, then discard a card.');
     expect(spellSpec(threeSteps).effects).toEqual([]);
   });
@@ -3058,6 +3058,44 @@ describe('Overlord of the Balemurk: impending, mill then return a card', () => {
     s.priority = null;
     s = apply(s, { type: 'pass' });
     expect(isCreature(perm(s, 'Overlord of the Balemurk')!.card)).toBe(true);
+  });
+});
+
+describe('Spree and Tiered: modes with their own costs', () => {
+  const threeSteps = spell('Three Steps Ahead', '{U}', 'Spree (Choose one or more additional costs.)\n+ {1}{U} — Counter target spell.\n+ {3} — Create a token that\'s a copy of target artifact or creature you control.\n+ {2} — Draw two cards, then discard a card.');
+  const fireMagic = spell('Fire Magic', '{R}', 'Tiered (Choose one additional cost.)\n• Fire — {0} — Fire Magic deals 1 damage to each creature.\n• Fira — {2} — Fire Magic deals 2 damage to each creature.\n• Firaga — {5} — Fire Magic deals 3 damage to each creature.');
+  const islands = (n: number) => Array.from({ length: n }, () => card({ name: 'Island', typeLine: 'Basic Land — Island' }));
+  const mountains = (n: number) => Array.from({ length: n }, () => card({ name: 'Mountain', typeLine: 'Basic Land — Mountain' }));
+
+  it('costs the mana cost plus the modes chosen', () => {
+    const s = board({ mine: islands(3), hand: [threeSteps] });
+    expect(castInfo(threeSteps).modal).toMatchObject({ min: 1, max: 3, costs: ['{1}{U}', '{3}', '{2}'] });
+    expect(castCost(s, 0, threeSteps, { modes: [2] })).toEqual({ generic: 2, colored: [['U']] });
+    expect(castCost(s, 0, threeSteps, { modes: [0, 2] })).toEqual({ generic: 3, colored: [['U'], ['U']] });
+    // Three Islands: drawing ({U} + {2}) is fine; counter and draw ({U}{1}{U}{2}) isn't.
+    expect(errorOf(() => apply(s, { type: 'cast', iid: 'h0', modes: [2] }))).toBeNull();
+    s.stack = [{ iid: 'x0', card: creature('Ogre', 3, 3), controller: 1, targets: [] }];
+    s.priority = { player: 0, passes: 0, reason: 'main' };
+    expect(errorOf(() => apply(s, { type: 'cast', iid: 'h0', modes: [0, 2], targets: [[{ kind: 'spell', iid: 'x0' }]] }))).toBe('notEnoughMana');
+    expect(errorOf(() => apply(s, { type: 'cast', iid: 'h0', modes: [0], targets: [[{ kind: 'spell', iid: 'x0' }]] }))).toBeNull();
+  });
+
+  it('Tiered: one mode, its cost added (Fira: {R} + {2})', () => {
+    const bear = creature('Bear', 2, 2);
+    let s = board({ mine: mountains(3), hand: [fireMagic], theirs: [bear] });
+    expect(errorOf(() => apply(s, { type: 'cast', iid: 'h0', modes: [2] }))).toBe('notEnoughMana');
+    s = settle(apply(s, { type: 'cast', iid: 'h0', modes: [1] }));
+    for (let i = 0; i < 8 && s.stack.length; i++) s = settle(apply(s, { type: 'pass' }));
+    expect(perm(s, 'Bear')).toBeUndefined();
+    expect(s.battlefield.filter((x) => !x.tapped)).toHaveLength(0);
+  });
+
+  it('the bot only picks modes it can pay for', () => {
+    const bear = creature('Bear', 2, 2);
+    const s = board({ mine: mountains(3), hand: [fireMagic], theirs: [bear, bear] });
+    const action = botAction(s) as { type: string; modes?: number[] };
+    expect(action.type === 'pass' || action.modes?.every((m) => m < 2)).toBe(true);
+    expect(errorOf(() => apply(s, botAction(s)))).toBeNull();
   });
 });
 

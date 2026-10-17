@@ -271,6 +271,8 @@ function candidates(s: GameState, me: PlayerId): Candidate[] {
     for (const opt of castOptions(s, me, inst.iid)) {
       const modal = castInfo(inst.card, opt.face).modal;
       for (const modes of modal ? modeSets(modal) : [undefined]) {
+        // Spree, Tiered: only the modes it can pay for.
+        if (modal?.costs && !findPayment(castSources(s, me, inst.card, inst.iid, opt.face), castCost(s, me, inst.card, { ...opt, iid: inst.iid, modes }))) continue;
         out.push({ iid: inst.iid, card: inst.card, opt, face: faceCard(inst.card, opt.face), ...(modes ? { modes } : {}) });
       }
     }
@@ -284,7 +286,7 @@ function candidates(s: GameState, me: PlayerId): Candidate[] {
 function candidateMaxX(s: GameState, me: PlayerId, c: Candidate): number {
   if (!xCount(c.face)) return 0;
   let x = 0;
-  while (findPayment(castSources(s, me, c.card, c.iid, c.opt.face), castCost(s, me, c.card, c.opt, x + 1))) x++;
+  while (findPayment(castSources(s, me, c.card, c.iid, c.opt.face), castCost(s, me, c.card, { ...c.opt, modes: c.modes }, x + 1))) x++;
   return x;
 }
 
@@ -333,7 +335,7 @@ function castable(s: GameState, me: PlayerId) {
 /** What would be left to pay with after paying for `c` (null: it can't be paid). */
 function sourcesAfter(s: GameState, me: PlayerId, c: Candidate): ManaSource[] | null {
   const sources = castSources(s, me, c.card, c.iid, c.opt.face);
-  const plan = planPayment(sources, castCost(s, me, c.card, c.opt));
+  const plan = planPayment(sources, castCost(s, me, c.card, { ...c.opt, modes: c.modes }));
   if (!plan) return null;
   const used = new Set(plan.map((m) => m.iid));
   // A source with several mana (Sol Ring) keeps its unspent mana in the pool.

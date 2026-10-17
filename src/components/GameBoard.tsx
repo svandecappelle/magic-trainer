@@ -604,7 +604,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
                 setModePick({ ...modePick, picked });
               }}
             >
-              {usable ? text : `${text} ✗`}
+              {modal.costs && <ManaCost cost={modal.costs[i]} />} {usable ? text : `${text} ✗`}
             </button>
           );
         })}

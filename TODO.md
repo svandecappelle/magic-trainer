@@ -202,7 +202,9 @@ Still missing, most played first:
   for as long as you control Ty Lee"), Inti's "Whenever you discard one or more cards" (impulse draw)
 - [x] Mill, then "you may return a … card from your graveyard to your hand" (Overlord of the Balemurk); impending (time
   counters, not a creature until the last is removed; the counter is removed at once, not by a trigger on the stack)
-- [ ] Spree and Tiered (Three Steps Ahead, Requisition Raid, Return the Favor, Fire Magic): modes with extra costs
+- [x] Spree and Tiered: each mode's cost added to the mana cost (Three Steps Ahead, Fire Magic); the bot only picks
+  modes it can pay. Modes still not simulated (can't be chosen): Requisition Raid's "+1/+1 counter on each creature
+  target player controls", Return the Favor (copying abilities, changing targets)
 - [ ] Blink "with a +1/+1 counter on it" (Daydream); "exile … until this leaves the battlefield" for Deep-Cavern Bat
   and Pinnacle Starcage (plain blink: All Aboard; Seam Rip done)
 - [ ] Emblems with static abilities (Ajani; triggered emblems work); loyalty counters from triggers (Ajani Resolute)

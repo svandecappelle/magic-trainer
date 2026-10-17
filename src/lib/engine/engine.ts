@@ -1112,7 +1112,7 @@ function payExtraCost(d: GameState, p: PlayerId, extra: AdditionalCost, item: St
   return false;
 }
 
-export function castCost(s: GameState, p: PlayerId, card: Card, opt: { face?: number; kicked?: boolean; from?: CastZone; iid?: string; alt?: number; exiled?: number }, x = 0): Cost {
+export function castCost(s: GameState, p: PlayerId, card: Card, opt: { face?: number; kicked?: boolean; from?: CastZone; iid?: string; alt?: number; exiled?: number; modes?: number[] }, x = 0): Cost {
   const face = opt.face ?? 0;
   const info = castInfo(card, face);
   const c = faceCard(card, face);
@@ -1130,6 +1130,17 @@ export function castCost(s: GameState, p: PlayerId, card: Card, opt: { face?: nu
     const more = parseCost(info.additional.cost);
     kicker.generic += more.generic;
     kicker.colored = [...kicker.colored, ...more.colored];
+  }
+  // Spree and Tiered: the costs of the modes chosen (none chosen yet: the cheapest one, to know if it can be cast).
+  const costs = info.modal?.costs;
+  if (costs) {
+    const total = (i: number) => { const m = parseCost(costs[i]); return m.generic + m.colored.length; };
+    const chosen = opt.modes ?? [costs.map((_, i) => i).reduce((a, b) => (total(b) < total(a) ? b : a))];
+    for (const i of chosen) {
+      const more = parseCost(costs[i] ?? '');
+      kicker.generic += more.generic;
+      kicker.colored = [...kicker.colored, ...more.colored];
+    }
   }
   const discount = (info.affinity ? s.battlefield.filter((x) => x.controller === p && cardMatches(x.card, info.affinity!)).length : 0)
     // March of Otherworldly Light: {2} less for each card exiled from the hand.
@@ -2028,7 +2039,7 @@ export function paymentFor(s: GameState, p: PlayerId, action: Action): { sources
     const exiled = info.exileDiscount && action.exiled ? action.exiled : 0;
     return {
       sources: castSources(s, p, src.inst.card, src.inst.iid, face),
-      cost: castCost(s, p, src.inst.card, { face, kicked, from: src.from, iid: src.inst.iid, alt, exiled }, x),
+      cost: castCost(s, p, src.inst.card, { face, kicked, from: src.from, iid: src.inst.iid, alt, exiled, modes: action.modes }, x),
     };
   }
   if (action.type === 'activate') {
@@ -4529,7 +4540,7 @@ export function apply(state: GameState, action: Action): GameState {
       const discountColor = info.exileDiscount?.color;
       const exiled = discountColor && action.exiled ? action.exiled : 0;
       if (exiled && me.hand.filter((c) => c.iid !== inst.iid && cardColors(c.card).includes(discountColor!)).length < exiled) throw new IllegalAction('noCardToExile', { card: card.name });
-      const plan = planPayment(chosenSources(castSources(d, p, inst.card, inst.iid, face), action.pay), castCost(d, p, inst.card, { face, kicked, from, iid: inst.iid, alt: altIndex, exiled }, x));
+      const plan = planPayment(chosenSources(castSources(d, p, inst.card, inst.iid, face), action.pay), castCost(d, p, inst.card, { face, kicked, from, iid: inst.iid, alt: altIndex, exiled, ...(modes ? { modes } : {}) }, x));
       if (!plan) throw unpaid(action.pay, card.name);
       // Cavern of Souls' mana spent on a creature spell of the chosen type: it can't be countered.
       // Delighted Halfling's mana spent on a legendary spell: the same (counted for any of its mana).

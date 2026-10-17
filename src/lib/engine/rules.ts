@@ -1627,7 +1627,8 @@ export interface CastInfo {
    */
   exileDiscount?: { color: Color; per: number };
   /** "Choose one —" / "Choose one or both —": the modes' texts, and how many to choose. */
-  modal?: { min: number; max: number; modes: string[] };
+  /** `costs`: Spree and Tiered, each mode's additional cost (added to the mana cost for the modes chosen). */
+  modal?: { min: number; max: number; modes: string[]; costs?: string[] };
   kicker?: string;
   additional?: AdditionalCost;
   /** The additional-cost sentence exists but isn't understood: the spell is not simulated. */
@@ -1695,8 +1696,14 @@ export function castInfo(card: Card, face = 0): CastInfo {
   if (phyrexian) info.alts.push({ kind: 'phyrexian', n: phyrexian });
   if (kw.includes('convoke')) info.convoke = true;
   if (kw.includes('delve')) info.delve = true;
+  // Spree: "+ {1}{U} — Counter target spell." (one or more); Tiered: "• Fira — {2} — …" (exactly one).
+  const spree = /^Spree\b/m.test(text) ? [...text.matchAll(/^\+ ((?:\{[^}]+\})+) — (.+)$/gm)] : [];
+  const tiered = /^Tiered\b/m.test(text) ? [...text.matchAll(/^• [^—\n]+ — ((?:\{[^}]+\})+) — (.+)$/gm)] : [];
   const modal = text.match(/Choose (one or both|one or more|up to one|up to two|one|two|three) —\n((?:• [^\n]+\n?)+)/);
-  if (modal) {
+  if (spree.length || tiered.length) {
+    const lines = spree.length ? spree : tiered;
+    info.modal = { min: 1, max: spree.length ? lines.length : 1, modes: lines.map((m) => m[2].trim()), costs: lines.map((m) => m[1]) };
+  } else if (modal) {
     const [min, max] = MODE_COUNTS[modal[1]];
     const modes = modal[2].split('\n').filter((l) => l.startsWith('• ')).map((l) => l.slice(2).trim());
     info.modal = { min, max: Math.min(max, modes.length), modes };
@@ -1804,7 +1811,8 @@ function castSpecRaw(card: Card, choice: CastChoice): AbilitySpec {
   if (info.modal) {
     const modes = choice.modes ?? [];
     if (modes.length < Math.max(1, info.modal.min) || modes.length > info.modal.max) return { targets: [], effects: [] };
-    const head = text.slice(0, text.indexOf('Choose ')).trim();
+    // Spree and Tiered have no text besides their modes.
+    const head = info.modal.costs ? '' : text.slice(0, text.indexOf('Choose ')).trim();
     const parsed = modes.map((i) => parseAbilityText(info.modal!.modes[i] ?? ''));
     // A mode that isn't understood makes the whole spell "not simulated" rather than half-simulated.
     if (parsed.some((p) => !p.effects.length)) return { targets: [], effects: [] };

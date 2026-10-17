@@ -69,6 +69,7 @@ function keywordLine(card: Card, line: string, one: Card): LineReport | null {
     if (k === 'convoke') return info.convoke;
     if (k === 'delve') return info.delve;
     if (k === 'affinity') return !!info.affinity;
+    if (k === 'spree' || k === 'tiered') return !!castInfo(card).modal?.costs;
     if (k === 'waterbend') return activatedOf(one).some((a) => a.cost.waterbend);
     if (k === 'ascend') return triggersOf(card).some((tr) => tr.ability.effects.some((x) => x.kind === 'copyNewTokens'));
     if (k === 'mobilize') return triggersOf(one).length > 0;
@@ -230,11 +231,13 @@ export function auditCard(card: Card): CardReport {
     const info = castInfo(frontCard);
     if (info.modal) {
       for (const line of body) {
-        if (!line.startsWith('• ')) {
+        // Spree "+ {1} — …", Tiered "• Fira — {2} — …": the mode's text after its cost.
+        const costed = info.modal.costs ? line.match(/^(?:\+|• [^—]+ —) (?:\{[^}]+\})+ — (.+)$/) : null;
+        if (!line.startsWith('• ') && !costed) {
           lines.push({ text: line, status: 'ok', how: `modal: choose ${info.modal.min}–${info.modal.max}` });
           continue;
         }
-        const i = info.modal.modes.indexOf(line.slice(2).trim());
+        const i = info.modal.modes.indexOf(costed ? costed[1].trim() : line.slice(2).trim());
         const ok = i >= 0 && modeSimulated(frontCard, 0, i);
         lines.push({ text: line, status: ok ? 'ok' : 'notSimulated', how: ok ? 'mode' : 'mode not simulated (can\'t be chosen)' });
       }
