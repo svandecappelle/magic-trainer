@@ -2925,3 +2925,32 @@ describe('bot mana planning', () => {
   });
 });
 
+describe('look at the top cards: Sleight of Hand, Flow State', () => {
+  const sleight = spell('Sleight of Hand', '{U}', 'Look at the top two cards of your library. Put one of them into your hand and the other on the bottom of your library.', 'Sorcery');
+  const flow = spell('Flow State', '{1}{U}', 'Look at the top three cards of your library. Put one of them into your hand and the rest on the bottom of your library in any order. If there is an instant card and a sorcery card in your graveyard, instead put two of them into your hand and the rest on the bottom of your library in any order.', 'Sorcery');
+  const islands = (n: number) => Array.from({ length: n }, () => card({ name: 'Island', typeLine: 'Basic Land — Island' }));
+  const named = (name: string, typeLine = 'Sorcery') => card({ name, typeLine, manaCost: '{1}', cmc: 1 });
+  const cast = (hand: Card[], grave: Card[] = []) => {
+    let s = board({ mine: islands(2), hand, grave });
+    s.players[0].library = [...['A', 'B', 'C'].map((n, i) => ({ iid: `l${i}`, card: named(n) })), ...s.players[0].library];
+    s = settle(apply(s, { type: 'cast', iid: 'h0' }));
+    for (let i = 0; i < 6 && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+
+  it('Sleight of Hand: one of two into the hand, the other on the bottom', () => {
+    let s = cast([sleight]);
+    expect(s.pending?.choice).toMatchObject({ kind: 'cards', purpose: 'dig', min: 1, max: 1 });
+    const options = (s.pending!.choice as { options: { iid: string; card: Card }[] }).options;
+    expect(options.map((c) => c.card.name)).toEqual(['A', 'B']);
+    s = apply(s, { type: 'choose', answer: { kind: 'cards', iids: [options[1].iid] } });
+    expect(s.players[0].hand.map((c) => c.card.name)).toEqual(['B']);
+    expect(s.players[0].library.at(-1)!.card.name).toBe('A');
+  });
+
+  it('Flow State: two cards with an instant and a sorcery in the graveyard', () => {
+    expect(cast([flow]).pending?.choice).toMatchObject({ purpose: 'dig', max: 1 });
+    expect(cast([flow], [named('Opt', 'Instant'), named('Ponder')]).pending?.choice).toMatchObject({ purpose: 'dig', max: 2 });
+  });
+});
+

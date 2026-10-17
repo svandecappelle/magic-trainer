@@ -186,8 +186,8 @@ Approximations kept on purpose (small upsides ignored): Empower Jace, No More Li
 would die this turn".
 
 Still missing, most played first:
-- [ ] "Look at the top N cards …" variants still missing (Sleight of Hand, Flow State; Stock Up, Dáin's Company and
-  Consult the Star Charts done)
+- [x] "Look at the top N cards …": Stock Up, Dáin's Company, Consult the Star Charts, Sleight of Hand ("the other on the
+  bottom"), Flow State (two with an instant and a sorcery in the graveyard)
 - [x] Modal triggers "When … enters, choose one —" / "choose up to one —": the mode is chosen as the trigger goes on
   the stack, then its targets; modes not understood or without a legal target can't be chosen (Kutzil's Flanker,
   Gaius van Baelsar, Yuriko's surveil, Charming Scoundrel, Hullbreaker Horror's bounce). Edicts and targets read

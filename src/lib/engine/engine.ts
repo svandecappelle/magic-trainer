@@ -3349,7 +3349,8 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       const n = e.n === 'lands' ? d.battlefield.filter((x) => x.controller === caster && isLandCard(x.card)).length : e.n;
       const top = ps.library.slice(0, n);
       const options = e.filter ? top.filter((c) => cardMatches(c.card, e.filter!)) : top;
-      const max = Math.min(e.take, options.length);
+      const spells = e.spellsTake !== undefined && (['instant', 'sorcery'] as const).every((t) => ps.graveyard.some((c) => cardTypes(c.card).includes(t)));
+      const max = Math.min(spells ? e.spellsTake! : e.take, options.length);
       if (max && answer?.kind !== 'cards') {
         return { kind: 'cards', player: caster, purpose: 'dig', min: e.optional ? 0 : max, max, options, params: { n: top.length } };
       }

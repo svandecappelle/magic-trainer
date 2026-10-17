@@ -76,9 +76,6 @@ NONE     Fire Magic {R} — Instant
       spell not simulated
   ✗ • Firaga — {5} — Fire Magic deals 3 damage to each creature.
       spell not simulated
-NONE     Flow State {1}{U} — Sorcery
-  ✗ Look at the top three cards of your library. Put one of them into you…
-      spell not simulated
 NONE     Ghitu Lavarunner {R} — Creature — Human Wizard
   ? As long as there are two or more instant and/or sorcery cards in your…
       not read by the engine
@@ -198,9 +195,6 @@ NONE     Seasoned Cryomancer {1}{U}{U} — Creature — Human Wizard
       trigger (enters), effect not simulated
   ? {3}{U}{U}, Exile this card from your graveyard: Draw two cards.
       activated ability with a cost or restriction not understood
-NONE     Sleight of Hand {U} — Sorcery
-  ✗ Look at the top two cards of your library. Put one of them into your …
-      spell not simulated
 NONE     Starfield Shepherd {3}{W}{W} — Creature — Angel
   ✓ Flying
       keyword
@@ -728,6 +722,9 @@ OK       Floodfarm Verge  — Land
       mana: W
   ✓ {T}: Add {U}. Activate only if you control a Plains or an Island.
       mana: U
+OK       Flow State {1}{U} — Sorcery
+  ✓ Look at the top three cards of your library. Put one of them into you…
+      spell → dig
 OK       Gandalf, Goblins' Bane // Flameshape {2}{R} // {1}{R} — Legendary Creature — Avatar Wizard // Sorcery — Adventure (other faces not audited)
   ✓ Whenever you cast a noncreature spell, Gandalf gets +1/+1 until end o…
       trigger (cast) → pump+damage
@@ -885,6 +882,9 @@ OK       Slagstorm {1}{R}{R} — Sorcery
       mode
   ✓ • Slagstorm deals 3 damage to each player.
       mode
+OK       Sleight of Hand {U} — Sorcery
+  ✓ Look at the top two cards of your library. Put one of them into your …
+      spell → dig
 OK       Soul-Guide Lantern {1} — Artifact
   ✓ When this artifact enters, exile target card from a graveyard.
       trigger (enters) → destroy (1 target)
@@ -961,5 +961,5 @@ OK       Watery Grave  — Land — Island Swamp
   ✓ As this land enters, you may pay 2 life. If you don't, it enters tapp…
       enters tapped (payLife)
 
-178 cards: 84 ok, 40 partial, 54 not simulated, 0 can't be cast
+178 cards: 86 ok, 40 partial, 52 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

@@ -538,7 +538,8 @@ export type Effect =
    * your hand. Put the rest on the bottom of your library in a random order." (`take` cards, `filter` to reveal.)
    */
   /** `n`: a number, or the lands you control (Consult the Star Charts). */
-  | { kind: 'dig'; n: number | 'lands'; take: number; optional: boolean; filter?: TargetFilter }
+  /** `spellsTake`: Flow State takes that many with an instant card and a sorcery card in your graveyard. */
+  | { kind: 'dig'; n: number | 'lands'; take: number; optional: boolean; filter?: TargetFilter; spellsTake?: number }
   /**
    * Until end of turn, a noncreature permanent becomes a creature: Iron Man Armor ("becomes a 0/0 Construct Hero
    * artifact creature with flying and \"…\""), crewed Vehicles and Chandra's ("becomes an artifact creature").
@@ -1154,8 +1155,11 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
   });
   // Stock Up: "Look at the top five cards of your library. Put two of them into your hand and the rest on the bottom of
   // your library in any order."
-  scan(/\bLook at the top (\w+) cards of your library\. Put (one|two) of them into your hand and the rest on the bottom of your library in (?:a random|any) order\./gi, (m) => ({
-    kind: 'dig', n: toNumber(m[1]), take: toNumber(m[2]), optional: false,
+  // Sleight of Hand: "Put one of them into your hand and the other on the bottom of your library."
+  // Flow State: "If there is an instant card and a sorcery card in your graveyard, instead put two of them into your hand
+  // and the rest on the bottom of your library in any order."
+  scan(/\bLook at the top (\w+) cards of your library\. Put (one|two) of them into your hand and (?:the rest on the bottom of your library in (?:a random|any) order|the other on the bottom of your library)\.(?: If there is an instant card and a sorcery card in your graveyard, instead put (one|two) of them into your hand and the rest on the bottom of your library in (?:a random|any) order\.)?/gi, (m) => ({
+    kind: 'dig', n: toNumber(m[1]), take: toNumber(m[2]), optional: false, ...(m[3] ? { spellsTake: toNumber(m[3]) } : {}),
   }));
   // Thorin (see the attachEquipment effect).
   scan(new RegExp(THORIN_ATTACH.source, 'g'), (m) => {
