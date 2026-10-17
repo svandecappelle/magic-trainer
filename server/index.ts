@@ -126,14 +126,19 @@ if (store) {
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 2_000_000 });
 const alive = new WeakSet<WebSocket>();
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
   alive.add(ws);
   const conn: Conn = {
     send: (msg) => {
       if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
     },
   };
-  conn.send({ t: 'hello', build: BUILD });
+  // The logged-in account, if any, before hello: browsers send nothing before it.
+  void account.socketUser(req).catch(() => null).then((user) => {
+    if (user) conn.userId = user.id;
+    conn.send({ t: 'hello', build: BUILD });
+    rooms.welcome(conn);
+  });
   ws.on('pong', () => alive.add(ws));
   ws.on('message', (data) => {
     let msg: unknown;

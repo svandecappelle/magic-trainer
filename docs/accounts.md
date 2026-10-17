@@ -279,6 +279,22 @@ by `src/store/useAccount.ts`; the UI is `src/components/AccountMenu.tsx`.
   (green saved, orange saving, grey offline, red error) and a menu: status, sync now, log out, delete my account.
   After a refused or failed login, a notice under the top bar.
 
+## Online rooms
+
+Each online room has an address, `/online/<id>` (a random UUID), which is also its invitation link; the 5-letter
+code still works. The server sends each player a secret for their seat; the browser keeps it in localStorage for 3
+days (`mt.onlineSeats`), and the server only its SHA-256. Opening the address sends `{t:'open', room, token}`: back to
+the seat, or the room's info to join it.
+
+The server saves each room (game state packed with each card written once, seats with hashed secrets, the seat's
+account if any) a second after it changes, in the `rooms` table (`004_rooms.sql`: `id`, `code`, `state_version`,
+`data`, `updated_at`), and restores the rooms at startup; a restart or an update doesn't end the games. Rooms untouched
+for a day, or saved by another `STATE_VERSION` of the engine, are deleted.
+
+A seat taken while logged in remembers the account: the same account opening the room's address on another device
+gets the seat back (with a new secret), and `/online` lists the account's rooms (`myRooms`, sent after `hello`). The
+WebSocket's user is read from the session cookie only for connections whose `Origin` is `PUBLIC_URL`.
+
 ## Security
 
 - Cookies `HttpOnly; Secure; SameSite=Lax; Path=/` (`Secure` off on `http://localhost` in development).

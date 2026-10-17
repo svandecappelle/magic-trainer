@@ -206,6 +206,24 @@ describe.skipIf(!testDbUrl)('login with Discord', () => {
     }
   });
 
+  it('knows the user of a WebSocket connection opened by our own pages only', async () => {
+    profile = { id: '5', username: 'toph' };
+    const { call, close } = await serve({ pool, config, fetch: fakeDiscord });
+    try {
+      const { session } = await login(call);
+      const { socketUser } = accounts({ pool, config });
+      const req = (origin: string | undefined, token = session) =>
+        ({ headers: { ...(origin ? { origin } : {}), cookie: `mt_session=${token}` } }) as unknown as import('node:http').IncomingMessage;
+      expect(await socketUser(req(PUBLIC))).toMatchObject({ name: 'toph' });
+      // Another site opening a WebSocket with the user's cookie: no account.
+      expect(await socketUser(req('https://evil.example'))).toBeNull();
+      expect(await socketUser(req(undefined))).toBeNull();
+      expect(await socketUser(req(PUBLIC, 'wrong'))).toBeNull();
+    } finally {
+      await close();
+    }
+  });
+
   it('deletes the account and everything it owns', async () => {
     profile = { id: '3', username: 'sokka' };
     const { call, close } = await serve({ pool, config, fetch: fakeDiscord });

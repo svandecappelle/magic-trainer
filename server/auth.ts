@@ -154,6 +154,24 @@ export function accounts({ pool, config, fetch: fetchFn = fetch }: AccountsOptio
     return { id: row.id, name: row.name, avatarUrl: row.avatar };
   }
 
+  /**
+   * The logged-in user of a WebSocket connection (online games). Only for connections opened by our own pages:
+   * browsers send cookies with WebSocket requests from any site, and SameSite doesn't cover every case.
+   */
+  async function socketUser(req: IncomingMessage): Promise<SessionUser | null> {
+    if (!pool || !enabled || !sameOrigin(req)) return null;
+    const token = parseCookies(req).get(SESSION_COOKIE);
+    if (!token) return null;
+    const { rows } = await pool.query<{ id: string; name: string; avatar: string | null }>(
+      `SELECT u.id, u.display_name AS name, u.avatar_url AS avatar
+         FROM sessions s JOIN users u ON u.id = s.user_id
+        WHERE s.token_hash = $1 AND s.expires_at > now()`,
+      [hashToken(token)],
+    );
+    const row = rows[0];
+    return row ? { id: row.id, name: row.name, avatarUrl: row.avatar } : null;
+  }
+
   /** GET /auth/discord?return=/path: off to Discord's consent page. */
   function login(req: IncomingMessage, res: ServerResponse, url: URL) {
     if (!loginLimit.hit(clientIp(req))) return sendJson(res, 429, { error: 'tooManyRequests' });
@@ -275,5 +293,5 @@ export function accounts({ pool, config, fetch: fetchFn = fetch }: AccountsOptio
     return true;
   }
 
-  return { enabled, handle, userOf, sameOrigin };
+  return { enabled, handle, userOf, socketUser, sameOrigin };
 }

@@ -66,7 +66,8 @@ other targets: `make update` (git pull, rebuild, restart), `make status`, `make 
 Each online game has its own address (`/online/<id>`, the invitation link). The server saves the rooms in
 PostgreSQL after each change and restores them when it starts, so a restart or a `make update` doesn't end the games:
 players reconnect by themselves (their browser keeps their seat's secret for 3 days; the server keeps only its hash).
-Rooms nobody touched for a day are deleted. Without a database, rooms live in memory and a restart ends them. Games
+Rooms nobody touched for a day are deleted. Logged in with Discord, a player gets their seat back from any device
+(`/online` lists their games). Without a database, rooms live in memory and a restart ends them. Games
 against the bot are saved in the browser (`/play/<id>`, the last 10).
 
 The database password is in `.env` next to `docker-compose.yml`: `make app` creates it with a random value the first

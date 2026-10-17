@@ -40,6 +40,8 @@ export type ServerMessage =
   | { t: 'joined'; room: string; code: string; seat: PlayerId; token: string }
   /** `size`: seats in the room (2, or 4 in Two-Headed Giant); `mode`: its rules. */
   | { t: 'lobby'; room: string; code: string; players: LobbyPlayer[]; match?: MatchScore; size?: number; mode?: GameMode }
+  /** After hello, for a logged-in account: the rooms where it has a seat (to come back from any device). */
+  | { t: 'myRooms'; rooms: { room: string; code: string; players: string[]; over: boolean }[] }
   /** Your main deck for the current game, and the other cards you brought (to sideboard between games). */
   | { t: 'deck'; main: Card[]; side: Card[] }
   /** A room opened by its address without holding a seat in it: who is there, and whether a seat is free. */

@@ -384,3 +384,50 @@ describe('saved rooms', () => {
     expect(new RoomManager().restore([saved])).toBe(1);
   });
 });
+
+describe('seats of logged-in players', () => {
+  const user = (userId?: string) => Object.assign(new FakeConn(), userId ? { userId } : {});
+
+  it('lets a player come back from another device logged in to the same account, and lists their rooms', () => {
+    const rooms = new RoomManager({ rng: () => 0.1 });
+    const [alice, bob] = [user('u-alice'), user()];
+    rooms.handle(alice, { t: 'create', name: 'Alice', deck });
+    const { room, token } = alice.last('joined')!;
+    rooms.handle(bob, { t: 'join', room, name: 'Bob', deck });
+
+    // Alice's phone: logged in, without the seat's secret.
+    const phone = user('u-alice');
+    rooms.welcome(phone);
+    expect(phone.last('myRooms')!.rooms).toEqual([{ room, code: alice.last('joined')!.code, players: ['Alice', 'Bob'], over: false }]);
+    rooms.handle(phone, { t: 'open', room });
+    expect(phone.last('joined')).toMatchObject({ room, seat: 0 });
+    // It gets a new secret; the old one no longer works, the account still does.
+    expect(phone.last('joined')!.token).not.toBe(token);
+    const old = new FakeConn();
+    rooms.handle(old, { t: 'open', room, token });
+    expect(old.last('joined')).toBeUndefined();
+
+    // Someone else's account, or nobody: what the room is, not a seat.
+    for (const other of [user('u-eve'), user()]) {
+      rooms.welcome(other);
+      expect(other.last('myRooms')?.rooms ?? []).toEqual([]);
+      rooms.handle(other, { t: 'open', room });
+      expect(other.last('joined')).toBeUndefined();
+      expect(other.last('roomInfo')).toBeDefined();
+    }
+  });
+
+  it('forgets the account of a seat given up', () => {
+    const rooms = new RoomManager({ rng: () => 0.1 });
+    const alice = user('u-alice');
+    rooms.handle(alice, { t: 'create', name: 'Alice', deck });
+    const { room } = alice.last('joined')!;
+    rooms.handle(new FakeConn(), { t: 'join', room, name: 'Bob', deck });
+    rooms.handle(alice, { t: 'leave' });
+    const phone = user('u-alice');
+    rooms.welcome(phone);
+    expect(phone.last('myRooms')!.rooms).toEqual([]);
+    rooms.handle(phone, { t: 'open', room });
+    expect(phone.last('joined')).toBeUndefined();
+  });
+});

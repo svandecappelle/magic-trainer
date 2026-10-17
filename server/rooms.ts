@@ -12,6 +12,8 @@ import type { Card } from '../src/types';
 /** One browser connection. The transport (WebSocket) lives in index.ts. */
 export interface Conn {
   send(msg: ServerMessage): void;
+  /** The account logged in on this connection (Discord login), if any. */
+  userId?: string;
 }
 
 interface Seat {
@@ -24,6 +26,8 @@ interface Seat {
   commanders: Card[];
   /** SHA-256 of the seat's secret (the browser keeps the secret); '' once the seat is given up. */
   tokenHash: string;
+  /** The account of the player who took the seat: they can come back from any device logged in to it. */
+  userId?: string;
   conn: Conn | null;
   wantsRematch: boolean;
 }
@@ -263,9 +267,18 @@ export class RoomManager {
     if (room.seats.length === room.size) this.startGame(room);
   }
 
+  /** On a new connection: the rooms where the logged-in account has a seat, to find them from any device. */
+  welcome(conn: Conn) {
+    if (!conn.userId) return;
+    const rooms = [...this.byId.values()]
+      .filter((r) => r.seats.some((s) => s.userId === conn.userId && s.tokenHash))
+      .map((r) => ({ room: r.id, code: r.code, players: r.seats.map((s) => s.name), over: !!r.game && r.game.winner !== null }));
+    conn.send({ t: 'myRooms', rooms });
+  }
+
   /**
-   * A browser opens /online/<id>: back to its seat when it holds the seat's secret, otherwise what it needs to
-   * join (or that the room is full).
+   * A browser opens /online/<id>: back to its seat when it holds the seat's secret or is logged in to the seat's
+   * account (it then gets a new secret), otherwise what it needs to join (or that the room is full).
    */
   private open(conn: Conn, id: string, token: string) {
     const room = UUID.test(id) ? this.byId.get(id) : undefined;
@@ -274,7 +287,14 @@ export class RoomManager {
       return;
     }
     const hash = token ? hashToken(token) : '';
-    const seat = hash ? room.seats.findIndex((s) => s.tokenHash === hash) : -1;
+    let seat = hash ? room.seats.findIndex((s) => s.tokenHash === hash) : -1;
+    if (seat < 0 && conn.userId) {
+      seat = room.seats.findIndex((s) => s.userId === conn.userId && s.tokenHash);
+      if (seat >= 0) {
+        token = randomUUID();
+        room.seats[seat].tokenHash = hashToken(token);
+      }
+    }
     if (seat < 0) {
       conn.send({
         t: 'roomInfo', room: room.id, code: room.code, size: room.size, mode: room.mode, bestOf: room.match.bestOf,
@@ -367,7 +387,7 @@ export class RoomManager {
 
   private seat(conn: Conn, room: Room, name: string, deck: Card[], side: Card[], commanders: Card[]) {
     const token = randomUUID();
-    room.seats.push({ name, deck, side, next: deck, commanders, tokenHash: hashToken(token), conn, wantsRematch: false });
+    room.seats.push({ name, deck, side, next: deck, commanders, tokenHash: hashToken(token), ...(conn.userId ? { userId: conn.userId } : {}), conn, wantsRematch: false });
     const seat = (room.seats.length - 1) as PlayerId;
     this.where.set(conn, { room, seat });
     conn.send({ t: 'joined', room: room.id, code: room.code, seat, token });

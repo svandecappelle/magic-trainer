@@ -72,6 +72,8 @@ export function useGameSocket(roomId?: string) {
   /** The room of the page when this browser has no seat in it; `gone`: it doesn't exist (anymore). */
   const [info, setInfo] = useState<RoomInfo | null>(null);
   const [gone, setGone] = useState(false);
+  /** Logged in: the rooms where the account has a seat (from any device). */
+  const [accountRooms, setAccountRooms] = useState<Extract<ServerMessage, { t: 'myRooms' }>['rooms']>([]);
   const [players, setPlayers] = useState<LobbyPlayer[]>([]);
   const [game, setGame] = useState<GameState | null>(null);
   /** Your cards in this room: main deck for the current game, and the rest (sideboard). */
@@ -158,6 +160,9 @@ export function useGameSocket(roomId?: string) {
             setMatch(msg.match ?? null);
             setSize(msg.size ?? 2);
             break;
+          case 'myRooms':
+            setAccountRooms(msg.rooms);
+            break;
           case 'deck':
             setDeck({ main: msg.main, side: msg.side });
             break;
@@ -215,5 +220,5 @@ export function useGameSocket(roomId?: string) {
     else setError({ code: 'notConnected' });
   }, []);
 
-  return { status, room, info, gone, players, game, deck, error, setError, clock, match, size, send, outdated };
+  return { status, room, info, gone, accountRooms, players, game, deck, error, setError, clock, match, size, send, outdated };
 }

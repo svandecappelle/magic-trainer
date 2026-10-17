@@ -28,7 +28,7 @@ export function Online() {
   // /online/<id>: a room's own address (an invite link, or the room you are in).
   const { roomId } = useParams();
   const navigate = useNavigate();
-  const { status, room, info, gone, players, game, deck, error, setError, send, clock, match, size, outdated } = useGameSocket(roomId);
+  const { status, room, info, gone, accountRooms, players, game, deck, error, setError, send, clock, match, size, outdated } = useGameSocket(roomId);
   // Seated in a room: its address in the URL (after creating or joining one).
   useEffect(() => {
     if (room && !roomId) navigate(`/online/${room.id}`, { replace: true });
@@ -170,7 +170,14 @@ export function Online() {
 
   // 1. Not in a room: pick a name and deck, then host a game or join one.
   if (!room) {
-    const resume = savedSeats();
+    // Your rooms: the seats this browser keeps, and those of your account (logged in, from any device).
+    const local = savedSeats();
+    const resume = [
+      ...local.map((r) => ({ room: r.room, label: t.online.room(r.code), at: new Date(r.savedAt).toLocaleString(), local: true })),
+      ...accountRooms
+        .filter((r) => !r.over && !local.some((l) => l.room === r.room))
+        .map((r) => ({ room: r.room, label: `${t.online.room(r.code)} · ${r.players.join(', ')}`, at: '', local: false })),
+    ];
     const offline = busy || status !== 'open';
     return (
       <div className="page setup">
@@ -182,9 +189,9 @@ export function Online() {
             <ul className="plain-list">
               {resume.slice(0, 3).map((r) => (
                 <li key={r.room}>
-                  <Link to={`/online/${r.room}`}>{t.online.room(r.code)}</Link>
-                  <span className="small muted">{new Date(r.savedAt).toLocaleString()}</span>
-                  <button type="button" className="icon" aria-label={t.play.forgetGame} title={t.play.forgetGame} onClick={() => { forgetSeat(r.room); setResumeTick((n) => n + 1); }}>✕</button>
+                  <Link to={`/online/${r.room}`}>{r.label}</Link>
+                  <span className="small muted">{r.at}</span>
+                  {r.local && <button type="button" className="icon" aria-label={t.play.forgetGame} title={t.play.forgetGame} onClick={() => { forgetSeat(r.room); setResumeTick((n) => n + 1); }}>✕</button>}
                 </li>
               ))}
             </ul>
