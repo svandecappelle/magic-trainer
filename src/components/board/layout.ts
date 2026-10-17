@@ -21,7 +21,10 @@ export interface BoardLayout {
 
 export type LayoutSize = 'side' | 'opp' | 'perm' | 'land' | 'hand';
 
-export const LAYOUT_LIMITS: Record<LayoutSize, [number, number]> = { side: [240, 520], opp: [25, 75], perm: [40, 130], land: [28, 110], hand: [50, 150] };
+export const LAYOUT_LIMITS: Record<LayoutSize, [number, number]> = { side: [240, 800], opp: [15, 85], perm: [40, 220], land: [28, 200], hand: [50, 240] };
+
+/** Above this width, cards are drawn from the larger images (Scryfall's small ones are 146 px wide). */
+export const SHARP_FROM = 140;
 export const LAYOUT_DEFAULTS = { side: 320, opp: 50 };
 
 export const clampSize = (k: LayoutSize, v: number) => Math.round(Math.min(LAYOUT_LIMITS[k][1], Math.max(LAYOUT_LIMITS[k][0], v)));

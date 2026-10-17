@@ -19,7 +19,7 @@ import { engineStatus } from '../lib/engineStatus';
 import { ChoicePanel, choiceKey, choicePrompt } from './ChoicePanel';
 import { Lines, type Line } from './board/Lines';
 import { useBoardFx, type Float } from './board/useBoardFx';
-import { clampSize, layoutStyle, LAYOUT_DEFAULTS, LAYOUT_LIMITS, useBoardLayout, type LayoutSize } from './board/layout';
+import { clampSize, layoutStyle, LAYOUT_DEFAULTS, LAYOUT_LIMITS, SHARP_FROM, useBoardLayout, type LayoutSize } from './board/layout';
 import { ResizeHandle } from './board/ResizeHandle';
 import type { Card } from '../types';
 import './board/board.css';
@@ -135,6 +135,9 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     k === 'side' ? layout.side ?? sideRef.current?.offsetWidth ?? LAYOUT_DEFAULTS.side
     : k === 'opp' ? layout.opp ?? LAYOUT_DEFAULTS.opp
     : layout[k] ?? autoSizes[k];
+  /** Large cards (chosen above the small images' width) use the larger images. */
+  const sharpPerms = sizeNow('perm') > SHARP_FROM || sizeNow('land') > SHARP_FROM;
+  const sharpHand = sizeNow('hand') > SHARP_FROM;
   /** A handle for one size: `scale` turns the pointer's movement into that size's unit. */
   const handle = (k: LayoutSize, dir: 'row' | 'col', label: string, scale: number) => (
     <ResizeHandle
@@ -860,7 +863,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
         onClick={ghost ? undefined : () => onPermanentClick(perm)}
         {...zoomable(perm.card)}
       >
-        <img src={show.imageSmall(perm.card)} alt={show.name(perm.card)} draggable={false} />
+        <img src={sharpPerms ? show.imageNormal(perm.card) : show.imageSmall(perm.card)} alt={show.name(perm.card)} draggable={false} />
         {isCreature(perm.card) && (
           <span className={`pt ${hurt ? 'hurt' : ''} ${perm.boosts.length || counters.length || perm.statics?.power || perm.statics?.toughness ? 'pumped' : ''}`}>
             {powerOf(perm)}/{toughnessOf(perm) - perm.damage}
@@ -1141,7 +1144,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
                     onClick={() => iAct && playCard(c.iid, c.card)}
                     {...zoomable(c.card)}
                   >
-                    <img src={show.imageSmall(c.card)} alt={show.name(c.card)} draggable={false} />
+                    <img src={sharpHand ? show.imageNormal(c.card) : show.imageSmall(c.card)} alt={show.name(c.card)} draggable={false} />
                     <span className="crown" title={t.game.zoneNames.command}>👑</span>
                     {tax > 0 && <span className="tax" title={t.game.commanderTax(tax)}>+{tax}</span>}
                   </div>
@@ -1163,7 +1166,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
                   onClick={() => onHandClick(iid, card)}
                   {...zoomable(card)}
                 >
-                  <img src={show.imageSmall(card)} alt={show.name(card)} draggable={false} />
+                  <img src={sharpHand ? show.imageNormal(card) : show.imageSmall(card)} alt={show.name(card)} draggable={false} />
                   {status !== 'ok' && <span className={`engine-badge ${status}`} title={t.game.engineStatus[status]}>{t.game.engineBadge[status]}</span>}
                 </div>
               );

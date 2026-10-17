@@ -7,9 +7,9 @@ describe('board layout', () => {
     expect(readLayout('not json')).toEqual({});
     expect(readLayout('[1]')).toEqual({});
     expect(readLayout('{"side":9999,"opp":10,"perm":"big","hand":90.4,"closed":true,"other":1}'))
-      .toEqual({ side: 520, opp: 25, hand: 90, closed: true });
+      .toEqual({ side: 800, opp: 15, hand: 90, closed: true });
     expect(clampSize('perm', 12)).toBe(40);
-    expect(readLayout('{"land":200}')).toEqual({ land: 110 });
+    expect(readLayout('{"land":500}')).toEqual({ land: 200 });
   });
 
   it('turns the layout into CSS variables, leaving the card sizes to the window by default', () => {
