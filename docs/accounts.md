@@ -1,0 +1,355 @@
+# Accounts and saved decks (design)
+
+Status: **proposal**, not implemented yet.
+
+Players can log in with Discord to keep their decks and their collection on the server and find them on any
+device. Accounts are optional: without one, the app works exactly as today (everything in the browser's
+localStorage).
+
+## Overview
+
+```
+Browser ──HTTPS──▶ nginx ──▶ magic-trainer (Node) ──▶ postgres (container, private network)
+                                    │
+                                    ├─▶ discord.com   (OAuth2: login, user identity)
+                                    └─▶ api.scryfall.com (card data, already used by the card check)
+```
+
+- **Login**: Discord OAuth2, authorization code flow, run by the server (it holds the client secret). The first
+  login creates the account: there is no separate sign-up form, no password and no email.
+- **Session**: a random token in an `HttpOnly; Secure; SameSite=Lax` cookie. The database only keeps its SHA-256 hash.
+- **Storage**: PostgreSQL in its own container in `docker-compose.yml`, reachable only by the app.
+- **Sync**: the zustand store stays the source of truth in the browser. When logged in, every change is sent to
+  the server (debounced), and the server's data is merged in at login and on each app start.
+
+## Data model
+
+```mermaid
+erDiagram
+    users ||--o{ identities : "logs in with"
+    users ||--o{ sessions : "has"
+    users ||--o{ decks : "owns"
+    users ||--o{ collection_cards : "owns"
+    decks ||--o{ deck_cards : "contains"
+    cards ||--o{ deck_cards : "is"
+    cards ||--o{ collection_cards : "is"
+
+    users {
+        uuid id PK
+        text display_name
+        text avatar_url
+        timestamptz created_at
+        timestamptz last_login_at
+    }
+    identities {
+        uuid id PK
+        uuid user_id FK
+        text provider "discord"
+        text provider_user_id "Discord snowflake"
+        text username
+        timestamptz created_at
+    }
+    sessions {
+        bytea token_hash PK "sha256(token)"
+        uuid user_id FK
+        timestamptz created_at
+        timestamptz expires_at
+        timestamptz last_seen_at
+        text user_agent
+    }
+    cards {
+        uuid id PK "Scryfall id"
+        jsonb data "Card, as in src/types.ts"
+        timestamptz fetched_at
+    }
+    decks {
+        uuid id PK "created by the client"
+        uuid user_id FK
+        text name
+        text format
+        integer version
+        timestamptz created_at
+        timestamptz updated_at
+        timestamptz deleted_at "tombstone"
+    }
+    deck_cards {
+        uuid deck_id PK,FK
+        uuid card_id PK,FK
+        deck_board board PK
+        smallint qty
+    }
+    collection_cards {
+        uuid user_id PK,FK
+        uuid card_id PK,FK
+        integer qty
+        integer foil_qty
+        timestamptz updated_at
+    }
+```
+
+### Choices
+
+- **`identities` apart from `users`**: Discord is the only provider for now, but another one (Google, email link…)
+  can be added later without changing `users`. One user may have several identities.
+- **`cards` is a shared cache of Scryfall data**: a deck or collection row only stores the card id. Each card is
+  stored once for all users, so a 100-card deck costs 100 small rows instead of a few hundred KB of JSON.
+  The server fills this table **from Scryfall only** (`fetchCardsById`, as the online card check already does),
+  never from data sent by a client, so nobody can alter a card for other players. It also replaces the in-memory
+  cache of `server/cards.ts`, so online games don't ask Scryfall again after a restart.
+- **`decks.id` is created by the browser** (`crypto.randomUUID()`, as today), so a deck made offline keeps its id
+  when it is uploaded. The server refuses an id that already belongs to another user.
+- **`deleted_at` (tombstone)**: a deck deleted on one device must not come back from another device's local copy
+  during a merge. Tombstones older than 90 days are purged.
+- **`version`**: incremented on each update, used to detect that two devices changed the same deck (see Sync).
+- **`format`** is free text checked by the API against `FORMATS` (src/types.ts), so adding a format needs no
+  migration. **`board`** is a Postgres enum, since it changes with the engine.
+- Collection quantities are per printing (`card_id`), like today's `collection` record.
+
+### Schema (first migration)
+
+```sql
+-- server/db/migrations/001_accounts.sql
+CREATE TYPE deck_board AS ENUM ('main', 'side', 'commander');
+
+CREATE TABLE users (
+  id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  display_name  text        NOT NULL CHECK (length(display_name) BETWEEN 1 AND 64),
+  avatar_url    text,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  last_login_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE identities (
+  id               uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id          uuid        NOT NULL REFERENCES users ON DELETE CASCADE,
+  provider         text        NOT NULL CHECK (provider IN ('discord')),
+  provider_user_id text        NOT NULL,
+  username         text        NOT NULL,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (provider, provider_user_id)
+);
+CREATE INDEX identities_user_idx ON identities (user_id);
+
+CREATE TABLE sessions (
+  token_hash   bytea       PRIMARY KEY,
+  user_id      uuid        NOT NULL REFERENCES users ON DELETE CASCADE,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  expires_at   timestamptz NOT NULL,
+  last_seen_at timestamptz NOT NULL DEFAULT now(),
+  user_agent   text
+);
+CREATE INDEX sessions_user_idx ON sessions (user_id);
+CREATE INDEX sessions_expires_idx ON sessions (expires_at);
+
+CREATE TABLE cards (
+  id         uuid        PRIMARY KEY,
+  data       jsonb       NOT NULL,
+  fetched_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE decks (
+  id         uuid        PRIMARY KEY,
+  user_id    uuid        NOT NULL REFERENCES users ON DELETE CASCADE,
+  name       text        NOT NULL CHECK (length(name) BETWEEN 1 AND 100),
+  format     text        NOT NULL,
+  version    integer     NOT NULL DEFAULT 1,
+  created_at timestamptz NOT NULL,
+  updated_at timestamptz NOT NULL,
+  deleted_at timestamptz
+);
+CREATE INDEX decks_user_idx ON decks (user_id, updated_at);
+
+CREATE TABLE deck_cards (
+  deck_id uuid       NOT NULL REFERENCES decks ON DELETE CASCADE,
+  card_id uuid       NOT NULL REFERENCES cards,
+  board   deck_board NOT NULL,
+  qty     smallint   NOT NULL CHECK (qty BETWEEN 1 AND 999),
+  PRIMARY KEY (deck_id, card_id, board)
+);
+
+CREATE TABLE collection_cards (
+  user_id    uuid        NOT NULL REFERENCES users ON DELETE CASCADE,
+  card_id    uuid        NOT NULL REFERENCES cards,
+  qty        integer     NOT NULL DEFAULT 0 CHECK (qty >= 0),
+  foil_qty   integer     NOT NULL DEFAULT 0 CHECK (foil_qty >= 0),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, card_id),
+  CHECK (qty + foil_qty > 0)
+);
+```
+
+Migrations are plain SQL files in `server/db/migrations/`, numbered, applied in order at server start by a small
+runner that records them in a `schema_migrations (name text PRIMARY KEY, applied_at timestamptz)` table, each in
+its own transaction. Driver: [`pg`](https://node-postgres.com/) (node-postgres) with a connection pool.
+
+### Mapping to the client types
+
+| Client (`src/types.ts`)              | Database                                                    |
+| ------------------------------------ | ----------------------------------------------------------- |
+| `Deck.id`, `name`, `format`          | `decks.id`, `name`, `format`                                |
+| `Deck.createdAt`, `updatedAt` (ms)   | `decks.created_at`, `updated_at`                            |
+| `DeckEntry { card, qty, board }`     | `deck_cards (card_id, qty, board)` + `cards.data` for `card` |
+| `collection[cardId] { card, qty, foilQty }` | `collection_cards (card_id, qty, foil_qty)` + `cards.data` |
+
+## Login with Discord
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant S as Server
+    participant D as Discord
+    B->>S: GET /auth/discord?return=/decks
+    S->>B: 302 to discord.com/oauth2/authorize (scope=identify, state)<br/>Set-Cookie oauth_state (10 min)
+    B->>D: authorize
+    D->>B: 302 to /auth/discord/callback?code&state
+    B->>S: GET /auth/discord/callback
+    S->>S: check state == oauth_state cookie
+    S->>D: POST /api/oauth2/token (code, client secret)
+    S->>D: GET /api/users/@me
+    S->>S: upsert identity + user, create session
+    S->>B: 302 to /decks, Set-Cookie session
+```
+
+- Scope `identify` only: Discord id, username, global name, avatar. No email, no guilds.
+- `state` is 32 random bytes, kept in a short `HttpOnly` cookie and compared on the callback (blocks forged logins).
+  The `return` path is only accepted if it starts with a single `/` (no open redirect).
+- On each login, `display_name` (Discord global name, or username) and the avatar are refreshed.
+- The Discord access token is used once and not stored: we never call Discord on the user's behalf afterwards.
+- Session: 32 random bytes, base64url, cookie `mt_session`, valid 30 days, extended when used during its last
+  15 days. Expired sessions are deleted hourly.
+
+## HTTP API
+
+All JSON. Routes under `/api` need a session (401 otherwise), except `/api/me`.
+
+| Method | Path                          | Purpose                                                        |
+| ------ | ----------------------------- | -------------------------------------------------------------- |
+| GET    | `/auth/discord`               | Starts the login (`?return=` path)                             |
+| GET    | `/auth/discord/callback`      | Discord redirect target                                        |
+| POST   | `/auth/logout`                | Deletes the session, clears the cookie                         |
+| GET    | `/api/me`                     | `{ user: { id, name, avatarUrl } \| null }`                    |
+| DELETE | `/api/me`                     | Deletes the account and all its data                           |
+| GET    | `/api/decks?since=<ms>`       | Decks changed since (all if omitted), tombstones included      |
+| PUT    | `/api/decks/:id`              | Creates or replaces a deck; body `{ name, format, entries: [{ cardId, board, qty }], createdAt, updatedAt, baseVersion }` |
+| DELETE | `/api/decks/:id`              | Marks the deck deleted (tombstone)                             |
+| GET    | `/api/collection`             | The whole collection                                           |
+| PATCH  | `/api/collection`             | `[{ cardId, qty, foilQty }]`, absolute values (0 and 0 removes) |
+
+- Decks come back with full card data (`cards.data`), in the client's `Deck` shape.
+- Unknown card ids are fetched from Scryfall before saving. If Scryfall is unreachable, the API answers 503 and
+  the client retries later (it is just another offline case). An id Scryfall doesn't know: 422.
+- `PUT` with a `baseVersion` lower than the stored `version`: 409 with the server copy (conflict, see below).
+- Limits: 500 decks per user, 300 entries per deck, 1 MB request body, 20 000 collection rows.
+- Every query filters on the session's `user_id`; another user's deck id answers 404.
+
+## Sync in the browser
+
+- New module `src/lib/sync.ts`, subscribed to the `useApp` store. It does nothing while logged out.
+- **At login and at each start while logged in**: `GET /api/decks` and `GET /api/collection`, then merge:
+  - a deck only in the browser → uploaded (this is how existing local decks join the account);
+  - a deck only on the server → added locally;
+  - a tombstone → the local deck is removed;
+  - both changed → the newer `updatedAt` wins; the other version is kept as a copy named "Deck (other device)"
+    rather than lost.
+- **After each change**: the changed deck is sent 1.5 s later (debounced). Failed requests stay in a queue
+  in localStorage and are retried when the connection comes back.
+- **Logout**: the local decks stay in the browser (asked: "keep a copy on this device?").
+- UI: "Log in with Discord" in the header; once logged in, the avatar with a menu (sync status, log out,
+  delete my account), and an "x decks saved" hint.
+
+## Security
+
+- Cookies `HttpOnly; Secure; SameSite=Lax; Path=/` (`Secure` off on `http://localhost` in development).
+- Requests that change data must carry an `Origin` equal to `PUBLIC_URL` (CSRF), in addition to `SameSite`.
+- Only the token's hash is stored, so a database leak gives no usable sessions.
+- Card data in the database only comes from Scryfall.
+- Rate limits per IP on `/auth/*` and per user on writes.
+- Postgres is not published on the host: only the app container reaches it, on the compose network.
+- Account deletion removes every row (cascades); this covers the GDPR right to erasure. A privacy note lists what
+  is kept: Discord id and name, avatar, decks, collection.
+
+## Configuration
+
+New environment variables:
+
+| Variable                | Example                                       | Purpose                                   |
+| ----------------------- | --------------------------------------------- | ----------------------------------------- |
+| `DATABASE_URL`          | `postgres://magic:secret@postgres:5432/magic` | Postgres connection                       |
+| `PUBLIC_URL`            | `https://magic.example.com`                   | Redirect URI and `Origin` check           |
+| `DISCORD_CLIENT_ID`     | `1234567890`                                  | Discord application                       |
+| `DISCORD_CLIENT_SECRET` | from the Discord portal                       | Secret, never sent to the browser         |
+| `POSTGRES_PASSWORD`     | random                                        | Used by both containers                   |
+
+Without `DATABASE_URL` or the Discord variables, the server starts as today, with accounts disabled (`/api/me`
+answers `{ user: null, enabled: false }` and the login button is hidden).
+
+### Discord application
+
+1. https://discord.com/developers/applications → New Application.
+2. OAuth2 → copy the Client ID and reset/copy the Client Secret.
+3. OAuth2 → Redirects: add `https://<domain>/auth/discord/callback` and, for development,
+   `http://localhost:5173/auth/discord/callback`.
+
+### docker-compose.yml
+
+```yaml
+services:
+  magic-trainer:
+    # … as today, plus:
+    environment:
+      DATABASE_URL: postgres://magic:${POSTGRES_PASSWORD}@postgres:5432/magic
+      PUBLIC_URL: ${PUBLIC_URL}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: magic
+      POSTGRES_USER: magic
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U magic -d magic"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # No "ports": only reachable from the app container.
+
+volumes:
+  pgdata:
+```
+
+Secrets go in a `.env` file next to `docker-compose.yml` (git-ignored; a `.env.example` lists the names).
+
+### Development
+
+- `docker compose up -d postgres` with a `docker-compose.dev.yml` override publishing `127.0.0.1:5432`, then
+  `DATABASE_URL=postgres://magic:dev@localhost:5432/magic npm run server`.
+- Vite proxies `/auth` and `/api` to `localhost:8787`, like `/ws`.
+- Tests: server tests use a fake Discord (`fetch` stubbed) and a test database (`DATABASE_URL_TEST`, skipped when
+  unset). Covered: login, wrong `state`, expired session, another user's deck, conflict, tombstones, merge rules.
+
+### Backups
+
+`docker compose exec postgres pg_dump -U magic magic | gzip > backup-$(date +%F).sql.gz` from a daily cron;
+restore with `gunzip -c file | docker compose exec -T postgres psql -U magic magic`.
+
+## Implementation steps
+
+1. Postgres in compose, `pg`, migration runner, `001_accounts.sql`, `cards` table backing the card check.
+2. Discord login, sessions, `/api/me`, logout, account deletion.
+3. Deck and collection API with limits and conflicts.
+4. Client: login button and menu, `sync.ts`, merge, offline queue, i18n (en, fr).
+5. README: deployment section (variables, Discord application, backups).
+
+## Later
+
+- Online games: use the Discord name instead of the typed name, and list "my games".
+- Share a deck by link (read-only `decks.public_slug`).
+- Other login providers (a new `identities.provider` value).
