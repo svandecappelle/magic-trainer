@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
 import { activationProblem, actor, apply, findPermanent, hasKw, paymentFor, canBlock, canCastNow, castCost, castSource, canTapForMana, type Answer, castOptions, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
 import { botAction } from './bot';
-import { activatedOf, castInfo, entersTappedRule, castSpec, finalChapter, hasKeyword, isCreature, PREDEFINED_TOKENS, tokenCard, type TargetSpec, manaUnits, parseAbilityText, spellSpec, triggersOf } from './rules';
+import { activatedOf, castInfo, entersTappedRule, gameRulesOf, castSpec, finalChapter, hasKeyword, isCreature, PREDEFINED_TOKENS, tokenCard, type TargetSpec, manaUnits, parseAbilityText, spellSpec, triggersOf } from './rules';
 
 // Cards from Standard decks on mtgtop8 (Oct 2026), with their Oracle text.
 let n = 0;
@@ -3251,5 +3251,145 @@ describe('metagame audit 2026-10-17', () => {
     expect(perm(s, 'Iron-Shield Elf')!.tapped).toBe(true);
     // No card left to discard.
     expect(errorOf(() => apply(s, { type: 'activate', iid: iidOf(s, 'Iron-Shield Elf'), index: 0 }))).toBe('nothingToDiscard');
+  });
+
+  describe('rules from the second batch', () => {
+    const art = (name: string, oracleText: string, typeLine = 'Artifact') => card({ name, typeLine, manaCost: '{2}', cmc: 2, oracleText });
+    const bolt = spell('Bolt', '{R}', 'Bolt deals 3 damage to any target.');
+
+    it('Bilbo: spells cast from anywhere but the hand cost {1} less', () => {
+      const bilbo = creature('Bilbo, Thief in the Night', 2, 2, { typeLine: 'Legendary Creature — Halfling Rogue', oracleText: 'Spells you cast from anywhere other than your hand cost {1} less to cast.' });
+      const recall = spell('Recall', '{2}{U}', 'Draw two cards.\nFlashback {3}{U}', 'Sorcery');
+      expect(castCost(board({ mine: [bilbo] }), 0, recall, { from: 'graveyard' })).toEqual({ generic: 2, colored: [['U']] });
+      expect(castCost(board({ mine: [bilbo] }), 0, recall, { from: 'hand' }).generic).toBe(2);
+      expect(castCost(board({ theirs: [bilbo] }), 0, recall, { from: 'graveyard' }).generic).toBe(3);
+    });
+
+    it('Valley Floodcaller: noncreature spells as though they had flash', () => {
+      const flood = creature('Valley Floodcaller', 2, 2, { oracleText: 'Flash\nYou may cast noncreature spells as though they had flash.' });
+      const sorcery = spell('Think', '{B}', 'Draw a card.', 'Sorcery');
+      const bear = creature('Bear', 2, 2, { manaCost: '{B}' });
+      const s = board({ mana: 2, mine: [flood], hand: [sorcery, bear] });
+      s.stack = [{ iid: 'x0', card: bolt, controller: 1, targets: [] }];
+      s.priority = { player: 0, passes: 0, reason: 'main' };
+      expect(canCastNow(s, 0, sorcery)).toBe(true);
+      expect(canCastNow(s, 0, bear)).toBe(false);
+      s.battlefield = s.battlefield.filter((x) => x.card !== flood);
+      expect(canCastNow(s, 0, sorcery)).toBe(false);
+    });
+
+    it('Karn and Cursed Totem stop activated abilities', () => {
+      const karn = card({ name: 'Karn, the Great Creator', typeLine: 'Legendary Planeswalker — Karn', oracleText: 'Activated abilities of artifacts your opponents control can\'t be activated.' });
+      const rock = art('Mind Stone', '{T}: Add {C}.\n{1}, {T}, Sacrifice this artifact: Draw a card.');
+      let s = board({ mana: 1, mine: [rock], theirs: [karn] });
+      expect(canTapForMana(s, perm(s, 'Mind Stone')!)).toBe(false);
+      expect(errorOf(() => apply(s, { type: 'activate', iid: iidOf(s, 'Mind Stone'), index: 0 }))).toBe('activationForbidden');
+      // Karn's own controller's artifacts still work.
+      s = board({ mana: 1, mine: [rock, karn] });
+      expect(canTapForMana(s, perm(s, 'Mind Stone')!)).toBe(true);
+      const totem = art('Cursed Totem', 'Activated abilities of creatures can\'t be activated.');
+      const elf = creature('Llanowar Elves', 1, 1, { oracleText: '{T}: Add {G}.' });
+      s = board({ mine: [elf, totem] });
+      expect(canTapForMana(s, perm(s, 'Llanowar Elves')!)).toBe(false);
+    });
+
+    it('Ashiok: an opponent\'s own spells can\'t make them search', () => {
+      const ashiok = card({ name: 'Ashiok, Dream Render', typeLine: 'Legendary Planeswalker — Ashiok', oracleText: 'Spells and abilities your opponents control can\'t cause their controller to search their library.' });
+      const tutor = spell('Tutor', '{B}', 'Search your library for a land card, put it into your hand, then shuffle.', 'Sorcery');
+      let s = board({ mana: 1, hand: [tutor], theirs: [ashiok] });
+      perm(s, 'Ashiok, Dream Render')!.counters = { loyalty: 5 };
+      s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+      expect(s.pending?.choice).toBeFalsy();
+      expect(s.stack).toHaveLength(0);
+      s = resolve(apply(board({ mana: 1, hand: [tutor] }), { type: 'cast', iid: 'h0' }));
+      expect(s.pending?.choice).toMatchObject({ purpose: 'search' });
+    });
+
+    it('Archon of Emeria, Manglehorn and Root Maze make permanents enter tapped', () => {
+      const archon = creature('Archon of Emeria', 2, 3, { oracleText: 'Flying\nEach player can\'t cast more than one spell each turn.\nNonbasic lands your opponents control enter tapped.' });
+      const maze = art('Root Maze', 'Artifacts and lands enter tapped.', 'Enchantment');
+      const tundra = card({ name: 'Tundra', typeLine: 'Land — Plains Island' });
+      const play = (c: Card, opts: Parameters<typeof board>[0]) => perm(apply(board({ ...opts, hand: [c] }), { type: 'playLand', iid: 'h0' }), c.name)!.tapped;
+      expect(play(tundra, { theirs: [archon] })).toBe(true);
+      expect(play(tundra, { mine: [archon] })).toBe(false);
+      expect(play(island, { theirs: [archon] })).toBe(false);
+      expect(play(island, { mine: [maze] })).toBe(true);
+    });
+
+    it('Frenzied Baloth: creature spells can\'t be countered, combat damage can\'t be prevented', () => {
+      const baloth = creature('Frenzied Baloth', 3, 2, { oracleText: 'This spell can\'t be countered.\nTrample, haste\nCreature spells you control can\'t be countered.\nCombat damage can\'t be prevented.', keywords: ['Trample', 'Haste'] });
+      const counter = spell('Counterspell', '{U}', 'Counter target spell.');
+      let s = board({ mine: [baloth], oppMana: 1, mana: 1, hand: [creature('Bear', 2, 2, { manaCost: '{B}' })], oppHand: [counter] });
+      s = apply(s, { type: 'cast', iid: 'h0' });
+      // The opponent counters: nothing happens.
+      s = apply(s, { type: 'cast', iid: 'o0', targets: [[{ kind: 'spell', iid: s.stack[0].iid }]] });
+      s = resolve(s);
+      expect(perm(s, 'Bear')).toBeDefined();
+      expect(gameRulesOf(baloth)).toEqual(['creatureSpellsUncounterable', 'combatDamageCantBePrevented']);
+    });
+
+    it('Exploration: one more land each turn', () => {
+      const exploration = art('Exploration', 'You may play an additional land on each of your turns.', 'Enchantment');
+      let s = board({ mine: [exploration], hand: [island, island, island] });
+      s = apply(apply(s, { type: 'playLand', iid: 'h0' }), { type: 'playLand', iid: 'h1' });
+      expect(errorOf(() => apply(s, { type: 'playLand', iid: 'h2' }))).toBe('landAlreadyPlayed');
+      expect(errorOf(() => apply(apply(board({ hand: [island, island] }), { type: 'playLand', iid: 'h0' }), { type: 'playLand', iid: 'h1' }))).toBe('landAlreadyPlayed');
+    });
+
+    it('Lhurgoyfs, Ardyn\'s Demons and Skrelv', () => {
+      const barrowgoyf = creature('Barrowgoyf', 0, 1, { power: '*', toughness: '1+*', oracleText: 'Deathtouch, lifelink\nBarrowgoyf\'s power is equal to the number of card types among cards in all graveyards and its toughness is equal to that number plus 1.' });
+      const nethergoyf = creature('Nethergoyf', 0, 1, { power: '*', toughness: '1+*', oracleText: 'Nethergoyf\'s power is equal to the number of card types among cards in your graveyard and its toughness is equal to that number plus 1.' });
+      let s = board({ mine: [barrowgoyf, nethergoyf], grave: [bolt] });
+      s.players[1].graveyard = [{ iid: 'og', card: creature('Bear', 2, 2) }, { iid: 'og2', card: swamp }];
+      s = settle(apply(s, { type: 'pass' }));
+      // All graveyards: instant, creature, land; mine: instant.
+      expect([powerOf(perm(s, 'Barrowgoyf')!), toughnessOf(perm(s, 'Barrowgoyf')!)]).toEqual([3, 4]);
+      expect([powerOf(perm(s, 'Nethergoyf')!), toughnessOf(perm(s, 'Nethergoyf')!)]).toEqual([1, 2]);
+      const ardyn = creature('Ardyn, the Usurper', 4, 4, { oracleText: 'Demons you control have menace, lifelink, and haste.' });
+      const demon = creature('Demon', 5, 5, { typeLine: 'Creature — Demon' });
+      const skrelv = creature('Skrelv, Defector Mite', 1, 1, { oracleText: 'Toxic 1\nSkrelv can\'t block.' });
+      s = settle(apply(board({ mine: [ardyn, demon], theirs: [skrelv] }), { type: 'pass' }));
+      expect(hasKw(perm(s, 'Demon')!, 'haste')).toBe(true);
+      expect(hasKw(perm(s, 'Ardyn, the Usurper')!, 'haste')).toBe(false);
+      expect(canBlock(perm(s, 'Skrelv, Defector Mite')!, perm(s, 'Demon')!)).toBe(false);
+    });
+
+    it('Survival of the Fittest discards a creature card to find one', () => {
+      const survival = art('Survival of the Fittest', '{G}, Discard a creature card: Search your library for a creature card, reveal that card, put it into your hand, then shuffle.', 'Enchantment');
+      const forest = card({ name: 'Forest', typeLine: 'Basic Land — Forest' });
+      let s = board({ mine: [forest, survival], hand: [swamp] });
+      expect(errorOf(() => apply(s, { type: 'activate', iid: iidOf(s, 'Survival of the Fittest'), index: 0 }))).toBe('nothingToDiscard');
+      s = board({ mine: [forest, survival], hand: [swamp, creature('Bear', 2, 2)] });
+      s.players[0].library = [{ iid: 'l0', card: creature('Ogre', 3, 3) }, ...s.players[0].library];
+      s = apply(s, { type: 'activate', iid: iidOf(s, 'Survival of the Fittest'), index: 0 });
+      expect((s.pending!.choice as { options: { iid: string }[] }).options.map((c) => c.iid)).toEqual(['h1']);
+      s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['h1'] } }));
+      expect(s.pending?.choice).toMatchObject({ purpose: 'search' });
+      s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['l0'] } }));
+      expect(s.players[0].hand.map((c) => c.card.name)).toEqual(['Swamp', 'Ogre']);
+    });
+
+    it('Priest of Titania: {G} for each Elf on the battlefield', () => {
+      const priest = creature('Priest of Titania', 1, 1, { typeLine: 'Creature — Elf Druid', oracleText: '{T}: Add {G} for each Elf on the battlefield.' });
+      const s = board({ mine: [priest], theirs: [creature('Elvish Visionary', 1, 1, { typeLine: 'Creature — Elf Shaman' })] });
+      expect(unitsOf(s, perm(s, 'Priest of Titania')!)).toEqual([['G'], ['G']]);
+    });
+
+    it('Disruptor Flute and Anointed Peacekeeper tax the chosen name', () => {
+      const flute = art('Disruptor Flute', 'Flash\nAs this artifact enters, choose a card name.\nSpells with the chosen name cost {3} more to cast.\nActivated abilities of sources with the chosen name can\'t be activated unless they\'re mana abilities.');
+      const keeper = creature('Anointed Peacekeeper', 3, 3, { oracleText: 'Vigilance\nAs this creature enters, look at an opponent\'s hand, then choose any card name.\nSpells your opponents cast with the chosen name cost {2} more to cast.\nActivated abilities of sources with the chosen name cost {2} more to activate unless they\'re mana abilities.' });
+      let s = board({ mine: [flute, keeper] });
+      perm(s, 'Disruptor Flute')!.chosenName = 'Bolt';
+      perm(s, 'Anointed Peacekeeper')!.chosenName = 'Bolt';
+      // Mine: only the Flute's {3}; the opponent's: {3} + {2}.
+      expect(castCost(s, 0, bolt, {}).generic).toBe(3);
+      expect(castCost(s, 1, bolt, {}).generic).toBe(5);
+      // Cast, the Peacekeeper offers the opponent's hand first.
+      s = board({ mana: 3, hand: [keeper], oppHand: [bolt, swamp] });
+      s.battlefield.push(...[0, 1].map((i): Permanent => ({ iid: `w${i}`, card: card({ name: 'Plains', typeLine: 'Basic Land — Plains' }), controller: 0, tapped: false, sick: false, damage: 0, deathtouched: false, counters: {}, boosts: [] })));
+      s.battlefield = s.battlefield.slice(1);
+      s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+      expect(s.pending?.choice).toMatchObject({ purpose: 'taxName', modes: ['Bolt', 'Swamp'] });
+    });
   });
 });

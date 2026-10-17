@@ -792,6 +792,7 @@ export const en = {
       creatureType: (p: { card: string }) => `${p.card}: choose a creature type.`,
       cardName: (p: { card: string }) => `${p.card}: choose a card name (its activated abilities, other than mana abilities, can't be activated).`,
       spellName: (p: { card: string }) => `${p.card}: choose a nonland card name (spells with that name can't be cast).`,
+      taxName: (p: { card: string }) => `${p.card}: choose a card name (spells with that name cost more to cast).`,
       chosenPlayer: (p: { card: string }) => `${p.card}: choose a player (it has protection from them).`,
       returnFromGraveyard: (p: { card: string }) => `${p.card}: return a card from your graveyard to your hand?`,
       reflexiveSacrifice: (p: { card: string }) => `${p.card}: sacrifice a creature to use its ability? (Pick none to decline.)`,

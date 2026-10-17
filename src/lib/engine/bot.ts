@@ -794,6 +794,8 @@ function abilityPlays(s: GameState, me: PlayerId): (Play & { perm: Permanent; in
   return activatable(s, me)
     // Never pay life (it could loop until death), except a little for a fetch land.
     .filter(({ spec }) => !spec.cost.life || (isLandSearch(spec.ability) && s.players[me].life > 6))
+    // Discarding for an ability (Psychic Frog, Survival of the Fittest) isn't planned by the bot.
+    .filter(({ spec }) => !spec.cost.discard)
     // Free abilities could repeat forever; loyalty abilities are once a turn and handled by usePlaneswalkers.
     .filter(({ spec }) => (spec.cost.tap || spec.cost.mana || spec.cost.sacrificeSelf) && spec.cost.loyalty === undefined)
     // Becoming a creature until end of turn (Iron Man Armor) isn't planned by the bot; Vehicles are crewed by crewVehicles.

@@ -213,13 +213,6 @@ NONE     Uldaros Theorix {3}{U}{B}{B} — Legendary Creature — Elder Sphinx
       keyword
   ✗ When Uldaros Theorix enters, if you cast him, exile up to one target …
       trigger (enters), effect not simulated
-NONE     Valley Floodcaller {2}{U} — Creature — Otter Wizard
-  ✓ Flash
-      keyword
-  ? You may cast noncreature spells as though they had flash.
-      not read by the engine
-  ✗ Whenever you cast a noncreature spell, Birds, Frogs, Otters, and Rats…
-      trigger (cast), effect not simulated
 NONE     Wan Shi Tong, Librarian {X}{U}{U} — Legendary Creature — Bird Spirit
   ✓ Flash
       keyword
@@ -485,8 +478,8 @@ PARTIAL  Starscape Cleric {1}{B} — Creature — Bat Cleric
       keyword not simulated: offspring
   ✓ Flying
       keyword
-  ? This creature can't block.
-      not read by the engine
+  ✓ This creature can't block.
+      static ability
   ✓ Whenever you gain life, each opponent loses 1 life.
       trigger (gainLife) → loseLife
 PARTIAL  Sunspine Lynx {2}{R}{R} — Creature — Elemental Cat
@@ -519,6 +512,13 @@ PARTIAL  Torch the Tower {R} — Instant
       spell → damage (1 target)
   ✓ If a permanent dealt damage by Torch the Tower would die this turn, e…
       spell → damage (1 target)
+PARTIAL  Valley Floodcaller {2}{U} — Creature — Otter Wizard
+  ✓ Flash
+      keyword
+  ✓ You may cast noncreature spells as though they had flash.
+      rule for the game: noncreatureFlash
+  ✗ Whenever you cast a noncreature spell, Birds, Frogs, Otters, and Rats…
+      trigger (cast), effect not simulated
 PARTIAL  Wild Ride {R} — Sorcery
   ✗ Harmonize {4}{R}
       keyword not simulated: harmonize
@@ -961,5 +961,5 @@ OK       Zoraline, Cosmos Caller {1}{W}{B} — Legendary Creature — Bat Cleric
   ✓ Whenever Zoraline enters or attacks, you may pay {W}{B} and 2 life. W…
       trigger (enters/attacks) → reflexive | reflexive
 
-178 cards: 91 ok, 41 partial, 46 not simulated, 0 can't be cast
+178 cards: 91 ok, 42 partial, 45 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

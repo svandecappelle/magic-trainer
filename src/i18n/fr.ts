@@ -798,6 +798,7 @@ export const fr: Messages = {
       creatureType: (p) => `${p.card} : choisissez un type de créature.`,
       cardName: (p) => `${p.card} : choisissez un nom de carte (ses capacités activées, sauf de mana, ne peuvent pas être activées).`,
       spellName: (p) => `${p.card} : choisissez un nom de carte non-terrain (les sorts de ce nom ne peuvent pas être lancés).`,
+      taxName: (p) => `${p.card} : choisissez un nom de carte (les sorts de ce nom coûtent plus cher à lancer).`,
       chosenPlayer: (p) => `${p.card} : choisissez un joueur (il a la protection contre ce joueur).`,
       returnFromGraveyard: (p) => `${p.card} : renvoyer une carte de votre cimetière dans votre main ?`,
       reflexiveSacrifice: (p) => `${p.card} : sacrifier une créature pour utiliser sa capacité ? (Aucune pour refuser.)`,

@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type AltCost, type CastInfo, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -171,6 +171,8 @@ export interface PlayerState {
   graveyard: CardInst[];
   exile: CardInst[];
   landPlayed: boolean;
+  /** Lands played this turn (Exploration allows a second one). */
+  landsThisTurn?: number;
   /** Life gained and lost this turn ("if you gained life this turn"). */
   gainedThisTurn?: number;
   lostThisTurn?: number;
@@ -265,6 +267,7 @@ export type ChoicePurpose =
   | 'creatureType' // Cavern of Souls: "choose a creature type"
   | 'cardName' // Pithing Needle: "choose a card name"
   | 'spellName' // Meddling Mage: "choose a nonland card name"
+  | 'taxName' // Disruptor Flute, Anointed Peacekeeper: "choose a card name" (spells with it cost more)
   | 'basicType' // Multiversal Passage: "choose a basic land type"
   | 'color' // Mother of Runes: "protection from the color of your choice"
   | 'exploreMill' // explore: put the revealed nonland card into the graveyard?
@@ -735,6 +738,9 @@ export function unitsOf(s: GameState, perm: Permanent, spell?: Card): Color[][] 
     // Gaea's Cradle: {G} for each creature you control.
     const n = s.battlefield.filter((x) => x.controller === perm.controller && isCreature(x.card)).length;
     units = Array.from({ length: n }, () => ['G'] as Color[]);
+  } else if (state === 'perElf') {
+    const n = s.battlefield.filter((x) => isCreature(x.card) && hasSubtype(x.card, 'elf')).length;
+    units = Array.from({ length: n }, () => ['G'] as Color[]);
   } else if (state === 'opponentLands') {
     // Fellwar Stone: the colors an opponent's land could make (Pools and Stones aside).
     const colors = s.battlefield
@@ -813,6 +819,16 @@ function hasSubtype(c: Card, type: string): boolean {
 function painOf(s: GameState, perm: Permanent) {
   const pain = manaPain(perm.card, s.players[perm.controller]?.identity);
   return pain && s.players[perm.controller].life >= pain.life ? pain : undefined;
+}
+
+/** Disruptor Flute and Anointed Peacekeeper: what the chosen name adds to `p`'s spells or abilities with that name. */
+function nameTax(s: GameState, p: PlayerId, name: string, what: 'spells' | 'abilities'): number {
+  let n = 0;
+  for (const x of s.battlefield) {
+    const tax = x.chosenName === name ? chosenNameTax(x.card) : null;
+    if (tax && !(tax.opponents && teamOf(s, x.controller) === teamOf(s, p))) n += tax[what];
+  }
+  return n;
 }
 
 function graveDiscount(s: GameState, p: PlayerId, d: CastInfo['graveDiscount']): number {
@@ -907,10 +923,13 @@ export const nameStopped = (s: GameState, name: string) =>
 
 /** Clarion Conqueror: no activated abilities (mana abilities included) for artifacts, creatures and planeswalkers. */
 function activationsForbidden(s: GameState, perm: Permanent): boolean {
-  // Null Rod: artifacts' activated abilities, mana abilities included.
-  if (cardTypes(perm.card).includes('artifact') && withRule(s, 'noArtifactAbilities').length) return true;
-  if (!withRule(s, 'noActivatedAbilities').length) return false;
   const types = cardTypes(perm.card);
+  // Null Rod: artifacts' activated abilities, mana abilities included; Karn, the Great Creator: the opponents' artifacts.
+  if (types.includes('artifact') && withRule(s, 'noArtifactAbilities').length) return true;
+  if (types.includes('artifact') && withRule(s, 'opponentsArtifactAbilitiesForbidden').some((x) => teamOf(s, x.controller) !== teamOf(s, perm.controller))) return true;
+  // Cursed Totem: creatures' activated abilities.
+  if (isCreature(perm.card) && withRule(s, 'noCreatureAbilities').length) return true;
+  if (!withRule(s, 'noActivatedAbilities').length) return false;
   return types.includes('artifact') || types.includes('creature') || types.includes('planeswalker');
 }
 
@@ -929,7 +948,9 @@ function castTimingFor(s: GameState, p: PlayerId, inst: CardInst, card: Card): b
 function castTimingOk(s: GameState, p: PlayerId, card: Card): boolean {
   if (!s.priority) return isMainStep(s) && isActivePlayer(s, p);
   if (sorceryOnly(s, p)) return false;
-  return hasInstantSpeed(card) || (!!s.players[p].sorceryFlash && /\bSorcery\b/.test(card.typeLine.split('//')[0]));
+  return hasInstantSpeed(card) || (!!s.players[p].sorceryFlash && /\bSorcery\b/.test(card.typeLine.split('//')[0]))
+    // Valley Floodcaller: "You may cast noncreature spells as though they had flash."
+    || (!isCreature(card) && withRule(s, 'noncreatureFlash').some((x) => x.controller === p));
 }
 
 /** Containment Priest: a nontoken creature card entering without being cast is exiled instead. */
@@ -1166,10 +1187,14 @@ export function castCost(s: GameState, p: PlayerId, card: Card, opt: { face?: nu
     // March of Otherworldly Light: {2} less for each card exiled from the hand.
     + (info.exileDiscount && opt.exiled ? info.exileDiscount.per * opt.exiled : 0)
     // Eddymurk Crab: per instant and sorcery card in the graveyard; Emrakul: per card type among them.
-    + graveDiscount(s, p, info.graveDiscount);
+    + graveDiscount(s, p, info.graveDiscount)
+    // Bilbo: {1} less for a spell cast from anywhere but the hand.
+    + (opt.from && opt.from !== 'hand' ? withRule(s, 'notFromHandCostsLess').filter((x) => x.controller === p).length : 0);
   // Commander tax: {2} more for each previous cast from the command zone; Defense Grid: {3} more off its caster's turn;
   // Thalia: {1} more for a noncreature spell; Damping Sphere: {1} more for each other spell cast this turn.
   const tax = (opt.from === 'command' && opt.iid ? 2 * (s.players[p].commanderCasts?.[opt.iid] ?? 0) : 0)
+    // Disruptor Flute, Anointed Peacekeeper: more for a spell with the chosen name.
+    + nameTax(s, p, c.name, 'spells')
     + (isActivePlayer(s, p) ? 0 : 3 * withRule(s, 'offTurnSpellsCost3').length)
     + (isCreature(c) ? 0 : withRule(s, 'noncreatureSpellsCost1').length)
     + (s.players[p].spellsThisTurn ?? 0) * withRule(s, 'spellsCostMorePerSpell').length
@@ -1326,6 +1351,8 @@ function abilityCost(s: GameState, perm: Permanent, spec: ActivatedSpec, x = 0, 
   let generic = cost.generic + x * (spec.cost.mana.match(/\{X\}/g) ?? []).length;
   const p = perm.controller;
   if (spec.discountPer) generic -= matching(s, p, spec.discountPer).filter((x) => x.controller === p).length;
+  // Anointed Peacekeeper: {2} more for the abilities of a source with the chosen name.
+  generic += nameTax(s, p, printedCard(perm).name, 'abilities');
   if (spec.equip) {
     if (freeEquip(s, p)) return { generic: 0, colored: [] };
     const reduction = (c: Permanent) => equipDiscount(c.card) + (spec.equip!.perColor ? cardColors(c.card).length : 0);
@@ -1381,7 +1408,7 @@ export function activationProblem(s: GameState, p: PlayerId, perm: Permanent, in
   if (spec.cost.life && s.players[p].life < spec.cost.life) return 'notEnoughLife';
   if (spec.cost.removeCounter && !perm.counters[spec.cost.removeCounter]) return 'noCounterToRemove';
   if (spec.cost.exileFromGraveyard && s.players[p].graveyard.filter((c) => cardMatches(c.card, spec.cost.exileFromGraveyard!)).length < (spec.cost.exileCount ?? 1)) return 'nothingToExile';
-  if (spec.cost.discard && s.players[p].hand.length < spec.cost.discard) return 'nothingToDiscard';
+  if (spec.cost.discard && discardOptions(s, p, spec).length < spec.cost.discard) return 'nothingToDiscard';
   if (spec.cost.sacrifice && !sacrificeOptions(s, perm, spec).length) return 'nothingToSacrifice';
   if (spec.cost.crew !== undefined && crewOptions(s, perm).reduce((n, x) => n + powerOf(x), 0) < spec.cost.crew) return 'notEnoughCrew';
   if (!findPayment(sourcesFor(s, perm, spec), abilityCost(s, perm, spec, x))) return 'notEnoughMana';
@@ -1396,6 +1423,10 @@ export function abilityMaxX(s: GameState, perm: Permanent, index: number): numbe
   while (findPayment(sourcesFor(s, perm, spec), abilityCost(s, perm, spec, x + 1))) x++;
   return x;
 }
+
+/** The cards that may be discarded for an ability's "Discard a card" (Survival of the Fittest: "a creature card"). */
+const discardOptions = (s: GameState, p: PlayerId, spec: ActivatedSpec) =>
+  s.players[p].hand.filter((c) => !spec.cost.discardFilter || cardMatches(c.card, spec.cost.discardFilter));
 
 /** What may be sacrificed to pay an ability's "Sacrifice a creature" cost. */
 function sacrificeOptions(s: GameState, perm: Permanent, spec: ActivatedSpec): Permanent[] {
@@ -1778,6 +1809,7 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
   d.step = 'main1';
   for (const q of teamPlayers(d, p)) {
     d.players[q].landPlayed = false;
+    delete d.players[q].landsThisTurn;
     // "Until your next turn" ends.
     delete d.players[q].sorceryFlash;
     d.players[q].turns = (d.players[q].turns ?? 0) + 1;
@@ -2142,6 +2174,12 @@ function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, op
     perm.tapped = true;
     (d.lifeChoices ??= []).push({ iid: perm.iid, n: rule.n });
   }
+  // Archon of Emeria, Manglehorn: the opponents' nonbasic lands / artifacts enter tapped; Root Maze: everyone's
+  // artifacts and lands.
+  const types = cardTypes(inst.card);
+  const theirs = (rule: GameRule) => withRule(d, rule).some((x) => teamOf(d, x.controller) !== teamOf(d, controller));
+  if ((isNonbasicLand(inst.card) && theirs('opponentsNonbasicsEnterTapped')) || (types.includes('artifact') && theirs('opponentsArtifactsEnterTapped'))
+    || ((types.includes('artifact') || types.includes('land')) && withRule(d, 'artifactsLandsEnterTapped').length)) perm.tapped = true;
   // Fading N: enters with N fade counters.
   const fading = fadingOf(inst.card);
   if (fading) perm.counters = { ...perm.counters, fade: fading };
@@ -2288,16 +2326,22 @@ function spellNames(d: GameState, p: PlayerId): string[] {
 
 /** Pithing Needle: "As this artifact enters, choose a card name." (asked once nothing else is going on). */
 function askCardName(d: GameState): boolean {
-  const perm = d.battlefield.find((x) => (namesCardToStop(x.card) || namesSpellToStop(x.card)) && x.chosenName === undefined);
+  const perm = d.battlefield.find((x) => (namesCardToStop(x.card) || namesSpellToStop(x.card) || namesAnyCard(x.card)) && x.chosenName === undefined);
   if (!perm) return false;
-  const names = namesSpellToStop(perm.card) ? spellNames(d, perm.controller) : stoppableNames(d, perm.controller);
+  // Anointed Peacekeeper looks at an opponent's hand first; Disruptor Flute names spells as well as abilities.
+  const opponentHand = namesAnyCard(perm.card)
+    ? opponentsOf(d, perm.controller).flatMap((q) => d.players[q].hand.map((c) => c.card.name))
+    : [];
+  const names = namesSpellToStop(perm.card) ? spellNames(d, perm.controller)
+    : chosenNameTax(perm.card) ? [...new Set([...opponentHand, ...spellNames(d, perm.controller), ...stoppableNames(d, perm.controller)])].slice(0, 24)
+    : stoppableNames(d, perm.controller);
   if (!names.length) {
     perm.chosenName = '';
     log(d, { k: 'chosenName', card: perm.card.name, name: '' });
     return false;
   }
   d.pending = {
-    choice: { kind: 'mode', player: perm.controller, purpose: namesSpellToStop(perm.card) ? 'spellName' : 'cardName', min: 1, max: 1, modes: names, params: { card: perm.card.name } },
+    choice: { kind: 'mode', player: perm.controller, purpose: namesSpellToStop(perm.card) ? 'spellName' : chosenNameTax(perm.card) ? 'taxName' : 'cardName', min: 1, max: 1, modes: names, params: { card: perm.card.name } },
     resume: 'cardName', iid: perm.iid,
   };
   return true;
@@ -2725,6 +2769,7 @@ function refreshStatics(d: GameState) {
       const times = st.perEach ? matching(d, src.controller, st.perEach).filter((x) => x.controller === src.controller).length
         : st.perAttached ? d.battlefield.filter((x) => x.attachedTo === src.iid && /\b(?:Aura|Equipment)\b/.test(x.card.typeLine.split('//')[0])).length
         : st.perCounter ? (src.counters[st.perCounter] ?? 0)
+        : st.perGraveType ? new Set((st.perGraveType === 'you' ? [src.controller] : playersOf(d)).flatMap((q) => d.players[q].graveyard.flatMap((c) => cardTypes(c.card)))).size
         : 1;
       for (const h of hosts) {
         if (!isCreature(h.card)) continue;
@@ -2750,7 +2795,7 @@ function dealDamage(d: GameState, source: CardInst, controller: PlayerId, target
   const dealer = findPermanent(d, source.iid) ?? ((source as StackItem).source ? findPermanent(d, (source as StackItem).source!) : undefined);
   if (dealer?.statics?.doubleDamage) amount *= 2;
   // Sunspine Lynx: "Damage can't be prevented."
-  const preventable = !withRule(d, 'damageCantBePrevented').length;
+  const preventable = !withRule(d, 'damageCantBePrevented').length && !(combat && withRule(d, 'combatDamageCantBePrevented').length);
   if (preventable && typeof target !== 'number' && (protectedFrom(target, source.card) || protectedFromPlayer(target, controller))) return; // protection prevents it
   // Black Panther: "Prevent all damage that would be dealt to Black Panther."
   if (preventable && typeof target !== 'number' && preventsDamageToSelf(target.card)) return;
@@ -2826,7 +2871,7 @@ function teamLoses(d: GameState, p: PlayerId) {
 
 function resolveCombat(d: GameState) {
   refreshStatics(d);
-  if (d.preventCombat && !withRule(d, 'damageCantBePrevented').length) return; // Fog
+  if (d.preventCombat && !withRule(d, 'damageCantBePrevented').length && !withRule(d, 'combatDamageCantBePrevented').length) return; // Fog
   // Combat damage to "the player" goes to the defending team (one shared life total).
   const def = firstOpponent(d, d.active);
   const get = (iid: string) => findPermanent(d, iid);
@@ -2972,6 +3017,8 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       for (const target of spells) {
         if (!target.ability && /\bThis spell can't be countered\./.test(castCard(target).oracleText)) continue;
         if (target.uncounterable) continue;
+        // Frenzied Baloth: "Creature spells you control can't be countered."
+        if (!target.ability && isCreature(castCard(target)) && withRule(d, 'creatureSpellsUncounterable').some((x) => x.controller === target.controller)) continue;
         // Hexing Squelcher: "Spells you control can't be countered."
         if (!target.ability && d.battlefield.some((x) => x.controller === target.controller && protectsSpells(x.card))) continue;
         if (e.unlessPaysLife) {
@@ -3145,6 +3192,8 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         searcher = who;
       }
       const ps = d.players[searcher];
+      // Ashiok, Dream Render: an opponent's own spells and abilities can't make them search.
+      if (searcher === caster && withRule(d, 'opponentsCantSearch').some((x) => teamOf(d, x.controller) !== teamOf(d, searcher))) break;
       const found = ps.library.filter((c) => cardMatches(c.card, e.filter));
       if (found.length && (!answer || answer.kind !== 'cards')) {
         return { kind: 'cards', player: searcher, purpose: 'search', min: 0, max: Math.min(e.n, found.length), options: found, params: { n: e.n } };
@@ -4510,7 +4559,9 @@ export function apply(state: GameState, action: Action): GameState {
       if (!inst || !landFaces(inst.card).includes(face)) throw new IllegalAction('notALand');
       const land = faceCard(inst.card, face);
       me.hand = me.hand.filter((c) => c !== inst);
-      me.landPlayed = true;
+      // Exploration: one more land each turn.
+      me.landsThisTurn = (me.landsThisTurn ?? 0) + 1;
+      me.landPlayed = me.landsThisTurn > withRule(d, 'extraLand').filter((x) => x.controller === p).length;
       log(d, { k: 'playLand', p, card: land.name });
       const perm = enterBattlefield(d, { iid: inst.iid, card: land }, p);
       if (land !== inst.card) perm.printed = inst.card;
@@ -4719,7 +4770,7 @@ export function apply(state: GameState, action: Action): GameState {
         // Psychic Frog: "Discard a card": which one.
         const n = spec.cost.discard;
         d.pending = {
-          choice: { kind: 'cards', player: p, purpose: 'discardCost', min: n, max: n, options: [...me.hand], params: { card: perm.card.name, n, ability: 1 } },
+          choice: { kind: 'cards', player: p, purpose: 'discardCost', min: n, max: n, options: discardOptions(d, p, spec), params: { card: perm.card.name, n, ability: 1 } },
           resume: 'activation',
           activation: { item, named },
         };

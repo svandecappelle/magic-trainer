@@ -1508,6 +1508,9 @@ const TRADE_FOR_CARD = /\bYou may sacrifice an? (artifact|creature) or discard a
 /** Path to Exile, Boseiju: the removed permanent's controller may search for a land (see parseAbilityText). */
 const CONTROLLER_SEARCH = /\b(?:Its|That (?:land|permanent|creature)'s|That player) (?:controller )?may search (?:their|his or her) library for (a basic land card|a land card with a basic land type), put it onto the battlefield( tapped)?, then shuffle(?=\.)/;
 
+/** Survival of the Fittest: "Search your library for a creature card, reveal that card, put it into your hand". */
+const REVEAL_FOUND = /\bsearch your library for [a-z ,-]+? card, reveal that card, (?=put it into your hand)/i;
+
 /** Enlightened Confidant's second sentence, after "surveil 1." */
 const SURVEIL_TO_HAND = /If you put a card with mana value less than or equal to the amount of life you gained this turn into your graveyard this way, put that card into your hand\./;
 
@@ -1923,7 +1926,7 @@ const UNSUPPORTED_WORDS = /\b(?:if|unless|for each|where|instead|that (?:creatur
 const UNSUPPORTED = {
   test: (text: string) => {
     let rest = text;
-    for (const handled of [CONTROLLER_SEARCH, SURVEIL_TO_HAND, THORIN_ATTACH, BECOMES_CREATURE, LAND_BECOMES, TRADE_FOR_CARD, COUNTER_DEST, TIDEBINDER, POWER_LIFE, PHELIA, CITY_COPIES, GHOST_VACUUM, MALCOLM, FLICKER, BLACK_SUN]) rest = rest.replace(handled, '');
+    for (const handled of [CONTROLLER_SEARCH, REVEAL_FOUND, SURVEIL_TO_HAND, THORIN_ATTACH, BECOMES_CREATURE, LAND_BECOMES, TRADE_FOR_CARD, COUNTER_DEST, TIDEBINDER, POWER_LIFE, PHELIA, CITY_COPIES, GHOST_VACUUM, MALCOLM, FLICKER, BLACK_SUN]) rest = rest.replace(handled, '');
     return UNSUPPORTED_WORDS.test(rest.replace(/"[^"]*"/g, '""'));
   },
 };
@@ -2297,8 +2300,9 @@ export interface ActivationCost {
    */
   exileFromGraveyard?: TargetFilter;
   exileCount?: number;
-  /** Psychic Frog: "Discard a card" (chosen when activating). */
+  /** Psychic Frog: "Discard a card"; Survival of the Fittest: "Discard a creature card" (`discardFilter`). */
   discard?: number;
+  discardFilter?: TargetFilter;
   /** Waterbend {N}: each artifact or creature tapped while paying pays for {1}. */
   waterbend?: boolean;
 }
@@ -2398,6 +2402,13 @@ export function activatedOf(card: Card): ActivatedSpec[] {
         cost.exileCount = toNumber(p.split(' ')[1]);
       }
       else if (new RegExp(`^discard (${NUMBER}) cards?$`, 'i').test(p)) cost.discard = toNumber(p.split(' ')[1]);
+      else if (/^discard an? ([a-z ]+?) card$/i.test(p)) {
+        const filter = cardWordsFilter(p.match(/^discard an? ([a-z ]+?) card$/i)![1]);
+        if (filter) {
+          cost.discard = 1;
+          cost.discardFilter = filter;
+        } else ok = false;
+      }
       else if (/^remove an? (fade|age|lore) counter from /i.test(p) && selves.includes(p.replace(/^remove an? \w+ counter from /i, '').toLowerCase())) {
         cost.removeCounter = p.match(/^remove an? (\w+)/i)![1].toLowerCase() as CounterKind;
       }
@@ -2418,6 +2429,8 @@ export function activatedOf(card: Card): ActivatedSpec[] {
     // Other restrictions ("only during your turn", "only if …") aren't checked: leave the ability out.
     if (/Activate (?:only|this ability only)/i.test(text.replace(/Activate only (?:as a sorcery|once each turn)\.?/gi, ''))) continue;
     text = text.replace(/\s*Activate (?:only|this ability only)[^.]*\./gi, '').trim();
+    // Seasoned Hallowblade: "Tap this creature. It gains indestructible until end of turn." (read as Iron-Shield Elf's)
+    text = text.replace(/^Tap this creature\. It gains ([a-z ,]+ until end of turn)\.$/i, 'This creature gains $1. Tap it.');
     const optional = /^you may /i.test(text);
     const body = optional ? `you ${text.slice('you may '.length)}` : text;
     // {S} must be paid with mana from a snow source, which the engine doesn't track (Faceless Haven).
@@ -2465,8 +2478,10 @@ export function doublesEquippedTriggers(card: Card): boolean {
  * Amber "{T}: Add one mana of any color among legendary creatures and planeswalkers you control." (legends),
  * Gemstone Caverns (luck: any color with a luck counter, otherwise {C}).
  */
-export function stateMana(card: Card): 'imprinted' | 'legends' | 'luck' | 'perArtifact' | 'mining' | 'reflect' | 'perCreature' | 'opponentLands' | null {
+export function stateMana(card: Card): 'imprinted' | 'legends' | 'luck' | 'perArtifact' | 'mining' | 'reflect' | 'perCreature' | 'perElf' | 'opponentLands' | null {
   const text = frontText(card);
+  // Priest of Titania: "{T}: Add {G} for each Elf on the battlefield."
+  if (/^\{T\}: Add \{G\} for each Elf on the battlefield\.$/m.test(text)) return 'perElf';
   // Gaea's Cradle: "{T}: Add {G} for each creature you control."
   if (/^\{T\}: Add \{G\} for each creature you control\.$/m.test(text)) return 'perCreature';
   // Fellwar Stone: "{T}: Add one mana of any color that a land an opponent controls could produce."
@@ -2558,6 +2573,11 @@ export interface StaticSpec {
   delirium?: boolean;
   /** "attacks each combat if able". */
   mustAttack?: boolean;
+  /**
+   * Lhurgoyfs: "+1/+1 for each card type among cards in your graveyard" (Nethergoyf: `you`) or "in all graveyards"
+   * (Barrowgoyf, Tarmogoyf: `all`).
+   */
+  perGraveType?: 'you' | 'all';
   keywords: Keyword[];
   /** "has … ward {2}" (Lavaspur Boots, Sheltered by Ghosts). */
   ward?: number;
@@ -2651,6 +2671,19 @@ export function staticsOf(card: Card): StaticSpec[] {
       out.push({ who: 'self', power: Number(delirium[1]), toughness: Number(delirium[2]), keywords: kws(delirium[3]), delirium: true, ...(delirium[4] ? { mustAttack: true } : {}) });
       continue;
     }
+    // Skrelv: "Skrelv can't block."
+    const cant = line.match(new RegExp(`^(?:${selves}) can't (attack or block|attack|block)\\.$`, 'i'));
+    if (cant) {
+      out.push({ who: 'self', power: 0, toughness: 0, keywords: [], ...(/attack/i.test(cant[1]) ? { cantAttack: true } : {}), ...(/block/i.test(cant[1]) ? { cantBlock: true } : {}) });
+      continue;
+    }
+    // Barrowgoyf: "Barrowgoyf's power is equal to the number of card types among cards in all graveyards and its
+    // toughness is equal to that number plus 1." (its printed */1+* is 0/1)
+    const goyf = line.match(new RegExp(`^(?:${selves})'s power is equal to the number of card types among cards in (all graveyards|your graveyard) and its toughness is equal to that number plus 1\\.$`, 'i'));
+    if (goyf) {
+      out.push({ who: 'self', power: 1, toughness: 1, keywords: [], perGraveType: goyf[1].toLowerCase() === 'your graveyard' ? 'you' : 'all' });
+      continue;
+    }
     // Dáin's Company: "This creature has lifelink as long as you control another Dwarf."
     const ifAnother = line.match(new RegExp(`^(?:${selves}) has ${KEYWORD_LIST} as long as you control another ([A-Z][a-z]+)\\.$`, 'i'));
     if (ifAnother) {
@@ -2671,7 +2704,11 @@ export function staticsOf(card: Card): StaticSpec[] {
       out.push({ who: wardSubject, power: 0, toughness: 0, keywords: [], ...(grantedWard![2] ? { wardLife: Number(grantedWard![2]) } : { ward: Number(grantedWard![3]) }) });
       continue;
     }
-    const anthem = line.match(/^((?:Other )?[A-Za-z ]*?[Cc]reatures?(?: you control| your opponents control| you don't control)?) (?:get ([+-]\d+)\/([+-]\d+)(?: and have (.+))?|have (.+))\.$/);
+    // Ardyn: "Demons you control have menace, lifelink, and haste." (a creature type without the word "creatures")
+    const tribal = line.match(/^(Other )?([A-Z][a-z]+?)s you control (get|have) /);
+    const tribe = tribal && tribal[2].replace(/ve$/, 'f'); // Elves, Wolves, Dwarves
+    const anthemLine = tribal && !/^Creature$/i.test(tribal[2]) ? line.replace(tribal[0], `${tribal[1] ?? ''}${tribe} creatures you control ${tribal[3]} `) : line;
+    const anthem = anthemLine.match(/^((?:Other )?[A-Za-z ]*?[Cc]reatures?(?: you control| your opponents control| you don't control)?) (?:get ([+-]\d+)\/([+-]\d+)(?: and have (.+))?|have (.+))\.$/);
     if (anthem) {
       const subject = anthemSubject(anthem[1]);
       const keywordText = anthem[4] ?? anthem[5];
@@ -2768,6 +2805,24 @@ export const choosesBasicType = (card: Card) =>
   /^As this land enters, choose a basic land type\./m.test(frontText(card)) && /^This land is the chosen type\.$/m.test(frontText(card));
 
 /** Meddling Mage: "As this creature enters, choose a nonland card name." and "Spells with the chosen name can't be cast." */
+/** Anointed Peacekeeper: "As this creature enters, look at an opponent's hand, then choose any card name." */
+export const namesAnyCard = (card: Card) =>
+  /^As this creature enters, look at an opponent's hand, then choose any card name\.$/m.test(frontText(card));
+
+/**
+ * Spells with the permanent's chosen name cost more: Disruptor Flute "Spells with the chosen name cost {3} more to
+ * cast." (everyone's), Anointed Peacekeeper "Spells your opponents cast with the chosen name cost {2} more to cast."
+ * `abilities`: Peacekeeper's "Activated abilities of sources with the chosen name cost {2} more to activate unless
+ * they're mana abilities."
+ */
+export function chosenNameTax(card: Card): { spells: number; opponents: boolean; abilities: number } | null {
+  const text = frontText(card);
+  const m = text.match(/^Spells (your opponents cast )?with the chosen name (?:your opponents cast )?cost \{(\d+)\} more to cast\.$/m);
+  if (!m) return null;
+  const abilities = text.match(/^Activated abilities of sources with the chosen name cost \{(\d+)\} more to activate unless they're mana abilities\.$/m);
+  return { spells: Number(m[2]), opponents: !!m[1], abilities: abilities ? Number(abilities[1]) : 0 };
+}
+
 export const namesSpellToStop = (card: Card) =>
   /^As this creature enters, choose a nonland card name\.$/m.test(frontText(card)) && /^Spells with the chosen name can't be cast\.$/m.test(frontText(card));
 
@@ -2880,6 +2935,28 @@ export type GameRule =
   | 'landsAreSwamps'
   /** Cryptolith Rite, Enduring Vitality: "Creatures you control have "{T}: Add one mana of any color."" */
   | 'creaturesTapForAnyColor'
+  /** Karn, the Great Creator: "Activated abilities of artifacts your opponents control can't be activated." */
+  | 'opponentsArtifactAbilitiesForbidden'
+  /** Cursed Totem: "Activated abilities of creatures can't be activated." (mana abilities included) */
+  | 'noCreatureAbilities'
+  /** Ashiok, Dream Render: "Spells and abilities your opponents control can't cause their controller to search their library." */
+  | 'opponentsCantSearch'
+  /** Archon of Emeria: "Nonbasic lands your opponents control enter tapped." */
+  | 'opponentsNonbasicsEnterTapped'
+  /** Manglehorn: "Artifacts your opponents control enter tapped." */
+  | 'opponentsArtifactsEnterTapped'
+  /** Root Maze: "Artifacts and lands enter tapped." */
+  | 'artifactsLandsEnterTapped'
+  /** Bilbo, Thief in the Night: "Spells you cast from anywhere other than your hand cost {1} less to cast." */
+  | 'notFromHandCostsLess'
+  /** Valley Floodcaller: "You may cast noncreature spells as though they had flash." */
+  | 'noncreatureFlash'
+  /** Frenzied Baloth: "Creature spells you control can't be countered." */
+  | 'creatureSpellsUncounterable'
+  /** Frenzied Baloth: "Combat damage can't be prevented." */
+  | 'combatDamageCantBePrevented'
+  /** Exploration: "You may play an additional land on each of your turns." */
+  | 'extraLand'
   /** Sunspine Lynx: "Players can't gain life." */
   | 'noLifeGain'
   /** Sunspine Lynx: "Damage can't be prevented." (protection, shields and Fog included) */
@@ -2927,6 +3004,17 @@ const GAME_RULES: [RegExp, GameRule][] = [
   [/^Nonbasic lands are Islands\.$/m, 'nonbasicLandsAreIslands'],
   [/^Spells your opponents cast from graveyards or from exile cost \{2\} more to cast\.$/m, 'opponentsGraveyardExileSpellsCost2'],
   [/^Players can't gain life\.$/m, 'noLifeGain'],
+  [/^Activated abilities of artifacts your opponents control can't be activated\.$/m, 'opponentsArtifactAbilitiesForbidden'],
+  [/^Activated abilities of creatures can't be activated\.$/m, 'noCreatureAbilities'],
+  [/^Spells and abilities your opponents control can't cause their controller to search their library\.$/m, 'opponentsCantSearch'],
+  [/^Nonbasic lands your opponents control enter(?: the battlefield)? tapped\.$/m, 'opponentsNonbasicsEnterTapped'],
+  [/^Artifacts your opponents control enter(?: the battlefield)? tapped\.$/m, 'opponentsArtifactsEnterTapped'],
+  [/^Artifacts and lands enter(?: the battlefield)? tapped\.$/m, 'artifactsLandsEnterTapped'],
+  [/^Spells you cast from anywhere other than your hand cost \{1\} less to cast\.$/m, 'notFromHandCostsLess'],
+  [/^You may cast noncreature spells as though they had flash\.$/m, 'noncreatureFlash'],
+  [/^Creature spells you control can't be countered\.$/m, 'creatureSpellsUncounterable'],
+  [/^Combat damage can't be prevented\.$/m, 'combatDamageCantBePrevented'],
+  [/^You may play an additional land on each of your turns\.$/m, 'extraLand'],
   [/^Creatures you control have "\{T\}: Add one mana of any color\."$/m, 'creaturesTapForAnyColor'],
   [/^Damage can't be prevented\.$/m, 'damageCantBePrevented'],
 ];

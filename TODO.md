@@ -346,8 +346,29 @@ off its controller's turn, Lair of the Hydra, Rejuvenating Springs), Sunspine Ly
 "Damage can't be prevented": protection, shields and Fog), Exalted Angel's life gain, Cryptolith Rite and Enduring
 Vitality (creatures you control tap for any color).
 
+Second batch, rules of the game: Bilbo (spells cast from anywhere but the hand cost {1} less), Valley Floodcaller
+(noncreature spells with flash), Karn, the Great Creator and Cursed Totem (no activated abilities of the opponents'
+artifacts / of creatures), Ashiok, Dream Render (no searching with one's own spells), Archon of Emeria, Manglehorn and
+Root Maze (permanents entering tapped), Frenzied Baloth (creature spells can't be countered, combat damage can't be
+prevented), Exploration (a second land each turn), the Lhurgoyfs' power (Barrowgoyf, Nethergoyf, Pyrogoyf), tribal
+keyword lords ("Demons you control have …": Ardyn), "<name> can't block" (Skrelv), Survival of the Fittest ("Discard a
+creature card" as a cost), Seasoned Hallowblade, Priest of Titania ({G} per Elf), Disruptor Flute and Anointed
+Peacekeeper (the chosen name costs more; the Peacekeeper offers the opponent's hand first).
+
 Approximations: Exalted Angel's "Whenever this creature deals damage, you gain that much life" is played as lifelink
-(no trigger on the stack); a creature making several mana keeps its own ability under Cryptolith Rite.
+(no trigger on the stack); a creature making several mana keeps its own ability under Cryptolith Rite; the bot never
+activates abilities with a discard cost (Psychic Frog, Survival of the Fittest).
+
+Still open, playing wrongly, most played first (see `audit-reports/2026-10-17/report.md`):
+- [ ] Talon Gates of Madara (6), The Mycosynth Gardens, Giant's Boulder: "{1}, {T}: Add one mana of any color" (a mana
+  ability costing mana) makes nothing; Talon Gates' phasing and "{4}: Put this card from your hand onto the battlefield"
+- [ ] Seasoned Cryomancer (5): stun counters; "When you discard one or more nonland cards this way"
+- [ ] Badgermole Cub (4): earthbend; "Whenever you tap a creature for mana, add an additional {G}"
+- [ ] Lion's Eye Diamond (4), Arena of Glory (exert), Wall of Roots (a -0/-1 counter as a mana cost)
+- [ ] Clones of anything but "any creature": Phantasmal Image (sacrificed when targeted), Flesh Duplicate (vanishing),
+  Glasspool Mimic (a creature you control), Clever Impersonator (any nonland permanent), Superior Spider-Man
+- [ ] Kinnan, Nyxbloom Ancient, Wild Growth, Badgermole Cub: extra mana when a permanent is tapped for mana
+- [ ] Hypnotic Specter: "deals damage to an opponent, that player discards a card at random"
 
 ## Commander: Aang, Swift Savior (a user's deck, `deck.txt`)
 
