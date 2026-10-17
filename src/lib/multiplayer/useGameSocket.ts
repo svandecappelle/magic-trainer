@@ -42,6 +42,24 @@ function writeSeats(seats: SavedSeat[]) {
 const saveSeat = (seat: SavedSeat) => writeSeats([seat, ...savedSeats().filter((s) => s.room !== seat.room)]);
 export const forgetSeat = (room: string) => writeSeats(savedSeats().filter((s) => s.room !== room));
 
+/** The room this tab watches as a spectator (kept through a reload of the tab). */
+const WATCH_KEY = 'mt.watching';
+function watchedRoom(): string | null {
+  try {
+    return sessionStorage.getItem(WATCH_KEY);
+  } catch {
+    return null;
+  }
+}
+function setWatchedRoom(id: string | null) {
+  try {
+    if (id) sessionStorage.setItem(WATCH_KEY, id);
+    else sessionStorage.removeItem(WATCH_KEY);
+  } catch {
+    // a reload then shows the room's page instead of the game
+  }
+}
+
 /** Builds that can play together: the same one, or a development build on either side. */
 export const sameBuild = (a: string, b: string) => a === b || a === 'dev' || b === 'dev';
 
@@ -69,6 +87,9 @@ export type RoomInfo = Extract<ServerMessage, { t: 'roomInfo' }>;
 export function useGameSocket(roomId?: string) {
   const [status, setStatus] = useState<ConnectionStatus>('connecting');
   const [room, setRoom] = useState<{ id: string; code: string; seat: PlayerId } | null>(null);
+  /** The room watched as a spectator, and how many spectators the room has. */
+  const [watching, setWatching] = useState<{ id: string; code: string } | null>(null);
+  const [watchers, setWatchers] = useState(0);
   /** The room of the page when this browser has no seat in it; `gone`: it doesn't exist (anymore). */
   const [info, setInfo] = useState<RoomInfo | null>(null);
   const [gone, setGone] = useState(false);
@@ -93,13 +114,17 @@ export function useGameSocket(roomId?: string) {
   /** The room this browser is seated in, as the server last said. */
   const seatedRef = useRef<string | null>(null);
 
-  /** Opens the page's room on the server (no-op without a room, or when already seated in it). */
+  /**
+   * Opens the page's room on the server (no-op without a room, or when already seated in it): back to this browser's
+   * seat, or to watching it when this tab was watching it.
+   */
   const openRoom = useCallback(() => {
     const ws = wsRef.current;
     const id = roomIdRef.current;
     if (!id || ws?.readyState !== WebSocket.OPEN || seatedRef.current === id) return;
     const token = savedSeats().find((s) => s.room === id)?.token;
-    ws.send(JSON.stringify({ t: 'open', room: id, ...(token ? { token } : {}) } satisfies ClientMessage));
+    const msg: ClientMessage = !token && watchedRoom() === id ? { t: 'watch', room: id } : { t: 'open', room: id, ...(token ? { token } : {}) };
+    ws.send(JSON.stringify(msg));
   }, []);
 
   useEffect(() => {
@@ -110,6 +135,7 @@ export function useGameSocket(roomId?: string) {
     const reset = () => {
       seatedRef.current = null;
       setRoom(null);
+      setWatching(null);
       setPlayers([]);
       setGame(null);
       setDeck(null);
@@ -142,7 +168,16 @@ export function useGameSocket(roomId?: string) {
             openRoom();
             break;
           }
+          case 'watching':
+            seatedRef.current = msg.room;
+            setWatchedRoom(msg.room);
+            setWatching({ id: msg.room, code: msg.code });
+            setInfo(null);
+            setGone(false);
+            setError(null);
+            break;
           case 'joined':
+            setWatching(null);
             seatedRef.current = msg.room;
             setRoom({ id: msg.room, code: msg.code, seat: msg.seat });
             setInfo(null);
@@ -157,6 +192,7 @@ export function useGameSocket(roomId?: string) {
             break;
           case 'lobby':
             setPlayers(msg.players);
+            setWatchers(msg.watchers ?? 0);
             setMatch(msg.match ?? null);
             setSize(msg.size ?? 2);
             break;
@@ -175,6 +211,7 @@ export function useGameSocket(roomId?: string) {
             break;
           case 'left':
             if (seatedRef.current) forgetSeat(seatedRef.current);
+            setWatchedRoom(null);
             reset();
             break;
           case 'error':
@@ -182,6 +219,7 @@ export function useGameSocket(roomId?: string) {
               // The page's room is gone (finished long ago, or never existed): forget its seat.
               const id = roomIdRef.current;
               if (id) forgetSeat(id);
+              setWatchedRoom(null);
               reset();
               setInfo(null);
               setGone(true);
@@ -214,11 +252,19 @@ export function useGameSocket(roomId?: string) {
     if (roomId) openRoom();
   }, [roomId, openRoom]);
 
+  /** Watch the page's room as a spectator. */
+  const watch = useCallback(() => {
+    const id = roomIdRef.current;
+    if (!id) return;
+    setWatchedRoom(id);
+    openRoom();
+  }, [openRoom]);
+
   const send = useCallback((msg: ClientMessage) => {
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
     else setError({ code: 'notConnected' });
   }, []);
 
-  return { status, room, info, gone, accountRooms, players, game, deck, error, setError, clock, match, size, send, outdated };
+  return { status, room, watching, watchers, watch, info, gone, accountRooms, players, game, deck, error, setError, clock, match, size, send, outdated };
 }

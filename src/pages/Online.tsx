@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { BetweenGames } from '../components/BetweenGames';
 import { GameBoard } from '../components/GameBoard';
@@ -9,6 +9,8 @@ import { teamOf, teamsOf } from '../lib/engine/engine';
 import type { Card } from '../types';
 import { MIN_DECK_SIZE } from '../lib/multiplayer/protocol';
 import { forgetSeat, savedSeats, useGameSocket, type RoomInfo } from '../lib/multiplayer/useGameSocket';
+import { useCallBack, useNotifyPref } from '../lib/multiplayer/alerts';
+import { actor } from '../lib/engine/engine';
 import { errorText, useT } from '../i18n';
 import { useApp } from '../store/useApp';
 
@@ -28,12 +30,13 @@ export function Online() {
   // /online/<id>: a room's own address (an invite link, or the room you are in).
   const { roomId } = useParams();
   const navigate = useNavigate();
-  const { status, room, info, gone, accountRooms, players, game, deck, error, setError, send, clock, match, size, outdated } = useGameSocket(roomId);
+  const { status, room, watching, watchers, watch, info, gone, accountRooms, players, game, deck, error, setError, send, clock, match, size, outdated } = useGameSocket(roomId);
   // Seated in a room: its address in the URL (after creating or joining one).
   useEffect(() => {
     if (room && !roomId) navigate(`/online/${room.id}`, { replace: true });
   }, [room, roomId, navigate]);
   const seatedHere = !!room && (!roomId || room.id === roomId);
+  const watchingHere = !!watching && watching.id === roomId;
   /** Leaving for good: back to /online. */
   const leave = () => {
     send({ t: 'leave' });
@@ -71,6 +74,25 @@ export function Online() {
   const [copied, setCopied] = useState<'link' | 'code' | null>(null);
   // Forgetting a saved room redraws the list.
   const [, setResumeTick] = useState(0);
+
+  // ---------- Calling the player back to this tab (lib/multiplayer/alerts.ts) ----------
+  const notify = useNotifyPref();
+  /** An opponent came back, or joined the room: said for a few seconds. */
+  const [presence, setPresence] = useState<string | null>(null);
+  const seen = useRef<Map<string, boolean>>(new Map());
+  useEffect(() => {
+    const before = seen.current;
+    seen.current = new Map(players.map((p) => [p.name, p.connected]));
+    if (!room) return;
+    const mine = players[room.seat]?.name;
+    const news = players.filter((p) => p.name !== mine && p.connected && before.size > 0 && before.get(p.name) !== true);
+    if (news.length === 0) return;
+    setPresence(news.map((p) => (before.has(p.name) ? t.online.isBack(p.name) : t.online.hasJoined(p.name))).join(' '));
+    const timer = setTimeout(() => setPresence(null), 8000);
+    return () => clearTimeout(timer);
+  }, [players, room, t]);
+  const myMove = !!game && !!room && (!roomId || room.id === roomId) && game.winner === null && actor(game) === room.seat;
+  useCallBack(myMove ? t.online.alertYourMove : presence, notify.on);
 
   async function enter(kind: 'create' | 'join' | 'joinLink') {
     if (!name.trim()) return setError({ code: 'enterYourName' });
@@ -119,8 +141,48 @@ export function Online() {
     );
   }
 
-  // 1a. A room's address without a seat in it: join it (an invite link), or say it's gone.
+  // 0. Watching a game as a spectator.
+  if (watchingHere && !seatedHere) {
+    const stop = () => {
+      send({ t: 'leave' });
+      navigate('/online');
+    };
+    const head = (
+      <>
+        {connection}
+        <div className="muted">👁 {t.online.spectating(watching.code)}</div>
+        {error && <div className="error">{errorText(t, error)}</div>}
+      </>
+    );
+    if (!game) {
+      return (
+        <div className="page">
+          <h1>{t.online.title}</h1>
+          {head}
+          <p className="muted">{t.online.watchWaiting(players.map((p) => p.name).join(', '))}</p>
+          <button className="secondary" onClick={stop}>{t.online.stopWatching}</button>
+        </div>
+      );
+    }
+    return (
+      <div className="page play">
+        <GameBoard
+          game={game}
+          me={0}
+          readOnly="spectator"
+          onAction={() => {}}
+          notice={head}
+          endControls={<button className="secondary" onClick={stop}>{t.online.stopWatching}</button>}
+        />
+      </div>
+    );
+  }
+
+  // 1a. A room's address without a seat in it: join it (an invite link), watch it, or say it's gone.
   if (!seatedHere && roomId) {
+    const watchButton = info && (
+      <button className="secondary" disabled={status !== 'open'} onClick={watch}>👁 {t.online.watch}</button>
+    );
     return (
       <div className="page setup">
         <h1>{t.online.title}</h1>
@@ -143,6 +205,7 @@ export function Online() {
             {info.players.length >= info.size ? (
               <div className="banner">
                 {t.online.roomFull}
+                {watchButton}
                 <Link to="/online">{t.online.newGame} →</Link>
               </div>
             ) : (
@@ -157,6 +220,7 @@ export function Online() {
                 {missingCommander && info.mode.commander && <div className="error small">{t.game.noCommanderInDeck(chosen!.name)}</div>}
                 <section className="setup-options">
                   <button className="start-button" disabled={busy || status !== 'open'} onClick={() => enter('joinLink')}>{t.online.joinButton}</button>
+                  {watchButton}
                 </section>
               </>
             )}
@@ -293,6 +357,8 @@ export function Online() {
             </div>
           ) : null}
           <p className="muted">{size === 4 ? t.online.waitingPlayers(players.length, size) : t.online.waiting}</p>
+          {presence && <p className="presence">{presence}</p>}
+          <NotifyToggle {...notify} />
           {error && <div className="error small">{errorText(t, error)}</div>}
           <button className="danger" onClick={() => leave()}>{t.online.leaveRoom}</button>
         </div>
@@ -318,6 +384,7 @@ export function Online() {
     <>
       {status !== 'open' && <div className="error">{t.online.reconnecting}</div>}
       {away && <div className="error">{t.online.oppDisconnected(away.name)}</div>}
+      {presence && !away && <div className="presence">{presence}</div>}
       {clock && (() => {
         const left = Math.max(0, Math.ceil((clock.deadline - now) / 1000));
         const time = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
@@ -329,7 +396,11 @@ export function Online() {
       {others.some((p) => p.wantsRematch) && !iWantRematch && <div>{t.online.wantsRematch(others.find((p) => p.wantsRematch)!.name)}</div>}
       {error && <div className="error">{errorText(t, error)}</div>}
       {bo3 && match && <div className="muted">{t.match.inGame(match.games + (game.winner === null ? 1 : 0), score)}</div>}
-      <div className="muted">{t.online.room(room.code)}</div>
+      <div className="muted">
+        {t.online.room(room.code)}
+        {watchers > 0 && <span title={t.online.spectators(watchers)}> · 👁 {watchers}</span>}
+        <NotifyToggle {...notify} />
+      </div>
     </>
   );
 
@@ -374,6 +445,17 @@ export function Online() {
         }
       />
     </div>
+  );
+}
+
+/** Turns notifications on or off (when the browser has them). */
+function NotifyToggle({ on, toggle, available }: ReturnType<typeof useNotifyPref>) {
+  const t = useT();
+  if (!available) return null;
+  return (
+    <button type="button" className="icon notify-toggle" aria-pressed={on} title={t.online.notifyHint} onClick={() => void toggle()}>
+      {on ? `🔔 ${t.online.notifyOn}` : `🔕 ${t.online.notifyOff}`}
+    </button>
   );
 }
 

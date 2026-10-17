@@ -52,10 +52,15 @@ interface Room {
   scored?: boolean;
   /** A save to the store is due (see persist). */
   saveTimer?: ReturnType<typeof setTimeout>;
+  /** Connections watching the game (no seat; they see no hand). */
+  watchers?: Set<Conn>;
 }
 
 /** What is saved of a room: everything but the connections and the timers. */
-type SavedRoom = Omit<Room, 'expiry' | 'clock' | 'saveTimer' | 'seats'> & { seats: Omit<Seat, 'conn'>[] };
+type SavedRoom = Omit<Room, 'expiry' | 'clock' | 'saveTimer' | 'seats' | 'watchers'> & { seats: Omit<Seat, 'conn'>[] };
+
+/** Spectators per room. */
+const MAX_WATCHERS = 20;
 
 /** Changes to a room within this delay are saved together. */
 const SAVE_DELAY_MS = 1000;
@@ -106,6 +111,8 @@ export class RoomManager {
   readonly rooms = new Map<string, Room>();
   private byId = new Map<string, Room>();
   private where = new Map<Conn, { room: Room; seat: PlayerId }>();
+  /** The room each spectator watches. */
+  private watching = new Map<Conn, Room>();
   private ttl: number;
   private rng: () => number;
   private verifyDeck?: (deck: Card[]) => Promise<Card[]>;
@@ -175,9 +182,15 @@ export class RoomManager {
           return this.withDeck(conn, msg.deck, msg.sideboard, msg.commanders, (deck, side, commanders) => this.join(conn, room, name, deck, side, commanders));
         }
         case 'open': return this.open(conn, String(msg.room ?? ''), typeof msg.token === 'string' ? msg.token : '');
+        case 'watch': return this.watch(conn, String(msg.room ?? ''));
         case 'action': return this.act(conn, msg.action);
         case 'rematch': return this.rematch(conn, msg.deck);
-        case 'leave': return this.leave(conn);
+        case 'leave':
+          if (this.watching.has(conn)) {
+            this.unwatch(conn);
+            return conn.send({ t: 'left' });
+          }
+          return this.leave(conn);
         default: throw new ClientError('unknownMessage');
       }
     } catch (e) {
@@ -218,7 +231,7 @@ export class RoomManager {
     clearTimeout(room.saveTimer);
     room.saveTimer = undefined;
     if (!this.store || this.byId.get(room.id) !== room) return;
-    const { expiry: _e, clock: _c, saveTimer: _s, ...rest } = room;
+    const { expiry: _e, clock: _c, saveTimer: _s, watchers: _w, ...rest } = room;
     const saved: SavedRoom = { ...rest, seats: room.seats.map(({ conn: _conn, ...seat }) => seat) };
     try {
       await this.store.save(room.id, room.code, packState({ v: STATE_VERSION, room: saved }));
@@ -233,6 +246,7 @@ export class RoomManager {
   }
 
   disconnect(conn: Conn) {
+    this.unwatch(conn);
     const at = this.where.get(conn);
     if (!at) return;
     this.where.delete(conn);
@@ -245,6 +259,7 @@ export class RoomManager {
   // ---------- Handlers ----------
 
   private create(conn: Conn, name: string, deck: Card[], side: Card[], commanders: Card[], bestOf: 1 | 3, size: 2 | 4, mode: GameMode) {
+    this.unwatch(conn);
     this.leave(conn, true);
     let code: string;
     do code = Array.from({ length: 5 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
@@ -259,6 +274,7 @@ export class RoomManager {
     // The room may have closed during the deck check.
     if (this.byId.get(room.id) !== room) throw new ClientError('noRoom', { code: room.code });
     if (room.seats.length >= room.size) throw new ClientError('roomFull');
+    this.unwatch(conn);
     this.leave(conn, true);
     const taken = new Set(room.seats.map((x) => x.name));
     for (let i = 2; taken.has(name); i++) name = `${name.replace(/ \(\d+\)$/, '')} (${i})`;
@@ -302,6 +318,7 @@ export class RoomManager {
       });
       return;
     }
+    this.unwatch(conn);
     // Already seated elsewhere on this connection: that seat is left as if disconnected.
     const before = this.where.get(conn);
     if (before && before.room !== room) this.disconnect(conn);
@@ -315,6 +332,34 @@ export class RoomManager {
     this.sendLobby(room);
     if (room.game) conn.send({ t: 'state', state: redact(room.game, seat as PlayerId) });
     this.armClock(room);
+  }
+
+  /** Watching a room's game without a seat: everything public, no hand. */
+  private watch(conn: Conn, id: string) {
+    const room = UUID.test(id) ? this.byId.get(id) : undefined;
+    if (!room) {
+      conn.send({ t: 'error', code: 'gameGone', lostRoom: true });
+      return;
+    }
+    if (this.where.has(conn)) this.disconnect(conn);
+    this.unwatch(conn);
+    room.watchers ??= new Set();
+    if (room.watchers.size >= MAX_WATCHERS) throw new ClientError('tooManyWatchers', { max: MAX_WATCHERS });
+    room.watchers.add(conn);
+    this.watching.set(conn, room);
+    conn.send({ t: 'watching', room: room.id, code: room.code });
+    this.sendLobby(room);
+    if (room.game) conn.send({ t: 'state', state: redact(room.game, null) });
+    const clock = room.clock ? { player: room.clock.player, ms: room.clock.endsAt - Date.now(), kind: room.clock.kind } : null;
+    conn.send({ t: 'clock', clock });
+  }
+
+  private unwatch(conn: Conn) {
+    const room = this.watching.get(conn);
+    if (!room) return;
+    this.watching.delete(conn);
+    room.watchers?.delete(conn);
+    if (this.byId.get(room.id) === room) this.sendLobby(room);
   }
 
   private act(conn: Conn, action: unknown) {
@@ -444,6 +489,10 @@ export class RoomManager {
       this.sendLobby(room);
     }
     room.seats.forEach((s, i) => s.conn?.send({ t: 'state', state: redact(room.game!, i as PlayerId) }));
+    if (room.watchers?.size) {
+      const view = redact(room.game!, null);
+      for (const w of room.watchers) w.send({ t: 'state', state: view });
+    }
     this.armClock(room);
   }
 
@@ -468,6 +517,7 @@ export class RoomManager {
     }
     const clock = room.clock ? { player: room.clock.player, ms: room.clock.endsAt - Date.now(), kind: room.clock.kind } : null;
     for (const s of room.seats) s.conn?.send({ t: 'clock', clock });
+    for (const w of room.watchers ?? []) w.send({ t: 'clock', clock });
   }
 
   /** Out of time for a decision: play the default action (pass, keep, no blocks…); conceding after a few in a row. */
@@ -492,7 +542,9 @@ export class RoomManager {
   private sendLobby(room: Room) {
     this.persist(room);
     const players = room.seats.map((s) => ({ name: s.name, connected: !!s.conn, wantsRematch: s.wantsRematch }));
-    for (const s of room.seats) s.conn?.send({ t: 'lobby', room: room.id, code: room.code, players, match: room.match, size: room.size, mode: room.mode });
+    const lobby: ServerMessage = { t: 'lobby', room: room.id, code: room.code, players, match: room.match, size: room.size, mode: room.mode, watchers: room.watchers?.size ?? 0 };
+    for (const s of room.seats) s.conn?.send(lobby);
+    for (const w of room.watchers ?? []) w.send(lobby);
   }
 
   private expireIfEmpty(room: Room) {
@@ -505,6 +557,12 @@ export class RoomManager {
     clearTimeout(room.expiry);
     clearTimeout(room.saveTimer);
     if (room.clock) clearTimeout(room.clock.timer);
+    // Spectators are told the game is gone.
+    for (const w of room.watchers ?? []) {
+      this.watching.delete(w);
+      w.send({ t: 'error', code: 'gameGone', lostRoom: true });
+    }
+    room.watchers?.clear();
     this.rooms.delete(room.code);
     this.byId.delete(room.id);
     this.store?.remove(room.id).catch((e) => console.warn(`Room ${room.code} could not be deleted:`, (e as Error).message));

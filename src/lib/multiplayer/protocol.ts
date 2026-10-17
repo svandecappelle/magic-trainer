@@ -14,6 +14,8 @@ export type ClientMessage =
   | { t: 'join'; room?: string; code?: string; name: string; deck: Card[]; sideboard?: Card[]; commanders?: Card[] }
   /** The page /online/<id> is open: back to the seat (`token`: the seat's secret), or what is needed to join. */
   | { t: 'open'; room: string; token?: string }
+  /** Watch the room's game without a seat (no hand is shown); `leave` stops watching. */
+  | { t: 'watch'; room: string }
   | { t: 'action'; action: Action }
   /** Ready for the next game; `deck`: the main deck after sideboarding (cards from your main deck and sideboard). */
   | { t: 'rematch'; deck?: Card[] }
@@ -28,7 +30,7 @@ export interface LobbyPlayer {
 /** Errors specific to the server; rule violations use the engine's codes. */
 export type ServerErrorCode =
   | 'invalidMessage' | 'unknownMessage' | 'enterName' | 'deckSize' | 'invalidCard' | 'cardCheckFailed' | 'noRoom' | 'roomFull'
-  | 'gameGone' | 'notStarted' | 'invalidAction' | 'notYourTurn' | 'gameNotOver' | 'opponentLeft' | 'notInRoom';
+  | 'gameGone' | 'tooManyWatchers' | 'notStarted' | 'invalidAction' | 'notYourTurn' | 'gameNotOver' | 'opponentLeft' | 'notInRoom';
 
 export type ErrorCode = GameErrorCode | ServerErrorCode;
 
@@ -38,8 +40,10 @@ export type ServerMessage =
   | { t: 'hello'; build: string }
   /** Seated in a room: `room` is its id (its address), `token` the secret to come back to this seat. */
   | { t: 'joined'; room: string; code: string; seat: PlayerId; token: string }
-  /** `size`: seats in the room (2, or 4 in Two-Headed Giant); `mode`: its rules. */
-  | { t: 'lobby'; room: string; code: string; players: LobbyPlayer[]; match?: MatchScore; size?: number; mode?: GameMode }
+  /** `size`: seats in the room (2, or 4 in Two-Headed Giant); `mode`: its rules; `watchers`: spectators. */
+  | { t: 'lobby'; room: string; code: string; players: LobbyPlayer[]; match?: MatchScore; size?: number; mode?: GameMode; watchers?: number }
+  /** Watching the room's game as a spectator. */
+  | { t: 'watching'; room: string; code: string }
   /** After hello, for a logged-in account: the rooms where it has a seat (to come back from any device). */
   | { t: 'myRooms'; rooms: { room: string; code: string; players: string[]; over: boolean }[] }
   /** Your main deck for the current game, and the other cards you brought (to sideboard between games). */
@@ -64,14 +68,17 @@ export const HIDDEN_CARD: Card = {
   colors: [], colorIdentity: [], setCode: '', setName: '', rarity: '',
 };
 
-/** What `viewer` is allowed to see: no libraries, no opponent hand, no random seed (it predicts shuffles). */
-export function redact(state: GameState, viewer: PlayerId): GameState {
+/**
+ * What `viewer` is allowed to see: no libraries, no opponent hand, no random seed (it predicts shuffles). A
+ * spectator (null) sees no hand at all.
+ */
+export function redact(state: GameState, viewer: PlayerId | null): GameState {
   const hide = (cards: CardInst[]): CardInst[] => cards.map((_, i) => ({ iid: `hidden-${i}`, card: HIDDEN_CARD }));
   // Your hand, and your teammate's in Two-Headed Giant (teammates may show each other their hands).
   const players = state.players.map((p, i): PlayerState => ({
     ...p,
     library: hide(p.library),
-    hand: teamOf(state, i) === teamOf(state, viewer) ? p.hand : hide(p.hand),
+    hand: viewer !== null && teamOf(state, i) === teamOf(state, viewer) ? p.hand : hide(p.hand),
   }));
   // A choice among hidden cards (your hand, your library) is only shown to the player making it.
   let pending = state.pending;

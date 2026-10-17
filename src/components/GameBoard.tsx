@@ -22,6 +22,7 @@ import { useBoardFx, type Float } from './board/useBoardFx';
 import { clampSize, layoutStyle, LAYOUT_DEFAULTS, LAYOUT_LIMITS, SHARP_FROM, useBoardLayout, type LayoutSize } from './board/layout';
 import { ResizeHandle } from './board/ResizeHandle';
 import type { Card } from '../types';
+import { HIDDEN_CARD } from '../lib/multiplayer/protocol';
 import './board/board.css';
 
 interface Props {
@@ -34,6 +35,11 @@ interface Props {
   endControls?: ReactNode;
   /** Extra status line, e.g. a server error or a disconnected opponent. */
   notice?: ReactNode;
+  /**
+   * Nothing can be played: a replay (seen as `me`, who is "you"), or a spectator (seen from `me`'s side, nobody is
+   * "you").
+   */
+  readOnly?: 'replay' | 'spectator';
 }
 
 type Phase = 'begin' | 'main1' | 'combat' | 'block' | 'main2' | 'end';
@@ -84,7 +90,7 @@ const readAutoPay = () => {
 };
 
 /** The two-player game table, shared by Play vs Bot and online multiplayer. */
-export function GameBoard({ game: g, me, onAction, endControls, notice }: Props) {
+export function GameBoard({ game: g, me, onAction, endControls, notice, readOnly }: Props) {
   const t = useT();
   const show = useCardDisplay();
   const opponents = opponentsOf(g, me);
@@ -93,7 +99,9 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   const multi = g.players.length > 2;
   /** "A & B" for a team. */
   const teamName = (p: PlayerId) => teamPlayers(g, p).map((q) => names[q]).join(' & ');
-  const myTurn = isActivePlayer(g, me);
+  /** Who the texts call "you": nobody for a spectator. */
+  const you = (readOnly === 'spectator' ? -1 : me) as PlayerId;
+  const myTurn = you === me && isActivePlayer(g, me);
   const names = g.players.map((p) => p.name || t.game.you) as [string, string];
   const [error, setError] = useState<AppError | null>(null);
   const [preview, setPreview] = useState<Card | null>(null);
@@ -256,7 +264,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
 
   const fullControl = g.fullControl?.[me] ?? false;
   const acting = actor(g);
-  const iAct = acting === me;
+  const iAct = !readOnly && acting === me;
 
   /**
    * Sends an action that spends mana: first the player chooses which sources pay, when there is a choice and auto pay
@@ -283,6 +291,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   }
 
   function act(action: Action) {
+    if (readOnly) return;
     try {
       apply(g, action); // validate locally for instant feedback
       setError(null);
@@ -581,7 +590,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   const waiting = !iAct && g.winner === null;
 
   if (g.winner !== null) {
-    prompt = g.winner === 'draw' ? t.game.drawGame : wonBy(g, me) ? t.game.youWin : t.game.theyWin(teamName(g.winner));
+    prompt = g.winner === 'draw' ? t.game.drawGame : you === me && wonBy(g, me) ? t.game.youWin : t.game.theyWin(teamName(g.winner));
     controls = endControls;
   } else if (g.mulligan) {
     const need = mulliganBottom(g, me);
@@ -608,7 +617,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
       );
     }
   } else if (g.pending && !targeting?.choice) {
-    if (g.pending.choice.player === me) prompt = choicePrompt(t, g.pending.choice, show.nameOf, names);
+    if (g.pending.choice.player === me && !readOnly) prompt = choicePrompt(t, g.pending.choice, show.nameOf, names);
     else prompt = t.game.choosing(oppName);
   } else if (!iAct) {
     prompt = g.priority ? t.game.mayRespond(oppName) : g.step === 'block' ? t.game.choosingBlockers(oppName) : t.game.thinking(oppName);
@@ -932,7 +941,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     return (
       <div ref={reg(`player:${p}`)} className={cls} onClick={() => onPlayerClick(p)}>
         <div className="hud-name">
-          <strong>{p === me && ps.name ? t.game.nameYou(ps.name) : names[p]}</strong>
+          <strong>{p === you && ps.name ? t.game.nameYou(ps.name) : names[p]}</strong>
           {isActivePlayer(g, p) && <span className="turn-dot" title={t.game.turnOf(ours(p), teamName(p))} />}
         </div>
         <div className="life" key={ps.life}>{ps.life}{floatsFor(`player:${p}`)}</div>
@@ -1043,7 +1052,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
           {/* Anchored to the center bar: what just happened (above), the stack (above, right), a choice to make (below). */}
           <div className="toasts" aria-live="polite">
             {fx.toasts.map((x) => (
-              <div key={x.id} className="toast">{logText(t, x.entry, names, me, show.nameOf)}</div>
+              <div key={x.id} className="toast">{logText(t, x.entry, names, you, show.nameOf)}</div>
             ))}
           </div>
           {g.stack.length > 0 && (
@@ -1089,7 +1098,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
               </div>
             </div>
           )}
-          {g.pending && g.pending.choice.player === me && g.pending.choice.kind !== 'targets' && g.winner === null && (() => {
+          {!readOnly && g.pending && g.pending.choice.player === me && g.pending.choice.kind !== 'targets' && g.winner === null && (() => {
             const choice = g.pending.choice;
             // One panel per choice: a choice following another one right away must not keep its picks.
             const title = choicePrompt(t, choice, show.nameOf, names);
@@ -1154,6 +1163,10 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
           )}
           <div className="my-hand">
             {myHand.map(({ iid, card }, handIndex) => {
+              // A spectator doesn't see the hand: its backs.
+              if (card.id === HIDDEN_CARD.id) {
+                return <div key={iid} className="hand-card hidden-card" style={{ '--i': handIndex - (myHand.length - 1) / 2 } as CSSProperties}><span /></div>;
+              }
               const playable = (landFaces(card).length > 0 && canPlayLand) || castOptions(g, me, iid).length > 0;
               const selected = targeting?.iid === iid || xPick?.iid === iid || modePick?.iid === iid || bottomSel.includes(iid);
               const status = engineStatus(card);
@@ -1267,14 +1280,14 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
           <section className="game-log" aria-label={t.common.log}>
             <ol className="log small" reversed>
               {[...g.log].reverse().map((l, i) => (
-                <li key={g.log.length - i} className={`${i < fx.freshLog ? 'fresh' : ''} ${l.k === 'turn' ? 'log-turn' : ''}`}>{logText(t, l, names, me, show.nameOf)}</li>
+                <li key={g.log.length - i} className={`${i < fx.freshLog ? 'fresh' : ''} ${l.k === 'turn' ? 'log-turn' : ''}`}>{logText(t, l, names, you, show.nameOf)}</li>
               ))}
             </ol>
           </section>
         )}
         {sideTab === 'settings' && (
           <div className="game-options">
-            {g.winner === null && (<>
+            {g.winner === null && !readOnly && (<>
             <label className="full-control small" title={t.game.fullControlHint(fullControl)}>
               <input
                 type="checkbox"

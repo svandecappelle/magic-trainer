@@ -188,6 +188,35 @@ describe('deck check', () => {
   });
 });
 
+describe('spectators', () => {
+  it('lets anyone with the address watch the game, without any hand, until they leave', () => {
+    const started = startedRoom();
+    const { rooms, alice, bob, room } = started;
+    const eve = new FakeConn();
+    rooms.handle(eve, { t: 'watch', room });
+    expect(eve.last('watching')).toMatchObject({ room });
+    expect(alice.last('lobby')!.watchers).toBe(1);
+    const view = eve.state;
+    expect(view.players.every((p) => p.hand.every((c) => c.card.name === 'Hidden card'))).toBe(true);
+    expect(view.seed).toBe(0);
+
+    // A spectator can't act, and follows the game.
+    rooms.handle(eve, { t: 'action', action: { type: 'keep', bottom: [] } });
+    expect(eve.last('error')!.code).toBe('notInRoom');
+    keepBoth(started);
+    expect(eve.state.turn).toBe(1);
+
+    // Watching changes no clock nor the room's life: the seats do.
+    rooms.handle(eve, { t: 'leave' });
+    expect(eve.last('left')).toBeDefined();
+    expect(alice.last('lobby')!.watchers).toBe(0);
+    rooms.handle(eve, { t: 'watch', room });
+    rooms.handle(alice, { t: 'leave' });
+    rooms.handle(bob, { t: 'leave' });
+    expect(eve.last('error')).toMatchObject({ code: 'gameGone', lostRoom: true });
+  });
+});
+
 describe('clocks', () => {
   function timedRoom() {
     const rooms = new RoomManager({ rng: () => 0.1, decisionMs: 1000, reconnectMs: 5000 });

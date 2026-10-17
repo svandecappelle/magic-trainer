@@ -519,3 +519,8 @@ footer { padding: 16px 20px; border-top: 1px solid #1f2530; color: var(--faint);
 }
 .invite-row { flex-wrap: nowrap; }
 .invite-link { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 0.85rem; }
+
+/* Play Online: an opponent back or joining, and the notifications switch. */
+.presence { color: var(--ok); }
+.notify-toggle { margin-left: 8px; }
+.lobby .notify-toggle { margin-left: 0; align-self: flex-start; }

@@ -670,3 +670,10 @@ main:has(> .page.play) { padding: 0 10px 10px; }
 .layout-slider input { width: 100%; accent-color: var(--accent); }
 .layout-settings button { align-self: flex-start; }
 .game-options { min-height: 0; overflow: auto; }
+
+/* A spectator sees the hands' backs. */
+.hand-card.hidden-card span {
+  display: block; width: var(--hand-w); aspect-ratio: 63 / 88; border-radius: 6px;
+  background: repeating-linear-gradient(45deg, rgba(217, 169, 78, 0.18) 0 4px, transparent 4px 12px), #2a2230;
+  border: 2px solid #5b4a36; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
+}
