@@ -6,8 +6,8 @@ import type { Card, Deck } from '../types';
  * The game modes of the setup pages (Play vs Bot, Play Online): what decks may be played and with what life.
  * - Constructed: a normal game in a format (Standard, Modern…); a deck not legal in it can't be played.
  * - Free Play: no restriction on the deck at all.
- * - Commander: 100-card singleton, 40 life; Duel Commander: the same for two players, 20 life. A deck that breaks
- *   their rules plays with a warning.
+ * - Commander: 100-card singleton, 40 life; Duel Commander: the same for two players, 20 life, with its own ban list.
+ *   A deck that breaks their rules plays with a warning.
  * Two-Headed Giant is an option of every mode but Duel Commander.
  */
 export const SETUP_MODES = ['constructed', 'free', 'commander', 'duelCommander'] as const;
@@ -62,7 +62,7 @@ export interface DeckCards {
 export function deckProblems(cards: DeckCards, s: GameSetup): { blocking: DeckIssue[]; warnings: DeckIssue[] } {
   if (s.mode === 'free') return { blocking: [], warnings: [] };
   const format = s.mode === 'constructed' ? s.format : 'commander';
-  const issues = checkDeck(asDeck(cards, format));
+  const issues = checkDeck(asDeck(cards, format), s.mode === 'duelCommander' ? 'duel' : format);
   if (s.mode !== 'constructed') return { blocking: [], warnings: issues };
   return { blocking: issues.filter((i) => i.kind !== 'unknown'), warnings: issues.filter((i) => i.kind === 'unknown') };
 }

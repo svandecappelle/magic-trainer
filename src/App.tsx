@@ -51,7 +51,13 @@ export function App() {
         <NavLink to="/play">{t.nav.play}</NavLink>
         <NavLink to="/online">{t.nav.online}</NavLink>
         <NavLink to="/life">{t.nav.life}</NavLink>
-        <NavLink to="/history">{t.nav.history}</NavLink>
+        {/* Not in the phone tab bar (six tabs fill it): an icon in the top bar there. */}
+        <NavLink to="/history" className="nav-history" aria-label={t.nav.history}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5M12 7v5l3 3" />
+          </svg>
+          <span>{t.nav.history}</span>
+        </NavLink>
         <span className="spacer" />
         <select className="lang-select" aria-label={t.common.language} value={lang} onChange={(e) => setLang(e.target.value as Lang)}>
           {LANGS.map((l) => <option key={l} value={l}>{messagesFor(l).langName}</option>)}

@@ -44,7 +44,7 @@ can't play altered cards. `CARD_CHECK=strict` refuses decks when Scryfall is unr
 client's data is used then), `CARD_CHECK=off` disables the check.
 Game modes (Play vs Bot and Play Online): **Constructed** in a format (Standard, Pioneer, Modern, Legacy, Vintage,
 Pauper; a deck not legal in it, ban list included, can't be played, checked by the server too online), **Free Play**
-(no restriction on the deck), **Commander** (100-card singleton, 40 life) and **Duel Commander** (20 life, 1 vs 1);
+(no restriction on the deck), **Commander** (100-card singleton, 40 life) and **Duel Commander** (20 life, 1 vs 1, its own ban list);
 Commander decks that break the rules play with a warning. Two-Headed Giant is an option of every mode but Duel
 Commander.
 

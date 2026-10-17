@@ -469,6 +469,7 @@ footer { padding: 16px 20px; border-top: 1px solid #1f2530; color: var(--faint);
 .engine-gaps li { margin: 3px 0; }
 /* Phone tab bar (see the small screens section). */
 .tabbar { display: none; }
+.topnav .nav-history svg { display: none; }
 
 /* ---------- Small screens ---------- */
 
@@ -479,6 +480,11 @@ footer { padding: 16px 20px; border-top: 1px solid #1f2530; color: var(--faint);
   :root { --tabbar-h: calc(58px + env(safe-area-inset-bottom)); }
   .topnav { flex-wrap: nowrap; gap: 14px; padding: 8px 10px; }
   .topnav a:not(.brand) { display: none; }
+  /* After the spacer, next to the language and the account. */
+  .topnav a.nav-history { display: inline-flex; padding: 0 8px; order: 1; }
+  .topnav .lang-select, .topnav .account, .topnav .discord-login { order: 2; }
+  .topnav .nav-history svg { display: block; }
+  .topnav .nav-history span { display: none; }
   .topnav .brand { margin-right: 0; }
   .tabbar {
     display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));

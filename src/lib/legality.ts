@@ -42,8 +42,11 @@ const unlimited = (typeLine: string, oracleText: string) =>
 export const canBeCommander = (card: Card) =>
   (/\bLegendary\b/.test(card.typeLine) && /\bCreature\b/.test(card.typeLine.split('//')[0])) || /can be your commander/i.test(card.oracleText);
 
-/** Checks a deck against its format (casual decks have no rules). */
-export function checkDeck(deck: Deck): DeckIssue[] {
+/**
+ * Checks a deck against its format (casual decks have no rules). `legality` is the ban list to read when it isn't the
+ * format's own: Duel Commander has Commander's deck rules but its own ban list ("duel").
+ */
+export function checkDeck(deck: Deck, legality: string = deck.format): DeckIssue[] {
   const rules = RULES[deck.format];
   if (!rules) return [];
   const issues: DeckIssue[] = [];
@@ -59,10 +62,11 @@ export function checkDeck(deck: Deck): DeckIssue[] {
   const byName = new Map<string, { n: number; typeLine: string; oracleText: string; legal?: string }>();
   let unknown = 0;
   for (const e of deck.entries) {
-    const cur = byName.get(e.card.name) ?? { n: 0, typeLine: e.card.typeLine, oracleText: e.card.oracleText, legal: e.card.legalities?.[deck.format] };
+    const cur = byName.get(e.card.name) ?? { n: 0, typeLine: e.card.typeLine, oracleText: e.card.oracleText, legal: e.card.legalities?.[legality] };
     cur.n += e.qty;
     byName.set(e.card.name, cur);
-    if (!e.card.legalities) unknown += e.qty;
+    // Cards saved before a ban list was kept (Duel Commander's) are unknown too.
+    if (!e.card.legalities?.[legality]) unknown += e.qty;
   }
   for (const [card, c] of byName) {
     const restricted = c.legal === 'restricted';

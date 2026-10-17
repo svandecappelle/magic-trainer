@@ -611,7 +611,7 @@ export const fr: Messages = {
     duelCommander: {
       title: 'Duel Commander',
       line: 'Commander à deux joueurs, 20 points de vie.',
-      text: 'Le format Commander en 1 contre 1 : les mêmes decks singleton de 100 cartes et la zone de commandement, mais 20 points de vie pour des parties plus rapides et plus interactives.',
+      text: 'Le format Commander en 1 contre 1 : les mêmes decks singleton de 100 cartes et la zone de commandement, mais 20 points de vie pour des parties plus rapides et plus interactives, et sa propre liste de cartes bannies.',
       rules: [['Deck', 'Singleton de 100'], ['Commandant', 'Zone de commandement, taxe'], ['Joueurs', '1 contre 1 uniquement']],
     },
   },

@@ -74,3 +74,5 @@ export interface CollectionEntry {
 }
 
 export const FORMATS = ['standard', 'pioneer', 'modern', 'legacy', 'vintage', 'pauper', 'commander', 'casual'] as const;
+/** The legalities kept from Scryfall: the formats, and Duel Commander's own ban list ("duel"). */
+export const LEGALITIES = ['standard', 'pioneer', 'modern', 'legacy', 'vintage', 'pauper', 'commander', 'duel'] as const;

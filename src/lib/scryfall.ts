@@ -1,4 +1,4 @@
-import { FORMATS, type Card } from '../types';
+import { LEGALITIES, type Card } from '../types';
 
 const API = 'https://api.scryfall.com';
 
@@ -60,7 +60,7 @@ export function toCard(c: ScryfallCard): Card {
     toughness: c.toughness ?? face?.toughness,
     ...((c.loyalty ?? face?.loyalty) ? { loyalty: c.loyalty ?? face?.loyalty } : {}),
     ...(c.layout && c.layout !== 'normal' ? { layout: c.layout } : {}),
-    ...(c.legalities ? { legalities: Object.fromEntries(FORMATS.filter((f) => c.legalities![f]).map((f) => [f, c.legalities![f]])) } : {}),
+    ...(c.legalities ? { legalities: Object.fromEntries(LEGALITIES.filter((f) => c.legalities![f]).map((f) => [f, c.legalities![f]])) } : {}),
     ...(c.card_faces?.length ? {
       faces: c.card_faces.map((f) => ({
         name: f.name ?? '', manaCost: f.mana_cost ?? '', typeLine: f.type_line ?? '', oracleText: f.oracle_text ?? '',

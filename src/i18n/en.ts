@@ -604,7 +604,7 @@ export const en = {
     duelCommander: {
       title: 'Duel Commander',
       line: 'Commander for two players, 20 life.',
-      text: 'The 1 vs 1 Commander format: the same 100-card singleton decks and command zone, but 20 life for faster, more interactive games.',
+      text: 'The 1 vs 1 Commander format: the same 100-card singleton decks and command zone, but 20 life for faster, more interactive games, and its own ban list.',
       rules: [['Deck', '100 singleton'], ['Commander', 'Command zone, tax'], ['Players', '1 vs 1 only']],
     },
   },

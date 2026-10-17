@@ -37,4 +37,18 @@ describe('game modes', () => {
     const old = card('Shock', 'legal', { legalities: undefined });
     expect(deckProblems({ main: [...legal60.slice(1), old], side: [], commander: [] }, modern)).toMatchObject({ blocking: [], warnings: [{ kind: 'unknown' }] });
   });
+
+  it('checks Duel Commander against its own ban list', () => {
+    const boss = card('Boss', 'legal', { typeLine: 'Legendary Creature — Goblin', legalities: { commander: 'legal', duel: 'legal' } });
+    const land = card('Mountain', 'legal', { typeLine: 'Basic Land — Mountain', legalities: { commander: 'legal', duel: 'legal' } });
+    // Legal in Commander, banned in Duel Commander (and the other way round).
+    const ring = card('Sol Ring', 'legal', { legalities: { commander: 'legal', duel: 'banned' } });
+    const deck = { main: [...Array(98).fill(land), ring], side: [], commander: [boss] };
+    const duel = { mode: 'duelCommander', format: 'modern', twoHeaded: false } as const;
+    expect(deckProblems(deck, duel).warnings).toEqual([{ kind: 'banned', card: 'Sol Ring' }]);
+    expect(deckProblems(deck, { ...duel, mode: 'commander' }).warnings).toEqual([]);
+    // Cards saved before the Duel Commander list was kept: unknown, refresh them.
+    const old = card('Shock', 'legal', { legalities: { commander: 'legal' } });
+    expect(deckProblems({ ...deck, main: [...Array(98).fill(land), old] }, duel).warnings).toEqual([{ kind: 'unknown', n: 1 }]);
+  });
 });
