@@ -1059,6 +1059,19 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
       }
       // Mox Diamond: a land, always (it goes to the graveyard otherwise).
       if (choice.purpose === 'discardLandInstead') return { kind: 'cards', iids: options.slice(0, 1).map((c) => c.iid) };
+      // Ruthless Lawbringer: a creature worth less than what the "When you do" part destroys.
+      if (!safe && choice.purpose === 'reflexiveSacrifice') {
+        const victim = [...options].sort((a, b) => creatureValue(a.card) - creatureValue(b.card))[0];
+        const item = s.resolving?.item;
+        const e = item?.ability?.effects.find((x) => x.kind === 'reflexive');
+        const best = e?.kind === 'reflexive' && e.then.targets[0]
+          ? legalTargets(s, choice.player, e.then.targets[0], undefined, item!.card)
+            .flatMap((t) => (t.kind === 'permanent' ? [findPermanent(s, t.iid)!] : []))
+            .filter((x) => !friend(s, choice.player, x.controller))
+            .reduce((n, x) => Math.max(n, isCreature(x.card) ? creatureValue(x.card) : x.card.cmc + 1), 0)
+          : 0;
+        return { kind: 'cards', iids: victim && reflexiveUseful(s, choice.player) && creatureValue(victim.card) < best ? [victim.iid] : [] };
+      }
       if (!safe && choice.purpose === 'reflexiveCost') {
         // Inti: a spare land, when the "When you do" part has something to target.
         const hand = s.players[choice.player].hand;
@@ -1171,6 +1184,7 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
         const effects = s.resolving?.item.ability?.effects ?? [];
         return { kind: 'yesNo', yes: !safe && !effects.every((e) => e.kind === 'tap' && e.untap && e.to === 'self') };
       }
+      if (choice.purpose === 'reflexiveRemoveCounter') return { kind: 'yesNo', yes: !safe && reflexiveUseful(s, choice.player) };
       if (choice.purpose === 'reflexivePay') return { kind: 'yesNo', yes: !safe && reflexiveUseful(s, choice.player) && s.players[choice.player].life > Number(choice.params?.life ?? 0) + 5 };
       // Ward—Pay N life: while life stays comfortable.
       // Subtlety: our spell goes back on top, to be drawn again.

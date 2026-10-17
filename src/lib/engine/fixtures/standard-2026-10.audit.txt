@@ -273,13 +273,6 @@ NONE     Winternight Stories {2}{U} — Sorcery
       keyword not simulated: harmonize
   ✗ Draw three cards. Then discard two cards unless you discard a creatur…
       spell not simulated
-NONE     Zoraline, Cosmos Caller {1}{W}{B} — Legendary Creature — Bat Cleric
-  ✓ Flying, vigilance
-      keyword
-  ? Whenever a Bat you control attacks, you gain 1 life.
-      not read by the engine
-  ✗ Whenever Zoraline enters or attacks, you may pay {W}{B} and 2 life. W…
-      trigger (enters/attacks), effect not simulated
 PARTIAL  Abhorrent Oculus {2}{U} — Creature — Eye
   ✓ As an additional cost to cast this spell, exile six cards from your g…
       additional cost: exileGraveyard
@@ -960,6 +953,13 @@ OK       Vibrant Outburst {U}{R} — Instant
 OK       Watery Grave  — Land — Island Swamp
   ✓ As this land enters, you may pay 2 life. If you don't, it enters tapp…
       enters tapped (payLife)
+OK       Zoraline, Cosmos Caller {1}{W}{B} — Legendary Creature — Bat Cleric
+  ✓ Flying, vigilance
+      keyword
+  ✓ Whenever a Bat you control attacks, you gain 1 life.
+      trigger (attacks) → gainLife
+  ✓ Whenever Zoraline enters or attacks, you may pay {W}{B} and 2 life. W…
+      trigger (enters/attacks) → reflexive | reflexive
 
-178 cards: 86 ok, 40 partial, 52 not simulated, 0 can't be cast
+178 cards: 87 ok, 40 partial, 51 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

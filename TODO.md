@@ -194,10 +194,12 @@ Still missing, most played first:
   "token" / "nontoken" (Gaius, Pinecone Strike); "Exile target player's graveyard"
 - [x] Reflexive triggers "you may discard a card / pay {…} (and N life). When you do, …": the "When you do" part
   triggers with its own targets (Inti, Icewrought Sentry, Thousand Moons Crackshot); "Whenever you attack" (Inti)
-- [ ] Reflexive triggers still not simulated: other costs (sacrifice: Ruthless Lawbringer; energy: Guide of Souls;
-  remove a counter: Leatherhead), "When you discard one or more nonland cards this way" (Seasoned Cryomancer), finality
-  and stun counters (Zoraline, Grim Reaper, Snaremaster Sprite), "can't block this turn" (Ty Lee); Inti's "Whenever
-  you discard one or more cards" (impulse draw)
+- [x] Reflexive costs "you may sacrifice another creature" (Ruthless Lawbringer) and "remove a counter" (Leatherhead's
+  cost); stun counters (Snaremaster Sprite: the untap is skipped, a counter removed), finality counters (Zoraline:
+  exiled instead of dying), keyword counters (hexproof, flying…), "Whenever a Bat you control attacks"
+- [ ] Still missing: energy (Guide of Souls), Leatherhead's "target artifact or enchantment that player controls" (the
+  damaged player), "When you discard one or more nonland cards this way" (Seasoned Cryomancer), Ty Lee ("doesn't untap
+  for as long as you control Ty Lee"), Inti's "Whenever you discard one or more cards" (impulse draw)
 - [ ] Mill, then "you may return a … card from your graveyard to your hand" (Overlord of the Balemurk); impending
 - [ ] Spree and Tiered (Three Steps Ahead, Requisition Raid, Return the Favor, Fire Magic): modes with extra costs
 - [ ] Blink "with a +1/+1 counter on it" (Daydream); "exile … until this leaves the battlefield" for Deep-Cavern Bat

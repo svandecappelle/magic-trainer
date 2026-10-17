@@ -39,6 +39,8 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
     case 'payLife': return t.game.choice.payLife({ card: card(String(p.card)), n });
     case 'sacrificeCost': return t.game.choice.sacrificeCost({ card: card(String(p.card)) });
     case 'creatureType': return t.game.choice.creatureType({ card: card(String(p.card)) });
+    case 'reflexiveSacrifice': return t.game.choice.reflexiveSacrifice({ card: card(String(p.card)) });
+    case 'reflexiveRemoveCounter': return t.game.choice.reflexiveRemoveCounter({ card: card(String(p.card)) });
     case 'exploreMill': return t.game.choice.exploreMill({ card: card(String(p.card)) });
     case 'color': return t.game.choice.color({ card: card(String(p.card)) });
     case 'basicType': return t.game.choice.basicType({ card: card(String(p.card)) });

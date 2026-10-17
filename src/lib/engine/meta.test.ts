@@ -2954,3 +2954,72 @@ describe('look at the top cards: Sleight of Hand, Flow State', () => {
   });
 });
 
+describe('reflexive costs, stun and finality counters', () => {
+  const land = (type: string, n: number) => Array.from({ length: n }, () => card({ name: type, typeLine: `Basic Land — ${type}` }));
+  const run = (s: GameState) => {
+    for (let i = 0; i < 12 && !s.pending && (s.stack.length || s.triggered?.length); i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  const toTrigger = (s: GameState) => {
+    for (let i = 0; i < 8 && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+
+  it('Ruthless Lawbringer: sacrifice another creature, then destroy a nonland permanent', () => {
+    const lawbringer = creature('Ruthless Lawbringer', 3, 2, {
+      typeLine: 'Creature — Vampire Assassin', manaCost: '{1}{W}{B}', cmc: 3,
+      oracleText: 'When this creature enters, you may sacrifice another creature. When you do, destroy target nonland permanent.',
+    });
+    const ogre = creature('Ogre', 4, 4, { cmc: 4 });
+    let s = board({ mana: 2, mine: [...land('Plains', 1), creature('Squire', 1, 1)], hand: [lawbringer], theirs: [ogre] });
+    s = toTrigger(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    expect(s.pending?.choice).toMatchObject({ kind: 'cards', purpose: 'reflexiveSacrifice' });
+    expect((s.pending!.choice as { options: { card: Card }[] }).options.map((c) => c.card.name)).toEqual(['Squire']);
+    s = apply(s, { type: 'choose', answer: { kind: 'cards', iids: [iidOf(s, 'Squire')] } });
+    s = toTrigger(s);
+    s = run(apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Ogre') }]] } }));
+    expect([perm(s, 'Squire'), perm(s, 'Ogre')]).toEqual([undefined, undefined]);
+  });
+
+  it('Snaremaster Sprite: a stun counter keeps the creature tapped through one untap step', () => {
+    const sprite = creature('Snaremaster Sprite', 1, 1, {
+      typeLine: 'Creature — Faerie Wizard', manaCost: '{U}', cmc: 1, keywords: ['Flying'],
+      oracleText: 'Flying\nWhen this creature enters, you may pay {2}. When you do, tap target creature an opponent controls and put a stun counter on it. (If a permanent with a stun counter would become untapped, remove one from it instead.)',
+    });
+    const ogre = creature('Ogre', 4, 4);
+    let s = board({ mine: land('Island', 3), hand: [sprite], theirs: [ogre] });
+    s = toTrigger(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    expect(s.pending?.choice).toMatchObject({ kind: 'yesNo', purpose: 'reflexivePay' });
+    s = toTrigger(apply(s, { type: 'choose', answer: { kind: 'yesNo', yes: true } }));
+    s = run(apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Ogre') }]] } }));
+    expect(perm(s, 'Ogre')).toMatchObject({ tapped: true, counters: { stun: 1 } });
+    // The opponent's untap step: the counter goes, the Ogre stays tapped.
+    for (let i = 0; i < 40 && s.active === 0; i++) s = s.pending ? apply(s, { type: 'choose', answer: { kind: 'cards', iids: [] } }) : !s.priority && s.step === 'attack' ? apply(s, { type: 'declareAttackers', attackers: [] }) : apply(s, { type: 'pass' });
+    expect(perm(s, 'Ogre')).toMatchObject({ tapped: true, counters: { stun: 0 } });
+  });
+
+  it('Zoraline: a Bat attacking gains life; the returned card has a finality counter (exiled if it dies)', () => {
+    const zoraline = creature('Zoraline, Cosmos Caller', 3, 3, {
+      typeLine: 'Legendary Creature — Bat Cleric', manaCost: '{1}{W}{B}', cmc: 3, keywords: ['Flying', 'Vigilance'],
+      oracleText: 'Flying, vigilance\nWhenever a Bat you control attacks, you gain 1 life.\nWhenever Zoraline enters or attacks, you may pay {W}{B} and 2 life. When you do, return target nonland permanent card with mana value 3 or less from your graveyard to the battlefield with a finality counter on it.',
+    });
+    const triggers = triggersOf(zoraline);
+    expect(triggers[0].ability.effects.map((e) => e.kind)).toEqual(['gainLife']);
+    const reflexive = triggers[1].ability.effects[0];
+    expect(reflexive.kind === 'reflexive' && reflexive.then.effects[0]).toMatchObject({ kind: 'returnCard', dest: 'battlefield', finality: true });
+    // A returned creature with a finality counter is exiled when it dies.
+    const bear = creature('Bear', 2, 2, { cmc: 2 });
+    let s = board({ mine: [...land('Plains', 1), ...land('Swamp', 1), zoraline], grave: [bear] });
+    s.stack = [{ iid: 'x0', card: zoraline, controller: 0, targets: [], ability: reflexive.kind === 'reflexive' ? reflexive.then : undefined, source: iidOf(s, 'Zoraline, Cosmos Caller') }];
+    s.stack[0].targets = [[{ kind: 'card', iid: 'g0' }]];
+    s.priority = { player: 0, passes: 0, reason: 'main' };
+    s = run(s);
+    expect(perm(s, 'Bear')!.counters.finality).toBe(1);
+    const shock = spell('Shock', '{R}', 'Shock deals 2 damage to any target.');
+    s.stack = [{ iid: 'x1', card: shock, controller: 1, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] }];
+    s.priority = { player: 0, passes: 0, reason: 'main' };
+    s = run(s);
+    expect(s.players[0].exile.map((c) => c.card.name)).toEqual(['Bear']);
+  });
+});
+

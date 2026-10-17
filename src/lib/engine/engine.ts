@@ -266,6 +266,8 @@ export type ChoicePurpose =
   | 'basicType' // Multiversal Passage: "choose a basic land type"
   | 'color' // Mother of Runes: "protection from the color of your choice"
   | 'exploreMill' // explore: put the revealed nonland card into the graveyard?
+  | 'reflexiveSacrifice' // Ruthless Lawbringer: "you may sacrifice another creature. When you do, …"
+  | 'reflexiveRemoveCounter' // Leatherhead: "you may remove a counter from her. When you do, …"
   | 'chosenPlayer' // True-Name Nemesis: "choose a player"
   | 'crewCost' // Crew N: which creatures to tap
   | 'dig' // "look at the top N cards …": which to put into the hand
@@ -379,6 +381,7 @@ export type LogEntry =
   | { k: 'becomesVehicle'; card: string }
   | { k: 'transformed'; card: string; into: string }
   | { k: 'basePT'; card: string; power: number; toughness: number }
+  | { k: 'counterRemoved'; card: string; counter: string }
   | { k: 'explores'; card: string; revealed?: string; land: boolean }
   | { k: 'counters'; card: string; counter: CounterKind; n: number }
   | { k: 'countered'; card: string }
@@ -670,7 +673,7 @@ const isPermanent = (x: object): x is Permanent => 'boosts' in x;
 
 /** Keyword printed on the card or granted until end of turn. */
 export const hasKw = (x: CardInst, kw: Keyword) =>
-  hasKeyword(x.card, kw) || (isPermanent(x) && (x.boosts.some((b) => b.keywords.includes(kw)) || !!x.statics?.keywords.includes(kw) || (kw === 'flying' && !!x.counters.flying)));
+  hasKeyword(x.card, kw) || (isPermanent(x) && (x.boosts.some((b) => b.keywords.includes(kw)) || !!x.statics?.keywords.includes(kw) || !!x.counters[kw as CounterKind]));
 
 export const firstStrikes = (x: CardInst) => hasKw(x, 'first strike') || hasKw(x, 'double strike');
 
@@ -1752,7 +1755,9 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
   emptyPools(d);
   for (const perm of d.battlefield) {
     if (isActivePlayer(d, perm.controller)) {
-      if (!doesntUntap(perm.card)) perm.tapped = false;
+      // Stun: "If a permanent with a stun counter would become untapped, remove one from it instead."
+      if (perm.tapped && perm.counters.stun) perm.counters = { ...perm.counters, stun: perm.counters.stun - 1 };
+      else if (!doesntUntap(perm.card)) perm.tapped = false;
       perm.sick = false;
     }
     delete perm.used;
@@ -1888,7 +1893,8 @@ function putInZone(d: GameState, owner: PlayerId, inst: CardInst, zone: 'graveya
 
 function removePermanent(d: GameState, perm: Permanent, zone: 'graveyard' | 'exile') {
   // Rest in Peace: exiled instead, so it doesn't die (a token too). Checked while the permanent is still there.
-  if (zone === 'graveyard' && graveyardExiled(d, perm.owner ?? perm.controller)) zone = 'exile';
+  // A finality counter: "If a permanent with a finality counter on it would die, exile it instead."
+  if (zone === 'graveyard' && (graveyardExiled(d, perm.owner ?? perm.controller) || perm.counters.finality)) zone = 'exile';
   d.battlefield = d.battlefield.filter((x) => x.iid !== perm.iid);
   returnExiledUntil(d, perm);
   // Tishana's Tidebinder leaves: the permanents it took the abilities of get them back.
@@ -3034,6 +3040,8 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         log(d, { k: 'returned', card: g.grave.card.name, dest: e.dest });
         if (e.dest === 'hand') d.players[g.owner].hand.push(g.grave);
         else putOntoBattlefield(d, g.grave, caster);
+        const back = e.finality ? findPermanent(d, g.grave.iid) : undefined;
+        if (back) back.counters = { ...back.counters, finality: 1 };
         // Pre-War Formalwear: "and attach this Equipment to it".
         const src = e.attachSource && item.source ? findPermanent(d, item.source) : undefined;
         const host = findPermanent(d, g.grave.iid);
@@ -3209,7 +3217,8 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
     }
     case 'tap':
       for (const perm of perms) {
-        if (e.untap) perm.tapped = false;
+        if (e.untap && perm.tapped && perm.counters.stun) perm.counters = { ...perm.counters, stun: perm.counters.stun - 1 };
+        else if (e.untap) perm.tapped = false;
         else tapPermanent(d, perm);
         log(d, { k: 'tapped', card: perm.card.name, untap: e.untap });
       }
@@ -3413,7 +3422,27 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
     case 'reflexive': {
       // "you may discard a card. When you do, …" / "you may pay {W}{B} and 2 life. When you do, …"
       const ps = d.players[caster];
-      if (e.cost.discard) {
+      const src = item.source ? findPermanent(d, item.source) : undefined;
+      if (e.cost.sacrifice) {
+        // Ruthless Lawbringer: "you may sacrifice another creature".
+        const sac = e.cost.sacrifice;
+        const options = matching(d, caster, sac.which).filter((x) => x.controller === caster && !(sac.another && x.iid === item.source));
+        if (!options.length) break;
+        if (answer?.kind !== 'cards') return { kind: 'cards', player: caster, purpose: 'reflexiveSacrifice', min: 0, max: 1, options, params: { card: item.card.name } };
+        const picked = answer.iids[0];
+        const victim = options.find((x) => x.iid === picked);
+        if (!victim) break;
+        sacrifice(d, victim);
+      } else if (e.cost.removeCounter) {
+        // Leatherhead: "you may remove a counter from her" (a keyword counter first: its +1/+1 counters are worth more).
+        const kinds = Object.entries(src?.counters ?? {}).filter(([, n]) => n).map(([k]) => k as CounterKind);
+        if (!src || !kinds.length) break;
+        if (answer?.kind !== 'yesNo') return { kind: 'yesNo', player: caster, purpose: 'reflexiveRemoveCounter', params: { card: item.card.name } };
+        if (!answer.yes) break;
+        const kind = kinds.find((k) => k !== '+1/+1' && k !== 'loyalty') ?? kinds[0];
+        src.counters = { ...src.counters, [kind]: (src.counters[kind] ?? 0) - 1 };
+        log(d, { k: 'counterRemoved', card: src.card.name, counter: kind });
+      } else if (e.cost.discard) {
         if (!ps.hand.length) break;
         if (answer?.kind !== 'cards') return { kind: 'cards', player: caster, purpose: 'reflexiveCost', min: 0, max: 1, options: ps.hand, params: { card: item.card.name } };
         const picked = answer.iids[0];

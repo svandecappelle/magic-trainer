@@ -403,7 +403,11 @@ export interface TargetSpec {
 // ---------- Effects ----------
 
 /** Counter kinds placed on permanents. */
-export type CounterKind = '+1/+1' | '-1/-1' | 'loyalty' | 'lore' | 'rev' | 'luck' | 'mining' | 'age' | 'fade' | 'flying' | 'chorus';
+export type CounterKind = '+1/+1' | '-1/-1' | 'loyalty' | 'lore' | 'rev' | 'luck' | 'mining' | 'age' | 'fade' | 'chorus'
+  // Stun (Snaremaster Sprite): it doesn't untap, a counter is removed instead. Finality (Zoraline): exiled if it would die.
+  | 'stun' | 'finality'
+  // Keyword counters (Ghost Vacuum's flying, Leatherhead's hexproof): the permanent has that keyword.
+  | 'flying' | 'hexproof' | 'indestructible' | 'lifelink' | 'trample' | 'deathtouch' | 'menace' | 'reach' | 'vigilance' | 'first strike';
 
 /**
  * Who an effect applies to: the targets chosen for a slot, the controller, everyone / each opponent,
@@ -485,7 +489,7 @@ export type Effect =
   | { kind: 'explore'; to: Affected }
   /** A card in a graveyard goes to its owner's hand, or onto the battlefield under the controller's control. */
   // Pre-War Formalwear: "… to the battlefield and attach this Equipment to it".
-  | { kind: 'returnCard'; to: Affected; dest: 'hand' | 'battlefield'; attachSource?: true }
+  | { kind: 'returnCard'; to: Affected; dest: 'hand' | 'battlefield'; attachSource?: true; finality?: true }
   // Snapcaster Mage: "gains flashback until end of turn. The flashback cost is equal to its mana cost."
   | { kind: 'grantFlashback'; to: Affected }
   // Phelia: exiled, back under its owner's control at the next end step (and a +1/+1 counter on the source if it's yours).
@@ -560,7 +564,11 @@ export type Effect =
    * A reflexive trigger: "you may discard a card. When you do, …" (Inti), "you may pay {W}{B} and 2 life. When you
    * do, …" (Zoraline). Paid as it resolves; then `then` triggers, its targets chosen at that time.
    */
-  | { kind: 'reflexive'; cost: { discard?: number; mana?: string; life?: number }; then: AbilitySpec }
+  /**
+   * Other costs: Ruthless Lawbringer's "you may sacrifice another creature" (`sacrifice`), Leatherhead's "you may remove a
+   * counter from her" (`removeCounter`).
+   */
+  | { kind: 'reflexive'; cost: { discard?: number; mana?: string; life?: number; sacrifice?: { which: Selector; another: boolean }; removeCounter?: boolean }; then: AbilitySpec }
   /** A modal trigger ("When … enters, choose one —"): stands for its modes (`AbilitySpec.modal`) until chosen. */
   | { kind: 'chooseModes' }
   /**
@@ -704,7 +712,11 @@ export function parseTargetPhrase(phrase: string): TargetSpec | null {
   if (grave) {
     if (grave[3] !== 'a') filter.controller = grave[3] === 'your' ? 'you' : 'opponent';
     const words = grave[1].trim();
-    const kinds = words === '' ? {} : words === 'permanent' ? { nonTypes: ['instant', 'sorcery'] as CardType[] } : cardWordsFilter(words);
+    // "permanent card": not an instant or sorcery ("nonland permanent card": not a land either).
+    const permanent = /(?:^|\s)permanent$/.test(words);
+    const rest = permanent ? words.replace(/\s*permanent$/, '') : words;
+    const base = rest === '' ? {} : cardWordsFilter(rest);
+    const kinds = base && permanent ? { ...base, nonTypes: [...(base.nonTypes ?? []), 'instant', 'sorcery'] as CardType[] } : base;
     if (!kinds) return null;
     Object.assign(filter, kinds);
     if (grave[2]) {
@@ -1282,6 +1294,8 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     const to = slotFor(m[2], (spec) => spec.kind === 'creature' || spec.kind === 'permanent');
     return to && { kind: 'tap', untap: m[1].toLowerCase() === 'untap', to };
   });
+  // Snaremaster Sprite: "tap target creature an opponent controls and put a stun counter on it".
+  scan(/(?:^|[.,] *|then |and )put an? (stun|finality) counter on it(?=\.)/gi, (m) => (targets.length === 1 ? { kind: 'addCounters', counter: m[1].toLowerCase() as CounterKind, n: 1, to: { slot: 0 } } : null));
   // Bounce.
   scan(new RegExp(`\\breturn (${TARGET}) to (?:its|their) (?:owner's|owners') hands?`, 'gi'), (m) => {
     // Reprieve: "Return target spell to its owner's hand"; Sink into Stupor: "target spell or nonland permanent".
@@ -1297,10 +1311,13 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     return to && { kind: 'grantFlashback', to };
   });
   // From a graveyard: "Return target creature card from your graveyard to your hand / to the battlefield".
-  scan(new RegExp(`\\breturn (${TARGET}) to (your hand|its owner's hand|the battlefield(?: under your control)?)( and attach this Equipment to it)?(?=\\.|,| and |$)`, 'gi'), (m) => {
+  // Zoraline: "… to the battlefield with a finality counter on it".
+  scan(new RegExp(`\\breturn (${TARGET}) to (your hand|its owner's hand|the battlefield(?: under your control)?)( and attach this Equipment to it| with a finality counter on it)?(?=\\.|,| and |$)`, 'gi'), (m) => {
     const to = slotFor(m[1], (spec) => spec.kind === 'card');
     const dest = m[2].toLowerCase().includes('battlefield') ? 'battlefield' : 'hand';
-    return to && { kind: 'returnCard', to, dest, ...(m[3] && dest === 'battlefield' ? { attachSource: true as const } : {}) };
+    if (m[3] && dest !== 'battlefield') return null;
+    const extra = !m[3] ? {} : /finality/.test(m[3]) ? { finality: true as const } : { attachSource: true as const };
+    return to && { kind: 'returnCard', to, dest, ...extra };
   });
   scan(/\breturn all ([a-z0-9 ,'-]+?) to (?:its|their) (?:owner's|owners') hands?/gi, (m) => {
     const which = selector(m[1]);
@@ -1871,7 +1888,8 @@ const NO_EFFECT: AbilitySpec = { targets: [], effects: [] };
 /** "a creature you control", "another nontoken creature", "a land" → which permanents a trigger watches. */
 function triggerSubject(subject: string, underYourControl: boolean): { which: Selector; another: boolean } | null {
   // Kíli: "another Dwarf or Equipment you control": any permanent of these subtypes.
-  const kinds = subject.match(/^(a|an|another) ((?:[A-Z][a-z]+)(?: or [A-Z][a-z]+)+)( you control)?$/);
+  // Zoraline: "a Bat you control" (one subtype).
+  const kinds = subject.match(/^(a|an|another) ((?:[A-Z][a-z]+)(?: or [A-Z][a-z]+)*)( you control)?$/);
   if (kinds) {
     const filter: TargetFilter = { subtypes: kinds[2].toLowerCase().split(' or ') };
     if (kinds[3] || underYourControl) filter.controller = 'you';
@@ -1891,13 +1909,16 @@ function triggerSubject(subject: string, underYourControl: boolean): { which: Se
 /** The effect text of a trigger: "you may" makes it optional; unsupported wordings give no effects. */
 function triggerAbility(text: string, name: string, self: boolean): AbilitySpec {
   // "you may discard a card. When you do, …", "you may pay {W}{B} and 2 life. When you do, …"
-  const reflexive = text.match(/^you may (?:(discard a card)|pay ((?:\{(?:\d+|[WUBRGC])\})+)(?: and (\d+) life)?)\. When you do, (.+)$/i);
+  const reflexive = text.match(/^you may (?:(discard a card)|pay ((?:\{(?:\d+|[WUBRGC])\})+)(?: and (\d+) life)?|sacrifice ((?:a|an|another) [a-z ]+?)|(remove a counter from (?:it|him|her|them|this creature)))\. When you do, (.+)$/i);
   if (reflexive) {
-    const inner = reflexive[4];
+    const inner = reflexive[6];
     // "It" in the reflexive part is its own target ("put a +1/+1 counter on target attacking creature. It gains trample").
     const then = UNSUPPORTED.test(inner) ? NO_EFFECT : parseAbilityText(inner, self ? name : undefined);
     if (!then.effects.length) return NO_EFFECT;
-    const cost = reflexive[1] ? { discard: 1 } : { mana: reflexive[2], ...(reflexive[3] ? { life: Number(reflexive[3]) } : {}) };
+    const sacrifice = reflexive[4] ? triggerSubject(reflexive[4], true) : undefined;
+    if (reflexive[4] && !sacrifice) return NO_EFFECT;
+    const cost = reflexive[1] ? { discard: 1 } : sacrifice ? { sacrifice } : reflexive[5] ? { removeCounter: true }
+      : { mana: reflexive[2], ...(reflexive[3] ? { life: Number(reflexive[3]) } : {}) };
     return { targets: [], effects: [{ kind: 'reflexive', cost, then }] };
   }
   // Mana Vault: "you may pay {4}. If you do, untap this artifact."
@@ -2428,8 +2449,11 @@ export const beginsOnBattlefield = (card: Card) =>
 // ---------- Entering the battlefield ----------
 
 /** "This creature enters with N +1/+1 counters on it" (X: the value paid when cast); Moonshadow: "six -1/-1 counters". */
-export function entersCounters(card: Card): { counter: '+1/+1' | '-1/-1' | 'mining'; n: Amount } | null {
+export function entersCounters(card: Card): { counter: CounterKind; n: Amount } | null {
   const selves = selfWords(card.name).map(escapeRe).join('|');
+  // Leatherhead: "Leatherhead enters with a hexproof counter on her."
+  const keyword = frontText(card).match(new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)? with an? (flying|hexproof|indestructible|lifelink|trample|deathtouch|menace|reach|vigilance|first strike) counter on (?:it|him|her|them)\\.`, 'i'));
+  if (keyword) return { counter: keyword[1].toLowerCase() as CounterKind, n: 1 };
   // Gemstone Mine: "This land enters with three mining counters on it."
   const mining = frontText(card).match(new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)? with (${AMOUNT}) mining counters? on it\\.`, 'i'));
   if (mining) return { counter: 'mining', n: toAmount(mining[1]) };
