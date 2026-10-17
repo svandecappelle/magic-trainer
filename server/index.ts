@@ -2,7 +2,10 @@ import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, normalize, resolve } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
+import { fetchCardsById } from '../src/lib/scryfall';
 import { parseCardCheck, scryfallDeckCheck } from './cards';
+import { storedLookup } from './db/cards';
+import { migrate, openDb, waitForDb } from './db/index';
 import { RoomManager, type Conn } from './rooms';
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -50,12 +53,26 @@ const server = createServer((req, res) => {
   createReadStream(file).pipe(res);
 });
 
-// Decks are checked against Scryfall (CARD_CHECK=strict|lenient|off, default lenient).
+// PostgreSQL (DATABASE_URL): accounts and saved decks (docs/accounts.md). Without it, the server keeps no data.
+const db = process.env.DATABASE_URL ? openDb(process.env.DATABASE_URL) : null;
+if (db) {
+  try {
+    await waitForDb(db);
+    const applied = await migrate(db);
+    if (applied.length) console.log(`Database migrations applied: ${applied.join(', ')}`);
+  } catch (e) {
+    console.error('Database unavailable:', (e as Error).message);
+    process.exit(1);
+  }
+}
+
+// Decks are checked against Scryfall (CARD_CHECK=strict|lenient|off, default lenient), through the cards table if any.
 const cardCheck = parseCardCheck(process.env.CARD_CHECK);
+const lookup = db ? storedLookup(db, fetchCardsById) : fetchCardsById;
 // Clocks for online games: TURN_SECONDS per decision (default 120), RECONNECT_SECONDS to come back (default 180); 0 = none.
 const seconds = (value: string | undefined, fallback: number) => (value === undefined || value === '' || Number.isNaN(Number(value)) ? fallback : Number(value));
 const rooms = new RoomManager({
-  ...(cardCheck === 'off' ? {} : { verifyDeck: scryfallDeckCheck(cardCheck) }),
+  ...(cardCheck === 'off' ? {} : { verifyDeck: scryfallDeckCheck(cardCheck, lookup) }),
   decisionMs: seconds(process.env.TURN_SECONDS, 120) * 1000,
   reconnectMs: seconds(process.env.RECONNECT_SECONDS, 180) * 1000,
 });
@@ -96,4 +113,12 @@ setInterval(() => {
   }
 }, 30_000);
 
-server.listen(PORT, () => console.log(`Magic Trainer server on http://localhost:${PORT} (WebSocket at /ws)`));
+server.listen(PORT, () => console.log(`Magic Trainer server on http://localhost:${PORT} (WebSocket at /ws)${db ? ', database connected' : ''}`));
+
+// docker stop: close the database connections cleanly.
+for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+  process.once(signal, () => {
+    server.close();
+    void (db?.end() ?? Promise.resolve()).finally(() => process.exit(0));
+  });
+}

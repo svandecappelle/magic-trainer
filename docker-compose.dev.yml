@@ -1,0 +1,17 @@
+# Development database: Postgres alone, published on 127.0.0.1:5432.
+#   docker compose -f docker-compose.dev.yml up -d
+#   DATABASE_URL=postgres://magic:dev@localhost:5432/magic npm run server
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: magic
+      POSTGRES_USER: magic
+      POSTGRES_PASSWORD: dev
+    volumes:
+      - pgdata-dev:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${DEV_DB_PORT:-5432}:5432"
+
+volumes:
+  pgdata-dev:

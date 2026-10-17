@@ -11,6 +11,14 @@ npm run build   # type-check + production build into dist/
 npm start       # production: serves dist/ and the game server on one port (PORT, default 8787)
 ```
 
+The server uses PostgreSQL when `DATABASE_URL` is set (without it, it keeps no data). For development:
+
+```bash
+docker compose -f docker-compose.dev.yml up -d     # Postgres on 127.0.0.1:5432 (DEV_DB_PORT to change)
+DATABASE_URL=postgres://magic:dev@localhost:5432/magic npm run server
+DATABASE_URL_TEST=postgres://magic:dev@localhost:5432/magic npm test   # also runs the database tests
+```
+
 ### Game modes
 
 Play vs Bot and online rooms offer a duel or **Two-Headed Giant** (two teams of two sharing 30 life and their turns:
@@ -37,7 +45,9 @@ disconnected player to come back before conceding. 0 disables either.
 ## Deploying on a server (Docker + nginx)
 
 One Node process serves the app and the multiplayer WebSocket (`/ws`); it runs in a Docker container listening on
-`127.0.0.1:8787`, with nginx in front. Requirements: Docker with the compose plugin, nginx, and make.
+`127.0.0.1:8787`, with nginx in front, and a PostgreSQL container next to it (for accounts and saved decks, being
+built: see [docs/accounts.md](docs/accounts.md); for now it caches the Scryfall data of the online card check).
+Requirements: Docker with the compose plugin, nginx, and make.
 
 ```bash
 git clone git@github.com:svandecappelle/magic-trainer.git && cd magic-trainer
@@ -51,6 +61,12 @@ other targets: `make update` (git pull, rebuild, restart), `make status`, `make 
 
 Games in progress live in the server's memory, so a restart or an update ends them (players keep their decks
 and collection: those stay in their browser).
+
+The database password is in `.env` next to `docker-compose.yml`: `make app` creates it with a random value the first
+time (see `.env.example`). Keep that file. The data is in the Docker volume `pgdata`, kept by `make uninstall`.
+Back it up with `docker compose exec postgres pg_dump -U magic magic | gzip > backup-$(date +%F).sql.gz`; restore
+with `gunzip -c backup.sql.gz | docker compose exec -T postgres psql -U magic magic`. The server applies the SQL
+files of `server/db/migrations/` that are new when it starts.
 
 ### What the installer does to nginx
 
@@ -106,7 +122,9 @@ and open `http://<server>:8787`.
 | `src/lib/engine/` | Simplified two-player rules engine with London mulligans, a stack and Arena-style priority windows with an optional per-player full control mode (`engine.ts`), card rules parsing (`rules.ts`), heuristic bot (`bot.ts`), preset decks |
 | `src/lib/multiplayer/` | Client/server message types, hidden-information redaction, WebSocket hook |
 | `server/` | Node WebSocket game server: rooms, seats, reconnection (`rooms.ts`), HTTP/static wiring (`index.ts`) |
-| `Makefile`, `Dockerfile`, `docker-compose.yml`, `deploy/` | Server installer, container image, compose service, nginx site template |
+| `server/db/` | PostgreSQL: connection and migration runner (`index.ts`), SQL migrations, Scryfall card cache (`cards.ts`) |
+| `Makefile`, `Dockerfile`, `docker-compose.yml`, `deploy/` | Server installer, container image, compose services (app, PostgreSQL), nginx site template |
+| `docker-compose.dev.yml` | PostgreSQL alone for development |
 | `src/i18n/` | Translations (`en.ts`, `fr.ts`), language store, log/error rendering |
 | `src/store/` | Zustand stores, persisted to `localStorage` |
 | `src/pages/` | One component per screen |

@@ -9,7 +9,31 @@ services:
       TURN_SECONDS: ${TURN_SECONDS:-120}
       RECONNECT_SECONDS: ${RECONNECT_SECONDS:-180}
       CARD_CHECK: ${CARD_CHECK:-lenient}
+      # Accounts and saved decks (docs/accounts.md). POSTGRES_PASSWORD is in .env (make app creates it).
+      DATABASE_URL: postgres://magic:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (make app creates it)}@postgres:5432/magic
+    depends_on:
+      postgres:
+        condition: service_healthy
     # Only reachable from the server itself: nginx faces the internet. The host port can be changed with
     # MAGIC_TRAINER_PORT (make install PORT=…). Use "8787:8787" to expose it directly, e.g. for a test without nginx.
     ports:
       - "127.0.0.1:${MAGIC_TRAINER_PORT:-8787}:8787"
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: magic
+      POSTGRES_USER: magic
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (make app creates it)}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U magic -d magic"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # No "ports": only the app container reaches the database, on the compose network.
+
+volumes:
+  pgdata:

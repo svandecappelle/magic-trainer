@@ -73,7 +73,12 @@ install: app nginx
 app:
 	@command -v docker >/dev/null || { echo "Docker is not installed: https://docs.docker.com/engine/install/" >&2; exit 1; }
 	$(COMPOSE) version >/dev/null || { echo "The Docker compose plugin is missing (package docker-compose-plugin)." >&2; exit 1; }
-	echo "Building and starting the container on 127.0.0.1:$(PORT)…"
+	# The database password lives in .env (read by docker compose): create it once, never overwrite it.
+	if [ ! -f .env ] || ! grep -q '^POSTGRES_PASSWORD=' .env; then
+	  (umask 077; echo "POSTGRES_PASSWORD=$$(head -c 24 /dev/urandom | base64 | tr -d '/+=')" >> .env)
+	  echo "Created the database password in .env (keep this file: the database needs it)."
+	fi
+	echo "Building and starting the containers (app on 127.0.0.1:$(PORT), PostgreSQL)…"
 	MAGIC_TRAINER_PORT=$(PORT) $(COMPOSE) up -d --build
 	# Wait until the app answers (the image runs the tests while building, so this is quick).
 	for i in $$(seq 1 30); do
@@ -161,4 +166,4 @@ uninstall:
 	  echo "Removed $$avail (backups $(SITE).bak-* are kept; the certificate, if any, too)."
 	fi
 	if command -v docker >/dev/null; then $(COMPOSE) down; fi
-	echo "Magic Trainer is uninstalled."
+	echo "Magic Trainer is uninstalled (the database volume and .env are kept; docker compose down -v deletes the data)."

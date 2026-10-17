@@ -1,6 +1,6 @@
 # Accounts and saved decks (design)
 
-Status: **proposal**, not implemented yet.
+Status: step 1 done (PostgreSQL, migrations, card cache); login and sync not implemented yet.
 
 Players can log in with Discord to keep their decks and their collection on the server and find them on any
 device. Accounts are optional: without one, the app works exactly as today (everything in the browser's
@@ -311,7 +311,7 @@ services:
     environment:
       POSTGRES_DB: magic
       POSTGRES_USER: magic
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (make app creates it)}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -329,7 +329,7 @@ Secrets go in a `.env` file next to `docker-compose.yml` (git-ignored; a `.env.e
 
 ### Development
 
-- `docker compose up -d postgres` with a `docker-compose.dev.yml` override publishing `127.0.0.1:5432`, then
+- `docker compose -f docker-compose.dev.yml up -d` (Postgres alone on `127.0.0.1:5432`), then
   `DATABASE_URL=postgres://magic:dev@localhost:5432/magic npm run server`.
 - Vite proxies `/auth` and `/api` to `localhost:8787`, like `/ws`.
 - Tests: server tests use a fake Discord (`fetch` stubbed) and a test database (`DATABASE_URL_TEST`, skipped when
@@ -342,7 +342,7 @@ restore with `gunzip -c file | docker compose exec -T postgres psql -U magic mag
 
 ## Implementation steps
 
-1. Postgres in compose, `pg`, migration runner, `001_accounts.sql`, `cards` table backing the card check.
+1. ✓ Postgres in compose, `pg`, migration runner, `001_accounts.sql`, `cards` table backing the card check.
 2. Discord login, sessions, `/api/me`, logout, account deletion.
 3. Deck and collection API with limits and conflicts.
 4. Client: login button and menu, `sync.ts`, merge, offline queue, i18n (en, fr).

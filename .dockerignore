@@ -5,3 +5,7 @@ dist
 *.tsbuildinfo
 Dockerfile
 docker-compose.yml
+.env
+docker-compose.dev.yml
+audit-reports
+deck.txt
