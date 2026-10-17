@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { BetweenGames } from '../components/BetweenGames';
-import { DeckOptions } from '../components/DeckOptions';
 import { GameBoard } from '../components/GameBoard';
+import { DeckPicker, EngineSummary, ModeTile, Segmented } from '../components/Setup';
 import { loadDeck75 } from '../lib/loadDeck';
 import { matchWinner } from '../lib/match';
 import { teamOf, teamsOf } from '../lib/engine/engine';
@@ -10,7 +10,6 @@ import { MIN_DECK_SIZE } from '../lib/multiplayer/protocol';
 import { useGameSocket } from '../lib/multiplayer/useGameSocket';
 import { errorText, useT } from '../i18n';
 import { useApp } from '../store/useApp';
-import { RulesNote } from './Play';
 
 const NAME_KEY = 'magic-trainer-name';
 
@@ -121,63 +120,60 @@ export function Online() {
     );
   }
 
-  // 1. Not in a room: pick a name and deck, create or join.
+  // 1. Not in a room: pick a name and deck, then host a game or join one.
   if (!room) {
+    const offline = busy || status !== 'open';
     return (
-      <div className="page">
+      <div className="page setup">
         <h1>{t.online.title}</h1>
         {connection}
-        <div className="panel online-setup">
-          <label>
-            {t.online.yourName} <input value={name} maxLength={24} onChange={(e) => setName(e.target.value)} placeholder={t.online.namePlaceholder} />
+
+        <section className="deck-pickers">
+          <label className="name-field">
+            <h4>{t.online.yourName}</h4>
+            <input value={name} maxLength={24} onChange={(e) => setName(e.target.value)} placeholder={t.online.namePlaceholder} />
           </label>
-          <label>
-            {t.online.deck} <select value={deckId} onChange={(e) => setDeckId(e.target.value)}><DeckOptions decks={decks} /></select>
-          </label>
-          <div className="online-choices">
-            <div>
-              <h3>{t.online.host}</h3>
-              <p className="small muted">{t.online.hostHint}</p>
-              <label className="small">
-                {t.play.gameType}{' '}
-                <select value={twoHeaded ? '2hg' : 'duel'} onChange={(e) => setTwoHeaded(e.target.value === '2hg')}>
-                  <option value="duel">{t.play.duel}</option>
-                  <option value="2hg">{t.play.twoHeaded}</option>
-                </select>
-              </label>
-              <label className="small check" title={t.play.commanderHint}>
-                <input type="checkbox" checked={commander} onChange={(e) => setCommander(e.target.checked)} /> {t.play.commander}
-              </label>
-              <label className="small">
-                {t.match.format}{' '}
-                <select value={bestOf} onChange={(e) => setBestOf(Number(e.target.value) as 1 | 3)}>
-                  <option value={1}>{t.match.single}</option>
-                  <option value={3}>{t.match.bo3}</option>
-                </select>
-              </label>
-              <button disabled={busy || status !== 'open'} onClick={() => enter('create')}>{t.online.createRoom}</button>
-            </div>
-            <div>
-              <h3>{t.online.join}</h3>
-              <p className="small muted">{t.online.joinHint}</p>
-              <div className="row">
-                <input
-                  className="room-code-input"
-                  value={code}
-                  maxLength={5}
-                  placeholder="ABCDE"
-                  onChange={(e) => setCode(e.target.value.toUpperCase())}
-                  onKeyDown={(e) => e.key === 'Enter' && enter('join')}
-                />
-                <button disabled={busy || status !== 'open'} onClick={() => enter('join')}>{t.online.joinButton}</button>
-              </div>
-            </div>
+          <DeckPicker label={t.play.yourDeck} value={deckId} onChange={setDeckId} />
+        </section>
+        {missingCommander && <div className="error small">{t.game.noCommanderInDeck(chosen!.name)}</div>}
+
+        <section className="setup-section">
+          <h4>{t.online.host}</h4>
+          <div className="mode-tiles">
+            {(['duel', 'twoHeaded'] as const).map((m) => (
+              <ModeTile key={m} mode={m} text={t.online.modes[m]} on={(twoHeaded ? 'twoHeaded' : 'duel') === m} onClick={() => setTwoHeaded(m === 'twoHeaded')} />
+            ))}
+            <ModeTile mode="commander" text={t.play.modes.commander} on={commander} onClick={() => setCommander(!commander)} />
           </div>
-          {missingCommander && <div className="error small">{t.game.noCommanderInDeck(chosen!.name)}</div>}
-          {busy && <div className="small muted">{t.common.loadingCards}</div>}
-          {error && <div className="error small">{errorText(t, error)}</div>}
-        </div>
-        <RulesNote />
+        </section>
+        <section className="setup-options">
+          <Segmented label={t.match.format} value={bestOf} options={[[1, t.match.single], [3, t.match.bo3]]} onChange={setBestOf} />
+          <p className="small muted host-hint">{t.online.hostHint}</p>
+          <button className="start-button" disabled={offline} onClick={() => enter('create')}>{t.online.createRoom}</button>
+        </section>
+
+        <section className="panel join-panel">
+          <div>
+            <h4>{t.online.join}</h4>
+            <p className="small muted">{t.online.joinHint}</p>
+          </div>
+          <div className="join-row">
+            <input
+              className="room-code-input"
+              value={code}
+              maxLength={5}
+              placeholder="ABCDE"
+              aria-label={t.online.join}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              onKeyDown={(e) => e.key === 'Enter' && enter('join')}
+            />
+            <button className="start-button" disabled={offline} onClick={() => enter('join')}>{t.online.joinButton}</button>
+          </div>
+        </section>
+        {busy && <div className="small muted">{t.common.loadingCards}</div>}
+        {error && <div className="error small">{errorText(t, error)}</div>}
+
+        <EngineSummary deck={chosen} />
       </div>
     );
   }

@@ -536,7 +536,6 @@ export const en = {
     rules:
       'Full turns with priority, the stack and combat (London mulligans). Triggered, activated and modal abilities, Equipment, Auras, Sagas, manlands and planeswalkers are played by the rules engine; each card says whether it is simulated (the deck editor shows it for your whole deck). You are only asked to respond when you hold something castable, unless you turn on full control during a game. See TODO.md for what is not simulated yet.',
     buildDeck: 'Build a deck',
-    bringYourOwn: 'to bring your own.',
     yourDecks: 'Your decks',
     presets: 'Presets',
     modes: {
@@ -585,6 +584,10 @@ export const en = {
     deck: 'Deck',
     host: 'Host a game',
     hostHint: 'Get a room code to send to a friend.',
+    modes: {
+      duel: ['Duel', 'You against a friend. 20 life, London mulligan.'],
+      twoHeaded: ['Two-Headed Giant', 'Four players in two teams with shared life. The first two to join the room play together.'],
+    } as Record<'duel' | 'twoHeaded', [string, string]>,
     createRoom: 'Create room',
     join: 'Join a game',
     joinHint: 'Enter the code your friend sent you.',

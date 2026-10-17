@@ -544,7 +544,6 @@ export const fr: Messages = {
     rules:
       "Des tours complets avec la priorité, la pile et le combat (mulligan London). Les capacités déclenchées, activées et modales, les équipements, les auras, les sagas, les terrains-créatures et les planeswalkers sont joués par le moteur de règles ; chaque carte indique si elle est simulée (l'éditeur de deck le montre pour tout votre deck). Vous n'êtes sollicité pour répondre que si vous avez quelque chose à lancer, sauf si vous activez le contrôle total pendant la partie. Voir TODO.md pour ce qui n'est pas encore simulé.",
     buildDeck: 'Créez un deck',
-    bringYourOwn: 'pour jouer avec le vôtre.',
     yourDecks: 'Vos decks',
     presets: 'Prédéfinis',
     modes: {
@@ -593,6 +592,10 @@ export const fr: Messages = {
     deck: 'Deck',
     host: 'Créer une partie',
     hostHint: 'Obtenez un code de salle à envoyer à un ami.',
+    modes: {
+      duel: ['Duel', 'Vous contre un ami. 20 points de vie, mulligan London.'],
+      twoHeaded: ['Géant bicéphale', 'Quatre joueurs en deux équipes aux points de vie partagés. Les deux premiers à rejoindre la salle jouent ensemble.'],
+    },
     createRoom: 'Créer la salle',
     join: 'Rejoindre une partie',
     joinHint: 'Saisissez le code envoyé par votre ami.',
