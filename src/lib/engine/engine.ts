@@ -4,7 +4,7 @@ import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
   activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
-  type ActivatedSpec, type AltCost, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
+  type ActivatedSpec, type AltCost, type CastInfo, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
 
 /** A player: an index in GameState.players (0–1 in a duel, 0–3 in Two-Headed Giant). */
@@ -719,6 +719,11 @@ export function unitsOf(s: GameState, perm: Permanent, spell?: Card): Color[][] 
   if (mooned(s, perm.card)) return landTypeMana(s, [[moonType(s, perm.card) === 'island' ? 'U' : 'R']]);
   let units = manaUnits(perm.card, identity);
   if (isLandCard(perm.card)) units = landTypeMana(s, units);
+  // Cryptolith Rite: its controller's creatures have "{T}: Add one mana of any color." (a creature already making
+  // several mana keeps its own ability).
+  if (isCreature(perm.card) && units.length <= 1 && withRule(s, 'creaturesTapForAnyColor').some((x) => x.controller === perm.controller)) {
+    units = [[...new Set<Color>([...(units[0] ?? []), 'W', 'U', 'B', 'R', 'G'])]];
+  }
   // Springleaf Drum, Gene Pollinator: any color, with another untapped permanent to tap.
   if (tapsAnotherForMana(perm.card)) units = manaHelpers(s, perm).length ? [['W', 'U', 'B', 'R', 'G']] : [];
   // Mystic Gate: with another source to pay {W/U}, two mana of these colors (the other's mana is spent on the cost).
@@ -808,6 +813,12 @@ function hasSubtype(c: Card, type: string): boolean {
 function painOf(s: GameState, perm: Permanent) {
   const pain = manaPain(perm.card, s.players[perm.controller]?.identity);
   return pain && s.players[perm.controller].life >= pain.life ? pain : undefined;
+}
+
+function graveDiscount(s: GameState, p: PlayerId, d: CastInfo['graveDiscount']): number {
+  if (!d) return 0;
+  const grave = s.players[p].graveyard;
+  return 'types' in d ? new Set(grave.flatMap((c) => cardTypes(c.card))).size : grave.filter((c) => cardMatches(c.card, d.filter)).length;
 }
 
 /** Delirium: four or more card types among the cards in `p`'s graveyard. */
@@ -1153,7 +1164,9 @@ export function castCost(s: GameState, p: PlayerId, card: Card, opt: { face?: nu
   }
   const discount = (info.affinity ? s.battlefield.filter((x) => x.controller === p && cardMatches(x.card, info.affinity!)).length : 0)
     // March of Otherworldly Light: {2} less for each card exiled from the hand.
-    + (info.exileDiscount && opt.exiled ? info.exileDiscount.per * opt.exiled : 0);
+    + (info.exileDiscount && opt.exiled ? info.exileDiscount.per * opt.exiled : 0)
+    // Eddymurk Crab: per instant and sorcery card in the graveyard; Emrakul: per card type among them.
+    + graveDiscount(s, p, info.graveDiscount);
   // Commander tax: {2} more for each previous cast from the command zone; Defense Grid: {3} more off its caster's turn;
   // Thalia: {1} more for a noncreature spell; Damping Sphere: {1} more for each other spell cast this turn.
   const tax = (opt.from === 'command' && opt.iid ? 2 * (s.players[p].commanderCasts?.[opt.iid] ?? 0) : 0)
@@ -1367,7 +1380,8 @@ export function activationProblem(s: GameState, p: PlayerId, perm: Permanent, in
   }
   if (spec.cost.life && s.players[p].life < spec.cost.life) return 'notEnoughLife';
   if (spec.cost.removeCounter && !perm.counters[spec.cost.removeCounter]) return 'noCounterToRemove';
-  if (spec.cost.exileFromGraveyard && !s.players[p].graveyard.some((c) => cardMatches(c.card, spec.cost.exileFromGraveyard!))) return 'nothingToExile';
+  if (spec.cost.exileFromGraveyard && s.players[p].graveyard.filter((c) => cardMatches(c.card, spec.cost.exileFromGraveyard!)).length < (spec.cost.exileCount ?? 1)) return 'nothingToExile';
+  if (spec.cost.discard && s.players[p].hand.length < spec.cost.discard) return 'nothingToDiscard';
   if (spec.cost.sacrifice && !sacrificeOptions(s, perm, spec).length) return 'nothingToSacrifice';
   if (spec.cost.crew !== undefined && crewOptions(s, perm).reduce((n, x) => n + powerOf(x), 0) < spec.cost.crew) return 'notEnoughCrew';
   if (!findPayment(sourcesFor(s, perm, spec), abilityCost(s, perm, spec, x))) return 'notEnoughMana';
@@ -2118,7 +2132,9 @@ function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, op
     perm.tapped = !others.some((x) => rule.subtypes.some((t) => subtypesOf(x.card).includes(t) || landHasType(d, x.card, t)));
   } else if (rule?.kind === 'unlessEarlyTurn') {
     perm.tapped = !(isActivePlayer(d, controller) && (d.players[controller].turns ?? 0) <= rule.n);
-  } else if (rule?.kind === 'unlessBasic') perm.tapped = !otherLands.some((x) => /\bBasic\b/.test(x.card.typeLine));
+  } else if (rule?.kind === 'notYourTurn') perm.tapped = !isActivePlayer(d, controller);
+  else if (rule?.kind === 'unlessOpponents') perm.tapped = opponentsOf(d, controller).length < rule.n;
+  else if (rule?.kind === 'unlessBasic') perm.tapped = !otherLands.some((x) => /\bBasic\b/.test(x.card.typeLine));
   else if (rule?.kind === 'unlessOtherLands') {
     perm.tapped = (rule.max !== undefined && otherLands.length > rule.max) || (rule.min !== undefined && otherLands.length < rule.min);
   } else if (rule?.kind === 'payLife') {
@@ -2733,12 +2749,14 @@ function dealDamage(d: GameState, source: CardInst, controller: PlayerId, target
   // Mjölnir: "Double all damage equipped creature would deal." (the creature, or its own ability.)
   const dealer = findPermanent(d, source.iid) ?? ((source as StackItem).source ? findPermanent(d, (source as StackItem).source!) : undefined);
   if (dealer?.statics?.doubleDamage) amount *= 2;
-  if (typeof target !== 'number' && (protectedFrom(target, source.card) || protectedFromPlayer(target, controller))) return; // protection prevents it
+  // Sunspine Lynx: "Damage can't be prevented."
+  const preventable = !withRule(d, 'damageCantBePrevented').length;
+  if (preventable && typeof target !== 'number' && (protectedFrom(target, source.card) || protectedFromPlayer(target, controller))) return; // protection prevents it
   // Black Panther: "Prevent all damage that would be dealt to Black Panther."
-  if (typeof target !== 'number' && preventsDamageToSelf(target.card)) return;
+  if (preventable && typeof target !== 'number' && preventsDamageToSelf(target.card)) return;
   // "Prevent the next N damage" shields.
   const key = typeof target === 'number' ? `player:${target}` : target.iid;
-  for (const sh of d.shields ?? []) {
+  for (const sh of preventable ? d.shields ?? [] : []) {
     if (sh.target !== key || !sh.n || !amount) continue;
     const stop = Math.min(sh.n, amount);
     sh.n -= stop;
@@ -2782,6 +2800,8 @@ function addPoison(d: GameState, p: PlayerId, n: number) {
 
 /** Life changes; teammates share their life total. */
 function changeLife(d: GameState, p: PlayerId, delta: number) {
+  // Sunspine Lynx: "Players can't gain life."
+  if (delta > 0 && withRule(d, 'noLifeGain').length) return;
   for (const q of teamPlayers(d, p)) d.players[q].life += delta;
   const ps = d.players[p];
   if (delta > 0) ps.gainedThisTurn = (ps.gainedThisTurn ?? 0) + delta;
@@ -2806,7 +2826,7 @@ function teamLoses(d: GameState, p: PlayerId) {
 
 function resolveCombat(d: GameState) {
   refreshStatics(d);
-  if (d.preventCombat) return; // Fog
+  if (d.preventCombat && !withRule(d, 'damageCantBePrevented').length) return; // Fog
   // Combat damage to "the player" goes to the defending team (one shared life total).
   const def = firstOpponent(d, d.active);
   const get = (iid: string) => findPermanent(d, iid);
@@ -2861,6 +2881,8 @@ function resolveCombat(d: GameState) {
         const toxic = toxicOf(h.source.card);
         if (toxic) addPoison(d, h.target, toxic);
         fireObject(d, 'combatDamage', h.source);
+      } else if (typeof h.target !== 'number' && h.amount > 0 && isPlaneswalker(h.target.card)) {
+        fireObject(d, 'combatDamageWalker', h.source);
       }
     }
     checkStateBased(d);
@@ -4458,12 +4480,20 @@ export function apply(state: GameState, action: Action): GameState {
         } else sacrifice(d, findPermanent(d, action.answer.iids[0])!);
         finishCast(d, pending.activation!.item, pending.activation!.named);
       } else if (pending.resume === 'activation' && action.answer.kind === 'cards' && pending.choice.purpose === 'exileCost') {
-        // Moorland Haunt: the card exiled from the graveyard as a cost.
-        const picked = action.answer.iids[0];
-        const inst = me.graveyard.find((c) => c.iid === picked)!;
-        me.graveyard = me.graveyard.filter((c) => c !== inst);
-        me.exile.push(inst);
-        log(d, { k: 'exiledCard', card: inst.card.name });
+        // Moorland Haunt, Psychic Frog: the cards exiled from the graveyard as a cost.
+        for (const picked of action.answer.iids) {
+          const inst = me.graveyard.find((c) => c.iid === picked)!;
+          me.graveyard = me.graveyard.filter((c) => c !== inst);
+          me.exile.push(inst);
+          log(d, { k: 'exiledCard', card: inst.card.name });
+        }
+        finishActivation(d, pending.activation!.item, pending.activation!.named);
+      } else if (pending.resume === 'activation' && action.answer.kind === 'cards' && pending.choice.purpose === 'discardCost') {
+        for (const picked of action.answer.iids) {
+          const inst = me.hand.find((c) => c.iid === picked)!;
+          moveToGraveyard(d, p, inst, 'hand');
+          log(d, { k: 'discard', p, card: inst.card.name });
+        }
         finishActivation(d, pending.activation!.item, pending.activation!.named);
       } else if (pending.resume === 'activation' && action.answer.kind === 'cards') {
         sacrifice(d, findPermanent(d, action.answer.iids[0])!);
@@ -4675,10 +4705,21 @@ export function apply(state: GameState, action: Action): GameState {
       const removed = spec.cost.removeCounter;
       if (removed) perm.counters = { ...perm.counters, [removed]: (perm.counters[removed] ?? 1) - 1 };
       if (spec.cost.exileFromGraveyard) {
-        // Moorland Haunt: the rest of the cost is paid; the player now picks the card to exile.
+        // Moorland Haunt, Psychic Frog: the rest of the cost is paid; the player now picks the cards to exile.
         const options = me.graveyard.filter((c) => cardMatches(c.card, spec.cost.exileFromGraveyard!));
+        const n = spec.cost.exileCount ?? 1;
         d.pending = {
-          choice: { kind: 'cards', player: p, purpose: 'exileCost', min: 1, max: 1, options, params: { card: perm.card.name, n: 1 } },
+          choice: { kind: 'cards', player: p, purpose: 'exileCost', min: n, max: n, options, params: { card: perm.card.name, n, ability: 1 } },
+          resume: 'activation',
+          activation: { item, named },
+        };
+        break;
+      }
+      if (spec.cost.discard) {
+        // Psychic Frog: "Discard a card": which one.
+        const n = spec.cost.discard;
+        d.pending = {
+          choice: { kind: 'cards', player: p, purpose: 'discardCost', min: n, max: n, options: [...me.hand], params: { card: perm.card.name, n, ability: 1 } },
           resume: 'activation',
           activation: { item, named },
         };

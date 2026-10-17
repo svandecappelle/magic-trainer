@@ -15,6 +15,7 @@ const frontText = (card: Card) => card.oracleText.split('\n//\n')[0];
 export { frontText };
 
 export function hasKeyword(card: Card, kw: Keyword): boolean {
+  if (kw === 'lifelink' && gainsLifeFromDamage(card)) return true;
   if (card.keywords) return card.keywords.some((k) => k.toLowerCase() === kw);
   // Fallback for cards saved without Scryfall keywords: a line made only of keywords, e.g. "Flying, vigilance".
   return frontText(card)
@@ -24,6 +25,13 @@ export function hasKeyword(card: Card, kw: Keyword): boolean {
       return parts.includes(kw) && parts.every((p) => (KEYWORDS as readonly string[]).includes(p));
     });
 }
+
+/**
+ * Exalted Angel: "Whenever this creature deals damage, you gain that much life." Played as lifelink (the life comes
+ * with the damage instead of with a trigger on the stack).
+ */
+export const gainsLifeFromDamage = (card: Card) =>
+  selfWords(card.name).some((w) => new RegExp(`^Whenever ${escapeRe(w)} deals damage, you gain that much life\\.$`, 'mi').test(frontText(card)));
 
 export const hasFirstStrike = (card: Card) => hasKeyword(card, 'first strike') || hasKeyword(card, 'double strike');
 
@@ -1422,6 +1430,8 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     });
     // Grim Monolith: "{4}: Untap this artifact."
     scan(new RegExp(`(?:^|[.,] *|then )untap ${SELF}(?=\\.|$)`, 'gi'), () => ({ kind: 'tap', untap: true, to: 'self' }));
+    // Iron-Shield Elf: "This creature gains indestructible until end of turn. Tap it."
+    scan(new RegExp(`(?<=^${SELF} gains [a-z ,]+ until end of turn\\. )Tap it(?=\\.|$)`, 'gi'), () => ({ kind: 'tap', untap: false, to: 'self' }));
     // Iron Man Armor: "When this Equipment enters, attach it to target creature you control."
     scan(new RegExp(`\\battach (?:it|${SELF}) to (${TARGET})${END}`, 'gi'), (m) => {
       const to = slotFor(m[1], (spec) => spec.kind === 'creature' && spec.filter.controller === 'you');
@@ -1646,6 +1656,11 @@ export interface CastInfo {
   delve: boolean;
   /** "Affinity for artifacts": costs {1} less for each matching permanent you control. */
   affinity?: TargetFilter;
+  /**
+   * "This spell costs {1} less to cast for each instant and sorcery card in your graveyard" (Eddymurk Crab: `filter`),
+   * "… for each card type among cards in your graveyard" (Emrakul, the Promised End: `types`).
+   */
+  graveDiscount?: { filter: TargetFilter } | { types: true };
 }
 
 const MODE_COUNTS: Record<string, [number, number]> = {
@@ -1684,6 +1699,11 @@ export function castInfo(card: Card, face = 0): CastInfo {
       const body = m[2].replace(discount, '');
       info.channel = { cost: m[1], ability: UNSUPPORTED.test(body.replace(CONTROLLER_SEARCH, '')) ? NO_EFFECT : parseAbilityText(body, selfName(c)), legendaryDiscount: discount.test(m[2]), keyword: line.startsWith('Channel') };
     } else if (/^Affinity for artifacts$/i.test(line)) info.affinity = { types: ['artifact'] };
+    else if (/^This spell costs \{1\} less to cast for each card type among cards in your graveyard\.$/i.test(line)) info.graveDiscount = { types: true };
+    else if ((m = line.match(/^This spell costs \{1\} less to cast for each ([a-z ]+?) card in your graveyard\.$/i))) {
+      const filter = cardWordsFilter(m[1].replace(/ and /g, ' or '));
+      if (filter) info.graveDiscount = { filter };
+    }
     else if (/^[A-Za-z ,]+$/.test(line) && line.split(/,\s*/).some((w) => /^(convoke|delve)$/i.test(w.trim()))) {
       for (const w of line.split(/,\s*/).map((x) => x.trim().toLowerCase())) {
         if (w === 'convoke') info.convoke = true;
@@ -1845,7 +1865,8 @@ export const parseEffects = (card: Card): Effect[] => spellSpec(card).effects;
 
 // ---------- Triggered abilities ----------
 
-export type ObjectEvent = 'enters' | 'dies' | 'attacks' | 'combatDamage';
+/** `combatDamageWalker`: combat damage to a planeswalker (Psychic Frog: "to a player or planeswalker"). */
+export type ObjectEvent = 'enters' | 'dies' | 'attacks' | 'combatDamage' | 'combatDamageWalker';
 export type StepEvent = 'upkeep' | 'draw' | 'endStep' | 'beginCombat';
 
 /** What makes a triggered ability trigger. */
@@ -2179,13 +2200,14 @@ export function triggersOf(card: Card): TriggerSpec[] {
     // Kíli: "Whenever another Dwarf or Equipment you control enters, draw a card. This ability triggers only once each turn."
     const oncePerTurn = / This ability triggers only once each turn\.$/.test(line);
     const matched = line.replace(/ This ability triggers only once each turn\.$/, '')
-      .match(/^(?:When|Whenever) (.+?) (enters(?: the battlefield)?( under your control)?|attacks?|dies|deals combat damage to a player)(?: or (enters|attacks|dies)(?: the battlefield)?)?, (.+)$/i);
+      .match(/^(?:When|Whenever) (.+?) (enters(?: the battlefield)?( under your control)?|attacks?|dies|deals combat damage to a player(?: or (?:a )?planeswalker)?)(?: or (enters|attacks|dies)(?: the battlefield)?)?, (.+)$/i);
     // "attack" only for a plural name ("Whenever Aang and La attack"), not "Whenever you attack".
     const ev = matched && (matched[2].toLowerCase() !== 'attack' || selves.includes(matched[1].toLowerCase())) ? matched : null;
     if (ev) {
       const [, rawSubject, verb, under, alsoVerb, text] = ev;
       // "Whenever Aang and La attack": a plural name.
       const ons = [verb, alsoVerb].filter(Boolean).map((v): ObjectEvent => (v.startsWith('deals') ? 'combatDamage' : (v.toLowerCase().split(' ')[0].replace(/^attack$/, 'attacks') as ObjectEvent)));
+      if (/planeswalker$/i.test(verb)) ons.push('combatDamageWalker');
       // "this creature or another creature you control" is any creature you control, itself included.
       const orAnother = rawSubject.match(/^(.+?) or another (.+)$/i);
       const subject = orAnother && selves.includes(orAnother[1].toLowerCase()) ? `a ${orAnother[2]}` : rawSubject;
@@ -2269,8 +2291,14 @@ export interface ActivationCost {
   crew?: number;
   /** Parallax Wave: "Remove a fade counter from this enchantment". */
   removeCounter?: CounterKind;
-  /** Moorland Haunt: "Exile a creature card from your graveyard" (chosen when activating). */
+  /**
+   * Moorland Haunt: "Exile a creature card from your graveyard"; Psychic Frog: "Exile three cards from your graveyard"
+   * (`exileCount` cards, chosen when activating).
+   */
   exileFromGraveyard?: TargetFilter;
+  exileCount?: number;
+  /** Psychic Frog: "Discard a card" (chosen when activating). */
+  discard?: number;
   /** Waterbend {N}: each artifact or creature tapped while paying pays for {1}. */
   waterbend?: boolean;
 }
@@ -2365,6 +2393,11 @@ export function activatedOf(card: Card): ActivatedSpec[] {
         if (filter) cost.exileFromGraveyard = filter;
         else ok = false;
       }
+      else if (new RegExp(`^exile (${NUMBER}) cards? from your graveyard$`, 'i').test(p)) {
+        cost.exileFromGraveyard = {};
+        cost.exileCount = toNumber(p.split(' ')[1]);
+      }
+      else if (new RegExp(`^discard (${NUMBER}) cards?$`, 'i').test(p)) cost.discard = toNumber(p.split(' ')[1]);
       else if (/^remove an? (fade|age|lore) counter from /i.test(p) && selves.includes(p.replace(/^remove an? \w+ counter from /i, '').toLowerCase())) {
         cost.removeCounter = p.match(/^remove an? (\w+)/i)![1].toLowerCase() as CounterKind;
       }
@@ -2782,7 +2815,11 @@ export type EntersTappedRule =
   /** "unless you control a basic land" (Abandoned Air Temple). */
   | { kind: 'unlessBasic' }
   /** Starting Town: "enters tapped unless it's your first, second, or third turn of the game" (n: 3). */
-  | { kind: 'unlessEarlyTurn'; n: number };
+  | { kind: 'unlessEarlyTurn'; n: number }
+  /** Eddymurk Crab: "This creature enters tapped if it's not your turn." */
+  | { kind: 'notYourTurn' }
+  /** Rejuvenating Springs: "This land enters tapped unless you have two or more opponents." */
+  | { kind: 'unlessOpponents'; n: number };
 
 /** When a permanent enters tapped. */
 export function entersTappedRule(card: Card): EntersTappedRule | null {
@@ -2791,6 +2828,12 @@ export function entersTappedRule(card: Card): EntersTappedRule | null {
   if (entersTapped(card)) return { kind: 'always' };
   const early = text.match(new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)? tapped unless it's your (first|first or second|first, second, or third) turn of the game\\.`, 'i'));
   if (early) return { kind: 'unlessEarlyTurn', n: early[1].split(/,? or |, /).length };
+  if (new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)? tapped if it's not your turn\\.`, 'i').test(text)) return { kind: 'notYourTurn' };
+  const opponents = text.match(new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)? tapped unless you have (two|three) or more opponents\\.`, 'i'));
+  if (opponents) return { kind: 'unlessOpponents', n: toNumber(opponents[1]) };
+  // Lair of the Hydra: "If you control two or more other lands, this land enters tapped." (a fast land)
+  const fast = text.match(new RegExp(`(?:^|\\n)If you control (two|three) or more other lands, (?:${selves}) enters(?: the battlefield)? tapped\\.`, 'i'));
+  if (fast) return { kind: 'unlessOtherLands', max: toNumber(fast[1]) - 1 };
   const unless = text.match(new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)? tapped unless you control (.+?)\\.`, 'i'));
   if (unless) {
     const what = unless[1].toLowerCase();
@@ -2835,6 +2878,12 @@ export type GameRule =
   | 'landsAreForests'
   /** Urborg, Tomb of Yawgmoth: "Each land is a Swamp in addition to its other land types." */
   | 'landsAreSwamps'
+  /** Cryptolith Rite, Enduring Vitality: "Creatures you control have "{T}: Add one mana of any color."" */
+  | 'creaturesTapForAnyColor'
+  /** Sunspine Lynx: "Players can't gain life." */
+  | 'noLifeGain'
+  /** Sunspine Lynx: "Damage can't be prevented." (protection, shields and Fog included) */
+  | 'damageCantBePrevented'
   /** Thalia, Guardian of Thraben: "Noncreature spells cost {1} more to cast." */
   | 'noncreatureSpellsCost1'
   /** Trinisphere: "As long as this artifact is untapped, each spell that would cost less than three mana to cast costs three mana to cast." */
@@ -2877,6 +2926,9 @@ const GAME_RULES: [RegExp, GameRule][] = [
   [/^Nonbasic lands are Mountains\.$/m, 'nonbasicLandsAreMountains'],
   [/^Nonbasic lands are Islands\.$/m, 'nonbasicLandsAreIslands'],
   [/^Spells your opponents cast from graveyards or from exile cost \{2\} more to cast\.$/m, 'opponentsGraveyardExileSpellsCost2'],
+  [/^Players can't gain life\.$/m, 'noLifeGain'],
+  [/^Creatures you control have "\{T\}: Add one mana of any color\."$/m, 'creaturesTapForAnyColor'],
+  [/^Damage can't be prevented\.$/m, 'damageCantBePrevented'],
 ];
 
 const rulesCache = new Map<string, GameRule[]>();

@@ -336,6 +336,19 @@ Delighted Halfling makes the legendary spell uncounterable whichever of its two 
 Yavimaya's {G} replaces nothing for a land with several mana per tap (City of Traitors); Mockingbird counts the mana
 spent as its mana cost with X.
 
+## Metagame audit 2026-10-17
+
+`npm run audit-meta` again (781 cards to fix, 325 playing wrongly). Fixed, most played first: "Discard a card" and
+"Exile three cards from your graveyard" as activation costs (Psychic Frog, Iron-Shield Elf, Fleeting Spirit),
+combat damage "to a player or planeswalker" triggers, spells costing {1} less per instant and sorcery card (Eddymurk
+Crab) or per card type (Emrakul, the Promised End) in the graveyard, more "enters tapped" conditions (Eddymurk Crab
+off its controller's turn, Lair of the Hydra, Rejuvenating Springs), Sunspine Lynx ("Players can't gain life",
+"Damage can't be prevented": protection, shields and Fog), Exalted Angel's life gain, Cryptolith Rite and Enduring
+Vitality (creatures you control tap for any color).
+
+Approximations: Exalted Angel's "Whenever this creature deals damage, you gain that much life" is played as lifelink
+(no trigger on the stack); a creature making several mana keeps its own ability under Cryptolith Rite.
+
 ## Commander: Aang, Swift Savior (a user's deck, `deck.txt`)
 
 Fixtures: `commander-aang-2026-10`. Fixed (they played wrongly): Harbinger of the Seas (nonbasic lands are Islands),

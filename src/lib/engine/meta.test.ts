@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
 import { activationProblem, actor, apply, findPermanent, hasKw, paymentFor, canBlock, canCastNow, castCost, castSource, canTapForMana, type Answer, castOptions, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
 import { botAction } from './bot';
-import { activatedOf, castInfo, castSpec, finalChapter, hasKeyword, isCreature, PREDEFINED_TOKENS, tokenCard, type TargetSpec, manaUnits, parseAbilityText, spellSpec, triggersOf } from './rules';
+import { activatedOf, castInfo, entersTappedRule, castSpec, finalChapter, hasKeyword, isCreature, PREDEFINED_TOKENS, tokenCard, type TargetSpec, manaUnits, parseAbilityText, spellSpec, triggersOf } from './rules';
 
 // Cards from Standard decks on mtgtop8 (Oct 2026), with their Oracle text.
 let n = 0;
@@ -3099,3 +3099,157 @@ describe('Spree and Tiered: modes with their own costs', () => {
   });
 });
 
+
+describe('metagame audit 2026-10-17', () => {
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 12 && (s.stack.length || s.triggered?.length) && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  /** From main phase 1: attack with `names` (planeswalker targets by name), then to main phase 2. */
+  const combat = (s: GameState, names: string[], walkers: Record<string, string> = {}) => {
+    s = apply(s, { type: 'pass' });
+    for (let i = 0; i < 5 && (s.priority || s.step !== 'attack'); i++) s = apply(s, { type: 'pass' });
+    const targets = Object.fromEntries(Object.entries(walkers).map(([a, w]) => [iidOf(s, a), iidOf(s, w)]));
+    s = settle(apply(s, { type: 'declareAttackers', attackers: names.map((n) => iidOf(s, n)), ...(walkers ? { targets } : {}) }));
+    for (let i = 0; i < 20 && s.step !== 'main2' && s.winner === null && !s.pending; i++) {
+      s = !s.priority && s.step === 'block' ? apply(s, { type: 'declareBlockers', blocks: {} }) : apply(s, { type: 'pass' });
+    }
+    return s;
+  };
+  const frog = card({
+    name: 'Psychic Frog', typeLine: 'Creature — Frog', manaCost: '{U}{B}', cmc: 2, power: '1', toughness: '3',
+    oracleText: 'Whenever this creature deals combat damage to a player or planeswalker, draw a card.\nDiscard a card: Put a +1/+1 counter on this creature.\nExile three cards from your graveyard: This creature gains flying until end of turn.',
+  });
+  const walker = card({ name: 'Teferi', typeLine: 'Legendary Planeswalker — Teferi', manaCost: '{2}{W}{U}', cmc: 4, loyalty: '4', oracleText: '+1: Draw a card.' });
+
+  it('Psychic Frog: discard for a counter, exile three for flying, draws on combat damage', () => {
+    const [discard, exile] = activatedOf(frog);
+    expect(discard.cost).toMatchObject({ discard: 1, mana: '', tap: false });
+    expect(exile.cost).toMatchObject({ exileFromGraveyard: {}, exileCount: 3 });
+    expect(triggersOf(frog).map((t) => t.event.on)).toEqual(['combatDamage', 'combatDamageWalker']);
+
+    let s = board({ mine: [frog], hand: [swamp, island], grave: [swamp, swamp] });
+    // Two cards in the graveyard: not enough to exile three.
+    expect(errorOf(() => apply(s, { type: 'activate', iid: iidOf(s, 'Psychic Frog'), index: 1 }))).toBe('nothingToExile');
+    s = apply(s, { type: 'activate', iid: iidOf(s, 'Psychic Frog'), index: 0 });
+    expect(s.pending?.choice).toMatchObject({ purpose: 'discardCost', min: 1, max: 1, params: { ability: 1 } });
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['h1'] } }));
+    expect(s.players[0].hand.map((c) => c.card.name)).toEqual(['Swamp']);
+    expect(perm(s, 'Psychic Frog')!.counters['+1/+1']).toBe(1);
+    // Three cards now: flying.
+    s = apply(s, { type: 'activate', iid: iidOf(s, 'Psychic Frog'), index: 1 });
+    expect(s.pending?.choice).toMatchObject({ purpose: 'exileCost', min: 3, max: 3 });
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: s.players[0].graveyard.map((c) => c.iid) } }));
+    expect(s.players[0].graveyard).toHaveLength(0);
+    expect(s.players[0].exile).toHaveLength(3);
+    expect(hasKw(perm(s, 'Psychic Frog')!, 'flying')).toBe(true);
+    // Combat damage to the player draws.
+    const hand = s.players[0].hand.length;
+    s = resolve(combat(s, ['Psychic Frog']));
+    expect(s.players[1].life).toBe(18);
+    expect(s.players[0].hand.length).toBe(hand + 1);
+  });
+
+  it('Psychic Frog draws on combat damage to a planeswalker too', () => {
+    let s = board({ mine: [frog], theirs: [walker] });
+    perm(s, 'Teferi')!.counters = { loyalty: 4 };
+    s = resolve(combat(s, ['Psychic Frog'], { 'Psychic Frog': 'Teferi' }));
+    expect(perm(s, 'Teferi')!.counters.loyalty).toBe(3);
+    expect(s.players[0].hand).toHaveLength(1);
+  });
+
+  const crab = card({
+    name: 'Eddymurk Crab', typeLine: 'Creature — Elemental Crab', manaCost: '{5}{U}{U}', cmc: 7, power: '5', toughness: '5', keywords: ['Flash'],
+    oracleText: 'Flash\nThis spell costs {1} less to cast for each instant and sorcery card in your graveyard.\nThis creature enters tapped if it\'s not your turn.\nWhen this creature enters, tap up to two target creatures.',
+  });
+  const emrakul = card({
+    name: 'Emrakul, the Promised End', typeLine: 'Legendary Creature — Eldrazi', manaCost: '{13}', cmc: 13, power: '13', toughness: '13', keywords: ['Flying', 'Protection', 'Trample'],
+    oracleText: 'This spell costs {1} less to cast for each card type among cards in your graveyard.\nWhen you cast this spell, you gain control of target opponent during that player\'s next turn. After that turn, that player takes an extra turn.\nFlying, trample, protection from instants',
+  });
+
+  it('Eddymurk Crab and Emrakul cost less for the cards in the graveyard', () => {
+    const bolt = spell('Bolt', '{R}', 'Bolt deals 3 damage to any target.');
+    const think = spell('Think', '{U}', 'Draw a card.', 'Sorcery');
+    const bear = creature('Bear', 2, 2);
+    const s = board({ grave: [bolt, think, bolt, bear, swamp] });
+    // Three instant and sorcery cards: {2}{U}{U}.
+    expect(castCost(s, 0, crab, {})).toEqual({ generic: 2, colored: [['U'], ['U']] });
+    // Instant, sorcery, creature, land: four types, {9}.
+    expect(castCost(s, 0, emrakul, {})).toEqual({ generic: 9, colored: [] });
+    expect(castCost(board({}), 0, emrakul, {}).generic).toBe(13);
+  });
+
+  it('enters tapped: not on your turn, a fast land worded the other way, two or more opponents', () => {
+    const lair = card({ name: 'Lair of the Hydra', typeLine: 'Land', oracleText: 'If you control two or more other lands, this land enters tapped.\n{T}: Add {G}.\n{X}{G}: Until end of turn, this land becomes an X/X green Hydra creature. It\'s still a land. X can\'t be 0.' });
+    const springs = card({ name: 'Rejuvenating Springs', typeLine: 'Land', oracleText: 'This land enters tapped unless you have two or more opponents.\n{T}: Add {G} or {U}.' });
+    expect(entersTappedRule(crab)).toEqual({ kind: 'notYourTurn' });
+    expect(entersTappedRule(lair)).toEqual({ kind: 'unlessOtherLands', max: 1 });
+    expect(entersTappedRule(springs)).toEqual({ kind: 'unlessOpponents', n: 2 });
+    const play = (lands: number, c: Card) => perm(apply(board({ mana: lands, hand: [c] }), { type: 'playLand', iid: 'h0' }), c.name)!.tapped;
+    expect(play(1, lair)).toBe(false);
+    expect(play(2, lair)).toBe(true);
+    // One opponent: tapped.
+    expect(play(0, springs)).toBe(true);
+    // On its controller's turn, the Crab enters untapped.
+    let s = board({ mine: [], hand: [crab], grave: [spell('Bolt', '{R}', 'Bolt deals 3 damage to any target.')] });
+    s.battlefield = Array.from({ length: 6 }, (_, i): Permanent => ({ iid: `i${i}`, card: island, controller: 0, tapped: false, sick: false, damage: 0, deathtouched: false, counters: {}, boosts: [] }));
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    if (s.pending) s = resolve(apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[]] } as never }));
+    expect(perm(s, 'Eddymurk Crab')?.tapped).toBe(false);
+  });
+
+  it('Sunspine Lynx: players can\'t gain life, damage can\'t be prevented', () => {
+    const lynx = card({
+      name: 'Sunspine Lynx', typeLine: 'Creature — Elemental Cat', manaCost: '{2}{R}{R}', cmc: 4, power: '5', toughness: '4',
+      oracleText: 'Players can\'t gain life.\nDamage can\'t be prevented.\nWhen this creature enters, it deals damage to each player equal to the number of nonbasic lands that player controls.',
+    });
+    const heal = spell('Heal', '{B}', 'You gain 3 life.');
+    const fog = spell('Fog', '{B}', 'Prevent all combat damage that would be dealt this turn.');
+    let s = resolve(apply(board({ mana: 1, hand: [heal], mine: [lynx] }), { type: 'cast', iid: 'h0' }));
+    expect(s.players[0].life).toBe(20);
+    s = resolve(apply(board({ mana: 1, hand: [heal] }), { type: 'cast', iid: 'h0' }));
+    expect(s.players[0].life).toBe(23);
+    // A Fog doesn't stop the Lynx's damage.
+    s = board({ mana: 1, hand: [fog], mine: [lynx] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    expect(s.preventCombat).toBe(true);
+    s = combat(s, ['Sunspine Lynx']);
+    expect(s.players[1].life).toBe(15);
+  });
+
+  it('Exalted Angel gains the damage it deals, as lifelink', () => {
+    const angel = card({
+      name: 'Exalted Angel', typeLine: 'Creature — Angel', manaCost: '{4}{W}{W}', cmc: 6, power: '4', toughness: '5', keywords: ['Flying', 'Morph'],
+      oracleText: 'Flying\nWhenever this creature deals damage, you gain that much life.\nMorph {2}{W}{W} (You may cast this card face down as a 2/2 creature for {3}. Turn it face up any time for its morph cost.)',
+    });
+    const s = combat(board({ mine: [angel] }), ['Exalted Angel']);
+    expect(s.players[1].life).toBe(16);
+    expect(s.players[0].life).toBe(24);
+    expect(hasKeyword(creature('Bear', 2, 2, { oracleText: 'Whenever another creature deals damage, you gain that much life.' }), 'lifelink')).toBe(false);
+  });
+
+  it('Cryptolith Rite: creatures you control tap for any color, once they can attack', () => {
+    const rite = card({ name: 'Cryptolith Rite', typeLine: 'Enchantment', manaCost: '{1}{G}', cmc: 2, oracleText: 'Creatures you control have "{T}: Add one mana of any color."' });
+    const s = board({ mine: [rite, creature('Bear', 2, 2)], theirs: [creature('Ogre', 3, 3)] });
+    expect(unitsOf(s, perm(s, 'Bear')!)).toEqual([['W', 'U', 'B', 'R', 'G']]);
+    expect(canTapForMana(s, perm(s, 'Bear')!)).toBe(true);
+    // The opponent's creatures don't get it.
+    expect(unitsOf(s, perm(s, 'Ogre')!)).toEqual([]);
+    perm(s, 'Bear')!.sick = true;
+    expect(canTapForMana(s, perm(s, 'Bear')!)).toBe(false);
+  });
+
+  it('Iron-Shield Elf: discard a card, indestructible, and it taps', () => {
+    const elf = card({
+      name: 'Iron-Shield Elf', typeLine: 'Creature — Elf Warrior', manaCost: '{1}{B}', cmc: 2, power: '3', toughness: '1',
+      oracleText: 'Discard a card: This creature gains indestructible until end of turn. Tap it.',
+    });
+    let s = board({ mine: [elf], hand: [swamp] });
+    s = apply(s, { type: 'activate', iid: iidOf(s, 'Iron-Shield Elf'), index: 0 });
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['h0'] } }));
+    expect(hasKw(perm(s, 'Iron-Shield Elf')!, 'indestructible')).toBe(true);
+    expect(perm(s, 'Iron-Shield Elf')!.tapped).toBe(true);
+    // No card left to discard.
+    expect(errorOf(() => apply(s, { type: 'activate', iid: iidOf(s, 'Iron-Shield Elf'), index: 0 }))).toBe('nothingToDiscard');
+  });
+});

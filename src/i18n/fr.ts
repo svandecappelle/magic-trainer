@@ -789,6 +789,8 @@ export const fr: Messages = {
       exileFromHandCost: (p) => `Exilez une carte de votre main pour lancer ${p.card}.`,
       returnCreatureCost: (p) => `Renvoyez une créature engagée que vous contrôlez dans la main de son propriétaire pour lancer ${p.card}.`,
       exileCost: (p) => `Exilez ${plural(p.n, 'carte', 'cartes')} de votre cimetière pour lancer ${p.card}.`,
+      exileForAbility: (p) => `Exilez ${plural(p.n, 'carte', 'cartes')} de votre cimetière pour la capacité de ${p.card}.`,
+      discardForAbility: (p) => `Défaussez ${plural(p.n, 'carte', 'cartes')} pour la capacité de ${p.card}.`,
       costChoice: (p) => `${p.card} : choisissez le coût supplémentaire à payer.`,
       search: (p) => `Cherchez dans votre bibliothèque : choisissez jusqu'à ${p.n} carte${p.n > 1 ? 's' : ''}.`,
       sacrifice: (p) => `Choisissez ${p.n === 1 ? 'un permanent' : `${p.n} permanents`} à sacrifier.`,

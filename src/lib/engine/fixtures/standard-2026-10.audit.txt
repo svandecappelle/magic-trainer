@@ -194,13 +194,6 @@ NONE     Sunderflock {7}{U}{U} — Creature — Elemental
       keyword
   ✗ When this creature enters, if you cast it, return all non-Elemental c…
       trigger (enters), effect not simulated
-NONE     Sunspine Lynx {2}{R}{R} — Creature — Elemental Cat
-  ? Players can't gain life.
-      not read by the engine
-  ? Damage can't be prevented.
-      not read by the engine
-  ✗ When this creature enters, it deals damage to each player equal to th…
-      trigger (enters), effect not simulated
 NONE     Superior Spider-Man {2}{U}{B} — Legendary Creature — Spider Human Hero
   ? Mind Swap — You may have Superior Spider-Man enter as a copy of any c…
       not read by the engine
@@ -329,15 +322,6 @@ PARTIAL  Doomsday Excruciator {B}{B}{B}{B}{B}{B} — Creature — Demon
       trigger (enters), effect not simulated
   ✓ At the beginning of your upkeep, draw a card.
       trigger (upkeep) → draw
-PARTIAL  Eddymurk Crab {5}{U}{U} — Creature — Elemental Crab
-  ✓ Flash
-      keyword
-  ? This spell costs {1} less to cast for each instant and sorcery card i…
-      not read by the engine
-  ? This creature enters tapped if it's not your turn.
-      not read by the engine
-  ✓ When this creature enters, tap up to two target creatures.
-      trigger (enters) → tap (1 target)
 PARTIAL  Elspeth, Storm Slayer {3}{W}{W} — Legendary Planeswalker — Elspeth
   ? If one or more tokens would be created under your control, twice that…
       not read by the engine
@@ -414,8 +398,8 @@ PARTIAL  Likeness Looter {U}{B} — Creature — Faerie Shapeshifter
 PARTIAL  Liliana the Faultless {W} — Legendary Creature — Human Cleric
   ✓ Whenever another creature or planeswalker you control enters, you gai…
       trigger (enters) → gainLife
-  ? {1}, {T}, Discard a card: Another target creature or planeswalker you…
-      activated ability with a cost or restriction not understood
+  ✗ {1}, {T}, Discard a card: Another target creature or planeswalker you…
+      activated ability, effect not simulated
 PARTIAL  Mistrise Village  — Land
   ✓ This land enters tapped unless you control a Mountain or a Forest.
       enters tapped (unlessSubtypes)
@@ -505,6 +489,13 @@ PARTIAL  Starscape Cleric {1}{B} — Creature — Bat Cleric
       not read by the engine
   ✓ Whenever you gain life, each opponent loses 1 life.
       trigger (gainLife) → loseLife
+PARTIAL  Sunspine Lynx {2}{R}{R} — Creature — Elemental Cat
+  ✓ Players can't gain life.
+      rule for the game: noLifeGain
+  ✓ Damage can't be prevented.
+      rule for the game: damageCantBePrevented
+  ✗ When this creature enters, it deals damage to each player equal to th…
+      trigger (enters), effect not simulated
 PARTIAL  Tablet of Discovery {2}{R} — Artifact
   ✗ When this artifact enters, mill a card. You may play that card this t…
       trigger (enters), effect not simulated
@@ -654,6 +645,15 @@ OK       Disdainful Stroke {1}{U} — Instant
 OK       Duress {B} — Sorcery
   ✓ Target opponent reveals their hand. You choose a noncreature, nonland…
       spell → discard (1 target)
+OK       Eddymurk Crab {5}{U}{U} — Creature — Elemental Crab
+  ✓ Flash
+      keyword
+  ✓ This spell costs {1} less to cast for each instant and sorcery card i…
+      costs {1} less for each matching card in your graveyard
+  ✓ This creature enters tapped if it's not your turn.
+      enters tapped (notYourTurn)
+  ✓ When this creature enters, tap up to two target creatures.
+      trigger (enters) → tap (1 target)
 OK       Elusive Otter // Grove's Bounty {U} // {X}{G} — Creature — Otter // Sorcery — Adventure (other faces not audited)
   ✓ Prowess
       keyword
@@ -961,5 +961,5 @@ OK       Zoraline, Cosmos Caller {1}{W}{B} — Legendary Creature — Bat Cleric
   ✓ Whenever Zoraline enters or attacks, you may pay {W}{B} and 2 life. W…
       trigger (enters/attacks) → reflexive | reflexive
 
-178 cards: 90 ok, 41 partial, 47 not simulated, 0 can't be cast
+178 cards: 91 ok, 41 partial, 46 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

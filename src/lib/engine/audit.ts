@@ -1,6 +1,6 @@
 import type { Card } from '../../types';
 import {
-  activatedOf, auraTarget, castInfo, castSpec, entersAsCopy, entersCounters, entersTappedRule, beginsWithLuck, discardsLandInstead, manaConditions, stateMana, doesntUntap, frontText, gameRulesOf, isInstantOrSorcery,
+  activatedOf, auraTarget, castInfo, gainsLifeFromDamage, castSpec, entersAsCopy, entersCounters, entersTappedRule, beginsWithLuck, discardsLandInstead, manaConditions, stateMana, doesntUntap, frontText, gameRulesOf, isInstantOrSorcery,
   KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, reconfiguresEnchanted, entersPrepared, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, returnsExiledWhenLeaving, fadingOf, type AbilitySpec,
 } from './rules';
 
@@ -111,6 +111,9 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
       ? { text: line, status: 'ok', how: `trigger (${event}${triggers.some((t) => t.oncePerTurn) ? ', once each turn' : ''}) → ${read.join(' | ')}` }
       : { text: line, status: 'notSimulated', how: `trigger (${event}), effect not simulated` };
   }
+  if (gainsLifeFromDamage(one)) return { text: line, status: 'ok', how: 'gains life equal to the damage dealt (as lifelink)' };
+  const discount = castInfo(one).graveDiscount;
+  if (discount) return { text: line, status: 'ok', how: `costs {1} less for each ${'types' in discount ? 'card type' : 'matching card'} in your graveyard` };
   const channel = castInfo(one).channel;
   if (channel) {
     const read = effectsText(channel.ability);
@@ -146,6 +149,7 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
     const how = { imprinted: 'the colors of the exiled card', legends: 'the colors of your legendary creatures and planeswalkers', luck: 'C, any color with a luck counter', perArtifact: 'U for each artifact you control', mining: 'any color, removing a mining counter (sacrificed after the last)', reflect: 'one mana of a type your other lands could make', perCreature: 'G for each creature you control', opponentLands: 'a color an opponent\'s land could make' }[state];
     return { text: line, status: 'ok', how: `mana: ${how}` };
   }
+  if (gameRulesOf(one).includes('creaturesTapForAnyColor')) return { text: line, status: 'ok', how: 'rule for the game: your creatures tap for any color' };
   if (/\bAdd \{|\bAdd (?:one|two|three) mana\b/.test(line) && !spell) {
     // Command Tower: read with a five-color commander.
     const units = manaUnits({ ...one, typeLine: 'Land' }, ['W', 'U', 'B', 'R', 'G']);
