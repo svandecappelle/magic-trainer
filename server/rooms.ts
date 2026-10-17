@@ -449,13 +449,14 @@ export class RoomManager {
 
   /**
    * Starts the clock that fits the room: a disconnected player must come back in time, otherwise
-   * the player who must act must decide in time. Each state change restarts it.
+   * the player who must act must decide in time. Each state change restarts it. With nobody connected, the game
+   * waits (until the room expires): the clocks start again when a player is back.
    */
   private armClock(room: Room) {
     if (room.clock) clearTimeout(room.clock.timer);
     room.clock = undefined;
     const game = room.game;
-    if (game && game.winner === null && room.seats.length === room.size) {
+    if (game && game.winner === null && room.seats.length === room.size && room.seats.some((s) => s.conn)) {
       const away = room.seats.findIndex((s) => !s.conn);
       const who = away >= 0 ? (away as PlayerId) : actor(game);
       const kind = away >= 0 ? 'reconnect' : 'turn';

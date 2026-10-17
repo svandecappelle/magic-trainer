@@ -234,6 +234,28 @@ describe('clocks', () => {
       vi.useRealTimers();
     }
   });
+
+  it('pauses while nobody is connected, and starts the clock again when a player is back', () => {
+    vi.useFakeTimers();
+    try {
+      const { rooms, alice, bob } = timedRoom();
+      const a = alice.messages.find((m) => m.t === 'joined')!;
+      const b = bob.messages.find((m) => m.t === 'joined')!;
+      rooms.disconnect(bob);
+      rooms.disconnect(alice);
+      vi.advanceTimersByTime(5 * 60_000); // minutes later (the room is still kept), nobody conceded
+      const back = new FakeConn();
+      rooms.handle(back, { t: 'open', room: a.room, token: a.token });
+      expect(back.state.winner).toBeNull();
+      // Bob gets the full time to come back, from now.
+      expect(back.last('clock')!.clock).toMatchObject({ player: 1, kind: 'reconnect', ms: 5000 });
+      const bobBack = new FakeConn();
+      rooms.handle(bobBack, { t: 'open', room: b.room, token: b.token });
+      expect(bobBack.last('clock')!.clock).toMatchObject({ player: 0, kind: 'turn' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('best of 3', () => {
