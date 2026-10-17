@@ -1,7 +1,6 @@
 # Accounts and saved decks (design)
 
-Status: steps 1 to 3 done (PostgreSQL, migrations, card cache, Discord login, sessions, deck and collection API);
-the client (login button, sync) is not implemented yet.
+Status: implemented (steps 1 to 5 below).
 
 Players can log in with Discord to keep their decks and their collection on the server and find them on any
 device. Accounts are optional: without one, the app works exactly as today (everything in the browser's
@@ -176,7 +175,7 @@ CREATE TABLE collection_cards (
   foil_qty   integer     NOT NULL DEFAULT 0 CHECK (foil_qty >= 0),
   updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (user_id, card_id),
-  CHECK (qty + foil_qty > 0)
+  CHECK (qty + foil_qty > 0) -- dropped by 003_collection_sync.sql: 0 and 0 is a removed card (tombstone)
 );
 ```
 
@@ -238,7 +237,7 @@ All JSON. Routes under `/api` need a session (401 otherwise), except `/api/me`.
 | GET    | `/api/decks?since=<cursor>`   | `{ decks, deleted: [{ id, version, deletedAt }], cursor }`: decks changed since the cursor of a previous call (all if omitted) |
 | PUT    | `/api/decks/:id`              | Creates (201, `baseVersion` 0) or replaces (200) a deck; body `{ name, format, entries: [{ cardId, board, qty }], createdAt, updatedAt, baseVersion }`; returns the saved deck with its new `version` |
 | DELETE | `/api/decks/:id`              | Marks the deck deleted (tombstone); returns `{ id, version, deletedAt }` |
-| GET    | `/api/collection`             | `{ cards: [{ card, qty, foilQty }] }`                          |
+| GET    | `/api/collection?since=<cursor>` | `{ cards: [{ card, qty, foilQty }], removed: [cardId], cursor }`: the collection, or what changed since the cursor (`removed`: cards now at 0 and 0) |
 | PATCH  | `/api/collection`             | `[{ cardId, qty, foilQty }]`, absolute values (0 and 0 removes); returns `{ count }` |
 
 - Decks come back with full card data (`cards.data`), in the client's `Deck` shape.
@@ -255,18 +254,30 @@ All JSON. Routes under `/api` need a session (401 otherwise), except `/api/me`.
 
 ## Sync in the browser
 
-- New module `src/lib/sync.ts`, subscribed to the `useApp` store. It does nothing while logged out.
-- **At login and at each start while logged in**: `GET /api/decks` and `GET /api/collection`, then merge:
-  - a deck only in the browser → uploaded (this is how existing local decks join the account);
-  - a deck only on the server → added locally;
-  - a tombstone → the local deck is removed;
-  - both changed → the newer `updatedAt` wins; the other version is kept as a copy named "Deck (other device)"
-    rather than lost.
-- **After each change**: the changed deck is sent 1.5 s later (debounced). Failed requests stay in a queue
-  in localStorage and are retried when the connection comes back.
-- **Logout**: the local decks stay in the browser (asked: "keep a copy on this device?").
-- UI: "Log in with Discord" in the header; once logged in, the avatar with a menu (sync status, log out,
-  delete my account), and an "x decks saved" hint.
+`src/lib/account/sync.ts` (logic, tested with two simulated devices in `sync.test.ts`), wired to the `useApp` store
+by `src/store/useAccount.ts`; the UI is `src/components/AccountMenu.tsx`.
+
+- The `useApp` store (localStorage) stays the source of truth. While logged in, the sync watches its changes and
+  remembers in localStorage (`magic-trainer-sync`) what is not sent yet: changed decks, deleted decks, changed
+  collection cards, plus the server version of each deck and the two cursors. Nothing is lost on reload or offline.
+- **A sync** = pull the decks and the collection changed since the cursors, merge, then send what is pending.
+  It runs at start, 1.5 s after a local change, when the tab comes back to the front, when the network comes back,
+  and from the menu ("Sync now"). Network or server failures retry after 30 s, doubling up to 5 minutes.
+- **First login in a browser** (or another user than last time): every local deck is sent, the account's decks are
+  added; for the collection, cards on both sides keep the larger counts.
+- **Merging decks**:
+  - a deck only on one side is copied to the other;
+  - a deck deleted elsewhere is removed here, unless it was changed here after the deletion (it comes back);
+  - both changed → the newer `updatedAt` keeps the deck's id; the other version becomes a copy named
+    "Deck (other device)", so nothing is lost;
+  - a deck the server refuses (unknown cards, limits) stays in the browser only, is listed in the menu, and is sent
+    again once it changes.
+- **Collection**: last write wins per card; cards Scryfall doesn't know stay in the browser only.
+- **Logout**: pending changes are sent first; the user chooses to keep a copy of the decks and collection in the
+  browser (default) or remove it. **Account deletion** keeps the browser's copies.
+- UI: "Log in with Discord" in the top bar ("Log in" on phones); once logged in, the avatar with a status dot
+  (green saved, orange saving, grey offline, red error) and a menu: status, sync now, log out, delete my account.
+  After a refused or failed login, a notice under the top bar.
 
 ## Security
 
@@ -356,8 +367,8 @@ restore with `gunzip -c file | docker compose exec -T postgres psql -U magic mag
 1. ✓ Postgres in compose, `pg`, migration runner, `001_accounts.sql`, `cards` table backing the card check.
 2. ✓ Discord login, sessions, `/api/me`, logout, account deletion.
 3. ✓ Deck and collection API with limits and conflicts.
-4. Client: login button and menu, `sync.ts`, merge, offline queue, i18n (en, fr).
-5. README: deployment section (variables, Discord application, backups).
+4. ✓ Client: login button and menu, `sync.ts`, merge, offline queue, i18n (en, fr).
+5. ✓ README: deployment section (variables, Discord application, backups).
 
 ## Later
 

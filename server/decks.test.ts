@@ -220,8 +220,16 @@ describe.skipIf(!testDbUrl)('deck and collection API', () => {
     const patch = await call(alice, 'PATCH', '/api/collection', [{ cardId: BOLT, qty: 4, foilQty: 1 }, { cardId: SHOCK, qty: 2, foilQty: 0 }]);
     expect(patch).toMatchObject({ status: 200, json: { count: 2 } });
     await call(alice, 'PATCH', '/api/collection', [{ cardId: BOLT, qty: 3, foilQty: 1 }, { cardId: SHOCK, qty: 0, foilQty: 0 }]);
-    expect((await call(alice, 'GET', '/api/collection')).json).toEqual({ cards: [{ card: SCRYFALL.get(BOLT), qty: 3, foilQty: 1 }] });
-    expect((await call(bob, 'GET', '/api/collection')).json).toEqual({ cards: [] });
+    const all = (await call(alice, 'GET', '/api/collection')).json;
+    expect(all).toMatchObject({ cards: [{ card: SCRYFALL.get(BOLT), qty: 3, foilQty: 1 }], removed: [] });
+    expect((await call(bob, 'GET', '/api/collection')).json).toMatchObject({ cards: [], removed: [] });
+    // Changes since a cursor include the removed cards; removing a card never saved changes nothing.
+    await pool.query(`UPDATE collection_cards SET updated_at = now() - interval '1 hour' WHERE card_id = $1`, [BOLT]);
+    expect((await call(alice, 'PATCH', '/api/collection', [{ cardId: MOUNTAIN, qty: 0, foilQty: 0 }])).status).toBe(200);
+    const since = (await call(alice, 'GET', `/api/collection?since=${Date.now() - 30 * 60_000}`)).json;
+    expect(since).toMatchObject({ cards: [], removed: [SHOCK] });
+    await pool.query(`UPDATE collection_cards SET updated_at = now() - interval '91 days' WHERE card_id = $1`, [SHOCK]);
+    expect(await purgeDeletedDecks(pool)).toBe(1);
 
     const max = LIMITS.collectionCards;
     LIMITS.collectionCards = 2;

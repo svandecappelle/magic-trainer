@@ -145,9 +145,14 @@ async function ensureCards(pool: pg.Pool, lookup: Lookup, ids: string[]): Promis
   if (unknown.length) throw new HttpError(422, 'unknownCards', { ids: unknown });
 }
 
-/** Deletes the tombstones older than TOMBSTONE_DAYS; returns how many. */
+/** Deletes the tombstones (decks, collection cards) older than TOMBSTONE_DAYS; returns how many. */
 export async function purgeDeletedDecks(pool: pg.Pool): Promise<number> {
-  return (await pool.query(`DELETE FROM decks WHERE deleted_at < now() - make_interval(days => $1)`, [TOMBSTONE_DAYS])).rowCount ?? 0;
+  const decks = await pool.query(`DELETE FROM decks WHERE deleted_at < now() - make_interval(days => $1)`, [TOMBSTONE_DAYS]);
+  const cards = await pool.query(
+    `DELETE FROM collection_cards WHERE qty + foil_qty = 0 AND updated_at < now() - make_interval(days => $1)`,
+    [TOMBSTONE_DAYS],
+  );
+  return (decks.rowCount ?? 0) + (cards.rowCount ?? 0);
 }
 
 export interface DeckRoutesOptions {
@@ -237,14 +242,22 @@ export function deckRoutes({ pool, account, lookup }: DeckRoutesOptions) {
     sendJson(res, 200, { id, version: rows[0].version, deletedAt: rows[0].deleted_at.getTime() });
   }
 
-  async function getCollection(user: SessionUser, res: ServerResponse) {
+  /** The collection, or what changed since a cursor of a previous call (`removed`: cards now at 0 and 0). */
+  async function getCollection(user: SessionUser, url: URL, res: ServerResponse) {
+    const since = Number(url.searchParams.get('since') ?? NaN);
     const { rows } = await pool!.query<CollectionEntry>(
       `SELECT c.data AS card, cc.qty, cc.foil_qty AS "foilQty"
          FROM collection_cards cc JOIN cards c ON c.id = cc.card_id
-        WHERE cc.user_id = $1 ORDER BY c.data->>'name'`,
-      [user.id],
+        WHERE cc.user_id = $1 AND ($2::timestamptz IS NULL OR cc.updated_at > $2)
+          AND ($2::timestamptz IS NOT NULL OR cc.qty + cc.foil_qty > 0)
+        ORDER BY c.data->>'name'`,
+      [user.id, Number.isFinite(since) ? new Date(since) : null],
     );
-    sendJson(res, 200, { cards: rows });
+    sendJson(res, 200, {
+      cards: rows.filter((r) => r.qty + r.foilQty > 0),
+      removed: rows.filter((r) => r.qty + r.foilQty === 0).map((r) => r.card.id),
+      cursor: Date.now() - CURSOR_MARGIN_MS,
+    });
   }
 
   async function patchCollection(user: SessionUser, req: IncomingMessage, res: ServerResponse) {
@@ -255,8 +268,14 @@ export function deckRoutes({ pool, account, lookup }: DeckRoutesOptions) {
     try {
       await client.query('BEGIN');
       await client.query(`SELECT 1 FROM users WHERE id = $1 FOR UPDATE`, [user.id]);
+      // Removed cards become tombstones (only those the server has: a card never saved has nothing to remove).
       const removed = changes.filter((c) => c.qty + c.foilQty === 0).map((c) => c.cardId);
-      if (removed.length) await client.query(`DELETE FROM collection_cards WHERE user_id = $1 AND card_id = ANY($2::uuid[])`, [user.id, removed]);
+      if (removed.length) {
+        await client.query(
+          `UPDATE collection_cards SET qty = 0, foil_qty = 0, updated_at = now() WHERE user_id = $1 AND card_id = ANY($2::uuid[]) AND qty + foil_qty > 0`,
+          [user.id, removed],
+        );
+      }
       if (kept.length) {
         await client.query(
           `INSERT INTO collection_cards (user_id, card_id, qty, foil_qty, updated_at)
@@ -265,7 +284,10 @@ export function deckRoutes({ pool, account, lookup }: DeckRoutesOptions) {
           [user.id, kept.map((c) => c.cardId), kept.map((c) => c.qty), kept.map((c) => c.foilQty)],
         );
       }
-      const { rows: [{ n }] } = await client.query<{ n: number }>(`SELECT count(*)::int AS n FROM collection_cards WHERE user_id = $1`, [user.id]);
+      const { rows: [{ n }] } = await client.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM collection_cards WHERE user_id = $1 AND qty + foil_qty > 0`,
+        [user.id],
+      );
       if (n > LIMITS.collectionCards) throw new HttpError(422, 'tooManyCards', { max: LIMITS.collectionCards });
       await client.query('COMMIT');
       sendJson(res, 200, { count: n });
@@ -299,7 +321,7 @@ export function deckRoutes({ pool, account, lookup }: DeckRoutesOptions) {
       } else if (path === '/api/decks') {
         if (method === 'GET') await listDecks(user, url, res);
         else throw new HttpError(405, 'methodNotAllowed');
-      } else if (method === 'GET') await getCollection(user, res);
+      } else if (method === 'GET') await getCollection(user, url, res);
       else if (method === 'PATCH') await patchCollection(user, req, res);
       else throw new HttpError(405, 'methodNotAllowed');
     } catch (e) {

@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { NavLink, Route, Routes } from 'react-router-dom';
+import { AccountMenu, LoginNotice } from './components/AccountMenu';
 import { LANGS, messagesFor, useLang, useT, type Lang } from './i18n';
 import { Collection } from './pages/Collection';
 import { DeckEditor } from './pages/DeckEditor';
@@ -9,6 +10,7 @@ import { Home } from './pages/Home';
 import { LifeTracker } from './pages/LifeTracker';
 import { Online } from './pages/Online';
 import { Play } from './pages/Play';
+import { initAccount } from './store/useAccount';
 
 /** The tab bar on phones: each section with a stroke icon. */
 const TABS = [
@@ -27,6 +29,10 @@ export function App() {
   useEffect(() => {
     document.documentElement.lang = lang;
   }, [lang]);
+
+  useEffect(() => {
+    void initAccount();
+  }, []);
 
   return (
     <>
@@ -48,7 +54,9 @@ export function App() {
         <select className="lang-select" aria-label={t.common.language} value={lang} onChange={(e) => setLang(e.target.value as Lang)}>
           {LANGS.map((l) => <option key={l} value={l}>{messagesFor(l).langName}</option>)}
         </select>
+        <AccountMenu />
       </nav>
+      <LoginNotice />
       {/* Phones: the sections move to a tab bar at the bottom, within thumb reach. */}
       <nav className="tabbar" aria-label={t.common.sections}>
         {TABS.map(({ to, key, icon }) => (

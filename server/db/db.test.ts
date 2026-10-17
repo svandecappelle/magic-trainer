@@ -40,7 +40,7 @@ describe.skipIf(!testDbUrl)('database', () => {
     await pool.query(`INSERT INTO decks (id, user_id, name, format, created_at, updated_at) VALUES ($1, $2, 'Burn', 'modern', now(), now())`, [deck, user.id]);
     await pool.query(`INSERT INTO deck_cards (deck_id, card_id, board, qty) VALUES ($1, $2, 'main', 4)`, [deck, BOLT]);
     await expect(pool.query(`INSERT INTO deck_cards (deck_id, card_id, board, qty) VALUES ($1, $2, 'maybe', 1)`, [deck, BOLT])).rejects.toThrow(/enum/);
-    await expect(pool.query(`INSERT INTO collection_cards (user_id, card_id, qty, foil_qty) VALUES ($1, $2, 0, 0)`, [user.id, BOLT])).rejects.toThrow(/check/);
+    await expect(pool.query(`INSERT INTO collection_cards (user_id, card_id, qty, foil_qty) VALUES ($1, $2, -1, 0)`, [user.id, BOLT])).rejects.toThrow(/check/);
     // Deleting the account deletes everything it owns.
     await pool.query(`DELETE FROM users WHERE id = $1`, [user.id]);
     const counts = await pool.query(`SELECT (SELECT count(*) FROM identities)::int AS i, (SELECT count(*) FROM decks)::int AS d, (SELECT count(*) FROM deck_cards)::int AS c`);

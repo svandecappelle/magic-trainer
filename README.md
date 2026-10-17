@@ -133,11 +133,12 @@ and open `http://<server>:8787`.
 | `Makefile`, `Dockerfile`, `docker-compose.yml`, `deploy/` | Server installer, container image, compose services (app, PostgreSQL), nginx site template |
 | `docker-compose.dev.yml` | PostgreSQL alone for development |
 | `src/i18n/` | Translations (`en.ts`, `fr.ts`), language store, log/error rendering |
-| `src/store/` | Zustand stores, persisted to `localStorage` |
+| `src/store/` | Zustand stores, persisted to `localStorage`; `useAccount.ts`: login and sync with the account |
+| `src/lib/account/` | Account API client and the sync of decks and collection (`sync.ts`) |
 | `src/pages/` | One component per screen |
 | `src/components/` | Shared UI: card search, mana symbols, deck stats |
 
-All data stays in the browser (`localStorage`). Card data and images come from [Scryfall](https://scryfall.com/docs/api).
+Data stays in the browser (`localStorage`); logged-in players (Discord) also have their decks and collection saved in their account and synced between devices ([docs/accounts.md](docs/accounts.md)). Card data and images come from [Scryfall](https://scryfall.com/docs/api).
 
 ### Languages
 
