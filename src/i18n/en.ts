@@ -631,6 +631,19 @@ export const en = {
     tappedToPay: (card: string) => `${card} (tapped)`,
     exiledToPay: (card: string) => `${card} (exiled)`,
     autoPaySetting: 'Pay mana automatically',
+    layout: {
+      title: 'Board layout',
+      hint: 'Drag the lines between the parts of the table (double-click one to reset it), or use these sliders. Saved in this browser.',
+      perm: 'Battlefield cards',
+      hand: 'Hand cards',
+      opp: "Opponent's battlefield",
+      side: 'Side panel width',
+      handleOpp: 'Battlefields: opponent / you',
+      auto: 'auto',
+      reset: 'Reset layout',
+      hideSide: 'Hide the side panel',
+      showSide: 'Show the side panel',
+    },
     autoPayHint: (on: boolean): string => (on
       ? 'The game chooses the lands and other sources to tap for each spell and ability.'
       : 'When several sources could pay, you choose them; "Auto pay" lets the game choose for that spell.'),

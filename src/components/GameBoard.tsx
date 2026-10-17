@@ -19,6 +19,8 @@ import { engineStatus } from '../lib/engineStatus';
 import { ChoicePanel, choiceKey, choicePrompt } from './ChoicePanel';
 import { Lines, type Line } from './board/Lines';
 import { useBoardFx, type Float } from './board/useBoardFx';
+import { clampSize, layoutStyle, LAYOUT_DEFAULTS, LAYOUT_LIMITS, useBoardLayout, type LayoutSize } from './board/layout';
+import { ResizeHandle } from './board/ResizeHandle';
 import type { Card } from '../types';
 import './board/board.css';
 
@@ -111,6 +113,42 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
 
   // Board elements by key, for drawing arrows between them.
   const boardRef = useRef<HTMLDivElement>(null);
+  // ---------- Layout (drag handles, Settings sliders) ----------
+  const { layout, update: setLayout, reset: resetLayout } = useBoardLayout();
+  const sideRef = useRef<HTMLElement>(null);
+  /** The card sizes the stylesheet gives for this window, read from two hidden probes (`var(--perm-w)`, `var(--hand-w)`). */
+  const permProbe = useRef<HTMLDivElement>(null);
+  const handProbe = useRef<HTMLDivElement>(null);
+  const [autoSizes, setAutoSizes] = useState({ perm: 80, hand: 90 });
+  useEffect(() => {
+    const read = () => setAutoSizes({ perm: permProbe.current?.offsetWidth || 80, hand: handProbe.current?.offsetWidth || 90 });
+    read();
+    window.addEventListener('resize', read);
+    return () => window.removeEventListener('resize', read);
+  }, [layout.perm, layout.hand]);
+  /** Where a drag started: the size then, and for the battlefields their total height. */
+  const dragFrom = useRef({ value: 0, span: 1 });
+  const sizeNow = (k: LayoutSize) =>
+    k === 'side' ? layout.side ?? sideRef.current?.offsetWidth ?? LAYOUT_DEFAULTS.side
+    : k === 'opp' ? layout.opp ?? LAYOUT_DEFAULTS.opp
+    : layout[k] ?? autoSizes[k];
+  /** A handle for one size: `scale` turns the pointer's movement into that size's unit. */
+  const handle = (k: LayoutSize, dir: 'row' | 'col', label: string, scale: number) => (
+    <ResizeHandle
+      dir={dir}
+      label={label}
+      className={`handle-${k}`}
+      onStart={() => {
+        const fields = boardRef.current ? [...boardRef.current.querySelectorAll<HTMLElement>(':scope > .fields')] : [];
+        dragFrom.current = { value: sizeNow(k), span: Math.max(1, fields.reduce((n, f) => n + f.offsetHeight, 0)) };
+      }}
+      onMove={(d) => {
+        const by = k === 'opp' ? (d / dragFrom.current.span) * 100 : d * scale;
+        setLayout({ [k]: clampSize(k, dragFrom.current.value + by), ...(k === 'side' ? { closed: false } : {}) });
+      }}
+      onReset={() => setLayout({ [k]: undefined })}
+    />
+  );
   const registry = useRef(new Map<string, HTMLElement>());
   const reg = (key: string) => (el: HTMLElement | null) => {
     if (el) registry.current.set(key, el);
@@ -950,8 +988,12 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   const myHand = g.players[me].hand;
 
   return (
-    <div className="game">
+    <div className={`game ${layout.closed ? 'side-closed' : ''}`} style={layoutStyle(layout) as CSSProperties}>
       <div className="board" ref={boardRef} onClickCapture={swallowZoomClick}>
+        <div className="size-probe" ref={permProbe} style={{ width: 'var(--perm-w)' }} />
+        <div className="size-probe" ref={handProbe} style={{ width: 'var(--hand-w)' }} />
+        {/* The side panel is folded away: what it says about the game (clock, opponent away…) shows on the table. */}
+        {layout.closed && notice && <div className="small play-notice board-notice">{notice}</div>}
         {/* Opponents */}
         <div className="player-bar theirs">
           {opponents.map((o) => (
@@ -970,6 +1012,8 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
 
         {/* Center: phases, prompt, actions */}
         <div className={`center-bar ${iAct && g.winner === null ? 'your-move' : ''} ${waiting ? 'waiting' : ''}`}>
+          {handle('opp', 'row', t.game.layout.handleOpp, 1)}
+          {handle('perm', 'row', t.game.layout.perm, 0.4)}
           <ol className="phases" aria-label={t.game.turnOf(myTurn, teamName(g.active))}>
             {g.mulligan ? (
               <li className="current">{t.game.steps.mulligan}</li>
@@ -1062,6 +1106,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
 
         {/* You (and your teammate) */}
         <div className="player-bar mine">
+          {handle('hand', 'row', t.game.layout.hand, -0.6)}
           {hud(me)}
           {/* Two-Headed Giant: your teammate's hand, face up (teammates see each other's hands). */}
           {mates.map((m) => (
@@ -1166,7 +1211,18 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
         </div>
       )}
 
-      <aside className="game-side">
+      {handle('side', 'col', t.game.layout.side, -1)}
+      <aside className="game-side" ref={sideRef}>
+        <button
+          type="button"
+          className="side-toggle icon"
+          aria-expanded={!layout.closed}
+          title={layout.closed ? t.game.layout.showSide : t.game.layout.hideSide}
+          aria-label={layout.closed ? t.game.layout.showSide : t.game.layout.hideSide}
+          onClick={() => setLayout({ closed: !layout.closed })}
+        >
+          {layout.closed ? '⟨' : '⟩'}
+        </button>
         {notice && <div className="small play-notice">{notice}</div>}
         <div className="side-tabs" role="tablist" aria-label={t.game.sideTabs.label}>
           {(['log', 'card', 'settings'] as SideTab[]).map((tab) => (
@@ -1209,8 +1265,9 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
             </ol>
           </section>
         )}
-        {sideTab === 'settings' && g.winner === null && (
+        {sideTab === 'settings' && (
           <div className="game-options">
+            {g.winner === null && (<>
             <label className="full-control small" title={t.game.fullControlHint(fullControl)}>
               <input
                 type="checkbox"
@@ -1226,6 +1283,27 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
             </label>
             <p className="small muted">{t.game.autoPayHint(autoPay)}</p>
             <button className="danger" onClick={() => act({ type: 'concede', player: me })}>{t.game.concede}</button>
+            </>)}
+            <section className="layout-settings" aria-label={t.game.layout.title}>
+              <h4>{t.game.layout.title}</h4>
+              <p className="small muted">{t.game.layout.hint}</p>
+              {([['perm', t.game.layout.perm, 'px'], ['hand', t.game.layout.hand, 'px'], ['opp', t.game.layout.opp, '%']] as const).map(([k, label, unit]) => (
+                <label key={k} className="layout-slider small">
+                  <span>
+                    {label}
+                    <output>{k === 'opp' || layout[k] !== undefined ? `${sizeNow(k)} ${unit}` : t.game.layout.auto}</output>
+                  </span>
+                  <input
+                    type="range"
+                    min={LAYOUT_LIMITS[k][0]}
+                    max={LAYOUT_LIMITS[k][1]}
+                    value={sizeNow(k)}
+                    onChange={(e) => setLayout({ [k]: clampSize(k, Number(e.target.value)) })}
+                  />
+                </label>
+              ))}
+              <button type="button" className="secondary" onClick={resetLayout} disabled={Object.keys(layout).length === 0}>{t.game.layout.reset}</button>
+            </section>
           </div>
         )}
       </aside>

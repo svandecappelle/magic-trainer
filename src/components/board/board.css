@@ -11,20 +11,22 @@ main:has(> .page.play) { padding: 0 10px 10px; }
   --hand-w: clamp(56px, min(14vh, 15vw), 108px);
   display: grid;
   /* The table, and a column with the log (or the last card, or the settings). */
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) var(--side-w, 320px);
   grid-template-rows: minmax(0, 1fr);
   grid-template-areas: "board side";
   gap: 10px;
   height: calc(100dvh - 64px);
   min-height: 340px;
   margin-top: 8px;
+  position: relative;
 }
 
 .board {
   grid-area: board;
   position: relative;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  /* The battlefields share the height as the player chose (--opp-fr, --you-fr; even by default). */
+  grid-template-rows: auto minmax(0, var(--opp-fr, 1fr)) auto minmax(0, var(--you-fr, 1fr)) auto;
   grid-template-columns: minmax(0, 1fr); /* rows never grow wider than the table */
   gap: 6px;
   padding: 10px;
@@ -158,7 +160,7 @@ main:has(> .page.play) { padding: 0 10px 10px; }
 /* ---------- Player bars ---------- */
 
 .player-bar { display: flex; align-items: center; gap: 14px; min-height: 0; }
-.player-bar.mine { align-items: flex-end; }
+.player-bar.mine { position: relative; align-items: flex-end; }
 
 .hud {
   position: relative; flex: 0 0 auto; width: clamp(120px, 22vw, 210px); padding: 8px 14px;
@@ -557,7 +559,7 @@ main:has(> .page.play) { padding: 0 10px 10px; }
   :root { --topnav-h: 57px; }
   body:has(.game) .tabbar, body:has(.game) footer { display: none; }
   body:has(.game) main { padding-bottom: 0; }
-  .board { height: calc(100dvh - var(--topnav-h) - 8px); grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr) auto auto; }
+  .board { height: calc(100dvh - var(--topnav-h) - 8px); grid-template-rows: auto minmax(0, var(--opp-fr, 1fr)) minmax(0, var(--you-fr, 1fr)) auto auto; }
   .board > .center-bar { order: 2; }
   /* The two sides of the table meet in the middle: a line between them. */
   .fields.mine { border-top: 1px solid #2a3240; margin: 0 16px; padding-top: 4px; }
@@ -616,3 +618,55 @@ main:has(> .page.play) { padding: 0 10px 10px; }
 .pay-units { display: inline-flex; gap: 4px; align-items: center; }
 .pay-unit { display: inline-flex; align-items: center; gap: 1px; }
 .pay-unit .mana-symbol { width: 15px; height: 15px; }
+
+/* ---------- Layout chosen by the player (components/board/layout.ts) ---------- */
+
+/* Hidden probes: the card sizes the rules above give for this window. */
+.size-probe { position: absolute; height: 0; visibility: hidden; pointer-events: none; }
+
+/* Lines to drag, on the edges of the parts they resize: thin until hovered, gold while dragged. Mouse and pen only. */
+.resize-handle { display: none; position: absolute; z-index: 12; touch-action: none; }
+.resize-handle::after { content: ''; position: absolute; border-radius: 3px; background: transparent; transition: background 0.15s; }
+.resize-handle:hover::after, .resize-handle.dragging::after, .resize-handle:focus-visible::after { background: var(--accent); }
+.resize-handle:focus-visible { outline: none; }
+.resize-handle.resize-row { left: 0; right: 0; height: 10px; cursor: row-resize; }
+.resize-handle.resize-row::after { left: 38%; right: 38%; top: 3px; height: 4px; }
+.resize-handle.resize-col { top: 0; bottom: 0; width: 10px; cursor: col-resize; }
+.resize-handle.resize-col::after { top: 38%; bottom: 38%; left: 3px; width: 4px; }
+/* Above and under the center bar (opponents / you, card size), above your hand, left of the side panel. */
+.center-bar > .handle-opp { top: -9px; }
+.center-bar > .handle-perm { bottom: -9px; }
+.player-bar.mine > .handle-hand { top: -9px; }
+.game > .handle-side { right: var(--side-w, 320px); }
+.game.side-closed > .handle-side { right: 40px; }
+@media (hover: hover) and (pointer: fine) {
+  .resize-handle { display: block; }
+}
+
+/* The side panel folded into a rail (wide screens only: below 1000px it sits under the table). */
+.side-toggle { display: none; }
+@media (min-width: 1001px) {
+  .side-toggle { display: block; align-self: flex-end; margin: -4px -4px -6px 0; padding: 0 8px; min-height: 26px; line-height: 1; }
+  .game.side-closed { grid-template-columns: minmax(0, 1fr) 40px; }
+  .game.side-closed .game-side { padding: 8px 4px; align-items: center; }
+  .game.side-closed .game-side > :not(.side-toggle) { display: none; }
+  .game.side-closed .side-toggle { align-self: center; margin: 0; }
+}
+@media (max-width: 1000px) {
+  .game > .handle-side, .board-notice { display: none; }
+}
+/* What the folded panel would say about the game, on the table's top right corner. */
+.board-notice {
+  position: absolute; top: 8px; right: 8px; z-index: 20; max-width: 320px; margin: 0; padding: 6px 10px;
+  background: rgba(12, 15, 20, 0.92); border: 1px solid var(--border); border-radius: 10px;
+}
+
+.layout-settings { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line-soft); }
+.layout-settings h4 { margin: 0; }
+.layout-settings p { margin: 0; }
+.layout-slider { display: flex; flex-direction: column; gap: 2px; }
+.layout-slider span { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); }
+.layout-slider output { color: var(--text); font-variant-numeric: tabular-nums; }
+.layout-slider input { width: 100%; accent-color: var(--accent); }
+.layout-settings button { align-self: flex-start; }
+.game-options { min-height: 0; overflow: auto; }

@@ -639,6 +639,19 @@ export const fr: Messages = {
     tappedToPay: (card) => `${card} (engagé)`,
     exiledToPay: (card) => `${card} (exilé)`,
     autoPaySetting: 'Payer le mana automatiquement',
+    layout: {
+      title: 'Disposition de la table',
+      hint: 'Faites glisser les lignes entre les parties de la table (double-clic pour en réinitialiser une), ou utilisez ces curseurs. Enregistré dans ce navigateur.',
+      perm: 'Cartes sur le champ de bataille',
+      hand: 'Cartes en main',
+      opp: "Champ de bataille adverse",
+      side: 'Largeur du panneau latéral',
+      handleOpp: 'Champs de bataille : adversaire / vous',
+      auto: 'auto',
+      reset: 'Réinitialiser la disposition',
+      hideSide: 'Masquer le panneau latéral',
+      showSide: 'Afficher le panneau latéral',
+    },
     autoPayHint: (on) => (on
       ? 'Le jeu choisit les terrains et autres sources à engager pour chaque sort et capacité.'
       : 'Quand plusieurs sources peuvent payer, vous les choisissez ; « Paiement auto » laisse le jeu choisir pour ce sort.'),
