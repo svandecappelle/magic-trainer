@@ -3,51 +3,102 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AppError } from '../../i18n/types';
 import type { GameState, PlayerId } from '../engine/engine';
 import type { ClientMessage, LobbyPlayer, ServerMessage } from './protocol';
+import type { Card } from '../../types';
 
-// sessionStorage is per tab: a reload rejoins the same seat, and two tabs can be two players.
-const SESSION_KEY = 'magic-trainer-online';
+/**
+ * The seats this browser holds, by room id: the secret that brings it back to its seat at /online/<id>, after a
+ * reload, a closed tab or an update of the server. Kept a few days.
+ */
+const SEATS_KEY = 'mt.onlineSeats';
+const SEAT_DAYS = 3;
+
+export interface SavedSeat {
+  room: string;
+  code: string;
+  token: string;
+  savedAt: number;
+}
+
+export function savedSeats(): SavedSeat[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(SEATS_KEY) ?? '[]');
+    const fresh = Date.now() - SEAT_DAYS * 86400_000;
+    return Array.isArray(v)
+      ? v.filter((s) => s && typeof s.room === 'string' && typeof s.token === 'string' && s.savedAt > fresh).sort((a, b) => b.savedAt - a.savedAt)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeSeats(seats: SavedSeat[]) {
+  try {
+    localStorage.setItem(SEATS_KEY, JSON.stringify(seats));
+  } catch {
+    // Storage unavailable (private mode): coming back after a reload won't work, playing still does.
+  }
+}
+
+const saveSeat = (seat: SavedSeat) => writeSeats([seat, ...savedSeats().filter((s) => s.room !== seat.room)]);
+export const forgetSeat = (room: string) => writeSeats(savedSeats().filter((s) => s.room !== room));
 
 /** Builds that can play together: the same one, or a development build on either side. */
 export const sameBuild = (a: string, b: string) => a === b || a === 'dev' || b === 'dev';
 
-/** The seat saved by this tab, if it was saved by this build of the app and has the expected shape. */
-function readSession(): { code: string; token: string } | null {
+/** Reloads after an update of the server, once a minute at most (a reload that didn't help must not loop). */
+const RELOAD_KEY = 'mt.reloadedForUpdate';
+function reloadForUpdate(): boolean {
   try {
-    const v = JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? 'null');
-    if (v && typeof v.code === 'string' && typeof v.token === 'string' && v.build === __BUILD__) return { code: v.code, token: v.token };
+    if (Date.now() - Number(sessionStorage.getItem(RELOAD_KEY) ?? 0) < 60_000) return false;
+    sessionStorage.setItem(RELOAD_KEY, String(Date.now()));
   } catch {
-    // unreadable: forgotten below
+    return false;
   }
-  writeSession(null);
-  return null;
-}
-
-function writeSession(value: { code: string; token: string } | null) {
-  try {
-    if (value) sessionStorage.setItem(SESSION_KEY, JSON.stringify({ ...value, build: __BUILD__ }));
-    else sessionStorage.removeItem(SESSION_KEY);
-  } catch {
-    // Storage unavailable (private mode): reconnecting after a reload won't work, playing still does.
-  }
+  location.reload();
+  return true;
 }
 
 export type ConnectionStatus = 'connecting' | 'open' | 'closed';
 
-/** Connection to the game server, with automatic reconnect and seat recovery. */
-export function useGameSocket() {
+export type RoomInfo = Extract<ServerMessage, { t: 'roomInfo' }>;
+
+/**
+ * Connection to the game server, with automatic reconnect. `roomId`: the room of the page (/online/<id>), opened as
+ * soon as the connection is up (back to this browser's seat, or what is needed to join it).
+ */
+export function useGameSocket(roomId?: string) {
   const [status, setStatus] = useState<ConnectionStatus>('connecting');
-  const [room, setRoom] = useState<{ code: string; seat: PlayerId } | null>(null);
+  const [room, setRoom] = useState<{ id: string; code: string; seat: PlayerId } | null>(null);
+  /** The room of the page when this browser has no seat in it; `gone`: it doesn't exist (anymore). */
+  const [info, setInfo] = useState<RoomInfo | null>(null);
+  const [gone, setGone] = useState(false);
   const [players, setPlayers] = useState<LobbyPlayer[]>([]);
   const [game, setGame] = useState<GameState | null>(null);
+  /** Your cards in this room: main deck for the current game, and the rest (sideboard). */
+  const [deck, setDeck] = useState<{ main: Card[]; side: Card[] } | null>(null);
   const [error, setError] = useState<AppError | null>(null);
-  /** The running clock, with its deadline in this browser's time. */
   const [match, setMatch] = useState<MatchScore | null>(null);
   /** Seats in the room: 2, or 4 in Two-Headed Giant. */
   const [size, setSize] = useState(2);
+  /** The running clock, with its deadline in this browser's time. */
   const [clock, setClock] = useState<{ player: PlayerId; deadline: number; kind: 'turn' | 'reconnect' } | null>(null);
   /** The server runs a newer (or older) build of the app: this page must be reloaded. */
   const [outdated, setOutdated] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  /** The page's room, read by the connection's handlers. */
+  const roomIdRef = useRef(roomId);
+  roomIdRef.current = roomId;
+  /** The room this browser is seated in, as the server last said. */
+  const seatedRef = useRef<string | null>(null);
+
+  /** Opens the page's room on the server (no-op without a room, or when already seated in it). */
+  const openRoom = useCallback(() => {
+    const ws = wsRef.current;
+    const id = roomIdRef.current;
+    if (!id || ws?.readyState !== WebSocket.OPEN || seatedRef.current === id) return;
+    const token = savedSeats().find((s) => s.room === id)?.token;
+    ws.send(JSON.stringify({ t: 'open', room: id, ...(token ? { token } : {}) } satisfies ClientMessage));
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -55,10 +106,12 @@ export function useGameSocket() {
     let timer: ReturnType<typeof setTimeout>;
 
     const reset = () => {
-      writeSession(null);
+      seatedRef.current = null;
       setRoom(null);
       setPlayers([]);
       setGame(null);
+      setDeck(null);
+      setClock(null);
     };
 
     const connect = () => {
@@ -74,29 +127,39 @@ export function useGameSocket() {
         const msg: ServerMessage = JSON.parse(event.data);
         switch (msg.t) {
           case 'hello': {
-            // A different build of the app on the server: its game states may not fit this page. Forget the saved
-            // seat and ask for a reload rather than breaking mid-game.
+            // A different build of the app on the server: its game states may not fit this page. Reload to get
+            // the same build; the seat is kept, so the game goes on after the reload.
             if (!sameBuild(msg.build, __BUILD__)) {
-              writeSession(null);
-              setOutdated(true);
               disposed = true;
               ws.close();
+              if (!(roomIdRef.current && reloadForUpdate())) setOutdated(true);
               return;
             }
+            seatedRef.current = null;
             setStatus('open');
-            const saved = readSession();
-            if (saved) ws.send(JSON.stringify({ t: 'rejoin', ...saved } satisfies ClientMessage));
+            openRoom();
             break;
           }
           case 'joined':
-            setRoom({ code: msg.code, seat: msg.seat });
-            writeSession({ code: msg.code, token: msg.token });
+            seatedRef.current = msg.room;
+            setRoom({ id: msg.room, code: msg.code, seat: msg.seat });
+            setInfo(null);
+            setGone(false);
+            saveSeat({ room: msg.room, code: msg.code, token: msg.token, savedAt: Date.now() });
             setError(null);
+            break;
+          case 'roomInfo':
+            if (msg.room !== roomIdRef.current) break;
+            setInfo(msg);
+            setGone(false);
             break;
           case 'lobby':
             setPlayers(msg.players);
             setMatch(msg.match ?? null);
             setSize(msg.size ?? 2);
+            break;
+          case 'deck':
+            setDeck({ main: msg.main, side: msg.side });
             break;
           case 'state':
             setGame(msg.state);
@@ -106,12 +169,20 @@ export function useGameSocket() {
             setClock(msg.clock ? { player: msg.clock.player, kind: msg.clock.kind, deadline: Date.now() + msg.clock.ms } : null);
             break;
           case 'left':
+            if (seatedRef.current) forgetSeat(seatedRef.current);
             reset();
-            setClock(null);
             break;
           case 'error':
+            if (msg.lostRoom) {
+              // The page's room is gone (finished long ago, or never existed): forget its seat.
+              const id = roomIdRef.current;
+              if (id) forgetSeat(id);
+              reset();
+              setInfo(null);
+              setGone(true);
+              break;
+            }
             setError({ code: msg.code, params: msg.params });
-            if (msg.lostRoom) reset();
             break;
         }
       };
@@ -129,7 +200,14 @@ export function useGameSocket() {
       clearTimeout(timer);
       wsRef.current?.close();
     };
-  }, []);
+  }, [openRoom]);
+
+  // Another room's page (a link followed, back to /online): open it, or forget the shown one.
+  useEffect(() => {
+    setGone(false);
+    setInfo(null);
+    if (roomId) openRoom();
+  }, [roomId, openRoom]);
 
   const send = useCallback((msg: ClientMessage) => {
     const ws = wsRef.current;
@@ -137,5 +215,5 @@ export function useGameSocket() {
     else setError({ code: 'notConnected' });
   }, []);
 
-  return { status, room, players, game, error, setError, clock, match, size, send, outdated };
+  return { status, room, info, gone, players, game, deck, error, setError, clock, match, size, send, outdated };
 }

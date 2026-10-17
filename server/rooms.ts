@@ -1,4 +1,4 @@
-import { randomInt, randomUUID } from 'node:crypto';
+import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { fallbackAction } from '../src/lib/engine/bot';
 import { actor, apply, IllegalAction, newGame, teamOf, teamsOf, type ErrorParams, type GameMode, type GameState, type PlayerId } from '../src/lib/engine/engine';
 import {
@@ -20,12 +20,15 @@ interface Seat {
   next: Card[];
   /** Commander games: the deck's commanders (none: it plays without one). */
   commanders: Card[];
-  token: string;
+  /** SHA-256 of the seat's secret (the browser keeps the secret); '' once the seat is given up. */
+  tokenHash: string;
   conn: Conn | null;
   wantsRematch: boolean;
 }
 
 interface Room {
+  /** The room's address (/online/<id>), and the short code to type or read out. */
+  id: string;
   code: string;
   seats: Seat[];
   game: GameState | null;
@@ -56,6 +59,9 @@ class ClientError extends Error {
 }
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O or 1/I
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
 export interface RoomManagerOptions {
   /** How long a room with nobody connected is kept so players can reconnect. */
@@ -80,7 +86,9 @@ export class DeckCheckError extends Error {
 }
 
 export class RoomManager {
+  /** Rooms by code, and by id. */
   readonly rooms = new Map<string, Room>();
+  private byId = new Map<string, Room>();
   private where = new Map<Conn, { room: Room; seat: PlayerId }>();
   private ttl: number;
   private rng: () => number;
@@ -143,9 +151,12 @@ export class RoomManager {
         }
         case 'join': {
           const name = cleanName(msg.name);
-          return this.withDeck(conn, msg.deck, msg.sideboard, msg.commanders, (deck, side, commanders) => this.join(conn, String(msg.code ?? '').toUpperCase().trim(), name, deck, side, commanders));
+          // By the room's address, or by its code.
+          const room = typeof msg.room === 'string' ? this.byId.get(msg.room) : this.rooms.get(String(msg.code ?? '').toUpperCase().trim());
+          if (!room) throw new ClientError('noRoom', { code: String(msg.code ?? '') });
+          return this.withDeck(conn, msg.deck, msg.sideboard, msg.commanders, (deck, side, commanders) => this.join(conn, room, name, deck, side, commanders));
         }
-        case 'rejoin': return this.rejoin(conn, String(msg.code ?? ''), String(msg.token ?? ''));
+        case 'open': return this.open(conn, String(msg.room ?? ''), typeof msg.token === 'string' ? msg.token : '');
         case 'action': return this.act(conn, msg.action);
         case 'rematch': return this.rematch(conn, msg.deck);
         case 'leave': return this.leave(conn);
@@ -174,14 +185,15 @@ export class RoomManager {
     let code: string;
     do code = Array.from({ length: 5 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
     while (this.rooms.has(code));
-    const room: Room = { code, seats: [], game: null, match: newMatch(bestOf), size, mode };
+    const room: Room = { id: randomUUID(), code, seats: [], game: null, match: newMatch(bestOf), size, mode };
     this.rooms.set(code, room);
+    this.byId.set(room.id, room);
     this.seat(conn, room, name, deck, side, commanders);
   }
 
-  private join(conn: Conn, code: string, name: string, deck: Card[], side: Card[], commanders: Card[]) {
-    const room = this.rooms.get(code);
-    if (!room) throw new ClientError('noRoom', { code });
+  private join(conn: Conn, room: Room, name: string, deck: Card[], side: Card[], commanders: Card[]) {
+    // The room may have closed during the deck check.
+    if (this.byId.get(room.id) !== room) throw new ClientError('noRoom', { code: room.code });
     if (room.seats.length >= room.size) throw new ClientError('roomFull');
     this.leave(conn, true);
     const taken = new Set(room.seats.map((x) => x.name));
@@ -191,19 +203,35 @@ export class RoomManager {
     if (room.seats.length === room.size) this.startGame(room);
   }
 
-  private rejoin(conn: Conn, code: string, token: string) {
-    const room = this.rooms.get(code);
-    const seat = room?.seats.findIndex((s) => s.token && s.token === token) ?? -1;
-    if (!room || seat < 0) {
+  /**
+   * A browser opens /online/<id>: back to its seat when it holds the seat's secret, otherwise what it needs to
+   * join (or that the room is full).
+   */
+  private open(conn: Conn, id: string, token: string) {
+    const room = UUID.test(id) ? this.byId.get(id) : undefined;
+    if (!room) {
       conn.send({ t: 'error', code: 'gameGone', lostRoom: true });
       return;
     }
+    const hash = token ? hashToken(token) : '';
+    const seat = hash ? room.seats.findIndex((s) => s.tokenHash === hash) : -1;
+    if (seat < 0) {
+      conn.send({
+        t: 'roomInfo', room: room.id, code: room.code, size: room.size, mode: room.mode, bestOf: room.match.bestOf,
+        players: room.seats.map((s) => s.name), started: !!room.game,
+      });
+      return;
+    }
+    // Already seated elsewhere on this connection: that seat is left as if disconnected.
+    const before = this.where.get(conn);
+    if (before && before.room !== room) this.disconnect(conn);
     const old = room.seats[seat].conn;
-    if (old) this.where.delete(old);
+    if (old && old !== conn) this.where.delete(old);
     clearTimeout(room.expiry);
     room.seats[seat].conn = conn;
     this.where.set(conn, { room, seat: seat as PlayerId });
-    conn.send({ t: 'joined', code, seat: seat as PlayerId, token });
+    conn.send({ t: 'joined', room: room.id, code: room.code, seat: seat as PlayerId, token });
+    this.sendDeck(room, seat);
     this.sendLobby(room);
     if (room.game) conn.send({ t: 'state', state: redact(room.game, seat as PlayerId) });
     this.armClock(room);
@@ -269,7 +297,7 @@ export class RoomManager {
     }
     this.where.delete(conn);
     room.seats[seat].conn = null;
-    room.seats[seat].token = ''; // can't rejoin
+    room.seats[seat].tokenHash = ''; // can't rejoin
     if (!silent) conn.send({ t: 'left' });
     if (room.seats.every((s) => !s.conn)) this.deleteRoom(room);
     else this.sendLobby(room);
@@ -279,10 +307,11 @@ export class RoomManager {
 
   private seat(conn: Conn, room: Room, name: string, deck: Card[], side: Card[], commanders: Card[]) {
     const token = randomUUID();
-    room.seats.push({ name, deck, side, next: deck, commanders, token, conn, wantsRematch: false });
+    room.seats.push({ name, deck, side, next: deck, commanders, tokenHash: hashToken(token), conn, wantsRematch: false });
     const seat = (room.seats.length - 1) as PlayerId;
     this.where.set(conn, { room, seat });
-    conn.send({ t: 'joined', code: room.code, seat, token });
+    conn.send({ t: 'joined', room: room.id, code: room.code, seat, token });
+    this.sendDeck(room, seat);
     this.sendLobby(room);
   }
 
@@ -303,8 +332,20 @@ export class RoomManager {
       publicStops: true,
     });
     for (const s of room.seats) s.wantsRematch = false;
+    room.seats.forEach((_, i) => this.sendDeck(room, i));
     this.sendLobby(room);
     this.sendState(room);
+  }
+
+  /** A player's main deck for the current game and the rest of their cards (sideboarding between games). */
+  private sendDeck(room: Room, seat: number) {
+    const s = room.seats[seat];
+    const side = [...s.deck, ...s.side];
+    for (const c of s.next) {
+      const i = side.findIndex((x) => x.id === c.id);
+      if (i >= 0) side.splice(i, 1);
+    }
+    s.conn?.send({ t: 'deck', main: s.next, side });
   }
 
   private locate(conn: Conn) {
@@ -368,7 +409,7 @@ export class RoomManager {
 
   private sendLobby(room: Room) {
     const players = room.seats.map((s) => ({ name: s.name, connected: !!s.conn, wantsRematch: s.wantsRematch }));
-    for (const s of room.seats) s.conn?.send({ t: 'lobby', code: room.code, players, match: room.match, size: room.size, mode: room.mode });
+    for (const s of room.seats) s.conn?.send({ t: 'lobby', room: room.id, code: room.code, players, match: room.match, size: room.size, mode: room.mode });
   }
 
   private expireIfEmpty(room: Room) {
@@ -381,6 +422,7 @@ export class RoomManager {
     clearTimeout(room.expiry);
     if (room.clock) clearTimeout(room.clock.timer);
     this.rooms.delete(room.code);
+    this.byId.delete(room.id);
   }
 }
 

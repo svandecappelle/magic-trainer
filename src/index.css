@@ -517,3 +517,5 @@ footer { padding: 16px 20px; border-top: 1px solid #1f2530; color: var(--faint);
   .discord-login .long { display: none; }
   .discord-login .short { display: inline; }
 }
+.invite-row { flex-wrap: nowrap; }
+.invite-link { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 0.85rem; }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { BetweenGames } from '../components/BetweenGames';
 import { GameBoard } from '../components/GameBoard';
 import { DeckPicker, EngineSummary, LifeChoice, ModeTile, Segmented } from '../components/Setup';
@@ -7,7 +8,7 @@ import { matchWinner } from '../lib/match';
 import { teamOf, teamsOf } from '../lib/engine/engine';
 import type { Card } from '../types';
 import { MIN_DECK_SIZE } from '../lib/multiplayer/protocol';
-import { useGameSocket } from '../lib/multiplayer/useGameSocket';
+import { forgetSeat, savedSeats, useGameSocket, type RoomInfo } from '../lib/multiplayer/useGameSocket';
 import { errorText, useT } from '../i18n';
 import { useApp } from '../store/useApp';
 
@@ -21,12 +22,23 @@ function savedName(): string {
   }
 }
 
-const MATCH_DECK_KEY = 'magic-trainer-match-deck';
-
 export function Online() {
   const t = useT();
   const decks = useApp((s) => s.decks);
-  const { status, room, players, game, error, setError, send, clock, match, size, outdated } = useGameSocket();
+  // /online/<id>: a room's own address (an invite link, or the room you are in).
+  const { roomId } = useParams();
+  const navigate = useNavigate();
+  const { status, room, info, gone, players, game, deck, error, setError, send, clock, match, size, outdated } = useGameSocket(roomId);
+  // Seated in a room: its address in the URL (after creating or joining one).
+  useEffect(() => {
+    if (room && !roomId) navigate(`/online/${room.id}`, { replace: true });
+  }, [room, roomId, navigate]);
+  const seatedHere = !!room && (!roomId || room.id === roomId);
+  /** Leaving for good: back to /online. */
+  const leave = () => {
+    send({ t: 'leave' });
+    navigate('/online');
+  };
   const [bestOf, setBestOf] = useState<1 | 3>(1);
   const [twoHeaded, setTwoHeaded] = useState(false);
   const [commander, setCommander] = useState(false);
@@ -37,26 +49,10 @@ export function Online() {
     if (chosen?.format === 'commander') setCommander(true);
   }, [chosen?.format]);
   const missingCommander = !!chosen && !chosen.entries.some((e) => e.board === 'commander') && (commander || chosen.format === 'commander');
-  // Your deck and sideboard for this match (changed by sideboarding), kept across reloads of the page.
-  // Saved by this build of the app only: an older one may have stored cards in another shape.
-  const [cards, setCardsState] = useState<{ main: Card[]; side: Card[] } | null>(() => {
-    try {
-      const v = JSON.parse(sessionStorage.getItem(MATCH_DECK_KEY) ?? 'null');
-      if (v && v.build === __BUILD__ && Array.isArray(v.main) && Array.isArray(v.side)) return { main: v.main, side: v.side };
-      sessionStorage.removeItem(MATCH_DECK_KEY);
-    } catch {
-      // unreadable or unavailable: start without it
-    }
-    return null;
-  });
-  const setCards = (c: { main: Card[]; side: Card[] }) => {
-    setCardsState(c);
-    try {
-      sessionStorage.setItem(MATCH_DECK_KEY, JSON.stringify({ ...c, build: __BUILD__ }));
-    } catch {
-      // not essential
-    }
-  };
+  // Your deck and sideboard for this match: the server's (it sends them when you sit down or come back), then
+  // changed here by sideboarding.
+  const [cards, setCards] = useState<{ main: Card[]; side: Card[] } | null>(null);
+  useEffect(() => setCards(deck), [deck]);
   const [between, setBetween] = useState(false);
   // A new game started: back to the board.
   useEffect(() => {
@@ -72,9 +68,11 @@ export function Online() {
   const [name, setName] = useState(savedName);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<'link' | 'code' | null>(null);
+  // Forgetting a saved room redraws the list.
+  const [, setResumeTick] = useState(0);
 
-  async function enter(kind: 'create' | 'join') {
+  async function enter(kind: 'create' | 'join' | 'joinLink') {
     if (!name.trim()) return setError({ code: 'enterYourName' });
     if (kind === 'join' && !code.trim()) return setError({ code: 'enterRoomCode' });
     try {
@@ -87,9 +85,9 @@ export function Online() {
       const { main: deck, side, commander: commanders } = await loadDeck75(deckId, decks);
       if (deck.length < MIN_DECK_SIZE) return setError({ code: 'deckTooSmall', params: { n: MIN_DECK_SIZE } });
       const sideboard = side.slice(0, 30);
-      setCards({ main: deck, side: sideboard });
       send(kind === 'create'
         ? { t: 'create', name, deck, sideboard, commanders, bestOf, size: twoHeaded ? 4 : 2, commander, duelCommander: commander && !twoHeaded && duelLife === 20 }
+        : kind === 'joinLink' ? { t: 'join', room: roomId, name, deck, sideboard, commanders }
         : { t: 'join', code: code.trim().toUpperCase(), name, deck, sideboard, commanders });
     } catch (e) {
       setError({ code: 'loadFailed', params: { message: e instanceof Error ? e.message : String(e) } });
@@ -121,13 +119,77 @@ export function Online() {
     );
   }
 
+  // 1a. A room's address without a seat in it: join it (an invite link), or say it's gone.
+  if (!seatedHere && roomId) {
+    return (
+      <div className="page setup">
+        <h1>{t.online.title}</h1>
+        {connection}
+        {gone ? (
+          <div className="banner">
+            {t.online.roomGone}
+            <Link to="/online">{t.online.newGame} →</Link>
+          </div>
+        ) : !info ? (
+          status === 'open' && <p className="muted">{t.online.opening}</p>
+        ) : (
+          <>
+            <section className="panel join-panel">
+              <div>
+                <h4>{t.online.invited(info.players[0] ?? '')}</h4>
+                <p className="small muted">{roomSummary(t, info)}</p>
+              </div>
+            </section>
+            {info.players.length >= info.size ? (
+              <div className="banner">
+                {t.online.roomFull}
+                <Link to="/online">{t.online.newGame} →</Link>
+              </div>
+            ) : (
+              <>
+                <section className="deck-pickers">
+                  <label className="name-field">
+                    <h4>{t.online.yourName}</h4>
+                    <input value={name} maxLength={24} onChange={(e) => setName(e.target.value)} placeholder={t.online.namePlaceholder} />
+                  </label>
+                  <DeckPicker label={t.play.yourDeck} value={deckId} onChange={setDeckId} />
+                </section>
+                {missingCommander && info.mode.commander && <div className="error small">{t.game.noCommanderInDeck(chosen!.name)}</div>}
+                <section className="setup-options">
+                  <button className="start-button" disabled={busy || status !== 'open'} onClick={() => enter('joinLink')}>{t.online.joinButton}</button>
+                </section>
+              </>
+            )}
+          </>
+        )}
+        {busy && <div className="small muted">{t.common.loadingCards}</div>}
+        {error && <div className="error small">{errorText(t, error)}</div>}
+      </div>
+    );
+  }
+
   // 1. Not in a room: pick a name and deck, then host a game or join one.
   if (!room) {
+    const resume = savedSeats();
     const offline = busy || status !== 'open';
     return (
       <div className="page setup">
         <h1>{t.online.title}</h1>
         {connection}
+        {resume.length > 0 && (
+          <section className="saved-games">
+            <h4>{t.online.yourRooms}</h4>
+            <ul className="plain-list">
+              {resume.slice(0, 3).map((r) => (
+                <li key={r.room}>
+                  <Link to={`/online/${r.room}`}>{t.online.room(r.code)}</Link>
+                  <span className="small muted">{new Date(r.savedAt).toLocaleString()}</span>
+                  <button type="button" className="icon" aria-label={t.play.forgetGame} title={t.play.forgetGame} onClick={() => { forgetSeat(r.room); setResumeTick((n) => n + 1); }}>✕</button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         <section className="deck-pickers">
           <label className="name-field">
@@ -187,17 +249,28 @@ export function Online() {
         <h1>{t.online.title}</h1>
         {connection}
         <div className="panel lobby">
-          <p>{t.online.sendCode}</p>
+          <p>{t.online.sendLink}</p>
+          <div className="row invite-row">
+            <input className="invite-link" readOnly value={`${location.origin}/online/${room.id}`} onFocus={(e) => e.target.select()} aria-label={t.online.inviteLink} />
+            <button
+              className="secondary"
+              onClick={() => {
+                navigator.clipboard.writeText(`${location.origin}/online/${room.id}`).then(() => setCopied('link'), () => {});
+              }}
+            >
+              {copied === 'link' ? t.online.copied : t.online.copyLink}
+            </button>
+          </div>
+          <p className="small muted">{t.online.orCode}</p>
           <div className="row">
             <span className="room-code">{room.code}</span>
             <button
               className="secondary"
               onClick={() => {
-                navigator.clipboard.writeText(room.code);
-                setCopied(true);
+                navigator.clipboard.writeText(room.code).then(() => setCopied('code'), () => {});
               }}
             >
-              {copied ? t.online.copied : t.online.copy}
+              {copied === 'code' ? t.online.copied : t.online.copy}
             </button>
           </div>
           {size === 4 ? (
@@ -214,7 +287,7 @@ export function Online() {
           ) : null}
           <p className="muted">{size === 4 ? t.online.waitingPlayers(players.length, size) : t.online.waiting}</p>
           {error && <div className="error small">{errorText(t, error)}</div>}
-          <button className="danger" onClick={() => send({ t: 'leave' })}>{t.online.leaveRoom}</button>
+          <button className="danger" onClick={() => leave()}>{t.online.leaveRoom}</button>
         </div>
       </div>
     );
@@ -267,7 +340,7 @@ export function Online() {
           onReady={() => send({ t: 'rematch', deck: cards.main })}
           waiting={iWantRematch}
         >
-          <button className="secondary" onClick={() => send({ t: 'leave' })}>{t.online.leave}</button>
+          <button className="secondary" onClick={() => leave()}>{t.online.leave}</button>
         </BetweenGames>
       </div>
     );
@@ -289,10 +362,21 @@ export function Online() {
                 {iWantRematch ? t.online.waitingFor(waitingOn?.name ?? t.online.opponent) : bo3 ? t.match.newMatch : t.play.rematch}
               </button>
             )}
-            <button className="secondary" onClick={() => send({ t: 'leave' })}>{t.online.leave}</button>
+            <button className="secondary" onClick={() => leave()}>{t.online.leave}</button>
           </>
         }
       />
     </div>
   );
+}
+
+/** What a room plays: "Duel · Commander · best of 3 · 1/2 players". */
+function roomSummary(t: ReturnType<typeof useT>, info: RoomInfo): string {
+  const parts = [
+    t.play.modes[info.mode.twoHeaded ? 'twoHeaded' : 'duel'][0],
+    ...(info.mode.commander ? [info.mode.duelCommander ? t.play.lifeDuel : t.play.modes.commander[0]] : []),
+    t.match.bestOf(info.bestOf),
+    t.online.seatsTaken(info.players.length, info.size),
+  ];
+  return parts.join(' · ');
 }

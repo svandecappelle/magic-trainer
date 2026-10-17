@@ -10,8 +10,10 @@ export type ClientMessage =
    * `commanders`: the deck's commanders.
    */
   | { t: 'create'; name: string; deck: Card[]; sideboard?: Card[]; commanders?: Card[]; bestOf?: 1 | 3; size?: 2 | 4; commander?: boolean; duelCommander?: boolean }
-  | { t: 'join'; code: string; name: string; deck: Card[]; sideboard?: Card[]; commanders?: Card[] }
-  | { t: 'rejoin'; code: string; token: string }
+  /** Join a room by its address (`room`, the id in /online/<id>) or its code. */
+  | { t: 'join'; room?: string; code?: string; name: string; deck: Card[]; sideboard?: Card[]; commanders?: Card[] }
+  /** The page /online/<id> is open: back to the seat (`token`: the seat's secret), or what is needed to join. */
+  | { t: 'open'; room: string; token?: string }
   | { t: 'action'; action: Action }
   /** Ready for the next game; `deck`: the main deck after sideboarding (cards from your main deck and sideboard). */
   | { t: 'rematch'; deck?: Card[] }
@@ -34,9 +36,14 @@ export type ErrorCode = GameErrorCode | ServerErrorCode;
 export type ServerMessage =
   /** First message on each connection: the build of the app the server ships ("dev" in development). */
   | { t: 'hello'; build: string }
-  | { t: 'joined'; code: string; seat: PlayerId; token: string }
+  /** Seated in a room: `room` is its id (its address), `token` the secret to come back to this seat. */
+  | { t: 'joined'; room: string; code: string; seat: PlayerId; token: string }
   /** `size`: seats in the room (2, or 4 in Two-Headed Giant); `mode`: its rules. */
-  | { t: 'lobby'; code: string; players: LobbyPlayer[]; match?: MatchScore; size?: number; mode?: GameMode }
+  | { t: 'lobby'; room: string; code: string; players: LobbyPlayer[]; match?: MatchScore; size?: number; mode?: GameMode }
+  /** Your main deck for the current game, and the other cards you brought (to sideboard between games). */
+  | { t: 'deck'; main: Card[]; side: Card[] }
+  /** A room opened by its address without holding a seat in it: who is there, and whether a seat is free. */
+  | { t: 'roomInfo'; room: string; code: string; size: number; mode: GameMode; bestOf: 1 | 3; players: string[]; started: boolean }
   | { t: 'state'; state: GameState }
   | { t: 'left' }
   /**

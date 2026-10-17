@@ -29,9 +29,9 @@ function startedRoom() {
   const alice = new FakeConn();
   const bob = new FakeConn();
   rooms.handle(alice, { t: 'create', name: 'Alice', deck });
-  const code = alice.last('joined')!.code;
+  const { code, room } = alice.last('joined')!;
   rooms.handle(bob, { t: 'join', code, name: 'Bob', deck });
-  return { rooms, alice, bob, code };
+  return { rooms, alice, bob, code, room };
 }
 
 function keepBoth({ rooms, alice, bob }: ReturnType<typeof startedRoom>) {
@@ -80,19 +80,42 @@ describe('RoomManager', () => {
     expect(bob.state.fullControl).toEqual([false, true]);
   });
 
-  it('lets a player reconnect to their seat with the token', () => {
-    const { rooms, alice, code } = startedRoom();
+  it('lets a player reconnect to their seat with the token, and gives their deck back', () => {
+    const { rooms, alice, room } = startedRoom();
     const token = alice.last('joined')!.token;
     rooms.disconnect(alice);
 
     const again = new FakeConn();
-    rooms.handle(again, { t: 'rejoin', code, token });
+    rooms.handle(again, { t: 'open', room, token });
     expect(again.last('joined')!.seat).toBe(0);
     expect(again.state.players[0].hand).toHaveLength(7);
+    expect(again.last('deck')).toMatchObject({ main: deck, side: [] });
 
+    // Without the seat's secret: what the room is, not a seat.
     const stranger = new FakeConn();
-    rooms.handle(stranger, { t: 'rejoin', code, token: 'nope' });
+    rooms.handle(stranger, { t: 'open', room, token: 'nope' });
+    expect(stranger.last('joined')).toBeUndefined();
+    expect(stranger.last('roomInfo')).toMatchObject({ room, players: ['Alice', 'Bob'], size: 2, started: true });
+    // An unknown room.
+    rooms.handle(stranger, { t: 'open', room: '00000000-0000-4000-8000-000000000000' });
     expect(stranger.last('error')!.lostRoom).toBe(true);
+  });
+
+  it('joins a room by its address (an invitation link)', () => {
+    const rooms = new RoomManager({ rng: () => 0.1 });
+    const [alice, bob] = [new FakeConn(), new FakeConn()];
+    rooms.handle(alice, { t: 'create', name: 'Alice', deck });
+    const { room, code } = alice.last('joined')!;
+    expect(room).toMatch(/^[0-9a-f-]{36}$/);
+    expect(alice.last('lobby')).toMatchObject({ room, code });
+    rooms.handle(bob, { t: 'open', room });
+    expect(bob.last('roomInfo')).toMatchObject({ room, code, players: ['Alice'], started: false, bestOf: 1 });
+    rooms.handle(bob, { t: 'join', room, name: 'Bob', deck });
+    expect(bob.last('joined')).toMatchObject({ room, seat: 1 });
+    expect(bob.state.players).toHaveLength(2);
+    // The secrets are kept hashed.
+    const seats = rooms.rooms.get(code)!.seats.map((x) => ({ ...x, conn: null }));
+    expect(JSON.stringify(seats)).not.toContain(bob.last('joined')!.token);
   });
 
   it('concedes when leaving mid-game and rematches when both agree', () => {
@@ -196,13 +219,13 @@ describe('clocks', () => {
   it('gives a disconnected player time to come back, then concedes for them', () => {
     vi.useFakeTimers();
     try {
-      const { rooms, alice, bob, code } = timedRoom();
-      const token = bob.messages.find((m) => m.t === 'joined')!.token;
+      const { rooms, alice, bob } = timedRoom();
+      const { token, room } = bob.messages.find((m) => m.t === 'joined')!;
       rooms.disconnect(bob);
       expect(alice.last('clock')!.clock).toMatchObject({ player: 1, kind: 'reconnect' });
       vi.advanceTimersByTime(4000);
       const back = new FakeConn();
-      rooms.handle(back, { t: 'rejoin', code, token });
+      rooms.handle(back, { t: 'open', room, token });
       expect(back.last('clock')!.clock).toMatchObject({ kind: 'turn' });
       rooms.disconnect(back);
       vi.advanceTimersByTime(5000);
