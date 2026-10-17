@@ -2817,3 +2817,44 @@ describe('choosing the mana to pay with', () => {
   });
 });
 
+describe('layers: base power and toughness, abilities lost until end of turn', () => {
+  const multiply = spell('Multiply by Zero', '{1}{B}', 'Target creature has base power and toughness 0/0 until end of turn.');
+  const blackSun = spell('Day of Black Sun', '{X}{B}{B}', 'Each creature with mana value X or less loses all abilities until end of turn. Destroy those creatures.', 'Sorcery');
+  const sheriff = spell('Shoot the Sheriff', '{1}{B}', 'Destroy target non-outlaw creature. (Assassins, Mercenaries, Pirates, Rogues, and Warlocks are outlaws. Everyone else is fair game.)');
+  const run = (s: GameState) => {
+    for (let i = 0; i < 12 && !s.pending && (s.stack.length || s.triggered?.length); i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+
+  it('Multiply by Zero: base 0/0, +1/+1 counters and pumps still apply on top', () => {
+    const ogre = creature('Ogre', 4, 4, { manaCost: '{3}{B}', cmc: 4 });
+    let s = board({ mana: 2, hand: [multiply], theirs: [ogre] });
+    perm(s, 'Ogre')!.counters = { '+1/+1': 1 };
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Ogre') }]] })));
+    expect([powerOf(perm(s, 'Ogre')!), toughnessOf(perm(s, 'Ogre')!)]).toEqual([1, 1]);
+    // Without the counter it dies (0 toughness).
+    s = board({ mana: 2, hand: [multiply], theirs: [ogre] });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Ogre') }]] })));
+    expect(perm(s, 'Ogre')).toBeUndefined();
+  });
+
+  it('Day of Black Sun: creatures with mana value X or less lose their abilities, then are destroyed', () => {
+    const wall = creature('Wall', 0, 4, { manaCost: '{1}', cmc: 1, keywords: ['Indestructible'], oracleText: 'Indestructible' });
+    const bear = creature('Bear', 2, 2, { manaCost: '{1}{G}', cmc: 2 });
+    const dragon = creature('Dragon', 5, 5, { manaCost: '{4}{R}', cmc: 5 });
+    let s = board({ mana: 4, hand: [blackSun], theirs: [wall, bear, dragon] });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0', x: 2 })));
+    // The Wall lost indestructible first: destroyed too. The Dragon (mana value 5) stays.
+    expect(s.battlefield.filter((x) => x.controller === 1 && isCreature(x.card)).map((x) => x.card.name)).toEqual(['Dragon']);
+    expect(s.players[1].graveyard.map((c) => c.card.name).sort()).toEqual(['Bear', 'Wall']);
+  });
+
+  it('Shoot the Sheriff can\'t target outlaws', () => {
+    const rogue = creature('Rogue', 2, 2, { typeLine: 'Creature — Human Rogue' });
+    const bear = creature('Bear', 2, 2, { typeLine: 'Creature — Bear' });
+    const s = board({ theirs: [rogue, bear] });
+    const slot = spellSpec(sheriff).targets[0];
+    expect(['Rogue', 'Bear'].map((n) => isLegalTarget(s, 0, slot, { kind: 'permanent', iid: iidOf(s, n) }))).toEqual([false, true]);
+  });
+});
+

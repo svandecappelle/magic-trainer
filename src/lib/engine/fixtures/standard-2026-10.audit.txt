@@ -40,9 +40,6 @@ NONE     Dawn's Truce {1}{W} — Instant
       keyword not simulated: gift
   ✗ You and permanents you control gain hexproof until end of turn. If th…
       spell not simulated
-NONE     Day of Black Sun {X}{B}{B} — Sorcery
-  ✗ Each creature with mana value X or less loses all abilities until end…
-      spell not simulated
 NONE     Daydream {W} — Sorcery
   ✓ Flashback {2}{W}
       keyword
@@ -129,9 +126,6 @@ NONE     Moseo, Vein's New Dean {2}{B} — Legendary Creature — Bird Skeleton 
       trigger (enters), effect not simulated
   ✗ Infusion — At the beginning of your end step, if you gained life this…
       trigger (endStep), effect not simulated
-NONE     Multiply by Zero {1}{B} — Instant
-  ✗ Target creature has base power and toughness 0/0 until end of turn.
-      spell not simulated
 NONE     Nurturing Pixie {W} — Creature — Faerie Rogue
   ✓ Flying
       keyword
@@ -204,9 +198,6 @@ NONE     Seasoned Cryomancer {1}{U}{U} — Creature — Human Wizard
       trigger (enters), effect not simulated
   ? {3}{U}{U}, Exile this card from your graveyard: Draw two cards.
       activated ability with a cost or restriction not understood
-NONE     Shoot the Sheriff {1}{B} — Instant
-  ✗ Destroy target non-outlaw creature.
-      spell not simulated
 NONE     Sleight of Hand {U} — Sorcery
   ✗ Look at the top two cards of your library. Put one of them into your …
       spell not simulated
@@ -677,6 +668,9 @@ OK       Curious Farm Animals {W} — Creature — Boar Elk Bird Ox
       trigger (dies) → gainLife
   ✓ {2}, Sacrifice this creature: Destroy up to one target artifact or en…
       activated → destroy (1 target)
+OK       Day of Black Sun {X}{B}{B} — Sorcery
+  ✓ Each creature with mana value X or less loses all abilities until end…
+      spell → loseAbilitiesDestroy
 OK       Day of Judgment {2}{W}{W} — Sorcery
   ✓ Destroy all creatures.
       spell → destroyAll
@@ -794,6 +788,9 @@ OK       Meticulous Archive  — Land — Plains Island
       enters tapped (always)
   ✓ When this land enters, surveil 1.
       trigger (enters) → surveil
+OK       Multiply by Zero {1}{B} — Instant
+  ✓ Target creature has base power and toughness 0/0 until end of turn.
+      spell → setBasePT (1 target)
 OK       Multiversal Passage  — Land
   ✓ As this land enters, choose a basic land type. Then you may pay 2 lif…
       chooses a basic land type (its mana); pay 2 life or it enters tapped
@@ -878,6 +875,9 @@ OK       Shipwreck Marsh  — Land
       enters tapped (unlessOtherLands)
   ✓ {T}: Add {U} or {B}.
       mana: U/B
+OK       Shoot the Sheriff {1}{B} — Instant
+  ✓ Destroy target non-outlaw creature.
+      spell → destroy (1 target)
 OK       Slagstorm {1}{R}{R} — Sorcery
   ✓ Choose one —
       modal: choose 1–1
@@ -961,5 +961,5 @@ OK       Watery Grave  — Land — Island Swamp
   ✓ As this land enters, you may pay 2 life. If you don't, it enters tapp…
       enters tapped (payLife)
 
-178 cards: 81 ok, 40 partial, 57 not simulated, 0 can't be cast
+178 cards: 84 ok, 40 partial, 54 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

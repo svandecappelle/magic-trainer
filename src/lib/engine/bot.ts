@@ -454,6 +454,7 @@ function withX(spec: AbilitySpec, x: number): AbilitySpec {
   const effects = spec.effects.map((e): Effect => {
     if (e.kind === 'damage' || e.kind === 'damageAll') return { ...e, amount: n(e.amount) };
     if (e.kind === 'dig') return e;
+    if (e.kind === 'loseAbilitiesDestroy') return { ...e, maxManaValue: n(e.maxManaValue) };
     if ('n' in e) return { ...e, n: n(e.n) } as Effect;
     return e;
   });
@@ -465,7 +466,7 @@ const num = (a: Amount) => (typeof a === 'number' ? a : 0);
 function intentOf(e: Effect): Intent {
   switch (e.kind) {
     case 'damage': case 'destroy': case 'counter': case 'loseLife': case 'mill': case 'discard': case 'bounce': case 'bounceAll': case 'sacrifice':
-    case 'poison': case 'gainControl': case 'flickerAtEnd': case 'airbend': case 'plot':
+    case 'poison': case 'gainControl': case 'flickerAtEnd': case 'airbend': case 'plot': case 'setBasePT':
       return 'harm';
     case 'tap':
       return e.untap ? 'neutral' : 'harm';
@@ -490,6 +491,8 @@ function kills(perm: Permanent, effects: Effect[]): boolean {
     if (e.kind === 'destroy') return true;
     if (e.kind === 'damage' || e.kind === 'damageAll') damage += num(e.amount);
     if (e.kind === 'pump' || e.kind === 'pumpAll') toughness += e.toughness;
+    // Multiply by Zero: the base toughness replaced.
+    if (e.kind === 'setBasePT' && !walker) toughness += e.toughness - (Number(perm.card.toughness) || 0);
     if (e.kind === 'addCounters' && e.counter === '-1/-1') toughness -= num(e.n);
   }
   return toughness <= 0 || damage >= toughness;
@@ -502,6 +505,14 @@ function kills(perm: Permanent, effects: Effect[]): boolean {
 function massValue(s: GameState, me: PlayerId, effects: Effect[]): number {
   let score = 0;
   for (const e of effects) {
+    // Day of Black Sun: the creatures with mana value X or less (indestructible ones survive).
+    if (e.kind === 'loseAbilitiesDestroy') {
+      for (const perm of s.battlefield.filter((x) => isCreature(x.card) && x.card.cmc <= num(e.maxManaValue))) {
+        if (hasKw(perm, 'indestructible')) continue;
+        score += friend(s, me, perm.controller) ? -creatureValue(perm.card) : creatureValue(perm.card);
+      }
+      continue;
+    }
     if (e.kind !== 'destroyAll' && e.kind !== 'damageAll' && e.kind !== 'pumpAll' && e.kind !== 'bounceAll') continue;
     for (const perm of matching(s, me, e.which)) {
       if (!isCreature(perm.card)) {
@@ -586,11 +597,11 @@ function playWithGoodTarget(s: GameState, me: PlayerId, play: Play, among?: Perm
   if (effects.some((e) => e.kind === 'counter' || e.kind === 'gainProtection' || e.kind === 'gainProtectionAll' || (e.kind === 'pump' && intentOf(e) === 'help'))) return null; // used in response only
   if (effects.some((e) => e.kind === 'tap' && e.untap)) return null;
 
-  const mass = effects.some((e) => e.kind === 'destroyAll' || e.kind === 'damageAll' || e.kind === 'pumpAll' || e.kind === 'bounceAll');
+  const mass = effects.some((e) => e.kind === 'destroyAll' || e.kind === 'damageAll' || e.kind === 'pumpAll' || e.kind === 'bounceAll' || e.kind === 'loseAbilitiesDestroy');
   if (mass) {
     if (among) return null;
     // Positive pumps only before attacking; wipes when they clearly favour us.
-    const pumpOnly = effects.every((e) => e.kind !== 'destroyAll' && e.kind !== 'damageAll' && e.kind !== 'bounceAll' && !(e.kind === 'pumpAll' && e.toughness < 0));
+    const pumpOnly = effects.every((e) => e.kind !== 'destroyAll' && e.kind !== 'damageAll' && e.kind !== 'bounceAll' && e.kind !== 'loseAbilitiesDestroy' && !(e.kind === 'pumpAll' && e.toughness < 0));
     if (pumpOnly && !(s.step === 'main1' && isActivePlayer(s, me) && creaturesOf(s, me).some(canAttack))) return null;
     if (massValue(s, me, effects) < (pumpOnly ? 3 : 2)) return null;
   }

@@ -36,6 +36,8 @@ export interface Boost {
   until: 'endOfTurn';
   /** Mother of Runes: protection from these colors. */
   protection?: Color[];
+  /** Multiply by Zero: base power and toughness set (layer 7b); the latest one wins, other changes apply on top. */
+  setBase?: { power: number; toughness: number };
 }
 
 export interface Permanent extends CardInst {
@@ -376,6 +378,7 @@ export type LogEntry =
   | { k: 'mayCastFree'; p: PlayerId; card: string }
   | { k: 'becomesVehicle'; card: string }
   | { k: 'transformed'; card: string; into: string }
+  | { k: 'basePT'; card: string; power: number; toughness: number }
   | { k: 'explores'; card: string; revealed?: string; land: boolean }
   | { k: 'counters'; card: string; counter: CounterKind; n: number }
   | { k: 'countered'; card: string }
@@ -669,8 +672,13 @@ export const firstStrikes = (x: CardInst) => hasKw(x, 'first strike') || hasKw(x
 const sum = (perm: Permanent, key: 'power' | 'toughness') => perm.boosts.reduce((n, b) => n + b[key], 0);
 const counterBonus = (perm: Permanent) => (perm.counters['+1/+1'] ?? 0) - (perm.counters['-1/-1'] ?? 0);
 
-export const powerOf = (perm: Permanent) => power(perm.card) + sum(perm, 'power') + counterBonus(perm) + (perm.statics?.power ?? 0);
-export const toughnessOf = (perm: Permanent) => toughness(perm.card) + sum(perm, 'toughness') + counterBonus(perm) + (perm.statics?.toughness ?? 0);
+/**
+ * Power and toughness in layer order: the card's (7a), then the latest "base power and toughness" (7b), then
+ * modifications from effects and static abilities (7c) and counters (7d).
+ */
+const basePT = (perm: Permanent) => [...perm.boosts].reverse().find((b) => b.setBase)?.setBase;
+export const powerOf = (perm: Permanent) => (basePT(perm)?.power ?? power(perm.card)) + sum(perm, 'power') + counterBonus(perm) + (perm.statics?.power ?? 0);
+export const toughnessOf = (perm: Permanent) => (basePT(perm)?.toughness ?? toughness(perm.card)) + sum(perm, 'toughness') + counterBonus(perm) + (perm.statics?.toughness ?? 0);
 
 /** True-Name Nemesis: protection from the chosen player (their spells, abilities, creatures and damage). */
 const protectedFromPlayer = (perm: Permanent, p: PlayerId) => perm.chosenPlayer === p && protectionFromChosenPlayer(perm.card);
@@ -1797,6 +1805,12 @@ function finishCleanup(d: GameState, p: PlayerId, iids: string[]) {
 }
 
 function finishTurn(d: GameState) {
+  // Day of Black Sun: "loses all abilities until end of turn".
+  for (const loss of (d.abilityLoss ?? []).filter((x) => x.by === 'endOfTurn')) {
+    const back = findPermanent(d, loss.iid);
+    if (back) back.card = loss.card;
+  }
+  if (d.abilityLoss) d.abilityLoss = d.abilityLoss.filter((x) => x.by !== 'endOfTurn');
   for (const perm of d.battlefield) {
     // "until end of turn": a crewed Vehicle or Iron Man Armor is no longer a creature.
     if (perm.unanimated) {
@@ -2933,6 +2947,31 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         }
       }
       break;
+    case 'setBasePT':
+      for (const perm of perms) {
+        perm.boosts.push({ power: 0, toughness: 0, keywords: [], until: 'endOfTurn', setBase: { power: e.power, toughness: e.toughness } });
+        log(d, { k: 'basePT', card: perm.card.name, power: e.power, toughness: e.toughness });
+      }
+      break;
+    case 'loseAbilitiesDestroy': {
+      const max = amount(d, r, e.maxManaValue);
+      const those = d.battlefield.filter((x) => isCreature(x.card) && printedCard(x).cmc <= max);
+      for (const perm of those) {
+        // Until end of turn: its abilities come back then (if it is still there: indestructible ones only lose it).
+        (d.abilityLoss ??= []).push({ iid: perm.iid, by: 'endOfTurn', card: perm.card });
+        perm.printed ??= perm.card;
+        perm.card = { ...perm.card, oracleText: '', keywords: [] };
+        log(d, { k: 'losesAbilities', card: perm.card.name });
+      }
+      refreshStatics(d);
+      for (const perm of those) {
+        if (!findPermanent(d, perm.iid) || hasKw(perm, 'indestructible')) continue;
+        removePermanent(d, perm, 'graveyard');
+        (r.removed ??= {})[perm.iid] = perm.controller;
+        log(d, { k: 'destroyed', card: perm.card.name });
+      }
+      break;
+    }
     case 'pump':
       for (const perm of perms) {
         perm.boosts.push({ power: e.power, toughness: e.toughness, keywords: e.keywords, until: 'endOfTurn' });

@@ -127,7 +127,10 @@ get each face's cost and image (their text is rebuilt from the joined faces mean
 - [x] Replacement and prevention effects — Fog ("prevent all combat damage"), "prevent the next N damage";
   other "instead" replacements are not simulated
 - [x] Extra turns ("take an extra turn after this one"); alternate win conditions are not simulated
-- [ ] Full layer system for interacting continuous effects (today: boosts, counters and statics simply add up)
+- [x] Layers for power and toughness: the card's (7a), then "has base power and toughness N/N" (7b, the latest wins:
+  Multiply by Zero), then effects and static abilities (7c), then counters (7d); "loses all abilities until end of
+  turn" (layer 6: Day of Black Sun) and for as long as a permanent stays (Tishana's Tidebinder). Type-changing effects
+  are applied to the card itself (Swift Reconfiguration, manlands, Magus of the Moon) without timestamps between them
 
 ## Game behaviour
 
@@ -175,13 +178,12 @@ the engine. Fixed:
   "that's blue or red"; "It gains …" / "Untap it." after a target; Harmonize, Paradigm, Web-slinging, Gift and
   Bargain lines (the option is never used)
 
-Approximations kept on purpose (small upsides ignored): Swords to Plowshares' life, Get Lost's Map
-tokens, Empower Jace, No More Lies exiling instead of the graveyard, "exile it instead if it
+Approximations kept on purpose (small upsides ignored): Empower Jace, No More Lies exiling instead of the graveyard, "exile it instead if it
 would die this turn".
 
 Still missing, most played first:
-- [ ] "Look at the top N cards …" variants still missing (Consult the Star Charts, Sleight of Hand, Flow State; Stock
-  Up and Dáin's Company done)
+- [ ] "Look at the top N cards …" variants still missing (Sleight of Hand, Flow State; Stock Up, Dáin's Company and
+  Consult the Star Charts done)
 - [x] Modal triggers "When … enters, choose one —" / "choose up to one —": the mode is chosen as the trigger goes on
   the stack, then its targets; modes not understood or without a legal target can't be chosen (Kutzil's Flanker,
   Gaius van Baelsar, Yuriko's surveil, Charming Scoundrel, Hullbreaker Horror's bounce). Edicts and targets read
@@ -194,11 +196,11 @@ Still missing, most played first:
   you discard one or more cards" (impulse draw)
 - [ ] Mill, then "you may return a … card from your graveyard to your hand" (Overlord of the Balemurk); impending
 - [ ] Spree and Tiered (Three Steps Ahead, Requisition Raid, Return the Favor, Fire Magic): modes with extra costs
-- [ ] Blink: "exile …, then return it to the battlefield" (Daydream); "exile … until this leaves the battlefield"
-  (Seam Rip, Deep-Cavern Bat, Pinnacle Starcage)
+- [ ] Blink "with a +1/+1 counter on it" (Daydream); "exile … until this leaves the battlefield" for Deep-Cavern Bat
+  and Pinnacle Starcage (plain blink: All Aboard; Seam Rip done)
 - [ ] Emblems with static abilities (Ajani; triggered emblems work); loyalty counters from triggers (Ajani Resolute)
 - [ ] "Any number of target players each …" (Ral Zarek's −1, Riverchurn Monument)
-- [ ] Lands that choose a basic land type (Multiversal Passage); Theorist's Sanctum entering tapped
+- [ ] Theorist's Sanctum entering tapped (Multiversal Passage done)
 - [x] Manlands: "this land becomes a 4/4 blue and black Shark creature … until end of turn" with its colors,
   keywords, quoted static or trigger (Raging Ravine), "artifact creature" (Mishra's Factory, Inkmoth Nexus) and "all
   creature types" (Mutavault: changelings count for every creature type); never paid by tapping itself; the bot
@@ -213,8 +215,8 @@ Still missing, most played first:
 - [ ] Static power from conditions (Dark Matter Manipulator, Ghitu Lavarunner), "can't block" (Starscape Cleric),
   Moonshadow losing its counters
 - [ ] Manifest dread (Abhorrent Oculus), "becomes a copy of a card in your graveyard" (Likeness Looter)
-- [ ] Day of Black Sun, Strategic Betrayal, Shoot the Sheriff (non-outlaw), Multiply by Zero (base P/T, layers)
-- [ ] Cost reductions (Eddymurk Crab, Hearth Elemental, Sunderflock), Warp, Plot, Offspring, Opus
+- [ ] Strategic Betrayal (Day of Black Sun, Shoot the Sheriff and Multiply by Zero done)
+- [ ] Cost reductions (Eddymurk Crab, Hearth Elemental, Sunderflock), Offspring, Opus (Warp and Plot done)
 - [ ] Mana spent conditions ("if {U}{U} was spent", Evoke Incarnations: Deceit, Emptiness)
 
 W lifegain (mtgtop8 deck 895437, card-audit skill). Fixed: Voice of Victory (opponents can't cast spells during
@@ -282,7 +284,7 @@ Left "not simulated" or found on the way:
 - [ ] Pain lands' "This land deals 1 damage to you." (Karplusan Forest) is still ignored
 
 Still open, most played first:
-- [ ] Quantum Riddler (6): Warp (cast for its warp cost, exiled at the end step, cast again later from exile)
+- [x] Quantum Riddler (6): Warp (cast for its warp cost, exiled at the end step, cast again later from exile)
 - [ ] Talon Gates of Madara (6): "{1}, {T}: Add one mana of any color" (mana costing mana), "up to one target creature
   phases out", "{4}: Put this card from your hand onto the battlefield" (it makes only {C} for now)
 
@@ -299,7 +301,7 @@ Approximations: Rhystic Study's "you may draw" always draws.
 
 Still open, playing wrongly, most played first (see `audit-reports/2026-10-16/report.md`):
 - [ ] Seasoned Cryomancer (5): stun counters; "When you discard one or more nonland cards this way"
-- [ ] Parallax Wave (5): fading, exile until it leaves
+- [x] Parallax Wave (5): fading, exile until it leaves
 - [ ] Bilbo, Thief in the Night (4): cost reduction for spells cast from anywhere but the hand; casting from the
   graveyard when it attacks
 - [ ] Anointed Peacekeeper (4): look at a hand, any card name, costs {2} more

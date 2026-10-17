@@ -65,6 +65,7 @@ const log: LogMessages = {
   paidTax: (e, c) => `${c.isMe(e.p) ? 'Vous payez' : `${c.name(e.p)} paie`} {${e.n}} pour ${c.card(e.card)}`,
   looksAtHand: (e, c) => `${c.isMe(e.p) ? 'Vous regardez' : `${c.name(e.p)} regarde`} la main de ${c.isMe(e.of) ? 'vous' : c.name(e.of)} : ${e.cards.length ? e.cards.map((n) => c.card(n)).join(', ') : 'vide'}`,
   explores: (e, c) => `${c.card(e.card)} explore${e.revealed ? ` : ${c.card(e.revealed)}` : ''}${e.land ? ' va dans la main' : ', un marqueur +1/+1'}`,
+  basePT: (e, c) => `${c.card(e.card)} a une force et une endurance de base de ${e.power}/${e.toughness} jusqu'à la fin du tour`,
   transformed: (e, c) => `${c.card(e.card)} se transforme en ${c.card(e.into)}`,
   becomesVehicle: (e, c) => `${c.card(e.card)} devient un artefact Véhicule, pas une créature sauf s'il est piloté`,
   mayCastFree: (e, c) => `${c.isMe(e.p) ? 'Vous pouvez' : `${c.name(e.p)} peut`} lancer ${c.card(e.card)} maintenant sans payer son coût de mana`,

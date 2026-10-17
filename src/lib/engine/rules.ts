@@ -596,6 +596,11 @@ export type Effect =
   | { kind: 'transform' }
   // All Aboard: "Exile target non-Pilot creature you control, then return that card to the battlefield under its owner's control."
   | { kind: 'flicker'; to: Affected }
+  // Multiply by Zero: "Target creature has base power and toughness 0/0 until end of turn." (layer 7b)
+  | { kind: 'setBasePT'; to: Affected; power: number; toughness: number }
+  // Day of Black Sun: "Each creature with mana value X or less loses all abilities until end of turn. Destroy those
+  // creatures." (layer 6, then destroyed: an indestructible one stays, without its abilities this turn)
+  | { kind: 'loseAbilitiesDestroy'; maxManaValue: Amount }
   /** Fog: no combat damage this turn. */
   | { kind: 'preventCombat' }
   /** "Prevent the next N damage that would be dealt to any target this turn." */
@@ -666,6 +671,9 @@ const NUMBER = '(?:a|an|one|two|three|four|five|six|seven|\\d+)';
 /** A number or X. */
 const AMOUNT = '(?:a|an|one|two|three|four|five|six|seven|\\d+|X)';
 const toAmount = (s: string): Amount => (s.toUpperCase() === 'X' ? 'X' : toNumber(s));
+
+/** "Assassins, Mercenaries, Pirates, Rogues, and Warlocks are outlaws." */
+const OUTLAWS = ['assassin', 'mercenary', 'pirate', 'rogue', 'warlock'];
 
 const NOUNS: Record<string, string> = {
   creature: 'creature', creatures: 'creature', player: 'player', players: 'player', opponent: 'opponent', opponents: 'opponent',
@@ -784,7 +792,9 @@ export function parseTargetPhrase(phrase: string): TargetSpec | null {
     else if (w.startsWith('non') && COLOR_WORDS[w.slice(3).replace('-', '')]) (filter.nonColors ??= []).push(COLOR_WORDS[w.slice(3).replace('-', '')]);
     else if (w.startsWith('non') && CARD_TYPES.includes(w.slice(3).replace('-', '') as CardType)) (filter.nonTypes ??= []).push(w.slice(3).replace('-', '') as CardType);
     else if (CARD_TYPES.includes(w as CardType)) adjectiveTypes.push(w as CardType); // "creature spell", "instant or sorcery spell"
-    // All Aboard: "non-Pilot creature" (a capitalized subtype; not "non-outlaw", a group of types).
+    // Shoot the Sheriff: "non-outlaw": none of the outlaw creature types.
+    else if (w === 'non-outlaw') (filter.nonSubtypes ??= []).push(...OUTLAWS);
+    // All Aboard: "non-Pilot creature" (a capitalized subtype; "outlaw" above is a group of types).
     else if (/^non-[a-z]+$/.test(w) && phrase.includes(`non-${w[4].toUpperCase()}${w.slice(5)}`)) (filter.nonSubtypes ??= []).push(w.slice(4));
     else return null;
   }
@@ -1071,6 +1081,13 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     const to = slotFor(m[1], (spec) => spec.kind === 'creature' || spec.kind === 'permanent');
     return to && { kind: 'flicker', to };
   });
+  scan(new RegExp(`(${TARGET}) has base power and toughness (\\d+)\\/(\\d+) until end of turn(?=\\.)`, 'gi'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'creature');
+    return to && { kind: 'setBasePT', to, power: Number(m[2]), toughness: Number(m[3]) };
+  });
+  scan(/\bEach creature with mana value (\d+|X) or less loses all abilities until end of turn\. Destroy those creatures(?=\.)/g, (m) => ({
+    kind: 'loseAbilitiesDestroy', maxManaValue: toAmount(m[1]),
+  }));
   scan(new RegExp(`\\bairbend (${TARGET})(?=\\.)`, 'gi'), (m) => {
     const to = slotFor(m[1], (spec) => spec.kind === 'creature' || spec.kind === 'permanent' || spec.kind === 'spell' || spec.kind === 'spellOrPermanent');
     return to && { kind: 'airbend', to };
@@ -1410,6 +1427,8 @@ const POWER_LIFE = /(?:Its|That creature's) controller gains life equal to its p
 /** Memory Lapse, Remand, Force of Negation: where the countered spell goes instead. */
 const COUNTER_DEST = /If that spell is countered this way, (put it on top of its owner's library|put it into its owner's hand|exile it) instead of (?:into that player's graveyard|putting it into its owner's graveyard)(?=\.)/;
 /** Tishana's Tidebinder: the countered ability's permanent loses all abilities. */
+/** Day of Black Sun: "Destroy those creatures" refers to the creatures that lost their abilities. */
+const BLACK_SUN = /Each creature with mana value (?:\d+|X) or less loses all abilities until end of turn\. Destroy those creatures\./g;
 /** All Aboard: exiled and back at once (flicker). */
 const FLICKER = /, then return that card to the battlefield under its owner's control\./g;
 /** Malcolm: the discarded card may be cast for free with four chorus counters (castDiscarded). */
@@ -1838,7 +1857,7 @@ const UNSUPPORTED_WORDS = /\b(?:if|unless|for each|where|instead|that (?:creatur
 const UNSUPPORTED = {
   test: (text: string) => {
     let rest = text;
-    for (const handled of [CONTROLLER_SEARCH, SURVEIL_TO_HAND, THORIN_ATTACH, BECOMES_CREATURE, LAND_BECOMES, TRADE_FOR_CARD, COUNTER_DEST, TIDEBINDER, POWER_LIFE, PHELIA, CITY_COPIES, GHOST_VACUUM, MALCOLM, FLICKER]) rest = rest.replace(handled, '');
+    for (const handled of [CONTROLLER_SEARCH, SURVEIL_TO_HAND, THORIN_ATTACH, BECOMES_CREATURE, LAND_BECOMES, TRADE_FOR_CARD, COUNTER_DEST, TIDEBINDER, POWER_LIFE, PHELIA, CITY_COPIES, GHOST_VACUUM, MALCOLM, FLICKER, BLACK_SUN]) rest = rest.replace(handled, '');
     return UNSUPPORTED_WORDS.test(rest.replace(/"[^"]*"/g, '""'));
   },
 };

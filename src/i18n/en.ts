@@ -54,6 +54,7 @@ const log: LogMessages = {
   shuffled: (e, c) => `${c.isMe(e.p) ? 'You shuffle' : `${c.name(e.p)} shuffles`} their library`,
   putBack: (e, c) => `${c.isMe(e.p) ? 'You put' : `${c.name(e.p)} puts`} ${e.n} cards from the hand on top of the library`,
   explores: (e, c) => `${c.card(e.card)} explores${e.revealed ? `: ${c.card(e.revealed)}` : ''}${e.land ? ' goes to the hand' : ', a +1/+1 counter'}`,
+  basePT: (e, c) => `${c.card(e.card)} has base power and toughness ${e.power}/${e.toughness} until end of turn`,
   transformed: (e, c) => `${c.card(e.card)} transforms into ${c.card(e.into)}`,
   becomesVehicle: (e, c) => `${c.card(e.card)} becomes a Vehicle artifact, not a creature unless crewed`,
   mayCastFree: (e, c) => `${c.isMe(e.p) ? 'You' : c.name(e.p)} may cast ${c.card(e.card)} now without paying its mana cost`,
