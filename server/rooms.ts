@@ -1,6 +1,8 @@
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { fallbackAction } from '../src/lib/engine/bot';
-import { actor, apply, IllegalAction, newGame, teamOf, teamsOf, type ErrorParams, type GameMode, type GameState, type PlayerId } from '../src/lib/engine/engine';
+import { actor, apply, IllegalAction, newGame, STATE_VERSION, teamOf, teamsOf, type ErrorParams, type GameMode, type GameState, type PlayerId } from '../src/lib/engine/engine';
+import { packState, unpackState } from '../src/lib/packState';
+import type { RoomStore } from './db/roomStore';
 import {
   MAX_DECK_SIZE, MIN_DECK_SIZE, redact, type ClientMessage, type ServerErrorCode, type ServerMessage,
 } from '../src/lib/multiplayer/protocol';
@@ -44,7 +46,15 @@ interface Room {
   /** Who played first in the current game, and whether its result is in the score. */
   first?: PlayerId;
   scored?: boolean;
+  /** A save to the store is due (see persist). */
+  saveTimer?: ReturnType<typeof setTimeout>;
 }
+
+/** What is saved of a room: everything but the connections and the timers. */
+type SavedRoom = Omit<Room, 'expiry' | 'clock' | 'saveTimer' | 'seats'> & { seats: Omit<Seat, 'conn'>[] };
+
+/** Changes to a room within this delay are saved together. */
+const SAVE_DELAY_MS = 1000;
 
 /** Timeouts in a row after which a player concedes. */
 const MAX_TIMEOUTS = 3;
@@ -76,6 +86,8 @@ export interface RoomManagerOptions {
   decisionMs?: number;
   /** Time a disconnected player has to come back before conceding. 0: no limit. */
   reconnectMs?: number;
+  /** Where rooms are saved after each change, so a restart of the server can restore them (see restore). */
+  store?: RoomStore;
 }
 
 /** A card the deck check doesn't recognize, or a check that couldn't run (`card` undefined). */
@@ -95,8 +107,10 @@ export class RoomManager {
   private verifyDeck?: (deck: Card[]) => Promise<Card[]>;
   private decisionMs: number;
   private reconnectMs: number;
+  private store?: RoomStore;
 
-  constructor({ emptyRoomTtlMs = 10 * 60_000, rng = Math.random, verifyDeck, decisionMs = 0, reconnectMs = 0 }: RoomManagerOptions = {}) {
+  constructor({ emptyRoomTtlMs = 10 * 60_000, rng = Math.random, verifyDeck, decisionMs = 0, reconnectMs = 0, store }: RoomManagerOptions = {}) {
+    this.store = store;
     this.ttl = emptyRoomTtlMs;
     this.rng = rng;
     this.verifyDeck = verifyDeck;
@@ -166,6 +180,52 @@ export class RoomManager {
       if (e instanceof ClientError || e instanceof IllegalAction) conn.send({ t: 'error', code: e.code, params: e.params });
       else throw e;
     }
+  }
+
+  // ---------- Saving (a restart of the server keeps the games) ----------
+
+  /** Rooms saved before a restart, as the store gave them back; returns how many were restored. */
+  restore(saved: string[]): number {
+    let n = 0;
+    for (const packed of saved) {
+      try {
+        const { v, room } = unpackState<{ v: number; room: SavedRoom }>(packed);
+        if (v !== STATE_VERSION || !room?.id || this.byId.has(room.id) || this.rooms.has(room.code)) continue;
+        // Nobody is connected yet: the clocks start when the first player is back.
+        const restored: Room = { ...room, seats: room.seats.map((s) => ({ ...s, conn: null })) };
+        this.rooms.set(restored.code, restored);
+        this.byId.set(restored.id, restored);
+        this.expireIfEmpty(restored);
+        n++;
+      } catch (e) {
+        console.warn('A saved room could not be restored:', (e as Error).message);
+      }
+    }
+    return n;
+  }
+
+  /** A save of the room is due (several changes in a row are saved once). */
+  private persist(room: Room) {
+    if (!this.store || room.saveTimer) return;
+    room.saveTimer = setTimeout(() => void this.saveNow(room), SAVE_DELAY_MS);
+  }
+
+  private async saveNow(room: Room) {
+    clearTimeout(room.saveTimer);
+    room.saveTimer = undefined;
+    if (!this.store || this.byId.get(room.id) !== room) return;
+    const { expiry: _e, clock: _c, saveTimer: _s, ...rest } = room;
+    const saved: SavedRoom = { ...rest, seats: room.seats.map(({ conn: _conn, ...seat }) => seat) };
+    try {
+      await this.store.save(room.id, room.code, packState({ v: STATE_VERSION, room: saved }));
+    } catch (e) {
+      console.warn(`Room ${room.code} could not be saved:`, (e as Error).message);
+    }
+  }
+
+  /** Saves the rooms with changes not saved yet (before the server stops). */
+  flush(): Promise<void> {
+    return Promise.all([...this.byId.values()].filter((r) => r.saveTimer).map((r) => this.saveNow(r))).then(() => {});
   }
 
   disconnect(conn: Conn) {
@@ -355,6 +415,7 @@ export class RoomManager {
   }
 
   private sendState(room: Room) {
+    this.persist(room);
     // A finished game counts once in the match score.
     if (room.game && room.game.winner !== null && !room.scored) {
       room.scored = true;
@@ -408,6 +469,7 @@ export class RoomManager {
   }
 
   private sendLobby(room: Room) {
+    this.persist(room);
     const players = room.seats.map((s) => ({ name: s.name, connected: !!s.conn, wantsRematch: s.wantsRematch }));
     for (const s of room.seats) s.conn?.send({ t: 'lobby', room: room.id, code: room.code, players, match: room.match, size: room.size, mode: room.mode });
   }
@@ -420,9 +482,11 @@ export class RoomManager {
 
   private deleteRoom(room: Room) {
     clearTimeout(room.expiry);
+    clearTimeout(room.saveTimer);
     if (room.clock) clearTimeout(room.clock.timer);
     this.rooms.delete(room.code);
     this.byId.delete(room.id);
+    this.store?.remove(room.id).catch((e) => console.warn(`Room ${room.code} could not be deleted:`, (e as Error).message));
   }
 }
 

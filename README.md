@@ -63,8 +63,11 @@ Point the domain's DNS (A/AAAA record) at the server and open ports 80 and 443 f
 other targets: `make update` (git pull, rebuild, restart), `make status`, `make logs`, `sudo make https DOMAIN=…`,
 `sudo make uninstall`. Options: `PORT=` (host port, default 8787), `FORCE=1` (see below).
 
-Games in progress live in the server's memory, so a restart or an update ends them (players keep their decks
-and collection: those stay in their browser).
+Each online game has its own address (`/online/<id>`, the invitation link). The server saves the rooms in
+PostgreSQL after each change and restores them when it starts, so a restart or a `make update` doesn't end the games:
+players reconnect by themselves (their browser keeps their seat's secret for 3 days; the server keeps only its hash).
+Rooms nobody touched for a day are deleted. Without a database, rooms live in memory and a restart ends them. Games
+against the bot are saved in the browser (`/play/<id>`, the last 10).
 
 The database password is in `.env` next to `docker-compose.yml`: `make app` creates it with a random value the first
 time (see `.env.example`). Keep that file. To enable accounts (login with Discord), add `PUBLIC_URL`,

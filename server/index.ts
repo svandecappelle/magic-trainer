@@ -8,6 +8,7 @@ import { parseCardCheck, scryfallDeckCheck } from './cards';
 import { deckRoutes, purgeDeletedDecks } from './decks';
 import { storedLookup } from './db/cards';
 import { migrate, openDb, waitForDb } from './db/index';
+import { ROOM_KEEP_HOURS, roomStore } from './db/roomStore';
 import { sendJson } from './http';
 import { RoomManager, type Conn } from './rooms';
 
@@ -97,9 +98,11 @@ const server = createServer(async (req, res) => {
 const cardCheck = parseCardCheck(process.env.CARD_CHECK);
 const lookup = db ? storedLookup(db, fetchCardsById) : fetchCardsById;
 const decks = deckRoutes({ pool: db, account, lookup });
-if (db) {
-  // Hourly clean-up: expired sessions, tombstones of decks deleted long ago.
-  setInterval(() => void Promise.all([purgeSessions(db), purgeDeletedDecks(db)]).catch(() => {}), 3600_000).unref();
+// Online rooms are saved in the database (when there is one), so a restart doesn't end the games.
+const store = db ? roomStore(db) : null;
+if (db && store) {
+  // Hourly clean-up: expired sessions, tombstones of decks deleted long ago, rooms nobody touched for a day.
+  setInterval(() => void Promise.all([purgeSessions(db), purgeDeletedDecks(db), store.purge()]).catch(() => {}), 3600_000).unref();
 }
 // Clocks for online games: TURN_SECONDS per decision (default 120), RECONNECT_SECONDS to come back (default 180); 0 = none.
 const seconds = (value: string | undefined, fallback: number) => (value === undefined || value === '' || Number.isNaN(Number(value)) ? fallback : Number(value));
@@ -107,7 +110,19 @@ const rooms = new RoomManager({
   ...(cardCheck === 'off' ? {} : { verifyDeck: scryfallDeckCheck(cardCheck, lookup) }),
   decisionMs: seconds(process.env.TURN_SECONDS, 120) * 1000,
   reconnectMs: seconds(process.env.RECONNECT_SECONDS, 180) * 1000,
+  // Players can come back to a room (its address) for a day.
+  emptyRoomTtlMs: ROOM_KEEP_HOURS * 3600_000,
+  ...(store ? { store } : {}),
 });
+if (store) {
+  try {
+    await store.purge();
+    const restored = rooms.restore(await store.load());
+    if (restored) console.log(`Online rooms restored: ${restored}`);
+  } catch (e) {
+    console.error('Saved rooms could not be read:', (e as Error).message);
+  }
+}
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 2_000_000 });
 const alive = new WeakSet<WebSocket>();
 
@@ -152,6 +167,7 @@ server.listen(PORT, () => console.log(`Magic Trainer server on http://localhost:
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.once(signal, () => {
     server.close();
-    void (db?.end() ?? Promise.resolve()).finally(() => process.exit(0));
+    // Rooms changed in the last second are saved first.
+    void rooms.flush().then(() => db?.end()).finally(() => process.exit(0));
   });
 }

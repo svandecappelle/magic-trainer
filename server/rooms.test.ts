@@ -322,3 +322,65 @@ describe('Commander rooms', () => {
     expect(c.last('lobby')!.mode).toEqual({ twoHeaded: true, commander: true });
   });
 });
+
+describe('saved rooms', () => {
+  /** A store in memory, like the rooms table. */
+  function memoryStore() {
+    const rows = new Map<string, string>();
+    return { rows, save: async (id: string, _code: string, data: string) => void rows.set(id, data), remove: async (id: string) => void rows.delete(id) };
+  }
+
+  it('saves rooms after changes, and a new server restores them: players come back with their seat', async () => {
+    vi.useFakeTimers();
+    try {
+      const store = memoryStore();
+      const rooms = new RoomManager({ rng: () => 0.1, store, reconnectMs: 5000 });
+      const [alice, bob] = [new FakeConn(), new FakeConn()];
+      rooms.handle(alice, { t: 'create', name: 'Alice', deck });
+      const { room, token } = alice.last('joined')!;
+      rooms.handle(bob, { t: 'join', room, name: 'Bob', deck });
+      rooms.handle(alice, { t: 'action', action: { type: 'keep', bottom: [] } });
+      expect(store.rows.size).toBe(0); // saved a moment later, once
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(store.rows.size).toBe(1);
+      const before = alice.state;
+
+      // The server restarts: nobody is connected, no clock runs until someone is back.
+      const again = new RoomManager({ rng: () => 0.1, store, reconnectMs: 5000 });
+      expect(again.restore([...store.rows.values(), 'not a room'])).toBe(1);
+      await vi.advanceTimersByTimeAsync(60_000);
+      const back = new FakeConn();
+      again.handle(back, { t: 'open', room, token });
+      expect(back.last('joined')).toMatchObject({ room, seat: 0 });
+      expect(back.state).toEqual(before);
+      expect(back.last('deck')!.main).toHaveLength(deck.length);
+      // Bob isn't back yet: his reconnect clock runs now.
+      expect(back.last('clock')!.clock).toMatchObject({ player: 1, kind: 'reconnect' });
+      // The game goes on.
+      const bob2 = new FakeConn();
+      again.handle(bob2, { t: 'open', room, token: bob.last('joined')!.token });
+      again.handle(bob2, { t: 'action', action: { type: 'keep', bottom: [] } });
+      expect(back.state.turn).toBe(1);
+
+      // Leaving for good deletes the saved room.
+      again.handle(back, { t: 'leave' });
+      again.handle(bob2, { t: 'leave' });
+      expect(store.rows.size).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('flushes pending saves, and skips rooms of another engine version', async () => {
+    const store = memoryStore();
+    const rooms = new RoomManager({ store });
+    const alice = new FakeConn();
+    rooms.handle(alice, { t: 'create', name: 'Alice', deck });
+    await rooms.flush();
+    const [saved] = store.rows.values();
+    expect(saved).toBeDefined();
+    const other = saved.replace(/"data":\{"v":\d+/, '"data":{"v":-1');
+    expect(new RoomManager().restore([other])).toBe(0);
+    expect(new RoomManager().restore([saved])).toBe(1);
+  });
+});
