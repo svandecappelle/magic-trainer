@@ -634,7 +634,8 @@ export const en = {
     layout: {
       title: 'Board layout',
       hint: 'Drag the lines between the parts of the table (double-click one to reset it), or use these sliders. Saved in this browser.',
-      perm: 'Battlefield cards',
+      perm: 'Battlefield: creatures and other cards',
+      land: 'Battlefield: lands',
       hand: 'Hand cards',
       opp: "Opponent's battlefield",
       side: 'Side panel width',

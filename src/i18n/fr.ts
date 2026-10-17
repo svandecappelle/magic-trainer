@@ -642,7 +642,8 @@ export const fr: Messages = {
     layout: {
       title: 'Disposition de la table',
       hint: 'Faites glisser les lignes entre les parties de la table (double-clic pour en réinitialiser une), ou utilisez ces curseurs. Enregistré dans ce navigateur.',
-      perm: 'Cartes sur le champ de bataille',
+      perm: 'Champ de bataille : créatures et autres cartes',
+      land: 'Champ de bataille : terrains',
       hand: 'Cartes en main',
       opp: "Champ de bataille adverse",
       side: 'Largeur du panneau latéral',

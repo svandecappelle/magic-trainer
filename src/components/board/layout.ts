@@ -11,15 +11,17 @@ export interface BoardLayout {
   closed?: boolean;
   /** Share of the battlefields' height given to the opponents, in %. */
   opp?: number;
-  /** Width of a permanent on the battlefields, in px (lands are 70 % of it). */
+  /** Width of a permanent other than a land on the battlefields, in px. */
   perm?: number;
+  /** Width of a land on the battlefields, in px; left out, 70 % of the other permanents. */
+  land?: number;
   /** Width of a card in your hand, in px. */
   hand?: number;
 }
 
-export type LayoutSize = 'side' | 'opp' | 'perm' | 'hand';
+export type LayoutSize = 'side' | 'opp' | 'perm' | 'land' | 'hand';
 
-export const LAYOUT_LIMITS: Record<LayoutSize, [number, number]> = { side: [240, 520], opp: [25, 75], perm: [40, 130], hand: [50, 150] };
+export const LAYOUT_LIMITS: Record<LayoutSize, [number, number]> = { side: [240, 520], opp: [25, 75], perm: [40, 130], land: [28, 110], hand: [50, 150] };
 export const LAYOUT_DEFAULTS = { side: 320, opp: 50 };
 
 export const clampSize = (k: LayoutSize, v: number) => Math.round(Math.min(LAYOUT_LIMITS[k][1], Math.max(LAYOUT_LIMITS[k][0], v)));
@@ -86,6 +88,7 @@ export function layoutStyle(l: BoardLayout): Record<string, string> {
     '--opp-fr': `${opp}fr`,
     '--you-fr': `${100 - opp}fr`,
     ...(l.perm ? { '--perm-w': `${l.perm}px` } : {}),
+    ...(l.land ? { '--land-w': `${l.land}px` } : {}),
     ...(l.hand ? { '--hand-w': `${l.hand}px` } : {}),
   };
 }

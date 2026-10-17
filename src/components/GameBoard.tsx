@@ -116,16 +116,19 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   // ---------- Layout (drag handles, Settings sliders) ----------
   const { layout, update: setLayout, reset: resetLayout } = useBoardLayout();
   const sideRef = useRef<HTMLElement>(null);
-  /** The card sizes the stylesheet gives for this window, read from two hidden probes (`var(--perm-w)`, `var(--hand-w)`). */
+  /** The card sizes the stylesheet gives for this window, read from hidden probes (`var(--perm-w)`…). */
   const permProbe = useRef<HTMLDivElement>(null);
+  const landProbe = useRef<HTMLDivElement>(null);
   const handProbe = useRef<HTMLDivElement>(null);
-  const [autoSizes, setAutoSizes] = useState({ perm: 80, hand: 90 });
+  const [autoSizes, setAutoSizes] = useState({ perm: 80, land: 56, hand: 90 });
   useEffect(() => {
-    const read = () => setAutoSizes({ perm: permProbe.current?.offsetWidth || 80, hand: handProbe.current?.offsetWidth || 90 });
+    const read = () => setAutoSizes({
+      perm: permProbe.current?.offsetWidth || 80, land: landProbe.current?.offsetWidth || 56, hand: handProbe.current?.offsetWidth || 90,
+    });
     read();
     window.addEventListener('resize', read);
     return () => window.removeEventListener('resize', read);
-  }, [layout.perm, layout.hand]);
+  }, [layout.perm, layout.land, layout.hand]);
   /** Where a drag started: the size then, and for the battlefields their total height. */
   const dragFrom = useRef({ value: 0, span: 1 });
   const sizeNow = (k: LayoutSize) =>
@@ -991,6 +994,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     <div className={`game ${layout.closed ? 'side-closed' : ''}`} style={layoutStyle(layout) as CSSProperties}>
       <div className="board" ref={boardRef} onClickCapture={swallowZoomClick}>
         <div className="size-probe" ref={permProbe} style={{ width: 'var(--perm-w)' }} />
+        <div className="size-probe" ref={landProbe} style={{ width: 'var(--land-w)' }} />
         <div className="size-probe" ref={handProbe} style={{ width: 'var(--hand-w)' }} />
         {/* The side panel is folded away: what it says about the game (clock, opponent away…) shows on the table. */}
         {layout.closed && notice && <div className="small play-notice board-notice">{notice}</div>}
@@ -1287,7 +1291,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
             <section className="layout-settings" aria-label={t.game.layout.title}>
               <h4>{t.game.layout.title}</h4>
               <p className="small muted">{t.game.layout.hint}</p>
-              {([['perm', t.game.layout.perm, 'px'], ['hand', t.game.layout.hand, 'px'], ['opp', t.game.layout.opp, '%']] as const).map(([k, label, unit]) => (
+              {([['perm', t.game.layout.perm, 'px'], ['land', t.game.layout.land, 'px'], ['hand', t.game.layout.hand, 'px'], ['opp', t.game.layout.opp, '%']] as const).map(([k, label, unit]) => (
                 <label key={k} className="layout-slider small">
                   <span>
                     {label}
