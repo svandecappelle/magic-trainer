@@ -5,6 +5,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { fetchCardsById } from '../src/lib/scryfall';
 import { accounts, authConfig, purgeSessions } from './auth';
 import { parseCardCheck, scryfallDeckCheck } from './cards';
+import { deckRoutes, purgeDeletedDecks } from './decks';
 import { storedLookup } from './db/cards';
 import { migrate, openDb, waitForDb } from './db/index';
 import { sendJson } from './http';
@@ -77,12 +78,12 @@ if (db) {
 // Accounts: login with Discord (PUBLIC_URL, DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET), needs the database.
 const account = accounts({ pool: db, config: authConfig(process.env) });
 if (db && !account.enabled) console.log('Accounts disabled: set PUBLIC_URL, DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET to enable them.');
-if (db) setInterval(() => void purgeSessions(db).catch(() => {}), 3600_000).unref();
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
   try {
     if (await account.handle(req, res, url)) return;
+    if (await decks.handle(req, res, url)) return;
     if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { error: 'notFound' });
     serveStatic(res, url);
   } catch (e) {
@@ -95,6 +96,11 @@ const server = createServer(async (req, res) => {
 // Decks are checked against Scryfall (CARD_CHECK=strict|lenient|off, default lenient), through the cards table if any.
 const cardCheck = parseCardCheck(process.env.CARD_CHECK);
 const lookup = db ? storedLookup(db, fetchCardsById) : fetchCardsById;
+const decks = deckRoutes({ pool: db, account, lookup });
+if (db) {
+  // Hourly clean-up: expired sessions, tombstones of decks deleted long ago.
+  setInterval(() => void Promise.all([purgeSessions(db), purgeDeletedDecks(db)]).catch(() => {}), 3600_000).unref();
+}
 // Clocks for online games: TURN_SECONDS per decision (default 120), RECONNECT_SECONDS to come back (default 180); 0 = none.
 const seconds = (value: string | undefined, fallback: number) => (value === undefined || value === '' || Number.isNaN(Number(value)) ? fallback : Number(value));
 const rooms = new RoomManager({

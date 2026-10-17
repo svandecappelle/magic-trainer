@@ -76,3 +76,27 @@ export function rateLimiter(limit: number, windowMs: number, now = () => Date.no
     },
   };
 }
+
+export class HttpError extends Error {
+  constructor(readonly status: number, readonly code: string, readonly params?: Record<string, unknown>) {
+    super(code);
+  }
+}
+
+/** The JSON body of a request: 415 if it isn't JSON, 413 over `limit` bytes, 400 if it doesn't parse. */
+export async function readJson(req: IncomingMessage, limit = 1_000_000): Promise<unknown> {
+  if (!/^application\/json\b/.test(req.headers['content-type'] ?? '')) throw new HttpError(415, 'jsonExpected');
+  if (Number(req.headers['content-length'] ?? 0) > limit) throw new HttpError(413, 'tooLarge');
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > limit) throw new HttpError(413, 'tooLarge');
+    chunks.push(chunk as Buffer);
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    throw new HttpError(400, 'invalidJson');
+  }
+}

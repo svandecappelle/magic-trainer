@@ -127,7 +127,8 @@ and open `http://<server>:8787`.
 | `src/lib/engine/` | Simplified two-player rules engine with London mulligans, a stack and Arena-style priority windows with an optional per-player full control mode (`engine.ts`), card rules parsing (`rules.ts`), heuristic bot (`bot.ts`), preset decks |
 | `src/lib/multiplayer/` | Client/server message types, hidden-information redaction, WebSocket hook |
 | `server/` | Node WebSocket game server: rooms, seats, reconnection (`rooms.ts`), HTTP/static wiring (`index.ts`) |
-| `server/auth.ts`, `server/http.ts` | Login with Discord, sessions, `/api/me`; cookie and rate-limit helpers |
+| `server/auth.ts`, `server/http.ts` | Login with Discord, sessions, `/api/me`; cookie, JSON body and rate-limit helpers |
+| `server/decks.ts` | Saved decks and collection API (`/api/decks`, `/api/collection`): versions, conflicts, tombstones, limits |
 | `server/db/` | PostgreSQL: connection and migration runner (`index.ts`), SQL migrations, Scryfall card cache (`cards.ts`) |
 | `Makefile`, `Dockerfile`, `docker-compose.yml`, `deploy/` | Server installer, container image, compose services (app, PostgreSQL), nginx site template |
 | `docker-compose.dev.yml` | PostgreSQL alone for development |

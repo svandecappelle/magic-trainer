@@ -1,6 +1,7 @@
 # Accounts and saved decks (design)
 
-Status: steps 1 and 2 done (PostgreSQL, migrations, card cache, Discord login, sessions); deck API and sync not implemented yet.
+Status: steps 1 to 3 done (PostgreSQL, migrations, card cache, Discord login, sessions, deck and collection API);
+the client (login button, sync) is not implemented yet.
 
 Players can log in with Discord to keep their decks and their collection on the server and find them on any
 device. Accounts are optional: without one, the app works exactly as today (everything in the browser's
@@ -71,6 +72,7 @@ erDiagram
         timestamptz created_at
         timestamptz updated_at
         timestamptz deleted_at "tombstone"
+        timestamptz synced_at "server time of the last change"
     }
     deck_cards {
         uuid deck_id PK,FK
@@ -233,17 +235,22 @@ All JSON. Routes under `/api` need a session (401 otherwise), except `/api/me`.
 | POST   | `/auth/logout`                | Deletes the session, clears the cookie                         |
 | GET    | `/api/me`                     | `{ enabled, user: { id, name, avatarUrl } \| null }`           |
 | DELETE | `/api/me`                     | Deletes the account and all its data                           |
-| GET    | `/api/decks?since=<ms>`       | Decks changed since (all if omitted), tombstones included      |
-| PUT    | `/api/decks/:id`              | Creates or replaces a deck; body `{ name, format, entries: [{ cardId, board, qty }], createdAt, updatedAt, baseVersion }` |
-| DELETE | `/api/decks/:id`              | Marks the deck deleted (tombstone)                             |
-| GET    | `/api/collection`             | The whole collection                                           |
-| PATCH  | `/api/collection`             | `[{ cardId, qty, foilQty }]`, absolute values (0 and 0 removes) |
+| GET    | `/api/decks?since=<cursor>`   | `{ decks, deleted: [{ id, version, deletedAt }], cursor }`: decks changed since the cursor of a previous call (all if omitted) |
+| PUT    | `/api/decks/:id`              | Creates (201, `baseVersion` 0) or replaces (200) a deck; body `{ name, format, entries: [{ cardId, board, qty }], createdAt, updatedAt, baseVersion }`; returns the saved deck with its new `version` |
+| DELETE | `/api/decks/:id`              | Marks the deck deleted (tombstone); returns `{ id, version, deletedAt }` |
+| GET    | `/api/collection`             | `{ cards: [{ card, qty, foilQty }] }`                          |
+| PATCH  | `/api/collection`             | `[{ cardId, qty, foilQty }]`, absolute values (0 and 0 removes); returns `{ count }` |
 
 - Decks come back with full card data (`cards.data`), in the client's `Deck` shape.
 - Unknown card ids are fetched from Scryfall before saving. If Scryfall is unreachable, the API answers 503 and
   the client retries later (it is just another offline case). An id Scryfall doesn't know: 422.
-- `PUT` with a `baseVersion` lower than the stored `version`: 409 with the server copy (conflict, see below).
-- Limits: 500 decks per user, 300 entries per deck, 1 MB request body, 20 000 collection rows.
+- `PUT` with a `baseVersion` other than the stored `version`: 409 `{ error: 'conflict', deck }` with the server copy
+  (a deck, or a tombstone), see Sync. A `PUT` on a deleted deck with its current version brings it back.
+- `cursor` is the server time minus one minute (`decks.synced_at` is compared to it), so a change still being
+  committed during a `GET` is not missed; the same deck may come back twice, which is harmless.
+- Client times (`createdAt`, `updatedAt`) later than the server's clock are clamped to it.
+- Limits: 500 decks per user, 300 entries per deck, 1 MB request body, 20 000 collection rows, 5 000 changes per
+  collection `PATCH`, 300 writes per minute per user. Errors are `{ error: <code>, …params }`.
 - Every query filters on the session's `user_id`; another user's deck id answers 404.
 
 ## Sync in the browser
@@ -348,7 +355,7 @@ restore with `gunzip -c file | docker compose exec -T postgres psql -U magic mag
 
 1. ✓ Postgres in compose, `pg`, migration runner, `001_accounts.sql`, `cards` table backing the card check.
 2. ✓ Discord login, sessions, `/api/me`, logout, account deletion.
-3. Deck and collection API with limits and conflicts.
+3. ✓ Deck and collection API with limits and conflicts.
 4. Client: login button and menu, `sync.ts`, merge, offline queue, i18n (en, fr).
 5. README: deployment section (variables, Discord application, backups).
 

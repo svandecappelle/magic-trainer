@@ -275,5 +275,5 @@ export function accounts({ pool, config, fetch: fetchFn = fetch }: AccountsOptio
     return true;
   }
 
-  return { enabled, handle, userOf };
+  return { enabled, handle, userOf, sameOrigin };
 }
