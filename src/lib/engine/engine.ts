@@ -496,6 +496,11 @@ export interface GameState {
    * Optional so states created before this option existed still load.
    */
   fullControl?: boolean[];
+  /**
+   * Online games: whether a player stops in a priority window depends only on what everyone can see (cards in hand,
+   * untapped mana, abilities on the battlefield), so a stop doesn't tell the opponent that an instant is in hand.
+   */
+  publicStops?: boolean;
   /** Fog: no combat damage this turn. */
   preventCombat?: boolean;
   /** "Prevent the next N damage" shields this turn: target ("player:0" or a permanent iid) and amount left. */
@@ -1626,12 +1631,14 @@ export interface NewGameOptions {
   mulligans?: boolean;
   /** Players who stop at every priority window (see GameState.fullControl). */
   fullControl?: boolean[];
+  /** Stops decided from public information only (see GameState.publicStops). */
+  publicStops?: boolean;
 }
 
 /** Starting life: 20, Commander 40; a Two-Headed Giant team shares 30 (Commander 60). */
 export const startingLife = (mode?: GameMode) => (mode?.twoHeaded ? 30 : 20) * (mode?.commander ? 2 : 1);
 
-export function newGame({ decks, names, first, mode, commanders, rng = Math.random, mulligans = true, fullControl }: NewGameOptions): GameState {
+export function newGame({ decks, names, first, mode, commanders, rng = Math.random, mulligans = true, fullControl, publicStops }: NewGameOptions): GameState {
   const twoHeaded = !!mode?.twoHeaded && decks.length === 4;
   const player = (p: PlayerId): PlayerState => ({
     name: names[p],
@@ -1665,6 +1672,7 @@ export function newGame({ decks, names, first, mode, commanders, rng = Math.rand
     log: [{ k: 'goesFirst', p: first }],
     seed: Math.floor(rng() * 2 ** 32),
     ...(fullControl ? { fullControl: [...fullControl] } : {}),
+    ...(publicStops ? { publicStops } : {}),
   };
   for (const p of playersOf(d)) draw(d, p, 7);
   if (mulligans) d.mulligan = { player: first, count: d.players.map(() => 0), kept: d.players.map(() => false) };
@@ -3899,7 +3907,11 @@ function wantsPriority(d: GameState, p: PlayerId): boolean {
   }
   if (d.stack.at(-1)?.controller === p) return false; // don't respond to your own spell
   const ps = d.players[p];
-  return [...ps.hand, ...ps.graveyard, ...ps.exile].some((c) => castOptions(d, p, c.iid).length > 0) || activatable(d, p).length > 0;
+  // Abilities of permanents and cards in public zones (flashback, adventures, the commander) are seen by everyone.
+  if (activatable(d, p).length > 0 || [...ps.graveyard, ...ps.exile, ...(ps.command ?? [])].some((c) => castOptions(d, p, c.iid).length > 0)) return true;
+  // Online: cards in hand and mana to cast one, whatever they are (a spell without mana, like Daze, needs full control).
+  if (d.publicStops) return ps.hand.length > 0 && (!!ps.pool?.length || manaSources(d, p).some((m) => !m.iid.startsWith('hand:')));
+  return ps.hand.some((c) => castOptions(d, p, c.iid).length > 0);
 }
 
 function openWindow(d: GameState, reason: WindowReason, player: PlayerId, passes: number) {

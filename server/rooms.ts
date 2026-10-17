@@ -294,6 +294,8 @@ export class RoomManager {
       rng: this.rng,
       // A rematch keeps each seat's full control setting.
       fullControl: room.game?.fullControl,
+      // A stop must not tell the opponent what is in a hand.
+      publicStops: true,
     });
     for (const s of room.seats) s.wantsRematch = false;
     this.sendLobby(room);

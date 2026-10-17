@@ -2858,3 +2858,24 @@ describe('layers: base power and toughness, abilities lost until end of turn', (
   });
 });
 
+describe('online: stops decided from public information', () => {
+  const bear = creature('Bear', 2, 2, { manaCost: '{B}', cmc: 1 });
+  const instant = spell('Opt', '{U}', 'Draw a card.');
+  const sorcery = spell('Divination', '{2}{U}', 'Draw two cards.', 'Sorcery');
+  /** Does the opponent get a stop when Bear is cast? */
+  const stops = (hand: Card[], publicStops: boolean, oppMana = 1) => {
+    let s = board({ mana: 1, hand: [bear], oppHand: hand, oppMana });
+    if (publicStops) s.publicStops = true;
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    return s.priority?.player === 1 && s.stack.length === 1;
+  };
+
+  it('stops the same with an instant or a sorcery in hand', () => {
+    // Offline (vs the bot): only with something to cast.
+    expect([stops([instant], false), stops([sorcery], false)]).toEqual([true, false]);
+    // Online: cards in hand and mana open: a stop either way; no mana or no cards: no stop.
+    expect([stops([instant], true), stops([sorcery], true)]).toEqual([true, true]);
+    expect([stops([instant], true, 0), stops([], true)]).toEqual([false, false]);
+  });
+});
+

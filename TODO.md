@@ -142,7 +142,9 @@ get each face's cost and image (their text is rebuilt from the joined faces mean
   "Refresh card data" re-fetches older saved cards
 - [x] Server-side deck validation — the server replaces card data with Scryfall's (by id) and refuses unknown
   cards; CARD_CHECK=strict|lenient|off decides what happens when Scryfall is unreachable
-- [ ] Auto-pass leaks that you hold a castable instant (full control avoids it)
+- [x] Auto-pass leaks that you hold a castable instant — online games stop from public information only (cards in
+  hand and open mana, abilities on the battlefield, cards castable from public zones); a spell cast without mana (Daze)
+  then needs full control. Against the bot (which never reads hidden information) the stops still look at the hand
 - [x] Two-Headed Giant and Commander:
   - [x] A. Engine: any number of players in teams; shared team life and poison; 1v1 unchanged
   - [x] B. 2HG rules: shared turns, priority around all players, heads act and declare attackers/blockers in turn,
