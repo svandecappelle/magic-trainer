@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as Rea
 import {
   activatable, activationProblem, abilityMaxX, actor, apply, canAttack, canTapForMana, canUntapForMana, castCost, castOptions, castSource, castSources, channelCost, manaSources,
   landFaces, findInGraveyard, legalTargets, canBlock, findPermanent, hasKw, IllegalAction, isActivePlayer, mulliganBottom, isLegalTarget, isMainStep, firstOpponent, opponentsOf, teammatesOf, teamPlayers, wonBy,
-  powerOf, toughnessOf, unitsOf, xCount,
+  paymentFor, powerOf, toughnessOf, unitsOf, xCount,
   type Action, type CardInst, type CastOption, type GameState, type Permanent, type PlayerId, type Target,
 } from '../lib/engine/engine';
 import { errorText, logText, useT, type AppError } from '../i18n';
@@ -11,8 +11,10 @@ import { Icon } from './Icon';
 import { useHoverPreview } from './HoverPreview';
 import { useCardDisplay } from '../lib/cardLocale';
 import {
-  activatedOf, castInfo, castSpec, faceCard, faceName, modeSimulated, findPayment, isCreature, isLandCard, isPlaneswalker, parseCost, type AbilitySpec,
+  activatedOf, castInfo, castSpec, faceCard, faceName, modeSimulated, findPayment, isCreature, isLandCard, isPlaneswalker, parseCost, planPayment, type AbilitySpec,
+  type Cost, type ManaSource,
 } from '../lib/engine/rules';
+import { ManaCost } from './ManaCost';
 import { engineStatus } from '../lib/engineStatus';
 import { ChoicePanel, choiceKey, choicePrompt } from './ChoicePanel';
 import { Lines, type Line } from './board/Lines';
@@ -49,6 +51,35 @@ const targetKey = (t: Target) => (t.kind === 'player' ? `player:${t.player}` : t
 // A player with an empty name (the human in Play vs Bot) is shown as "You" in the current language.
 
 type SideTab = 'log' | 'card' | 'settings';
+
+/** Actions that spend mana: the player may choose what pays for them. */
+type PayAction = Extract<Action, { type: 'cast' | 'activate' | 'cycle' | 'channel' }>;
+
+/** "{2}{W}{U/B}" for a cost. */
+const costText = (cost: Cost) => `${cost.generic || !cost.colored.length ? `{${cost.generic}}` : ''}${cost.colored.map((c) => `{${c.join('/')}}`).join('')}`;
+
+/** The sources a payment really uses (some picked sources may be left out), or null when they can't pay. */
+const paidWith = (sources: ManaSource[], cost: Cost, picked: string[]) => {
+  const plan = planPayment(sources.filter((m) => picked.includes(m.iid)), cost);
+  return plan && new Set(plan.map((m) => m.iid));
+};
+
+/** Is there anything to choose? Not when every source that could help is needed anyway. */
+function paymentChoice(sources: ManaSource[], cost: Cost): boolean {
+  const plan = planPayment(sources, cost);
+  if (!plan || cost.generic + cost.colored.length === 0) return false;
+  const helps = (m: ManaSource) => cost.generic > 0 || (m.units ?? [m.colors]).some((u) => u.some((c) => cost.colored.some((req) => req.includes(c))));
+  return new Set(sources.filter(helps).map((m) => m.iid)).size > new Set(plan.map((m) => m.iid)).size;
+}
+
+const AUTO_PAY_KEY = 'mt.autoPay';
+const readAutoPay = () => {
+  try {
+    return localStorage.getItem(AUTO_PAY_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
 
 /** The two-player game table, shared by Play vs Bot and online multiplayer. */
 export function GameBoard({ game: g, me, onAction, endControls, notice }: Props) {
@@ -116,6 +147,18 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   const [blockerSel, setBlockerSel] = useState<string | null>(null);
   const [blocks, setBlocks] = useState<Record<string, string[]>>({});
   const [bottomSel, setBottomSel] = useState<string[]>([]);
+  /** Choosing the mana that pays for `action` (unless auto pay is on): the sources picked so far. */
+  const [paying, setPaying] = useState<{ action: PayAction; picked: string[] } | null>(null);
+  /** Always let the engine choose the mana (a setting kept in this browser). */
+  const [autoPay, setAutoPayState] = useState(readAutoPay);
+  const setAutoPay = (on: boolean) => {
+    setAutoPayState(on);
+    try {
+      localStorage.setItem(AUTO_PAY_KEY, on ? '1' : '0');
+    } catch {
+      // private mode: the setting lasts for this game only
+    }
+  };
 
   // Reset selections whenever the game moves on.
   useEffect(() => {
@@ -125,6 +168,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
       setTargeting({ iid: '', spec: { targets: c.slots, effects: [] }, slot: 0, picked: c.slots.map(() => []), choice: true, from: `perm:${c.source.iid}` });
     } else setTargeting(null);
     setXPick(null);
+    setPaying(null);
     setAbilityMenu(null);
     setCastMenu(null);
     setModePick(null);
@@ -143,9 +187,56 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     return () => clearTimeout(timer);
   }, [error]);
 
+  /** What the action being paid costs, and what can pay for it. */
+  const payment = paying ? paymentFor(g, me, paying.action) : null;
+  /** The name of the spell or ability being paid for. */
+  const payingName = (() => {
+    const a = paying?.action;
+    if (!a) return '';
+    if (a.type === 'activate') return show.name(findPermanent(g, a.iid)?.card ?? ({ name: '' } as Card));
+    const src = castSource(g, me, a.iid);
+    const card = src?.inst.card ?? g.players[me].hand.find((c) => c.iid === a.iid)?.card;
+    return card ? show.name(a.type === 'cast' ? faceCard(card, a.face ?? 0) : card) : '';
+  })();
+  /** A mana source as shown while paying: mana in the pool, a permanent, a creature convoked, a card delved or exiled. */
+  const sourceName = (iid: string) => {
+    if (iid.startsWith('pool:')) return t.game.poolMana;
+    const [kind, rest] = iid.includes(':') ? [iid.slice(0, iid.indexOf(':')), iid.slice(iid.indexOf(':') + 1)] : ['', iid];
+    const ps = g.players[me];
+    const card = kind === 'delve' ? ps.graveyard.find((c) => c.iid === rest)?.card
+      : kind === 'hand' ? ps.hand.find((c) => c.iid === rest)?.card
+      : findPermanent(g, rest)?.card;
+    const name = card ? show.name(card) : iid;
+    return kind === 'convoke' ? t.game.tappedToPay(name) : kind === 'delve' ? t.game.exiledToPay(name) : name;
+  };
+
   const fullControl = g.fullControl?.[me] ?? false;
   const acting = actor(g);
   const iAct = acting === me;
+
+  /**
+   * Sends an action that spends mana: first the player chooses which sources pay, when there is a choice and auto pay
+   * is off (the rules are checked first, so a wrong target or timing is reported before choosing mana).
+   */
+  function submit(action: PayAction) {
+    const payment = autoPay ? null : paymentFor(g, me, action);
+    if (!payment || !paymentChoice(payment.sources, payment.cost)) return act(action);
+    try {
+      apply(g, action);
+    } catch {
+      return act(action); // reports the error
+    }
+    setError(null);
+    setTargeting(null);
+    setPaying({ action, picked: [] });
+  }
+
+  /** Pick or unpick a mana source while paying. */
+  function togglePay(iid: string) {
+    if (!paying) return;
+    const picked = paying.picked.includes(iid) ? paying.picked.filter((x) => x !== iid) : [...paying.picked, iid];
+    setPaying({ ...paying, picked });
+  }
 
   function act(action: Action) {
     try {
@@ -250,7 +341,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     const cycling = inHand ? castInfo(card).cycling : undefined;
     const cycleTiming = !!g.priority || (isMainStep(g) && myTurn);
     if (cycling && cycleTiming && !g.pending && findPayment(castSources(g, me, card, iid), parseCost(cycling.cost))) {
-      items.push({ key: 'cycle', label: t.game.cycleFor(cycling.cost), run: () => act({ type: 'cycle', iid }) });
+      items.push({ key: 'cycle', label: t.game.cycleFor(cycling.cost), run: () => submit({ type: 'cycle', iid }) });
     }
     const channel = inHand ? castInfo(card).channel : undefined;
     const channelCostNow = channel && channelCost(g, me, card);
@@ -275,7 +366,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
   function beginChannel(iid: string, card: Card) {
     setCastMenu(null);
     const spec = castInfo(card).channel!.ability;
-    if (!spec.targets.length) return act({ type: 'channel', iid });
+    if (!spec.targets.length) return submit({ type: 'channel', iid });
     if (spec.targets.some((slot) => legalTargets(g, me, slot, undefined, card).length < slot.min)) {
       return setError({ code: 'nothingToTarget', params: { card: show.name(card) } });
     }
@@ -303,7 +394,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
       ...(modes ? { modes } : {}), ...(x === undefined ? {} : { x }), ...(opt.alt !== undefined ? { alt: opt.alt } : {}), ...(opt.exiled ? { exiled: opt.exiled } : {}),
     };
     const spec = castSpec(card, { face: opt.face, modes, kicked: opt.kicked, alt: opt.alt, x });
-    if (!spec.targets.length) return act(cast);
+    if (!spec.targets.length) return submit(cast);
     if (spec.targets.some((slot) => legalTargets(g, me, slot, undefined, face).length < slot.min)) {
       return setError({ code: 'nothingToTarget', params: { card: show.name(face) } });
     }
@@ -327,16 +418,16 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
     if (tg.slot + 1 < tg.spec.targets.length) return setTargeting({ ...tg, slot: tg.slot + 1 });
     if (tg.choice) return act({ type: 'choose', answer: { kind: 'targets', targets: tg.picked } });
     if (tg.cast) {
-      act({ ...tg.cast, targets: tg.picked });
-      return setTargeting(null);
+      setTargeting(null);
+      return submit({ ...tg.cast, targets: tg.picked });
     }
     if (tg.activate !== undefined) {
-      act({ type: 'activate', iid: tg.iid, index: tg.activate, targets: tg.picked, ...(tg.x === undefined ? {} : { x: tg.x }) });
-      return setTargeting(null);
+      setTargeting(null);
+      return submit({ type: 'activate', iid: tg.iid, index: tg.activate, targets: tg.picked, ...(tg.x === undefined ? {} : { x: tg.x }) });
     }
     if (tg.channel) {
-      act({ type: 'channel', iid: tg.iid, targets: tg.picked });
-      return setTargeting(null);
+      setTargeting(null);
+      return submit({ type: 'channel', iid: tg.iid, targets: tg.picked });
     }
     setTargeting(null);
   }
@@ -375,12 +466,17 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
       return setXPick({ iid: perm.iid, card: perm.card, x: max, max, ability: index });
     }
     const xs = x === undefined ? {} : { x };
-    if (!spec.ability.targets.length) return act({ type: 'activate', iid: perm.iid, index, ...xs });
+    if (!spec.ability.targets.length) return submit({ type: 'activate', iid: perm.iid, index, ...xs });
     setTargeting({ iid: perm.iid, spec: spec.ability, slot: 0, picked: spec.ability.targets.map(() => []), activate: index, from: `perm:${perm.iid}`, ...xs });
     setError(null);
   }
 
   function onPermanentClick(perm: Permanent) {
+    if (paying) {
+      // A land or other mana source: pay with it (convoked creatures too), or take it back.
+      const iid = payment?.sources.find((m) => m.iid === perm.iid || m.iid === `convoke:${perm.iid}`)?.iid;
+      return iid ? togglePay(iid) : undefined;
+    }
     if (targeting) return pickTarget({ kind: 'permanent', iid: perm.iid });
     if (declaringAttack && perm.controller === me && canAttack(perm)) {
       setAttackSel((sel) => (sel.includes(perm.iid) ? sel.filter((x) => x !== perm.iid) : [...sel, perm.iid]));
@@ -528,6 +624,38 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
         ) : null)}
       </>
     );
+  } else if (paying && payment) {
+    const used = paidWith(payment.sources, payment.cost, paying.picked);
+    prompt = t.game.payPrompt(payingName);
+    const pay = () => act({ ...paying.action, pay: [...used!] });
+    if (used) primary = pay;
+    controls = (
+      <>
+        <span className="pay-cost"><ManaCost cost={costText(payment.cost)} /></span>
+        <div className="pay-sources">
+          {payment.sources.map((m) => (
+            <button
+              key={m.iid}
+              className={`pay-source${paying.picked.includes(m.iid) ? ' on' : ''}${used && paying.picked.includes(m.iid) && !used.has(m.iid) ? ' unused' : ''}`}
+              aria-pressed={paying.picked.includes(m.iid)}
+              onClick={() => togglePay(m.iid)}
+            >
+              <span>{sourceName(m.iid)}</span>
+              <span className="pay-units">
+                {(m.units ?? [m.colors]).map((u, i) => (
+                  <span key={i} className="pay-unit">
+                    {u.length >= 5 ? t.game.anyColor : u.map((c, j) => <span key={c}>{j > 0 && '/'}<ManaCost cost={`{${c}}`} /></span>)}
+                  </span>
+                ))}
+              </span>
+            </button>
+          ))}
+        </div>
+        <button className="secondary" onClick={() => setPaying(null)}>{t.common.cancel}</button>
+        <button className="secondary" onClick={() => act(paying.action)}>{t.game.autoPay}</button>
+        <button className="primary" disabled={!used} onClick={pay}>{t.game.payWithChosen}</button>
+      </>
+    );
   } else if (xPick) {
     prompt = t.game.chooseX(show.name(xPick.card));
     const confirm = () => {
@@ -613,6 +741,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
         setTargeting((tg) => (tg?.choice ? tg : null)); // a trigger's targets can't be cancelled
         setAbilityMenu(null);
         setCastMenu(null);
+        setPaying(null);
         setModePick(null);
         setXPick(null);
         setBlockerSel(null);
@@ -670,7 +799,10 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
         (declaringAttack && perm.controller !== me && isPlaneswalker(perm.card) && attackSel.length > 0) ||
         (declaringBlocks && perm.controller === me && isCreature(perm.card) && !perm.tapped) ||
         (declaringBlocks && !!blockerSel && attackerIds.has(perm.iid) && canBlock(findPermanent(g, blockerSel)!, perm)));
+    // Paying: the mana sources can be clicked, the ones chosen stand out.
+    const paySource = !ghost && payment?.sources.find((m) => m.iid === perm.iid || m.iid === `convoke:${perm.iid}`);
     const classes = [
+      paySource && 'targetable', paySource && paying!.picked.includes(paySource.iid) && 'picked', paying && !paySource && !ghost && 'dimmed',
       'perm', perm.tapped && 'tapped', attacking && 'attacking', blocking && 'blocking', selected && 'selected',
       targetable && 'targetable', picked && 'picked', canAct && 'actionable', ghost && 'leaving',
       targeting && !targetable && !ghost && 'dimmed', perm.controller === me ? 'mine' : 'theirs',
@@ -1067,6 +1199,11 @@ export function GameBoard({ game: g, me, onAction, endControls, notice }: Props)
               {t.game.fullControl}
             </label>
             <p className="small muted">{t.game.fullControlHint(fullControl)}</p>
+            <label className="full-control small">
+              <input type="checkbox" checked={autoPay} onChange={(e) => setAutoPay(e.target.checked)} />
+              {t.game.autoPaySetting}
+            </label>
+            <p className="small muted">{t.game.autoPayHint(autoPay)}</p>
             <button className="danger" onClick={() => act({ type: 'concede', player: me })}>{t.game.concede}</button>
           </div>
         )}

@@ -590,3 +590,23 @@ main:has(> .page.play) { padding: 0 10px 10px; }
   .turn-banner { padding: 4px 18px; }
 }
 .x-value { min-width: 56px; text-align: center; }
+
+/* Choosing the mana: the cost, then one button per source (lands are also clickable on the table). */
+.pay-cost { display: inline-flex; align-items: center; padding: 0 6px; }
+.pay-cost .mana-symbol { width: 20px; height: 20px; }
+/* Floats above the center bar, so the bar keeps its layout. */
+.pay-sources {
+  position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); z-index: 12;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; width: max-content; max-width: min(92%, 900px);
+  padding: 8px; background: rgba(12, 15, 20, 0.95); border: 1px solid var(--accent); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+.actions .pay-source { min-height: 36px; }
+.pay-source {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 4px 10px; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--border); color: inherit; font: inherit; font-size: 13px; cursor: pointer;
+}
+.pay-source.on { border-color: var(--accent); background: rgba(217, 169, 78, 0.22); }
+.pay-source.unused { opacity: 0.6; }
+.pay-units { display: inline-flex; gap: 4px; align-items: center; }
+.pay-unit { display: inline-flex; align-items: center; gap: 1px; }
+.pay-unit .mana-symbol { width: 15px; height: 15px; }

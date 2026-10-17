@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
-import { activationProblem, actor, apply, findPermanent, hasKw, canBlock, canCastNow, castCost, castSource, canTapForMana, type Answer, castOptions, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
+import { activationProblem, actor, apply, findPermanent, hasKw, paymentFor, canBlock, canCastNow, castCost, castSource, canTapForMana, type Answer, castOptions, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
 import { botAction } from './bot';
 import { activatedOf, castInfo, castSpec, finalChapter, hasKeyword, isCreature, PREDEFINED_TOKENS, tokenCard, type TargetSpec, manaUnits, parseAbilityText, spellSpec, triggersOf } from './rules';
 
@@ -2793,6 +2793,27 @@ describe('Aang deck, batch 5: transform and prepared', () => {
     s = run(apply(s, { type: 'choose', answer: { kind: 'yesNo', yes: true } }));
     expect(perm(s, 'Bear')!.counters['+1/+1']).toBe(1);
     expect(s.players[0].graveyard.map((c) => c.card.name)).toContain('Divination');
+  });
+});
+
+describe('choosing the mana to pay with', () => {
+  const plains = card({ name: 'Plains', typeLine: 'Basic Land — Plains' });
+  const island = card({ name: 'Island', typeLine: 'Basic Land — Island' });
+  const knight = creature('Knight', 2, 2, { manaCost: '{1}{W}', cmc: 2 });
+
+  it('pays with the sources chosen, or says they are not enough', () => {
+    let s = board({ mine: [plains, plains, island], hand: [knight] });
+    const [p1, p2, i1] = s.battlefield.map((x) => x.iid);
+    const payment = paymentFor(s, 0, { type: 'cast', iid: 'h0' })!;
+    expect(payment.cost).toEqual({ generic: 1, colored: [['W']] });
+    expect(payment.sources.map((m) => m.iid)).toEqual([p1, p2, i1]);
+    // Two Plains, the Island kept: the engine would have tapped the Island for the {1}.
+    expect(errorOf(() => apply(s, { type: 'cast', iid: 'h0', pay: [p1, i1] }))).toBeNull();
+    s = apply(s, { type: 'cast', iid: 'h0', pay: [p1, p2] });
+    expect(s.battlefield.filter((x) => x.tapped).map((x) => x.iid)).toEqual([p1, p2]);
+    // Not enough with the Island alone.
+    s = board({ mine: [plains, island], hand: [knight] });
+    expect(errorOf(() => apply(s, { type: 'cast', iid: 'h0', pay: [s.battlefield[1].iid] }))).toBe('chosenManaShort');
   });
 });
 

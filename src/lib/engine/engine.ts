@@ -543,13 +543,15 @@ export type Action =
       alt?: number;
       /** March of Otherworldly Light: how many cards to exile from the hand ({2} less each). */
       exiled?: number;
+      /** The mana sources the player chose to pay with (iids from paymentFor); without it, the engine chooses. */
+      pay?: string[];
     }
   /** Cycling (or landcycling) a card in hand. */
-  | { type: 'cycle'; iid: string }
+  | { type: 'cycle'; iid: string; pay?: string[] }
   /** Channel: discard a card from hand to activate its channel ability. */
-  | { type: 'channel'; iid: string; targets?: Target[][] }
+  | { type: 'channel'; iid: string; targets?: Target[][]; pay?: string[] }
   /** Activate ability number `index` (in activatedOf order) of a permanent you control. */
-  | { type: 'activate'; iid: string; index: number; targets?: Target[][]; x?: number }
+  | { type: 'activate'; iid: string; index: number; targets?: Target[][]; x?: number; pay?: string[] }
   | { type: 'pass' }
   /** `targets`: attackers that attack a planeswalker (attacker iid → planeswalker iid) instead of the player. */
   | { type: 'declareAttackers'; attackers: string[]; targets?: Record<string, string> }
@@ -568,7 +570,7 @@ export type GameErrorCode =
   | 'gameOver' | 'keepFirst' | 'notMulliganTime' | 'noMoreMulligans' | 'chooseBottom' | 'notInHand'
   | 'landTiming' | 'landAlreadyPlayed' | 'notALand' | 'notASpell' | 'sorcerySpeed' | 'castTiming' | 'sorceryOnly' | 'nameStopped' | 'mustAttack' | 'noCounterToRemove' | 'nothingToExile'
   | 'noLandToReturn' | 'onlyNotYourTurn' | 'noCardToExile' | 'noTappedCreature'
-  | 'needsTarget' | 'tooManyTargets' | 'targetMustBe' | 'illegalTarget' | 'notEnoughMana' | 'declareBlockersFirst'
+  | 'needsTarget' | 'tooManyTargets' | 'targetMustBe' | 'illegalTarget' | 'notEnoughMana' | 'chosenManaShort' | 'declareBlockersFirst'
   | 'notAttackStep' | 'cannotAttack' | 'notBlockStep' | 'notAttacking' | 'menace' | 'cannotBlock'
   | 'makeChoiceFirst' | 'nothingToChoose' | 'badChoice' | 'badX'
   | 'notEnoughLoyalty' | 'cannotAttackThat' | 'manaSpent' | 'badModes' | 'nothingToDiscard' | 'activationForbidden' | 'castingForbidden' | 'notEnoughInGraveyard' | 'costNotSimulated' | 'cannotCycle'
@@ -1971,6 +1973,49 @@ function pay(d: GameState, p: PlayerId, sources: ManaSource[], cost: { generic: 
   if (!plan) return false;
   payMana(d, p, plan);
   return true;
+}
+
+/** The sources the player chose (`pay` in the action), or all of them when the engine chooses. */
+const chosenSources = (sources: ManaSource[], chosen?: string[]) => (chosen ? sources.filter((m) => chosen.includes(m.iid)) : sources);
+
+/** Not enough mana: with sources the player chose, say so (other sources might have paid). */
+const unpaid = (chosen: string[] | undefined, card: string) => new IllegalAction(chosen ? 'chosenManaShort' : 'notEnoughMana', { card });
+
+/**
+ * What an action costs and what can pay for it (pool mana, permanents to tap, creatures to convoke, cards to delve…),
+ * so the player can choose the sources. Null when it costs no mana or isn't a spell or ability.
+ */
+export function paymentFor(s: GameState, p: PlayerId, action: Action): { sources: ManaSource[]; cost: Cost } | null {
+  if (action.type === 'cast') {
+    const src = castSource(s, p, action.iid);
+    if (!src) return null;
+    const face = action.face ?? 0;
+    const info = castInfo(src.inst.card, face);
+    const alt = action.alt !== undefined && info.alts[action.alt] ? action.alt : undefined;
+    const kicked = !!action.kicked && !!info.kicker && alt === undefined;
+    const x = xCount(faceCard(src.inst.card, face)) ? (action.x ?? 0) : 0;
+    const exiled = info.exileDiscount && action.exiled ? action.exiled : 0;
+    return {
+      sources: castSources(s, p, src.inst.card, src.inst.iid, face),
+      cost: castCost(s, p, src.inst.card, { face, kicked, from: src.from, iid: src.inst.iid, alt, exiled }, x),
+    };
+  }
+  if (action.type === 'activate') {
+    const perm = findPermanent(s, action.iid);
+    const spec = perm && activatedOf(perm.card)[action.index];
+    if (!perm || !spec) return null;
+    const x = spec.cost.mana.includes('{X}') ? (action.x ?? 0) : 0;
+    const first = action.targets?.[0]?.[0];
+    const equipped = spec.equip && first?.kind === 'permanent' ? findPermanent(s, first.iid) : undefined;
+    return { sources: sourcesFor(s, perm, spec), cost: abilityCost(s, perm, spec, x, equipped) };
+  }
+  if (action.type === 'cycle' || action.type === 'channel') {
+    const inst = s.players[p].hand.find((c) => c.iid === action.iid);
+    const info = inst && castInfo(inst.card);
+    const cost = action.type === 'cycle' ? info?.cycling && parseCost(info.cycling.cost) : inst && channelCost(s, p, inst.card);
+    return cost ? { sources: manaSources(s, p), cost } : null;
+  }
+  return null;
 }
 
 /** Mana empties from pools when a step or phase ends. */
@@ -4366,8 +4411,8 @@ export function apply(state: GameState, action: Action): GameState {
       const discountColor = info.exileDiscount?.color;
       const exiled = discountColor && action.exiled ? action.exiled : 0;
       if (exiled && me.hand.filter((c) => c.iid !== inst.iid && cardColors(c.card).includes(discountColor!)).length < exiled) throw new IllegalAction('noCardToExile', { card: card.name });
-      const plan = planPayment(castSources(d, p, inst.card, inst.iid, face), castCost(d, p, inst.card, { face, kicked, from, iid: inst.iid, alt: altIndex, exiled }, x));
-      if (!plan) throw new IllegalAction('notEnoughMana', { card: card.name });
+      const plan = planPayment(chosenSources(castSources(d, p, inst.card, inst.iid, face), action.pay), castCost(d, p, inst.card, { face, kicked, from, iid: inst.iid, alt: altIndex, exiled }, x));
+      if (!plan) throw unpaid(action.pay, card.name);
       // Cavern of Souls' mana spent on a creature spell of the chosen type: it can't be countered.
       // Delighted Halfling's mana spent on a legendary spell: the same (counted for any of its mana).
       const uncounterable = plan.some((m) => {
@@ -4416,7 +4461,7 @@ export function apply(state: GameState, action: Action): GameState {
       const cycling = inst && castInfo(inst.card).cycling;
       if (!inst || !cycling) throw new IllegalAction('cannotCycle');
       if (!d.priority && !(isMainStep(d) && isActivePlayer(d, p))) throw new IllegalAction('activateTiming');
-      if (!pay(d, p, manaSources(d, p), parseCost(cycling.cost))) throw new IllegalAction('notEnoughMana', { card: inst.card.name });
+      if (!pay(d, p, chosenSources(manaSources(d, p), action.pay), parseCost(cycling.cost))) throw unpaid(action.pay, inst.card.name);
       me.hand = me.hand.filter((c) => c !== inst);
       putInZone(d, p, inst, 'graveyard');
       log(d, { k: 'cycle', p, card: inst.card.name });
@@ -4441,7 +4486,7 @@ export function apply(state: GameState, action: Action): GameState {
       if (nameStopped(d, inst.card.name)) throw new IllegalAction('nameStopped');
       if (!d.priority && !(isMainStep(d) && isActivePlayer(d, p))) throw new IllegalAction('activateTiming');
       const targets = checkTargets(d, p, inst.card, channel.ability, action.targets ?? []);
-      if (!pay(d, p, manaSources(d, p), channelCost(d, p, inst.card)!)) throw new IllegalAction('notEnoughMana', { card: inst.card.name });
+      if (!pay(d, p, chosenSources(manaSources(d, p), action.pay), channelCost(d, p, inst.card)!)) throw unpaid(action.pay, inst.card.name);
       me.hand = me.hand.filter((c) => c !== inst);
       putInZone(d, p, inst, 'graveyard');
       d.abilities = (d.abilities ?? 0) + 1;
@@ -4462,7 +4507,7 @@ export function apply(state: GameState, action: Action): GameState {
 
       const first = targets[0]?.[0];
       const equipped = spec.equip && first?.kind === 'permanent' ? findPermanent(d, first.iid) : undefined;
-      if (!pay(d, p, sourcesFor(d, perm, spec), abilityCost(d, perm, spec, x, equipped))) throw new IllegalAction('notEnoughMana', { card: perm.card.name });
+      if (!pay(d, p, chosenSources(sourcesFor(d, perm, spec), action.pay), abilityCost(d, perm, spec, x, equipped))) throw unpaid(action.pay, perm.card.name);
       if (spec.equip) me.equipsThisTurn = (me.equipsThisTurn ?? 0) + 1;
       if (spec.cost.tap) tapPermanent(d, perm);
       if (spec.cost.life) changeLife(d, p, -spec.cost.life);
