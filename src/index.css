@@ -385,6 +385,10 @@ footer { padding: 16px 20px; border-top: 1px solid #1f2530; color: var(--faint);
   .segmented button { flex: 1; }
   .segmented-field { flex: 1 1 100%; }
 }
+.saved-games ul { display: flex; flex-direction: column; gap: 6px; }
+.saved-games li { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 14px; background: var(--panel); border: 1px solid var(--line-soft); border-radius: 12px; }
+.saved-games li a { font-weight: 600; }
+.saved-games li .icon { margin-left: auto; }
 .setup-panel { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
 .setup-panel .check { display: flex; gap: 6px; align-items: center; cursor: pointer; }
 .import-panel { margin-bottom: 16px; }

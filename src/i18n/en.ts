@@ -514,6 +514,10 @@ export const en = {
 
   play: {
     gameType: 'Game',
+    savedGames: 'Games in progress',
+    savedGame: (mine: string, theirs: string, turn: number) => `${mine} vs ${theirs} · turn ${turn}`,
+    forgetGame: 'Forget this game',
+    gameMissing: 'This game is not saved in this browser (it was opened elsewhere, finished, or cleared). Start a new one below.',
     commanderLife: 'Commander life',
     lifeOfficial: '40 (official)',
     lifeDuel: '20 (Duel Commander)',

@@ -452,6 +452,13 @@ export type LogEntry =
   | { k: 'wins'; p: PlayerId }
   | { k: 'draw' };
 
+/**
+ * Version of the GameState shape. Games are saved (bot games in the browser, online rooms in the database) and
+ * resumed after an update of the app: bump this when a change makes older saved states unsafe to play on (a field
+ * renamed or given another meaning, a required field added). Saved games of another version are dropped.
+ */
+export const STATE_VERSION = 1;
+
 export interface GameState {
   players: PlayerState[];
   /**

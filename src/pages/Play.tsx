@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { BetweenGames } from '../components/BetweenGames';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { DeckPicker, EngineSummary, LifeChoice, ModeTile, Segmented } from '../components/Setup';
 import { GameBoard } from '../components/GameBoard';
 import { botAction, fallbackAction } from '../lib/engine/bot';
 import { actor, apply, IllegalAction, newGame, teamOf, teamsOf, type GameState, type PlayerId } from '../lib/engine/engine';
 import { loadDeck75 } from '../lib/loadDeck';
+import { deleteBotGame, listBotGames, loadBotGame, saveBotGame, type BotGame, type BotSetup } from '../lib/botGames';
+import { PRESET_DECKS } from '../lib/engine/presets';
 import { matchWinner, newMatch, nextFirst, recordGame, type MatchScore } from '../lib/match';
 import type { Card } from '../types';
 import { errorText, useT, type AppError } from '../i18n';
@@ -14,6 +16,8 @@ import { useApp } from '../store/useApp';
 /** You are player 0; in Two-Headed Giant your teammate is player 1 (a bot), and players 2 and 3 are the opponents. */
 const ME: PlayerId = 0;
 const BOT_DELAY_MS = 650;
+/** Wait for the game to settle before saving it (the bot plays several actions in a row). */
+const SAVE_DELAY_MS = 300;
 
 export function Play() {
   const t = useT();
@@ -52,6 +56,49 @@ export function Play() {
   const [between, setBetween] = useState(false);
   /** Who played first in the current game, and whether its result is already in the score. */
   const current = useRef<{ first: PlayerId; scored: boolean }>({ first: ME, scored: true });
+
+  // ---------- The game's own address: /play/<id>, saved in this browser (lib/botGames.ts) ----------
+  const { gameId } = useParams();
+  const navigate = useNavigate();
+  /** The game shown, by id: set when a saved game is loaded or a new one starts, so neither is loaded again. */
+  const loadedId = useRef<string | null>(null);
+  /** /play/<id> of a game this browser no longer has. */
+  const [missing, setMissing] = useState(false);
+  const setup = (): BotSetup => ({ myDeck, botDeck, allyDeck, botDeck2, twoHeaded, commander, duelLife, first, bestOf });
+  // Before the first paint: a reload shows the game, not the setup for a moment.
+  useLayoutEffect(() => {
+    if ((gameId ?? null) === loadedId.current) return;
+    loadedId.current = gameId ?? null;
+    const saved = gameId ? loadBotGame(gameId) : null;
+    setMissing(!!gameId && !saved);
+    if (!saved) {
+      setGame(null);
+      setMatch(null);
+      setBetween(false);
+      return;
+    }
+    const { setup: su } = saved;
+    setMyDeck(su.myDeck); setBotDeck(su.botDeck); setAllyDeck(su.allyDeck); setBotDeck2(su.botDeck2);
+    setTwoHeaded(su.twoHeaded); setCommander(su.commander); setDuelLife(su.duelLife); setFirst(su.first); setBestOf(su.bestOf);
+    setMatch(saved.match); setMyCards(saved.myCards); setBotCards(saved.botCards); setCommanders(saved.commanders);
+    setBetween(saved.between);
+    current.current = saved.current;
+    setGame(saved.game);
+  }, [gameId]);
+  // Saved after each change, once the game is still for a moment.
+  useEffect(() => {
+    if (!game || !gameId || loadedId.current !== gameId) return;
+    const timer = setTimeout(() => {
+      const saved: BotGame = { setup: setup(), game, match, myCards, botCards, commanders, between, current: current.current };
+      const opponents = twoHeaded ? [botDeck, botDeck2] : [botDeck];
+      saveBotGame(gameId, saved, [deckName(myDeck), opponents.map(deckName).join(' & ')]);
+    }, SAVE_DELAY_MS);
+    return () => clearTimeout(timer);
+  });
+  function deckName(id: string) {
+    const preset = PRESET_DECKS.find((p) => p.id === id);
+    return decks.find((d) => d.id === id)?.name ?? (preset ? (t.presets[preset.id] ?? preset.name) : id);
+  }
 
   // Count each finished game once in the match score.
   useEffect(() => {
@@ -110,6 +157,13 @@ export function Play() {
       setBotCards(others.map((d) => d.main));
       setCommanders(cmd);
       startGame(firstPlayer, mine.main, others.map((d) => d.main), cmd);
+      // A new game gets its address; a new match or a rematch keeps the game's.
+      if (!gameId) {
+        const id = crypto.randomUUID();
+        loadedId.current = id;
+        setMissing(false);
+        navigate(`/play/${id}`);
+      }
     } catch (e) {
       setError({ code: 'loadFailed', params: { message: e instanceof Error ? e.message : String(e) } });
     } finally {
@@ -122,6 +176,8 @@ export function Play() {
     return (
       <div className="page setup">
         <h1>{t.play.title}</h1>
+        {missing && <div className="banner">{t.play.gameMissing}</div>}
+        <SavedGames />
 
         <section className="setup-section">
           <h4>{t.play.gameType}</h4>
@@ -170,10 +226,10 @@ export function Play() {
   const winnerTeam = game.winner === null || game.winner === 'draw' ? 'draw' : teamOf(game, game.winner);
   /** The first player of a team (who starts its turns). */
   const lead = (team: number) => teamsOf(game)[team][0];
+  // Back to the setup: this game is over for good.
   const changeDecks = () => {
-    setGame(null);
-    setMatch(null);
-    setBetween(false);
+    if (gameId) deleteBotGame(gameId);
+    navigate('/play');
   };
 
   // Between two games of a best of 3: sideboarding, then the loser plays first.
@@ -215,5 +271,37 @@ export function Play() {
         }
       />
     </div>
+  );
+}
+
+/** Unfinished games saved in this browser, to resume. */
+function SavedGames() {
+  const t = useT();
+  const [games, setGames] = useState(() => listBotGames().filter((g) => !g.over));
+  if (games.length === 0) return null;
+  return (
+    <section className="saved-games">
+      <h4>{t.play.savedGames}</h4>
+      <ul className="plain-list">
+        {games.slice(0, 5).map((g) => (
+          <li key={g.id}>
+            <Link to={`/play/${g.id}`}>{t.play.savedGame(g.title[0], g.title[1], g.turn)}</Link>
+            <span className="small muted">{new Date(g.savedAt).toLocaleString()}</span>
+            <button
+              type="button"
+              className="icon"
+              aria-label={t.play.forgetGame}
+              title={t.play.forgetGame}
+              onClick={() => {
+                deleteBotGame(g.id);
+                setGames((list) => list.filter((x) => x.id !== g.id));
+              }}
+            >
+              ✕
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

@@ -522,6 +522,10 @@ export const fr: Messages = {
 
   play: {
     gameType: 'Partie',
+    savedGames: 'Parties en cours',
+    savedGame: (mine, theirs, turn) => `${mine} contre ${theirs} · tour ${turn}`,
+    forgetGame: 'Oublier cette partie',
+    gameMissing: "Cette partie n'est pas enregistrée dans ce navigateur (ouverte ailleurs, terminée ou effacée). Lancez-en une nouvelle ci-dessous.",
     commanderLife: 'Vie en Commander',
     lifeOfficial: '40 (officiel)',
     lifeDuel: '20 (Duel Commander)',

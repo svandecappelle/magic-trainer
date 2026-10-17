@@ -74,7 +74,7 @@ export function App() {
           <Route path="/collection" element={<Collection />} />
           <Route path="/goldfish" element={<Goldfish />} />
           <Route path="/goldfish/:deckId" element={<Goldfish />} />
-          <Route path="/play" element={<Play />} />
+          <Route path="/play/:gameId?" element={<Play />} />
           <Route path="/online" element={<Online />} />
           <Route path="/life" element={<LifeTracker />} />
         </Routes>
