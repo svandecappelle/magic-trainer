@@ -359,8 +359,8 @@ Secrets go in a `.env` file next to `docker-compose.yml` (git-ignored; a `.env.e
 
 ### Backups
 
-`docker compose exec postgres pg_dump -U magic magic | gzip > backup-$(date +%F).sql.gz` from a daily cron;
-restore with `gunzip -c file | docker compose exec -T postgres psql -U magic magic`.
+`make backup [KEEP=14]` (`pg_dump -Fc` to `backups/`, from a daily cron) and `make restore FILE=…` (stops the app,
+empties the `public` schema, `pg_restore`, starts the app, which applies the newer migrations). See the README.
 
 ## Implementation steps
 

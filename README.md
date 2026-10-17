@@ -69,9 +69,26 @@ and collection: those stay in their browser).
 The database password is in `.env` next to `docker-compose.yml`: `make app` creates it with a random value the first
 time (see `.env.example`). Keep that file. To enable accounts (login with Discord), add `PUBLIC_URL`,
 `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET` to it (`.env.example` explains how), then `make app`. The data is in the Docker volume `pgdata`, kept by `make uninstall`.
-Back it up with `docker compose exec postgres pg_dump -U magic magic | gzip > backup-$(date +%F).sql.gz`; restore
-with `gunzip -c backup.sql.gz | docker compose exec -T postgres psql -U magic magic`. The server applies the SQL
-files of `server/db/migrations/` that are new when it starts.
+The server applies the SQL files of `server/db/migrations/` that are new when it starts.
+
+### Backups
+
+```bash
+make backup                      # backups/magic-<date>.dump (accounts, decks, collections)
+make backup KEEP=14              # … and delete the dumps of backups/ older than 14 days
+make restore FILE=backups/magic-2026-10-17-031500.dump   # asks, then replaces ALL the data
+```
+
+`make backup` runs `pg_dump -Fc` in the Postgres container (`BACKUP_DIR=…` for another folder). Copy the dumps off the
+server, with `.env`. For a daily backup at 3:30, add with `crontab -e`:
+
+```cron
+30 3 * * * cd /path/to/magic-trainer && make backup KEEP=14 >/dev/null
+```
+
+`make restore` stops the app, empties the database, loads the dump and starts the app again, which then applies the
+migrations newer than the dump; `YES=1` skips the question. To move to another server: `make install` there, then
+`make restore` with a dump of the old one (the new `.env` password is fine: it is not in the dump).
 
 ### What the installer does to nginx
 

@@ -4,3 +4,4 @@ dist
 *.tsbuildinfo
 audit-reports
 .env
+backups

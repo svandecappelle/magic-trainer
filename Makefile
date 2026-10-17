@@ -21,6 +21,12 @@ HTTPS ?= 0
 EMAIL ?=
 # FORCE=1: install even if another nginx site already uses DOMAIN.
 FORCE ?= 0
+# make backup: where the database dumps go, and how many days to keep them (0: keep all).
+BACKUP_DIR ?= backups
+KEEP ?= 0
+# make restore: the dump to load; YES=1 skips the confirmation (scripts).
+FILE ?=
+YES ?= 0
 
 SITE := magic-trainer.host.conf
 TEMPLATE := deploy/$(SITE)
@@ -47,7 +53,7 @@ else
 fi
 endef
 
-.PHONY: help install app nginx https update uninstall status logs
+.PHONY: help install app nginx https update uninstall status logs backup restore
 
 help:
 	@cat <<'EOF'
@@ -60,6 +66,11 @@ help:
 	  sudo make https DOMAIN=… [EMAIL=…]    Get the HTTPS certificate (certbot, webroot) and switch the site to HTTPS.
 	  make update                           git pull, rebuild and restart the container.
 	  make status / make logs               Container state / follow its logs.
+	  make backup [BACKUP_DIR=backups] [KEEP=14]
+	      Dump the database (accounts, decks, collections) to BACKUP_DIR/magic-<date>.dump;
+	      KEEP=N also deletes the dumps of that folder older than N days.
+	  make restore FILE=backups/magic-….dump [YES=1]
+	      Replace the whole database with that dump (asks first), then restart the app.
 	  sudo make uninstall                   Stop the container and remove the nginx site (only $(SITE)).
 	EOF
 
@@ -97,6 +108,50 @@ status:
 
 logs:
 	@$(COMPOSE) logs -f --tail=100
+
+# ---------- Database backups ----------
+
+# Postgres answers once its first start (creating the database) is over: the healthcheck can pass a bit earlier.
+define wait_postgres
+$(COMPOSE) up -d --wait postgres >/dev/null
+for i in $$(seq 1 30); do
+  if $(COMPOSE) exec -T postgres psql -U magic magic -c 'select 1' >/dev/null 2>&1; then break; fi
+  [ "$$i" = 30 ] && { echo "PostgreSQL does not answer: check 'make logs'." >&2; exit 1; }
+  sleep 1
+done
+endef
+
+backup:
+	@[[ "$(KEEP)" =~ ^[0-9]+$$ ]] || { echo "KEEP is a number of days: $(KEEP)" >&2; exit 1; }
+	$(wait_postgres)
+	mkdir -p "$(BACKUP_DIR)"
+	file="$(BACKUP_DIR)/magic-$$(date +%Y-%m-%d-%H%M%S).dump"
+	# -T: no terminal, which would alter the binary output. Written aside, then renamed: no half dump on failure.
+	trap 'rm -f "$$file.part"' EXIT
+	(umask 077; $(COMPOSE) exec -T postgres pg_dump -U magic -Fc magic > "$$file.part")
+	mv "$$file.part" "$$file"
+	echo "Saved $$file ($$(du -h "$$file" | cut -f1)). Copy it off this server; keep .env too (the database password)."
+	if [ "$(KEEP)" != 0 ]; then
+	  find "$(BACKUP_DIR)" -maxdepth 1 -name 'magic-*.dump' -mtime +$(KEEP) -print -delete | sed 's/^/Deleted old dump /'
+	fi
+
+restore:
+	@[ -n "$(FILE)" ] || { echo "Choose the dump: make restore FILE=backups/magic-….dump" >&2; exit 1; }
+	[ -f "$(FILE)" ] || { echo "No such file: $(FILE)" >&2; exit 1; }
+	head -c 5 "$(FILE)" | grep -q '^PGDMP' || { echo "$(FILE) is not a dump made by make backup (pg_dump -Fc)." >&2; exit 1; }
+	if [ "$(YES)" != 1 ]; then
+	  read -r -p "Replace ALL the data (accounts, decks, collections) with $(FILE)? Type yes: " answer
+	  [ "$$answer" = yes ] || { echo "Nothing was changed."; exit 1; }
+	fi
+	$(wait_postgres)
+	# Nobody writes during the restore. The app is started again even if the restore fails.
+	$(COMPOSE) stop magic-trainer
+	trap '$(COMPOSE) up -d magic-trainer' EXIT
+	# Empty schema first: tables newer than the dump would otherwise stay, and the migrations newer than it
+	# (applied again when the app starts) would fail on them.
+	$(COMPOSE) exec -T postgres psql -q -v ON_ERROR_STOP=1 -U magic magic -c 'SET client_min_messages = warning; DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
+	$(COMPOSE) exec -T postgres pg_restore -U magic -d magic --no-owner --exit-on-error < "$(FILE)"
+	echo "Restored $(FILE). The app restarts and applies the migrations newer than the dump."
 
 # ---------- nginx ----------
 
