@@ -3,11 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Card } from '../../src/types';
 import { storedLookup } from './cards';
 import { migrate } from './index';
-
-// Needs a PostgreSQL database: DATABASE_URL_TEST=postgres://magic:dev@localhost:5432/magic (docker-compose.dev.yml).
-// Each run works in its own schema, dropped at the end.
-const url = process.env.DATABASE_URL_TEST;
-const schema = `test_${process.pid}_${Date.now()}`;
+import { testDb, testDbUrl } from './testDb';
 
 const card = (id: string, name: string): Card => ({
   id, name, manaCost: '{R}', cmc: 1, typeLine: 'Instant', oracleText: 'Deal 3 damage to any target.',
@@ -16,21 +12,16 @@ const card = (id: string, name: string): Card => ({
 const BOLT = '11111111-1111-4111-8111-111111111111';
 const SHOCK = '22222222-2222-4222-8222-222222222222';
 
-describe.skipIf(!url)('database', () => {
+describe.skipIf(!testDbUrl)('database', () => {
   let pool: pg.Pool;
+  let schema: string;
+  let drop: () => Promise<void>;
 
   beforeAll(async () => {
-    const admin = new pg.Client({ connectionString: url });
-    await admin.connect();
-    await admin.query(`CREATE SCHEMA ${schema}`);
-    await admin.end();
-    pool = new pg.Pool({ connectionString: url, options: `-c search_path=${schema}` });
+    ({ pool, schema, drop } = await testDb(false));
   });
 
-  afterAll(async () => {
-    await pool?.query(`DROP SCHEMA ${schema} CASCADE`);
-    await pool?.end();
-  });
+  afterAll(() => drop?.());
 
   it('applies the migrations once', async () => {
     expect(await migrate(pool)).toContain('001_accounts.sql');

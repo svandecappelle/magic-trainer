@@ -11,6 +11,10 @@ services:
       CARD_CHECK: ${CARD_CHECK:-lenient}
       # Accounts and saved decks (docs/accounts.md). POSTGRES_PASSWORD is in .env (make app creates it).
       DATABASE_URL: postgres://magic:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (make app creates it)}@postgres:5432/magic
+      # Login with Discord, enabled when all three are set in .env (see .env.example).
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:-}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
     depends_on:
       postgres:
         condition: service_healthy

@@ -1,11 +1,13 @@
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
-import { createServer } from 'node:http';
+import { createServer, type ServerResponse } from 'node:http';
 import { extname, join, normalize, resolve } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { fetchCardsById } from '../src/lib/scryfall';
+import { accounts, authConfig, purgeSessions } from './auth';
 import { parseCardCheck, scryfallDeckCheck } from './cards';
 import { storedLookup } from './db/cards';
 import { migrate, openDb, waitForDb } from './db/index';
+import { sendJson } from './http';
 import { RoomManager, type Conn } from './rooms';
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -32,9 +34,15 @@ const TYPES: Record<string, string> = {
 };
 
 /** Serves the built app from dist/ (production). In development, Vite serves it and proxies /ws here. */
-const server = createServer((req, res) => {
-  const url = new URL(req.url ?? '/', 'http://x');
-  let file = normalize(join(DIST, decodeURIComponent(url.pathname)));
+function serveStatic(res: ServerResponse, url: URL) {
+  let path: string;
+  try {
+    path = decodeURIComponent(url.pathname);
+  } catch {
+    res.writeHead(400).end();
+    return;
+  }
+  let file = normalize(join(DIST, path));
   if (!file.startsWith(DIST)) {
     res.writeHead(403).end();
     return;
@@ -51,7 +59,7 @@ const server = createServer((req, res) => {
     'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache',
   });
   createReadStream(file).pipe(res);
-});
+}
 
 // PostgreSQL (DATABASE_URL): accounts and saved decks (docs/accounts.md). Without it, the server keeps no data.
 const db = process.env.DATABASE_URL ? openDb(process.env.DATABASE_URL) : null;
@@ -65,6 +73,24 @@ if (db) {
     process.exit(1);
   }
 }
+
+// Accounts: login with Discord (PUBLIC_URL, DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET), needs the database.
+const account = accounts({ pool: db, config: authConfig(process.env) });
+if (db && !account.enabled) console.log('Accounts disabled: set PUBLIC_URL, DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET to enable them.');
+if (db) setInterval(() => void purgeSessions(db).catch(() => {}), 3600_000).unref();
+
+const server = createServer(async (req, res) => {
+  const url = new URL(req.url ?? '/', 'http://x');
+  try {
+    if (await account.handle(req, res, url)) return;
+    if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { error: 'notFound' });
+    serveStatic(res, url);
+  } catch (e) {
+    console.error(`${req.method} ${url.pathname} failed:`, e);
+    if (!res.headersSent) sendJson(res, 500, { error: 'serverError' });
+    else res.end();
+  }
+});
 
 // Decks are checked against Scryfall (CARD_CHECK=strict|lenient|off, default lenient), through the cards table if any.
 const cardCheck = parseCardCheck(process.env.CARD_CHECK);
@@ -113,7 +139,8 @@ setInterval(() => {
   }
 }, 30_000);
 
-server.listen(PORT, () => console.log(`Magic Trainer server on http://localhost:${PORT} (WebSocket at /ws)${db ? ', database connected' : ''}`));
+const features = [db && 'database connected', account.enabled && 'accounts enabled'].filter(Boolean).join(', ');
+server.listen(PORT, () => console.log(`Magic Trainer server on http://localhost:${PORT} (WebSocket at /ws)${features ? `, ${features}` : ''}`));
 
 // docker stop: close the database connections cleanly.
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {

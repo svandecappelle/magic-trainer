@@ -19,6 +19,10 @@ DATABASE_URL=postgres://magic:dev@localhost:5432/magic npm run server
 DATABASE_URL_TEST=postgres://magic:dev@localhost:5432/magic npm test   # also runs the database tests
 ```
 
+Login with Discord also needs `PUBLIC_URL=http://localhost:5173`, `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET`
+(a Discord application with the redirect `http://localhost:5173/auth/discord/callback`, see `.env.example`); Vite
+proxies `/api` and `/auth` to the server.
+
 ### Game modes
 
 Play vs Bot and online rooms offer a duel or **Two-Headed Giant** (two teams of two sharing 30 life and their turns:
@@ -63,7 +67,8 @@ Games in progress live in the server's memory, so a restart or an update ends th
 and collection: those stay in their browser).
 
 The database password is in `.env` next to `docker-compose.yml`: `make app` creates it with a random value the first
-time (see `.env.example`). Keep that file. The data is in the Docker volume `pgdata`, kept by `make uninstall`.
+time (see `.env.example`). Keep that file. To enable accounts (login with Discord), add `PUBLIC_URL`,
+`DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET` to it (`.env.example` explains how), then `make app`. The data is in the Docker volume `pgdata`, kept by `make uninstall`.
 Back it up with `docker compose exec postgres pg_dump -U magic magic | gzip > backup-$(date +%F).sql.gz`; restore
 with `gunzip -c backup.sql.gz | docker compose exec -T postgres psql -U magic magic`. The server applies the SQL
 files of `server/db/migrations/` that are new when it starts.
@@ -122,6 +127,7 @@ and open `http://<server>:8787`.
 | `src/lib/engine/` | Simplified two-player rules engine with London mulligans, a stack and Arena-style priority windows with an optional per-player full control mode (`engine.ts`), card rules parsing (`rules.ts`), heuristic bot (`bot.ts`), preset decks |
 | `src/lib/multiplayer/` | Client/server message types, hidden-information redaction, WebSocket hook |
 | `server/` | Node WebSocket game server: rooms, seats, reconnection (`rooms.ts`), HTTP/static wiring (`index.ts`) |
+| `server/auth.ts`, `server/http.ts` | Login with Discord, sessions, `/api/me`; cookie and rate-limit helpers |
 | `server/db/` | PostgreSQL: connection and migration runner (`index.ts`), SQL migrations, Scryfall card cache (`cards.ts`) |
 | `Makefile`, `Dockerfile`, `docker-compose.yml`, `deploy/` | Server installer, container image, compose services (app, PostgreSQL), nginx site template |
 | `docker-compose.dev.yml` | PostgreSQL alone for development |

@@ -21,9 +21,14 @@ export default defineConfig(({ command }) => {
     plugins: [react(), buildId(id)],
     define: { __BUILD__: JSON.stringify(id) },
     server: {
-      // Multiplayer: forward WebSocket traffic to the game server (npm run server).
-      proxy: { '/ws': { target: 'ws://localhost:8787', ws: true } },
+      // Multiplayer and accounts: forward to the server (npm run server).
+      proxy: {
+        '/ws': { target: 'ws://localhost:8787', ws: true },
+        '/api': 'http://localhost:8787',
+        '/auth': 'http://localhost:8787',
+      },
     },
-    test: { environment: 'node' },
+    // Bot-vs-bot games are CPU-bound: the default 5 s can run out when all test files run in parallel.
+    test: { environment: 'node', testTimeout: 20_000 },
   };
 });

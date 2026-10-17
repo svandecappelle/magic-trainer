@@ -1,6 +1,6 @@
 # Accounts and saved decks (design)
 
-Status: step 1 done (PostgreSQL, migrations, card cache); login and sync not implemented yet.
+Status: steps 1 and 2 done (PostgreSQL, migrations, card cache, Discord login, sessions); deck API and sync not implemented yet.
 
 Players can log in with Discord to keep their decks and their collection on the server and find them on any
 device. Accounts are optional: without one, the app works exactly as today (everything in the browser's
@@ -214,7 +214,11 @@ sequenceDiagram
 - `state` is 32 random bytes, kept in a short `HttpOnly` cookie and compared on the callback (blocks forged logins).
   The `return` path is only accepted if it starts with a single `/` (no open redirect).
 - On each login, `display_name` (Discord global name, or username) and the avatar are refreshed.
-- The Discord access token is used once and not stored: we never call Discord on the user's behalf afterwards.
+- The Discord access token is used once, then revoked, and never stored: we never call Discord on the user's
+  behalf afterwards. `prompt=none` skips Discord's consent page once the user has authorized the app.
+- The callback always redirects to the `return` path; on failure it adds `?login=cancelled` (the user refused) or
+  `?login=failed` (wrong `state`, Discord error), which the app shows.
+- `/auth/discord` and its callback are limited to 30 requests per 10 minutes per address (nginx's `X-Real-IP`).
 - Session: 32 random bytes, base64url, cookie `mt_session`, valid 30 days, extended when used during its last
   15 days. Expired sessions are deleted hourly.
 
@@ -227,7 +231,7 @@ All JSON. Routes under `/api` need a session (401 otherwise), except `/api/me`.
 | GET    | `/auth/discord`               | Starts the login (`?return=` path)                             |
 | GET    | `/auth/discord/callback`      | Discord redirect target                                        |
 | POST   | `/auth/logout`                | Deletes the session, clears the cookie                         |
-| GET    | `/api/me`                     | `{ user: { id, name, avatarUrl } \| null }`                    |
+| GET    | `/api/me`                     | `{ enabled, user: { id, name, avatarUrl } \| null }`           |
 | DELETE | `/api/me`                     | Deletes the account and all its data                           |
 | GET    | `/api/decks?since=<ms>`       | Decks changed since (all if omitted), tombstones included      |
 | PUT    | `/api/decks/:id`              | Creates or replaces a deck; body `{ name, format, entries: [{ cardId, board, qty }], createdAt, updatedAt, baseVersion }` |
@@ -343,7 +347,7 @@ restore with `gunzip -c file | docker compose exec -T postgres psql -U magic mag
 ## Implementation steps
 
 1. ✓ Postgres in compose, `pg`, migration runner, `001_accounts.sql`, `cards` table backing the card check.
-2. Discord login, sessions, `/api/me`, logout, account deletion.
+2. ✓ Discord login, sessions, `/api/me`, logout, account deletion.
 3. Deck and collection API with limits and conflicts.
 4. Client: login button and menu, `sync.ts`, merge, offline queue, i18n (en, fr).
 5. README: deployment section (variables, Discord application, backups).
