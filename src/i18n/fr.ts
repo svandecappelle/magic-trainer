@@ -100,6 +100,7 @@ const log: LogMessages = {
   extraTurn: (e, c) => `${c.isMe(e.p) ? 'Vous jouerez' : `${c.name(e.p)} jouera`} un tour supplémentaire`,
   attached: (e, c) => `${c.card(e.card)} est attaché à ${c.card(e.to)}`,
   chosenType: (e, c) => `${c.card(e.card)} : type ${e.type} choisi`,
+  chosenColor: (e, c) => `${c.card(e.card)} : ${({ W: 'blanc', U: 'bleu', B: 'noir', R: 'rouge', G: 'vert' } as Record<string, string>)[e.color]} choisi`,
   chosenName: (e, c) => (e.name ? `${c.card(e.card)} nomme ${c.card(e.name)}` : `${c.card(e.card)} ne nomme rien (aucune carte vue n'a de capacité activée)`),
   chosenPlayer: (e, c) => `${c.card(e.card)} a la protection contre ${c.name(e.p)}`,
   emblem: (e, c) => `${c.isMe(e.p) ? 'Vous obtenez' : `${c.name(e.p)} obtient`} un emblème (${c.card(e.card)})`,

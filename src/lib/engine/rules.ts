@@ -432,7 +432,7 @@ export interface TargetSpec {
 // ---------- Effects ----------
 
 /** Counter kinds placed on permanents. */
-export type CounterKind = '+1/+1' | '-1/-1' | 'loyalty' | 'lore' | 'rev' | 'luck' | 'mining' | 'age' | 'fade' | 'chorus'
+export type CounterKind = '+1/+1' | '-1/-1' | '-0/-1' | 'loyalty' | 'lore' | 'rev' | 'luck' | 'mining' | 'age' | 'fade' | 'chorus'
   // Stun (Snaremaster Sprite): it doesn't untap, a counter is removed instead. Finality (Zoraline): exiled if it would die.
   | 'stun' | 'finality' | 'time'
   // Keyword counters (Ghost Vacuum's flying, Leatherhead's hexproof): the permanent has that keyword.
@@ -598,6 +598,11 @@ export type Effect =
    * counter from her" (`removeCounter`).
    */
   | { kind: 'reflexive'; cost: { discard?: number; mana?: string; life?: number; sacrifice?: { which: Selector; another: boolean }; removeCounter?: boolean }; then: AbilitySpec }
+  /**
+   * Seasoned Cryomancer: "When you discard one or more nonland cards this way, tap up to that many target creatures …"
+   * A reflexive trigger after the discard, its target count (`upToThatMany`) the number of nonland cards discarded.
+   */
+  | { kind: 'whenDiscardedNonland'; upToThatMany: boolean; then: AbilitySpec }
   /** A modal trigger ("When … enters, choose one —"): stands for its modes (`AbilitySpec.modal`) until chosen. */
   | { kind: 'chooseModes' }
   /**
@@ -1337,7 +1342,8 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     return to && { kind: 'tap', untap: m[1].toLowerCase() === 'untap', to };
   });
   // Snaremaster Sprite: "tap target creature an opponent controls and put a stun counter on it".
-  scan(/(?:^|[.,] *|then |and )put an? (stun|finality) counter on it(?=\.)/gi, (m) => (targets.length === 1 ? { kind: 'addCounters', counter: m[1].toLowerCase() as CounterKind, n: 1, to: { slot: 0 } } : null));
+  // Seasoned Cryomancer: "tap up to that many target creatures and put a stun counter on each of them".
+  scan(/(?:^|[.,] *|then |and )put an? (stun|finality) counter on (?:it|each of them)(?=\.)/gi, (m) => (targets.length === 1 ? { kind: 'addCounters', counter: m[1].toLowerCase() as CounterKind, n: 1, to: { slot: 0 } } : null));
   // Bounce.
   scan(new RegExp(`\\breturn (${TARGET}) to (?:its|their) (?:owner's|owners') hands?`, 'gi'), (m) => {
     // Reprieve: "Return target spell to its owner's hand"; Sink into Stupor: "target spell or nonland permanent".
@@ -1913,6 +1919,8 @@ export type TriggerEvent =
   | { on: 'castWithoutMana' }
   /** City of Brass: "Whenever this land becomes tapped, …" (not when it enters tapped). */
   | { on: 'becomesTapped' }
+  /** Hypnotic Specter: "Whenever this creature deals damage to an opponent, that player …" (slot 0 is that player). */
+  | { on: 'damagesOpponent' }
   /**
    * Each card an opponent draws (Orcish Bowmasters: `notFirstInDrawStep`, "except the first one they draw in each of
    * their draw steps"); Faerie Mastermind: only their `nth` (second) card each turn.
@@ -1989,6 +1997,17 @@ function triggerAbility(text: string, name: string, self: boolean): AbilitySpec 
     const cost = reflexive[1] ? { discard: 1 } : sacrifice ? { sacrifice } : reflexive[5] ? { removeCounter: true }
       : { mana: reflexive[2], ...(reflexive[3] ? { life: Number(reflexive[3]) } : {}) };
     return { targets: [], effects: [{ kind: 'reflexive', cost, then }] };
+  }
+  // Seasoned Cryomancer: "draw two cards, then discard two cards. When you discard one or more nonland cards this way, …"
+  const thisWay = text.match(/^(.+?\bdiscard (?:a|two|three) cards?)\. When you discard one or more nonland cards this way, (.+)$/i);
+  if (thisWay) {
+    const first = parseAbilityText(`${thisWay[1]}.`, self ? name : undefined);
+    const upToThatMany = /\bup to that many target\b/i.test(thisWay[2]);
+    const inner = thisWay[2].replace(/\bup to that many target\b/i, 'up to five target');
+    const then = UNSUPPORTED.test(inner) ? NO_EFFECT : parseAbilityText(inner, self ? name : undefined);
+    const discards = first.effects.some((e) => e.kind === 'discard' && e.to === 'you' && e.mode === 'choose');
+    if (!discards || first.targets.length || !then.effects.length || (upToThatMany && then.targets.length !== 1)) return NO_EFFECT;
+    return { targets: [], effects: [...first.effects, { kind: 'whenDiscardedNonland', upToThatMany, then }] };
   }
   // Mana Vault: "you may pay {4}. If you do, untap this artifact."
   const mayPay = text.match(/^you may pay ((?:\{(?:\d+|[WUBRGC])\})+)\. If you do, (.+)$/i);
@@ -2266,6 +2285,14 @@ export function triggersOf(card: Card): TriggerSpec[] {
         event: { on: 'castWithoutMana' },
         ability: { targets: [{ kind: 'spell', min: 1, max: 1, filter: {} }], effects: [{ kind: 'counter', to: { slot: 0 } }] },
       });
+      continue;
+    }
+
+    // Hypnotic Specter: "Whenever this creature deals damage to an opponent, that player discards a card at random."
+    const toOpponent = line.match(/^Whenever (.+?) deals damage to an opponent, that player (.+)$/i);
+    if (toOpponent && selves.includes(toOpponent[1].toLowerCase())) {
+      const ability = triggerAbility(`target opponent ${toOpponent[2]}`, name, true);
+      out.push({ event: { on: 'damagesOpponent' }, ability: ability.targets.length === 1 && ability.targets[0].kind === 'player' ? ability : NO_EFFECT });
       continue;
     }
 
@@ -2746,6 +2773,9 @@ export function staticsOf(card: Card): StaticSpec[] {
 export function auraTarget(card: Card): TargetSpec | null {
   if (!/\bAura\b/.test(card.typeLine.split('//')[0])) return null;
   const m = frontText(card).match(/^Enchant ([a-z ,]+?)\s*$/im);
+  // Utopia Sprawl: "Enchant Forest".
+  const basic = m?.[1].match(/^(Plains|Island|Swamp|Mountain|Forest)$/);
+  if (basic) return { kind: 'permanent', min: 1, max: 1, filter: { types: ['land'], subtypes: [basic[1].toLowerCase()] } };
   return m ? parseTargetPhrase(`target ${m[1]}`) : null;
 }
 
@@ -2821,18 +2851,35 @@ export function filterMana(card: Card): { fee: Color[] | null; units: Color[][] 
  */
 export const paidAnyColor = (card: Card) => /^\{1\}, \{T\}: Add one mana of any color\.$/m.test(frontText(card));
 
+/**
+ * Wall of Roots: "Put a -0/-1 counter on this creature: Add {G}. Activate only once each turn." The color, or null. (It
+ * doesn't tap: usable tapped or summoning sick.)
+ */
+export function counterMana(card: Card): Color | null {
+  const m = frontText(card).match(new RegExp(`^Put a -0/-1 counter on (?:${selfWords(card.name).map(escapeRe).join('|')}): Add \\{([WUBRG])\\}\\. Activate only once each turn\\.$`, 'im'));
+  return m ? (m[1] as Color) : null;
+}
+
+/** Lion's Eye Diamond: "Discard your hand, Sacrifice this artifact: Add three mana of any one color. Activate only as an instant." */
+export const diamondMana = (card: Card) =>
+  /^Discard your hand, Sacrifice this artifact: Add three mana of any one color\. Activate only as an instant\.$/m.test(frontText(card));
+
 /** Extra mana when a permanent is tapped for mana (a triggered mana ability). */
 export interface ExtraMana {
   /** Wild Growth: the enchanted permanent's taps; Badgermole Cub: its controller's; Mana Flare: anyone's. */
   whose: 'enchanted' | 'yours' | 'anyones';
   /** What is tapped: Badgermole Cub a creature, Kinnan a nonland permanent, Mana Flare a land. */
   kind: 'land' | 'creature' | 'nonland' | 'permanent';
-  /** The mana added; 'same': one mana of a type that permanent produced (Kinnan, Mana Flare). */
-  add: Color[][] | 'same';
+  /**
+   * The mana added; 'same': one mana of a type that permanent produced (Kinnan, Mana Flare); 'chosen': one mana of the
+   * color chosen as it entered (Utopia Sprawl).
+   */
+  add: Color[][] | 'same' | 'chosen';
 }
 
-const extraManaText = (text: string): Color[][] | 'same' | null =>
-  /^(?:one )?(?:additional )?(?:one )?mana of any type that (?:land|permanent) produced$/i.test(text) ? 'same' : parseManaText(text);
+const extraManaText = (text: string): ExtraMana['add'] | null =>
+  /^(?:one )?(?:additional )?(?:one )?mana of any type that (?:land|permanent) produced$/i.test(text) ? 'same'
+    : /^one mana of the chosen color$/i.test(text) ? 'chosen' : parseManaText(text);
 
 /**
  * Wild Growth: "Whenever enchanted land is tapped for mana, its controller adds an additional {G}."
@@ -2842,15 +2889,20 @@ const extraManaText = (text: string): Color[][] | 'same' | null =>
  */
 export function extraManaOf(card: Card): ExtraMana | null {
   for (const line of frontText(card).split('\n')) {
-    const aura = line.match(/^Whenever enchanted (land|creature|permanent) is tapped for mana, its controller adds an additional (.+)\.$/);
+    const aura = line.match(/^Whenever enchanted (land|creature|permanent|Plains|Island|Swamp|Mountain|Forest) is tapped for mana, its controller adds an additional (.+)\.$/);
     const tap = line.match(/^Whenever (you tap|a player taps) an? (land|creature|nonland permanent|permanent) for mana, (?:that player adds|add) (?:an additional )?(.+)\.$/);
     const add = aura ? extraManaText(aura[2]) : tap ? extraManaText(tap[3]) : null;
     if (!add) continue;
-    if (aura) return { whose: 'enchanted', kind: aura[1] as ExtraMana['kind'], add };
+    // "As this Aura enters, choose a color." goes with the chosen color.
+    if (add === 'chosen' && !choosesColor(card)) continue;
+    if (aura) return { whose: 'enchanted', kind: /^[a-z]/.test(aura[1]) ? aura[1] as ExtraMana['kind'] : 'land', add };
     return { whose: tap![1] === 'you tap' ? 'yours' : 'anyones', kind: tap![2] === 'nonland permanent' ? 'nonland' : tap![2] as ExtraMana['kind'], add };
   }
   return null;
 }
+
+/** Utopia Sprawl: "As this Aura enters, choose a color." */
+export const choosesColor = (card: Card) => /^As this (?:Aura|enchantment|artifact|creature|land|permanent) enters, choose a color\.$/m.test(frontText(card));
 
 /** Nyxbloom Ancient: "If you tap a permanent for mana, it produces three times as much of that mana instead." → 3. */
 export function manaMultiplier(card: Card): number {

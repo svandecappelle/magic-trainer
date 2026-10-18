@@ -309,7 +309,7 @@ permanents), Rhystic Study ("unless that player pays {1}").
 Approximations: Rhystic Study's "you may draw" always draws.
 
 Still open, playing wrongly, most played first (see `audit-reports/2026-10-16/report.md`):
-- [ ] Seasoned Cryomancer (5): stun counters; "When you discard one or more nonland cards this way"
+- [ ] Seasoned Cryomancer (5): its graveyard ability (enters trigger done, 2026-10-17 fifth batch)
 - [x] Parallax Wave (5): fading, exile until it leaves
 - [ ] Bilbo, Thief in the Night (4): cost reduction for spells cast from anywhere but the hand; casting from the
   graveyard when it attacks
@@ -361,24 +361,30 @@ Skycloud Expanse ("{1}, {T}: Add {W}{U}", like Mystic Gate); extra mana when a p
 Growth and other Auras, Badgermole Cub, Kinnan, Mana Flare, Zendikar Resurgent) and Nyxbloom Ancient / Mana Reflection
 (three / two times as much).
 
+Fifth batch: Hypnotic Specter (damage to an opponent: a random discard), Seasoned Cryomancer's enters trigger (taps
+and stuns one creature per nonland card discarded), Wall of Roots ({G} for a -0/-1 counter, once each turn, without
+tapping), Utopia Sprawl ("Enchant Forest", a color chosen as it enters), Lion's Eye Diamond (activated by hand like
+tapping for mana: a color, the hand discarded, three mana). Abilities activated from the graveyard (Seasoned
+Cryomancer, renew) and Arena of Glory's exert mana ability now show as not simulated.
+
 Approximations: Exalted Angel's "Whenever this creature deals damage, you gain that much life" is played as lifelink
 (no trigger on the stack); a creature making several mana keeps its own ability under Cryptolith Rite; the bot never
 activates abilities with a discard cost (Psychic Frog, Survival of the Fittest). Talon Gates tapped by hand (not while
 paying) makes {C}: its any-color mana is only chosen when paying. Kinnan's and Mana Flare's "one mana of any type that
 permanent produced" may be any of the colors it could make (Birds of Paradise tapped for {G}: Kinnan's mana may be
-blue). These extra mana abilities are not triggers on the log.
+blue). These extra mana abilities are not triggers on the log. Lion's Eye Diamond is never used to pay automatically
+(the bot never activates it). Hypnotic Specter's trigger only counts damage the creature itself deals.
 
 Still open, playing wrongly, most played first (see `audit-reports/2026-10-17/report.md`):
 - [ ] Talon Gates of Madara (6): its phasing and "{4}: Put this card from your hand onto the battlefield" (its mana done,
   fourth batch); The Mycosynth Gardens becoming a copy of an artifact
-- [ ] Seasoned Cryomancer (5): stun counters; "When you discard one or more nonland cards this way"
+- [ ] Seasoned Cryomancer (5): "{3}{U}{U}, Exile this card from your graveyard: Draw two cards." (abilities activated
+  from a graveyard; its enters trigger done, fifth batch)
 - [ ] Badgermole Cub (4): earthbend (its extra {G} done, 2026-10-17 fourth batch)
-- [ ] Lion's Eye Diamond (4), Arena of Glory (exert), Wall of Roots (a -0/-1 counter as a mana cost)
+- [ ] Arena of Glory (4): exert, and haste for a creature spell its mana paid for
 - [ ] Clones with more than added types: Phantasmal Image (sacrificed when targeted), Flesh Duplicate (vanishing),
   Gigantoplasm, Superior Spider-Man (a creature card in a graveyard) — Glasspool Mimic, Clever Impersonator and Copy
   Enchantment done (third batch)
-- [ ] Utopia Sprawl: "As this Aura enters, choose a color." (Wild Growth, Kinnan, Nyxbloom Ancient done, fourth batch)
-- [ ] Hypnotic Specter: "deals damage to an opponent, that player discards a card at random"
 
 ## Commander: Aang, Swift Savior (a user's deck, `deck.txt`)
 

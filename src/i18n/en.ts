@@ -86,6 +86,7 @@ const log: LogMessages = {
   extraTurn: (e, c) => `${c.isMe(e.p) ? 'You will take' : `${c.name(e.p)} will take`} an extra turn`,
   attached: (e, c) => `${c.card(e.card)} is attached to ${c.card(e.to)}`,
   chosenType: (e, c) => `${c.card(e.card)}: ${e.type} chosen`,
+  chosenColor: (e, c) => `${c.card(e.card)}: ${({ W: 'white', U: 'blue', B: 'black', R: 'red', G: 'green' } as Record<string, string>)[e.color]} chosen`,
   chosenName: (e, c) => (e.name ? `${c.card(e.card)} names ${c.card(e.name)}` : `${c.card(e.card)} names nothing (no card seen has activated abilities)`),
   chosenPlayer: (e, c) => `${c.card(e.card)} has protection from ${c.name(e.p)}`,
   emblem: (e, c) => `${c.isMe(e.p) ? 'You get' : `${c.name(e.p)} gets`} an emblem (${c.card(e.card)})`,

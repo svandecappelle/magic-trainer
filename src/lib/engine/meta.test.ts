@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
-import { activationProblem, actor, apply, findPermanent, hasKw, paymentFor, canBlock, canCastNow, castCost, castSource, canTapForMana, type Answer, castOptions, canPay, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
+import { activationProblem, actor, apply, findPermanent, hasKw, paymentFor, canBlock, canCastNow, castCost, castSource, canTapForMana, type Answer, castOptions, canPay, canActivateDiamond, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
 import { botAction } from './bot';
 import { activatedOf, castInfo, cloneOf, entersTappedRule, gameRulesOf, castSpec, finalChapter, hasKeyword, isCreature, PREDEFINED_TOKENS, tokenCard, type TargetSpec, manaUnits, extraManaOf, manaMultiplier, filterMana, paidAnyColor, parseAbilityText, spellSpec, triggersOf } from './rules';
 
@@ -3530,5 +3530,115 @@ describe('mana abilities costing mana, extra mana when tapped', () => {
     s = board({ mine: [forest], theirs: [flare, mountain] });
     expect(unitsOf(s, perm(s, 'Forest')!)).toEqual([['G'], ['G']]);
     expect(unitsOf(s, perm(s, 'Mountain')!)).toEqual([['R'], ['R']]);
+  });
+});
+
+describe('metagame audit 2026-10-17, fifth batch', () => {
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 12 && (s.stack.length || s.triggered?.length) && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  const forest = card({ name: 'Forest', typeLine: 'Basic Land — Forest' });
+  const mountain = card({ name: 'Mountain', typeLine: 'Basic Land — Mountain' });
+  const bear = creature('Bear', 2, 2);
+
+  it('Hypnotic Specter: damage to an opponent makes them discard at random', () => {
+    const specter = card({
+      name: 'Hypnotic Specter', typeLine: 'Creature — Specter', manaCost: '{1}{B}{B}', cmc: 3, power: '2', toughness: '2', keywords: ['Flying'],
+      oracleText: 'Flying\nWhenever this creature deals damage to an opponent, that player discards a card at random.',
+    });
+    expect(triggersOf(specter).map((t) => t.event.on)).toEqual(['damagesOpponent']);
+    let s = board({ mine: [specter], oppHand: [swamp, island] });
+    s = apply(s, { type: 'pass' });
+    for (let i = 0; i < 5 && (s.priority || s.step !== 'attack'); i++) s = apply(s, { type: 'pass' });
+    s = settle(apply(s, { type: 'declareAttackers', attackers: [iidOf(s, 'Hypnotic Specter')] }));
+    for (let i = 0; i < 20 && s.step !== 'main2' && !s.pending; i++) {
+      s = !s.priority && s.step === 'block' ? apply(s, { type: 'declareBlockers', blocks: {} }) : apply(s, { type: 'pass' });
+    }
+    s = resolve(s);
+    expect(s.players[1].life).toBe(18);
+    expect(s.players[1].hand).toHaveLength(1);
+    expect(s.players[1].graveyard).toHaveLength(1);
+  });
+
+  const cryomancer = card({
+    name: 'Seasoned Cryomancer', typeLine: 'Creature — Human Wizard', manaCost: '{1}{U}{U}', cmc: 3, power: '2', toughness: '2',
+    oracleText: 'When this creature enters, draw two cards, then discard two cards. When you discard one or more nonland cards this way, tap up to that many target creatures and put a stun counter on each of them.\n{3}{U}{U}, Exile this card from your graveyard: Draw two cards.',
+  });
+
+  it('Seasoned Cryomancer: taps and stuns one creature per nonland card discarded', () => {
+    expect(triggersOf(cryomancer)[0].ability.effects.map((e) => e.kind)).toEqual(['draw', 'discard', 'whenDiscardedNonland']);
+    expect(activatedOf(cryomancer)).toEqual([]);
+    const ogre = creature('Ogre', 3, 3);
+    let s = board({ mana: 3, hand: [{ ...cryomancer, manaCost: '{3}' }], theirs: [bear, ogre] });
+    s.players[0].library = [{ iid: 'l0', card: creature('Elf', 1, 1) }, { iid: 'l1', card: swamp }, ...s.players[0].library];
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    expect(s.pending?.choice).toMatchObject({ purpose: 'discard', min: 2, max: 2 });
+    // One nonland card and a land: one creature.
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['l0', 'l1'] } }));
+    expect(s.pending?.choice).toMatchObject({ kind: 'targets' });
+    const targets = (s.pending!.choice as { slots: TargetSpec[] }).slots;
+    expect(targets[0].max).toBe(1);
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Ogre') }]] } }));
+    expect(perm(s, 'Ogre')).toMatchObject({ tapped: true, counters: { stun: 1 } });
+    expect(perm(s, 'Bear')!.tapped).toBe(false);
+  });
+
+  it('Seasoned Cryomancer: two lands discarded, no trigger', () => {
+    let s = board({ mana: 3, hand: [{ ...cryomancer, manaCost: '{3}' }], theirs: [bear] });
+    s.players[0].library = [{ iid: 'l0', card: swamp }, { iid: 'l1', card: island }, ...s.players[0].library];
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['l0', 'l1'] } }));
+    expect(s.pending).toBeNull();
+    expect(perm(s, 'Bear')!.tapped).toBe(false);
+  });
+
+  const wall = card({
+    name: 'Wall of Roots', typeLine: 'Creature — Plant Wall', manaCost: '{1}{G}', cmc: 2, power: '0', toughness: '5', keywords: ['Defender'],
+    oracleText: 'Defender\nPut a -0/-1 counter on this creature: Add {G}. Activate only once each turn.',
+  });
+
+  it('Wall of Roots: {G} for a -0/-1 counter, once each turn, even summoning sick', () => {
+    const elf = creature('Elf', 1, 1, { manaCost: '{G}', cmc: 1 });
+    let s = board({ mine: [wall], hand: [elf, { ...elf, name: 'Elf Two' }] });
+    perm(s, 'Wall of Roots')!.sick = true;
+    expect(canPay(s, 0, elf)).toBe(true);
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    expect(perm(s, 'Wall of Roots')!.counters['-0/-1']).toBe(1);
+    expect(toughnessOf(perm(s, 'Wall of Roots')!)).toBe(4);
+    expect(perm(s, 'Wall of Roots')!.tapped).toBe(false);
+    // Once each turn.
+    s = resolve(s);
+    expect(canPay(s, 0, elf)).toBe(false);
+  });
+
+  it('Utopia Sprawl: enchants a Forest, a color chosen as it enters, one more mana of it', () => {
+    const sprawl = card({
+      name: 'Utopia Sprawl', typeLine: 'Enchantment — Aura', manaCost: '{G}', cmc: 1, keywords: ['Enchant'],
+      oracleText: 'Enchant Forest\nAs this Aura enters, choose a color.\nWhenever enchanted Forest is tapped for mana, its controller adds an additional one mana of the chosen color.',
+    });
+    expect(extraManaOf(sprawl)).toEqual({ whose: 'enchanted', kind: 'land', add: 'chosen' });
+    let s = board({ mine: [forest, mountain], hand: [sprawl] });
+    // Only a Forest can be enchanted.
+    expect(errorOf(() => apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Mountain') }]] }))).not.toBeNull();
+    s = resolve(settle(apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Forest') }]] })));
+    expect(s.pending?.choice).toMatchObject({ purpose: 'manaColor' });
+    s = apply(s, { type: 'choose', answer: { kind: 'mode', modes: [1] } });
+    expect(perm(s, 'Utopia Sprawl')!.chosenColor).toBe('U');
+    perm(s, 'Forest')!.tapped = false;
+    expect(unitsOf(s, perm(s, 'Forest')!)).toEqual([['G'], ['U']]);
+  });
+
+  it('Lion\'s Eye Diamond: discards the hand for three mana of one color, never paid automatically', () => {
+    const led = card({ name: 'Lion\'s Eye Diamond', typeLine: 'Artifact', oracleText: 'Discard your hand, Sacrifice this artifact: Add three mana of any one color. Activate only as an instant.' });
+    let s = board({ mine: [led], hand: [creature('Giant', 3, 3, { manaCost: '{R}{R}{R}', cmc: 3 }), swamp] });
+    expect(canPay(s, 0, s.players[0].hand[0].card)).toBe(false);
+    expect(canActivateDiamond(s, perm(s, 'Lion\'s Eye Diamond')!)).toBe(true);
+    s = apply(s, { type: 'tapForMana', iid: iidOf(s, 'Lion\'s Eye Diamond') });
+    expect(s.pending?.choice).toMatchObject({ purpose: 'manaColor' });
+    s = apply(s, { type: 'choose', answer: { kind: 'mode', modes: [3] } });
+    expect(s.players[0].pool?.map((m) => m.colors)).toEqual([['R'], ['R'], ['R']]);
+    expect(s.players[0].hand).toHaveLength(0);
+    expect(s.players[0].graveyard.map((c) => c.card.name).sort()).toEqual(['Giant', 'Lion\'s Eye Diamond', 'Swamp']);
   });
 });

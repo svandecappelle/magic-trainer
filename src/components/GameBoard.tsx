@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom';
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import {
-  activatable, activationProblem, abilityMaxX, actor, apply, canAttack, canTapForMana, canUntapForMana, castCost, castOptions, castSource, castSources, channelCost, manaSources,
+  activatable, activationProblem, abilityMaxX, actor, apply, canActivateDiamond, canAttack, canTapForMana, canUntapForMana, castCost, castOptions, castSource, castSources, channelCost, manaSources,
   landFaces, findInGraveyard, legalTargets, canBlock, findPermanent, hasKw, IllegalAction, isActivePlayer, mulliganBottom, isLegalTarget, isMainStep, firstOpponent, opponentsOf, teammatesOf, teamPlayers, wonBy,
   paymentFor, powerOf, toughnessOf, unitsOf, xCount,
   type Action, type CardInst, type CastOption, type GameState, type Permanent, type PlayerId, type Target,
@@ -564,7 +564,8 @@ export function GameBoard({ game: g, me, onAction, endControls, notice, readOnly
     if (perm.controller === me && !declaringAttack) {
       if (canUntapForMana(g, me, perm)) return act({ type: 'untapForMana', iid: perm.iid });
       const abilities = activatedOf(perm.card).map((spec, index) => ({ spec, index })).filter((a) => a.spec.ability.effects.length);
-      const mana = canTapForMana(g, perm);
+      // Lion's Eye Diamond: activated like tapping for mana.
+      const mana = canTapForMana(g, perm) || canActivateDiamond(g, perm);
       // Skycoach Conductor: a copy of its prepared spell.
       const prepared = castSource(g, me, perm.iid);
       if (prepared?.from === 'prepared' && !abilities.length && !mana) return playCard(perm.iid, prepared.inst.card);
@@ -669,7 +670,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice, readOnly
     controls = (
       <>
         <button className="secondary" onClick={() => setAbilityMenu(null)}>{t.common.cancel}</button>
-        {canTapForMana(g, abilityMenu) && (
+        {(canTapForMana(g, abilityMenu) || canActivateDiamond(g, abilityMenu)) && (
           <button className="ability-option" onClick={() => { setAbilityMenu(null); act({ type: 'tapForMana', iid: abilityMenu.iid }); }}>{t.game.addMana}</button>
         )}
         {activatedOf(abilityMenu.card).map((spec, index) => spec.ability.effects.length ? (

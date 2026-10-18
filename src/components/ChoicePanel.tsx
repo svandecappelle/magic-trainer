@@ -43,7 +43,8 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
     case 'reflexiveSacrifice': return t.game.choice.reflexiveSacrifice({ card: card(String(p.card)) });
     case 'reflexiveRemoveCounter': return t.game.choice.reflexiveRemoveCounter({ card: card(String(p.card)) });
     case 'exploreMill': return t.game.choice.exploreMill({ card: card(String(p.card)) });
-    case 'color': return t.game.choice.color({ card: card(String(p.card)) });
+    case 'color':
+    case 'manaColor': return t.game.choice.color({ card: card(String(p.card)) });
     case 'basicType': return t.game.choice.basicType({ card: card(String(p.card)) });
     case 'chosenPlayer': return t.game.choice.chosenPlayer({ card: card(String(p.card)) });
     case 'spellName': return t.game.choice.spellName({ card: card(String(p.card)) });
@@ -161,7 +162,7 @@ export function ChoicePanel({ choice, onAnswer, onPreview, title }: Props) {
               disabled={choice.disabled?.includes(i)}
               onChange={() => (choice.max === 1 ? setPicked([ids[i]]) : toggle(ids[i]))}
             />{' '}
-            {choice.purpose === 'color' ? t.colors[label] : label}
+            {choice.purpose === 'color' || choice.purpose === 'manaColor' ? t.colors[label] : label}
             {choice.disabled?.includes(i) && <small> — {t.game.modeUnavailable}</small>}
           </label>
         ))}

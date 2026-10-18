@@ -1154,7 +1154,8 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
     }
     case 'mode':
       // Multiversal Passage: the basic type of the color its hand and library need most.
-      if (choice.purpose === 'basicType') {
+      // Utopia Sprawl's mana: the same.
+      if (choice.purpose === 'basicType' || choice.purpose === 'manaColor') {
         const ps = s.players[choice.player];
         const need = (color: string) => [...ps.hand, ...ps.library].reduce((n, c) => n + (c.card.manaCost.match(new RegExp(`\\{${color}\\}`, 'g'))?.length ?? 0), 0);
         const order = ['W', 'U', 'B', 'R', 'G'];

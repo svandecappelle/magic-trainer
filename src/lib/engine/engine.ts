@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, counterMana, choosesColor, diamondMana, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type AltCost, type CastInfo, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -55,6 +55,10 @@ export interface Permanent extends CardInst {
   used?: number[];
   /** Triggered abilities (by index) that "trigger only once each turn" and already did this turn. */
   triggeredOnce?: number[];
+  /** Utopia Sprawl: the color chosen as it entered. */
+  chosenColor?: Color;
+  /** Wall of Roots: its once-each-turn mana ability was activated this turn. */
+  counterManaUsed?: boolean;
   /** The full card when the permanent is one face of it (modal double-faced back face), or a clone's own card. */
   printed?: Card;
   /** Its owner, when someone else controls it (gain control). */
@@ -265,6 +269,7 @@ export type ChoicePurpose =
   | 'exileCost' // a spell's additional cost: exile cards from your graveyard
   | 'costChoice' // a spell's additional cost "A or B": yes pays the first
   | 'creatureType' // Cavern of Souls: "choose a creature type"
+  | 'manaColor' // Utopia Sprawl: "As this Aura enters, choose a color."
   | 'cardName' // Pithing Needle: "choose a card name"
   | 'spellName' // Meddling Mage: "choose a nonland card name"
   | 'taxName' // Disruptor Flute, Anointed Peacekeeper: "choose a card name" (spells with it cost more)
@@ -317,7 +322,7 @@ export interface Pending {
    * What continues once answered: the end of turn, the spell or ability being resolved, or a
    * triggered ability waiting for targets (`trigger`).
    */
-  resume: 'cleanup' | 'effect' | 'trigger' | 'activation' | 'legend' | 'payLife' | 'castCost' | 'clone' | 'discardLandInstead' | 'gemstoneCaverns' | 'damageOrder' | 'creatureType' | 'cardName' | 'basicType' | 'chosenPlayer' | 'crew' | 'triggerMode';
+  resume: 'cleanup' | 'effect' | 'trigger' | 'activation' | 'legend' | 'payLife' | 'castCost' | 'clone' | 'discardLandInstead' | 'gemstoneCaverns' | 'damageOrder' | 'creatureType' | 'manaColor' | 'diamond' | 'cardName' | 'basicType' | 'chosenPlayer' | 'crew' | 'triggerMode';
   /** For clone: the window the resolving spell belongs to. */
   reason?: WindowReason;
   /** For payLife: the land that entered. */
@@ -419,6 +424,7 @@ export type LogEntry =
   /** Leylines: a card of the opening hand begins the game on the battlefield. */
   | { k: 'beginsOnBattlefield'; p: PlayerId; card: string }
   | { k: 'chosenType'; card: string; type: string }
+  | { k: 'chosenColor'; card: string; color: Color }
   | { k: 'chosenName'; card: string; name: string }
   | { k: 'chosenPlayer'; card: string; p: PlayerId }
   | { k: 'emblem'; p: PlayerId; card: string }
@@ -701,7 +707,7 @@ const counterBonus = (perm: Permanent) => (perm.counters['+1/+1'] ?? 0) - (perm.
  */
 const basePT = (perm: Permanent) => [...perm.boosts].reverse().find((b) => b.setBase)?.setBase;
 export const powerOf = (perm: Permanent) => (basePT(perm)?.power ?? power(perm.card)) + sum(perm, 'power') + counterBonus(perm) + (perm.statics?.power ?? 0);
-export const toughnessOf = (perm: Permanent) => (basePT(perm)?.toughness ?? toughness(perm.card)) + sum(perm, 'toughness') + counterBonus(perm) + (perm.statics?.toughness ?? 0);
+export const toughnessOf = (perm: Permanent) => (basePT(perm)?.toughness ?? toughness(perm.card)) + sum(perm, 'toughness') + counterBonus(perm) - (perm.counters['-0/-1'] ?? 0) + (perm.statics?.toughness ?? 0);
 
 /** True-Name Nemesis: protection from the chosen player (their spells, abilities, creatures and damage). */
 const protectedFromPlayer = (perm: Permanent, p: PlayerId) => perm.chosenPlayer === p && protectionFromChosenPlayer(perm.card);
@@ -731,7 +737,9 @@ export function unitsOf(s: GameState, perm: Permanent, spell?: Card): Color[][] 
     if (!extra) continue;
     if (extra.whose === 'enchanted' ? x.attachedTo !== perm.iid : extra.whose === 'yours' && x.controller !== perm.controller) continue;
     const kind = { land, creature: isCreature(perm.card), nonland: !land, permanent: true }[extra.kind];
-    if (kind) units = [...units, ...(extra.add === 'same' ? [made] : extra.add)];
+    // Utopia Sprawl: the color chosen as it entered.
+    const add = extra.add === 'same' ? [made] : extra.add === 'chosen' ? (x.chosenColor ? [[x.chosenColor]] : []) : extra.add;
+    if (kind) units = [...units, ...add];
   }
   return units;
 }
@@ -911,6 +919,12 @@ export const canTapForMana = (s: GameState, perm: Permanent) =>
   !perm.tapped && !(isCreature(perm.card) && perm.sick && !hasKw(perm, 'haste')) && unitsOf(s, perm).length > 0 && !activationsForbidden(s, perm) &&
   s.players[perm.controller].life >= manaLifeCost(perm.card);
 
+/**
+ * Lion's Eye Diamond: activated by its controller only (never to pay automatically: it discards the hand). The color is
+ * chosen, then the hand discarded and the Diamond sacrificed for three mana of that color.
+ */
+export const canActivateDiamond = (s: GameState, perm: Permanent) => diamondMana(perm.card) && !activationsForbidden(s, perm);
+
 /** Tapping it for mana costs life (Mana Confluence) or deals damage (City of Brass): tapped last, and can't be undone. */
 const painfulMana = (perm: Permanent) =>
   manaLifeCost(perm.card) > 0 || !!tapsAnotherForMana(perm.card) || !!filterMana(perm.card) || triggersOf(perm.card).some((t) => t.event.on === 'becomesTapped');
@@ -1048,12 +1062,17 @@ export function manaSources(s: GameState, p: PlayerId, spell?: Card): ManaSource
     if (helper) helpersUsed.add(helper.iid);
     return !!helper;
   });
+  // Wall of Roots: a -0/-1 counter for one mana, once each turn (spent last: it shrinks the wall).
+  const counters = s.battlefield.flatMap((x): ManaSource[] => {
+    const color = x.controller === p && !x.counterManaUsed && !activationsForbidden(s, x) ? counterMana(x.card) : null;
+    return color ? [{ iid: `counter:${x.iid}`, colors: [color], last: true }] : [];
+  });
   // Elvish / Simian Spirit Guide: exiled from the hand for one mana, spent last.
   const fromHand = s.players[p].hand.flatMap((c): ManaSource[] => {
     const color = handMana(c.card);
     return color ? [{ iid: `hand:${c.iid}`, colors: [color], last: true }] : [];
   });
-  return [...pool, ...usable, ...fromHand];
+  return [...pool, ...usable, ...counters, ...fromHand];
 }
 
 /** Can the permanent's mana be taken back (all of it still unspent in the pool)? */
@@ -1864,6 +1883,7 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
     }
     delete perm.used;
     delete perm.triggeredOnce;
+    delete perm.counterManaUsed;
   }
   log(d, { k: 'turn', n: d.turn, p });
   fireStep(d, 'upkeep');
@@ -2041,6 +2061,13 @@ function payMana(d: GameState, p: PlayerId, plan: ManaPick[]) {
   for (const iid of iids) {
     if (iid.startsWith('convoke:')) {
       tapPermanent(d, findPermanent(d, iid.slice(8))!);
+      continue;
+    }
+    if (iid.startsWith('counter:')) {
+      const wall = findPermanent(d, iid.slice(8))!;
+      wall.counters = { ...wall.counters, '-0/-1': (wall.counters['-0/-1'] ?? 0) + 1 };
+      wall.counterManaUsed = true;
+      log(d, { k: 'counters', card: wall.card.name, counter: '-0/-1', n: 1 });
       continue;
     }
     if (iid.startsWith('hand:')) {
@@ -2403,6 +2430,17 @@ function askCreatureType(d: GameState): boolean {
   d.pending = {
     choice: { kind: 'mode', player: perm.controller, purpose: 'creatureType', min: 1, max: 1, modes: creatureTypeOptions(d, perm.controller), params: { card: perm.card.name } },
     resume: 'creatureType', iid: perm.iid,
+  };
+  return true;
+}
+
+/** Utopia Sprawl: "As this Aura enters, choose a color." (for its mana; asked once nothing else is going on). */
+function askManaColor(d: GameState): boolean {
+  const perm = d.battlefield.find((x) => !x.chosenColor && choosesColor(x.card) && extraManaOf(x.card)?.add === 'chosen');
+  if (!perm) return false;
+  d.pending = {
+    choice: { kind: 'mode', player: perm.controller, purpose: 'manaColor', min: 1, max: 1, modes: [...COLORS], params: { card: perm.card.name } },
+    resume: 'manaColor', iid: perm.iid,
   };
   return true;
 }
@@ -2842,6 +2880,15 @@ function dealDamage(d: GameState, source: CardInst, controller: PlayerId, target
   }
   if (amount <= 0) return;
   const infect = hasKw(source, 'infect');
+  // Hypnotic Specter: "Whenever this creature deals damage to an opponent, that player …" (the creature itself dealing it).
+  const self = findPermanent(d, source.iid);
+  if (self && typeof target === 'number' && teamOf(d, target) !== teamOf(d, self.controller) && !mooned(d, self.card)) {
+    for (const t of triggersOf(self.card)) {
+      if (t.event.on !== 'damagesOpponent') continue;
+      if (!t.ability.effects.length) log(d, { k: 'notSimulated', card: self.card.name });
+      else (d.triggered ??= []).push({ source: { iid: self.iid, card: self.card }, controller: self.controller, ability: t.ability, targets: [[{ kind: 'player', player: target }]] });
+    }
+  }
   if (typeof target === 'number' && infect) {
     // Infect: damage to players as poison counters, to creatures as -1/-1 counters.
     addPoison(d, target, amount);
@@ -3606,6 +3653,18 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       (d.triggered ??= []).push({ source: { iid: item.source ?? item.iid, card: item.card }, controller: caster, ability: e.then });
       break;
     }
+    case 'whenDiscardedNonland': {
+      // Seasoned Cryomancer: "When you discard one or more nonland cards this way, tap up to that many target creatures …"
+      const n = (r.discarded ?? []).filter((iid) => {
+        // In the graveyard, or exiled instead (Rest in Peace).
+        const inst = [...d.players[caster].graveyard, ...d.players[caster].exile].find((c) => c.iid === iid);
+        return inst && !isLand(inst.card);
+      }).length;
+      if (!n) break;
+      const then = e.upToThatMany ? { ...e.then, targets: e.then.targets.map((t) => ({ ...t, max: Math.min(t.max, n) })) } : e.then;
+      (d.triggered ??= []).push({ source: { iid: item.source ?? item.iid, card: item.card }, controller: caster, ability: then });
+      break;
+    }
     case 'gainAbility': {
       // The Saga keeps the ability while it stays; what leaves the battlefield is the printed card.
       const src = item.source ? findPermanent(d, item.source) : undefined;
@@ -4122,7 +4181,7 @@ function settle(d: GameState) {
   for (;;) {
     checkStateBased(d);
     if (d.winner !== null || d.pending || d.mulligan) return;
-    if (askLegendRule(d) || askBasicType(d) || askLifeChoice(d) || askCreatureType(d) || askCardName(d) || askChosenPlayer(d)) return;
+    if (askLegendRule(d) || askBasicType(d) || askLifeChoice(d) || askCreatureType(d) || askManaColor(d) || askCardName(d) || askChosenPlayer(d)) return;
     if (d.triggered?.length) {
       if (!flushTrigger(d)) return;
       continue;
@@ -4451,6 +4510,25 @@ export function apply(state: GameState, action: Action): GameState {
         if (perm && name) {
           perm.chosenName = name;
           log(d, { k: 'chosenName', card: perm.card.name, name });
+        }
+      } else if (pending.resume === 'manaColor' && action.answer.kind === 'mode') {
+        const perm = findPermanent(d, pending.iid!);
+        const color = COLORS[action.answer.modes[0]];
+        if (perm && color) {
+          perm.chosenColor = color;
+          log(d, { k: 'chosenColor', card: perm.card.name, color });
+        }
+      } else if (pending.resume === 'diamond' && action.answer.kind === 'mode') {
+        // Lion's Eye Diamond: "Discard your hand, Sacrifice this artifact: Add three mana of any one color."
+        const perm = findPermanent(d, pending.iid!);
+        const color = COLORS[action.answer.modes[0]];
+        if (perm && color) {
+          for (const inst of [...me.hand]) {
+            moveToGraveyard(d, p, inst, 'hand');
+            log(d, { k: 'discard', p, card: inst.card.name });
+          }
+          sacrifice(d, perm);
+          me.pool = [...(me.pool ?? []), ...[0, 1, 2].map(() => ({ colors: [color], source: perm.iid }))];
         }
       } else if (pending.resume === 'creatureType' && action.answer.kind === 'mode') {
         const perm = findPermanent(d, pending.iid!);
@@ -4836,6 +4914,13 @@ export function apply(state: GameState, action: Action): GameState {
     case 'tapForMana': {
       const perm = findPermanent(d, action.iid);
       if (!perm || perm.controller !== p) throw new IllegalAction('noSuchAbility');
+      if (canActivateDiamond(d, perm)) {
+        d.pending = {
+          choice: { kind: 'mode', player: p, purpose: 'manaColor', min: 1, max: 1, modes: [...COLORS], params: { card: perm.card.name } },
+          resume: 'diamond', iid: perm.iid,
+        };
+        break;
+      }
       if (!canTapForMana(d, perm)) throw new IllegalAction(perm.tapped ? 'alreadyTapped' : 'summoningSick', { card: perm.card.name });
       const typed = perm.chosenType ? chosenTypeMana(perm.card) : null;
       const legend = legendaryMana(perm.card);

@@ -1,7 +1,7 @@
 import type { Card } from '../../types';
 import {
   activatedOf, auraTarget, castInfo, gainsLifeFromDamage, castSpec, entersAsCopy, entersCounters, entersTappedRule, beginsWithLuck, discardsLandInstead, manaConditions, stateMana, doesntUntap, frontText, gameRulesOf, isInstantOrSorcery,
-  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, chosenNameTax, namesAnyCard, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, extraManaOf, manaMultiplier, reconfiguresEnchanted, entersPrepared, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, returnsExiledWhenLeaving, fadingOf, type AbilitySpec,
+  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, chosenNameTax, namesAnyCard, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, extraManaOf, manaMultiplier, choosesColor, counterMana, diamondMana, reconfiguresEnchanted, entersPrepared, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, returnsExiledWhenLeaving, fadingOf, type AbilitySpec,
 } from './rules';
 
 /**
@@ -146,9 +146,16 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   if (paidAnyColor(one) && /^\{1\}, \{T\}: Add one mana of any color\.$/.test(line)) {
     return { text: line, status: 'ok', how: 'mana: any color, paying {1} with other mana (chosen automatically when paying)' };
   }
-  const extra = extraManaOf(one);
+  // Utopia Sprawl: its two lines are read together.
+  const extra = extraManaOf(one) ?? (/tapped for mana/.test(line) ? extraManaOf(card) : null);
+  if (choosesColor(one) && extraManaOf(card)?.add === 'chosen') return { text: line, status: 'ok', how: 'chooses a color as it enters (its mana)' };
+  // Arena of Glory: "{R}, {T}, Exert this land: Add {R}{R}. If any of that mana is spent on a creature spell, it gains haste …"
+  if (/^[^:]*\bExert this [a-z]+: Add /.test(line)) return { text: line, status: 'notSimulated', how: 'mana ability with exert, not simulated' };
+  if (diamondMana(one)) return { text: line, status: 'ok', how: 'mana: three of one color, discarding the hand (activated by hand only, never to pay automatically)' };
+  const wall = counterMana(one);
+  if (wall) return { text: line, status: 'ok', how: `mana: ${wall}, putting a -0/-1 counter on it, once each turn (spent last)` };
   if (extra) {
-    const what = extra.add === 'same' ? 'one mana of a type it made' : extra.add.map((u) => u.join('/')).join(' ');
+    const what = extra.add === 'same' ? 'one mana of a type it made' : extra.add === 'chosen' ? 'one mana of the color chosen as it entered' : extra.add.map((u) => u.join('/')).join(' ');
     const whose = { enchanted: 'the enchanted permanent', yours: `a ${extra.kind} you control`, anyones: `any ${extra.kind}` }[extra.whose];
     return { text: line, status: 'ok', how: `mana: ${what} more when ${whose} is tapped for mana` };
   }
@@ -212,6 +219,8 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   // Handled by the counter effect itself (engine.ts), on any spell.
   if (/^This spell can't be countered\.$/.test(line)) return { text: line, status: 'ok', how: 'can\'t be countered' };
   if (spell) return null;
+  // Seasoned Cryomancer: "{3}{U}{U}, Exile this card from your graveyard: Draw two cards." (can't be activated: no harm)
+  if (/^[^:"]*\bExile this card from your graveyard[^:"]*: /.test(line)) return { text: line, status: 'notSimulated', how: 'ability from the graveyard, not simulated' };
   if (/^[^:"]+: /.test(line)) return { text: line, status: 'unread', how: 'activated ability with a cost or restriction not understood' };
   return { text: line, status: 'unread', how: 'not read by the engine' };
 }

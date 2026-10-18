@@ -140,8 +140,8 @@ NONE     Practiced Offense {2}{W} — Sorcery
 NONE     Qarsi Revenant {1}{B}{B} — Creature — Vampire
   ✓ Flying, deathtouch, lifelink
       keyword
-  ? Renew — {2}{B}, Exile this card from your graveyard: Put a flying cou…
-      activated ability with a cost or restriction not understood
+  ✗ Renew — {2}{B}, Exile this card from your graveyard: Put a flying cou…
+      ability from the graveyard, not simulated
 NONE     Return the Favor {R}{R} — Instant
   ✓ Spree
       keyword
@@ -166,11 +166,6 @@ NONE     Sanar, Unfinished Genius // Wild Idea {U}{R} // {3}{U}{R} — Legendary
   ? Sanar enters prepared.
       not read by the engine
   ? {T}: Create a Treasure token. Activate only if you've cast an instant…
-      activated ability with a cost or restriction not understood
-NONE     Seasoned Cryomancer {1}{U}{U} — Creature — Human Wizard
-  ✗ When this creature enters, draw two cards, then discard two cards. Wh…
-      trigger (enters), effect not simulated
-  ? {3}{U}{U}, Exile this card from your graveyard: Draw two cards.
       activated ability with a cost or restriction not understood
 NONE     Starfield Shepherd {3}{W}{W} — Creature — Angel
   ✓ Flying
@@ -466,6 +461,11 @@ PARTIAL  Restless Anchorage  — Land
       activated → animate
   ✗ Whenever this land attacks, create a Map token.
       trigger (attacks), effect not simulated
+PARTIAL  Seasoned Cryomancer {1}{U}{U} — Creature — Human Wizard
+  ✓ When this creature enters, draw two cards, then discard two cards. Wh…
+      trigger (enters) → draw+discard+whenDiscardedNonland
+  ✗ {3}{U}{U}, Exile this card from your graveyard: Draw two cards.
+      ability from the graveyard, not simulated
 PARTIAL  Slickshot Show-Off {1}{R} — Creature — Bird Wizard
   ✓ Flying, haste
       keyword
@@ -961,5 +961,5 @@ OK       Zoraline, Cosmos Caller {1}{W}{B} — Legendary Creature — Bat Cleric
   ✓ Whenever Zoraline enters or attacks, you may pay {W}{B} and 2 life. W…
       trigger (enters/attacks) → reflexive | reflexive
 
-178 cards: 91 ok, 42 partial, 45 not simulated, 0 can't be cast
+178 cards: 91 ok, 43 partial, 44 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)
