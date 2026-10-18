@@ -862,7 +862,8 @@ export interface AbilitySpec {
    * Mana Vault: "if this artifact is tapped" (tapped).
    */
   /** `delirium`: Fear of Missing Out's "if there are four or more card types among cards in your graveyard". */
-  condition?: { gained?: number; lost?: boolean; tapped?: boolean; cast?: boolean; delirium?: boolean };
+  /** `notEscaped`: Phlage, Uro: "sacrifice it unless it escaped". */
+  condition?: { gained?: number; lost?: boolean; tapped?: boolean; cast?: boolean; delirium?: boolean; notEscaped?: boolean };
   /** A Saga's chapter ability: its Saga isn't sacrificed while it waits or is on the stack. */
   chapter?: number;
   /**
@@ -1558,7 +1559,8 @@ export function parseAbilityText(text: string, self?: string, selfIt = true): Ab
   // Brainstorm: "then put two cards from your hand on top of your library in any order".
   scan(new RegExp(`\\bput (${NUMBER}) cards from your hand on top of your library in any order(?=\\.|$)`, 'gi'), (m) => ({ kind: 'putBack', n: toNumber(m[1]) }));
   // Stoneforge Mystic: "put an Equipment card from your hand onto the battlefield".
-  scan(/\bput an? ([A-Za-z ]+?) card from your hand onto the battlefield(?=\.|$)/g, (m) => {
+  // Uro: "then you may put a land card from your hand onto the battlefield" (choosing none is the "may").
+  scan(/\b(?:you may )?put an? ([A-Za-z ]+?) card from your hand onto the battlefield(?=\.|$)/g, (m) => {
     const filter = revealFilter(m[1]);
     return filter && { kind: 'putFromHand', filter };
   });
@@ -2047,7 +2049,12 @@ export type AltCost =
   /** Phyrexian mana ({U/P}): 2 life for each one instead of its mana. */
   | { kind: 'phyrexian'; n: number }
   /** Invigorate: "If you control a Forest, rather than pay this spell's mana cost, you may have an opponent gain 3 life." */
-  | { kind: 'opponentGainsLife'; n: number; subtype: string };
+  | { kind: 'opponentGainsLife'; n: number; subtype: string }
+  /**
+   * Escape (cast from the graveyard): its mana (`cost`, or '' for the card's mana cost: Underworld Breach) and other
+   * cards exiled from the graveyard: `exile` of them, or any number with `minTypes` card types among them (Nethergoyf).
+   */
+  | { kind: 'escape'; cost: string; exile: number; minTypes?: number };
 
 export interface CastInfo {
   /** Alternative costs ("rather than pay this spell's mana cost", evoke, cleave, warp, web-slinging, Phyrexian mana). */
@@ -2113,6 +2120,10 @@ export function castInfo(card: Card, face = 0): CastInfo {
       info.alts.push({ kind: 'returnLand', subtype: m[1].toLowerCase() });
     } else if ((m = line.match(/^(If it's not your turn, )?you may exile an? (white|blue|black|red|green) card from your hand rather than pay this spell's mana cost\.$/i))) {
       info.alts.push({ kind: 'exileCard', color: COLOR_WORDS[m[2].toLowerCase()], ...(m[1] ? { notYourTurn: true } : {}) });
+    } else if ((m = line.match(/^Escape—((?:\{[^}]+\})+), Exile (any number of|\w+) other cards? from your graveyard(?: with (\w+) or more card types among them)?\.$/))) {
+      // Nethergoyf: "Escape—{2}{B}, Exile any number of other cards from your graveyard with four or more card types among them."
+      const any = m[2] === 'any number of';
+      if (!any || m[3]) info.alts.push({ kind: 'escape', cost: m[1], exile: any ? 0 : toNumber(m[2]), ...(m[3] ? { minTypes: toNumber(m[3]) } : {}) });
     } else if ((m = line.match(/^If you control an? (Plains|Island|Swamp|Mountain|Forest), rather than pay this spell's mana cost, you may have an opponent gain (\d+) life\.$/i))) {
       info.alts.push({ kind: 'opponentGainsLife', n: Number(m[2]), subtype: m[1].toLowerCase() });
     } else if ((m = line.match(/^Evoke—Exile an? (white|blue|black|red|green) card from your hand\.$/i))) {
@@ -2793,6 +2804,12 @@ export function triggersOf(card: Card): TriggerSpec[] {
     }
     if (/^Whenever a creature you control or a creature spell you control becomes the target of a spell or ability an opponent controls, /i.test(line)) {
       out.push({ event: { on: 'yourCreatureTargeted' }, ability: triggerAbility(line.replace(/^[^,]+, /, ''), name, true) });
+      continue;
+    }
+    // Phlage, Uro: "When Phlage enters, sacrifice it unless it escaped."
+    const unlessEscaped = line.match(/^When (.+?) enters(?: the battlefield)?, sacrifice it unless it escaped\.$/i);
+    if (unlessEscaped && selves.includes(unlessEscaped[1].toLowerCase())) {
+      out.push({ event: { on: 'enters', self: true }, ability: { targets: [], effects: [{ kind: 'sacrificeSelf' }], condition: { notEscaped: true } } });
       continue;
     }
     // Screaming Nemesis: "Whenever this creature is dealt damage, it deals that much damage to any other target. If a
@@ -3842,6 +3859,13 @@ export type GameRule =
   | 'creatureAbilitiesCostLess'
   /** Samut, Tyrant of Naktamun: "Instant and sorcery spells you control have split second." */
   | 'yourSpellsSplitSecond'
+  /**
+   * Underworld Breach: "Each nonland card in your graveyard has escape. The escape cost is equal to the card's mana cost
+   * plus exile three other cards from your graveyard."
+   */
+  | 'graveyardEscape'
+  /** Lurrus: "Once during each of your turns, you may cast a permanent spell with mana value 2 or less from your graveyard." */
+  | 'lurrus'
   /** Karn, the Great Creator: "Activated abilities of artifacts your opponents control can't be activated." */
   | 'opponentsArtifactAbilitiesForbidden'
   /** Cursed Totem: "Activated abilities of creatures can't be activated." (mana abilities included) */
@@ -3926,6 +3950,8 @@ const GAME_RULES: [RegExp, GameRule][] = [
   [/^The first activated ability of an artifact you activate each turn costs \{2\} less to activate\.$/m, 'firstArtifactAbilityCostsLess'],
   [/^Activated abilities of creatures you control cost \{2\} less to activate\. This effect can't reduce the mana in that cost to less than one mana\.$/m, 'creatureAbilitiesCostLess'],
   [/^Instant and sorcery spells you control have split second\.(?: \([^)]*\))?$/m, 'yourSpellsSplitSecond'],
+  [/^Each nonland card in your graveyard has escape\. The escape cost is equal to the card's mana cost plus exile three other cards from your graveyard\.(?: \([^)]*\))?$/m, 'graveyardEscape'],
+  [/^Once during each of your turns, you may cast a permanent spell with mana value 2 or less from your graveyard\.$/m, 'lurrus'],
   [/^Damage can't be prevented\.$/m, 'damageCantBePrevented'],
 ];
 

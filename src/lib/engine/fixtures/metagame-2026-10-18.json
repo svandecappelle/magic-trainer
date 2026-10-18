@@ -214,5 +214,118 @@
   "keywords": [
    "Delirium"
   ]
+ },
+ {
+  "id": "3ee3945e-5089-4751-b7b3-5961c39d2a33",
+  "name": "Nethergoyf",
+  "manaCost": "{B}",
+  "cmc": 1,
+  "typeLine": "Creature — Lhurgoyf",
+  "oracleText": "Nethergoyf's power is equal to the number of card types among cards in your graveyard and its toughness is equal to that number plus 1.\nEscape—{2}{B}, Exile any number of other cards from your graveyard with four or more card types among them. (You may cast this card from your graveyard for its escape cost.)",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "mh3",
+  "setName": "Modern Horizons 3",
+  "rarity": "mythic",
+  "power": "*",
+  "toughness": "1+*",
+  "keywords": [
+   "Escape"
+  ]
+ },
+ {
+  "id": "0e51d796-7279-4c06-87f0-37adbdaa41df",
+  "name": "Underworld Breach",
+  "manaCost": "{1}{R}",
+  "cmc": 2,
+  "typeLine": "Enchantment",
+  "oracleText": "Each nonland card in your graveyard has escape. The escape cost is equal to the card's mana cost plus exile three other cards from your graveyard. (You may cast cards from your graveyard for their escape cost.)\nAt the beginning of the end step, sacrifice this enchantment.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "thb",
+  "setName": "Theros Beyond Death",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "5ad36fb2-c44e-4085-ba0d-54277841ad3a",
+  "name": "Lurrus of the Dream-Den",
+  "manaCost": "{1}{W/B}{W/B}",
+  "cmc": 3,
+  "typeLine": "Legendary Creature — Cat Nightmare",
+  "oracleText": "Companion — Each permanent card in your starting deck has mana value 2 or less. (If this card is your chosen companion, you may put it into your hand from outside the game for {3} as a sorcery.)\nLifelink\nOnce during each of your turns, you may cast a permanent spell with mana value 2 or less from your graveyard.",
+  "colors": [
+   "B",
+   "W"
+  ],
+  "colorIdentity": [
+   "B",
+   "W"
+  ],
+  "setCode": "iko",
+  "setName": "Ikoria: Lair of Behemoths",
+  "rarity": "rare",
+  "power": "3",
+  "toughness": "2",
+  "keywords": [
+   "Lifelink",
+   "Companion"
+  ]
+ },
+ {
+  "id": "e419cd0b-2449-4cc5-9ead-b9e45e271700",
+  "name": "Phlage, Titan of Fire's Fury",
+  "manaCost": "{1}{R}{W}",
+  "cmc": 3,
+  "typeLine": "Legendary Creature — Elder Giant",
+  "oracleText": "When Phlage enters, sacrifice it unless it escaped.\nWhenever Phlage enters or attacks, it deals 3 damage to any target and you gain 3 life.\nEscape—{R}{R}{W}{W}, Exile five other cards from your graveyard. (You may cast this card from your graveyard for its escape cost.)",
+  "colors": [
+   "R",
+   "W"
+  ],
+  "colorIdentity": [
+   "R",
+   "W"
+  ],
+  "setCode": "mh3",
+  "setName": "Modern Horizons 3",
+  "rarity": "mythic",
+  "power": "6",
+  "toughness": "6",
+  "keywords": [
+   "Escape"
+  ]
+ },
+ {
+  "id": "a0b6a71e-56cb-4d25-8f2b-7a4f1b60900d",
+  "name": "Uro, Titan of Nature's Wrath",
+  "manaCost": "{1}{G}{U}",
+  "cmc": 3,
+  "typeLine": "Legendary Creature — Elder Giant",
+  "oracleText": "When Uro enters, sacrifice it unless it escaped.\nWhenever Uro enters or attacks, you gain 3 life and draw a card, then you may put a land card from your hand onto the battlefield.\nEscape—{G}{G}{U}{U}, Exile five other cards from your graveyard. (You may cast this card from your graveyard for its escape cost.)",
+  "colors": [
+   "G",
+   "U"
+  ],
+  "colorIdentity": [
+   "G",
+   "U"
+  ],
+  "setCode": "thb",
+  "setName": "Theros Beyond Death",
+  "rarity": "mythic",
+  "power": "6",
+  "toughness": "6",
+  "keywords": [
+   "Escape"
+  ]
  }
 ]

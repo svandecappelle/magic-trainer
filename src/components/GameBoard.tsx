@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom';
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import {
-  activatable, activationProblem, abilityMaxX, actor, apply, canActivateDiamond, canAttack, canTapForMana, canUntapForMana, castCost, castOptions, castSource, castSources, channelCost, manaSources,
+  activatable, activationProblem, abilityMaxX, actor, altsFor, apply, canActivateDiamond, canAttack, canTapForMana, canUntapForMana, castCost, castOptions, castSource, castSources, channelCost, manaSources,
   landFaces, findInGraveyard, legalTargets, canBlock, findPermanent, hasKw, IllegalAction, isActivePlayer, mulliganBottom, isLegalTarget, isMainStep, firstOpponent, opponentsOf, teammatesOf, teamPlayers, wonBy,
   paymentFor, powerOf, toughnessOf, unitsOf, xCount,
   type Action, type CardInst, type CastOption, type GameState, type Permanent, type PlayerId, type Target,
@@ -373,7 +373,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice, readOnly
     for (const opt of castOptions(g, me, iid)) {
       const name = opt.face ? show.name(faceCard(card, opt.face)) : show.nameOf(faceName(card));
       const info = castInfo(card, opt.face);
-      const alt = opt.alt === undefined ? undefined : info.alts[opt.alt];
+      const alt = opt.alt === undefined ? undefined : altsFor(g, me, card, opt.face, opt.from)[opt.alt];
       // Airbent ({2}) or plotted (free) cards in exile.
       const exiledFor = g.players[me].exile.find((c) => c.iid === iid)?.castFor?.cost;
       const colorName = (c: string) => t.colors[c] ?? c;
@@ -383,6 +383,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice, readOnly
         : alt.kind === 'exileCard' ? (alt.evoke ? t.game.altCosts.evoke(colorName(alt.color).toLowerCase()) : t.game.altCosts.exileCard(colorName(alt.color).toLowerCase()))
         : alt.kind === 'phyrexian' ? t.game.altCosts.phyrexian(2 * alt.n)
         : alt.kind === 'opponentGainsLife' ? t.game.altCosts.opponentGainsLife(alt.n)
+        : alt.kind === 'escape' ? t.game.altCosts.escape(alt.cost || card.manaCost, alt.exile)
         : t.game.altCosts[alt.name](alt.cost))
         : opt.from === 'prepared' ? t.game.castCopy(name)
         : g.castNow?.iid === iid ? t.game.castFree(name)

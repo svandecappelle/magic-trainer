@@ -1,3 +1,10 @@
+PARTIAL  Lurrus of the Dream-Den {1}{W/B}{W/B} — Legendary Creature — Cat Nightmare
+  ✗ Companion — Each permanent card in your starting deck has mana value …
+      companion not simulated (played from the deck)
+  ✓ Lifelink
+      keyword
+  ✓ Once during each of your turns, you may cast a permanent spell with m…
+      rule for the game: lurrus
 OK       Chalice of the Void {X}{X} — Artifact
   ✓ This artifact enters with X charge counters on it.
       enters with X charge counters
@@ -25,6 +32,11 @@ OK       Moonshadow {B} — Creature — Elemental
       enters with 6 -1/-1 counters
   ✓ Whenever one or more permanent cards are put into your graveyard from…
       trigger (permanentCardsToGraveyard) → removeCounterSelf
+OK       Nethergoyf {B} — Creature — Lhurgoyf
+  ✓ Nethergoyf's power is equal to the number of card types among cards i…
+      static ability
+  ✓ Escape—{2}{B}, Exile any number of other cards from your graveyard wi…
+      escape {2}{B}: cast from the graveyard, exiling cards with 4 card types
 OK       Obsidian Charmaw {3}{R}{R} — Creature — Dragon
   ✓ This spell costs {1} less to cast for each land your opponents contro…
       costs {1} less for each opponent's land that could make {C}
@@ -32,6 +44,13 @@ OK       Obsidian Charmaw {3}{R}{R} — Creature — Dragon
       keyword
   ✓ When this creature enters, destroy target nonbasic land an opponent c…
       trigger (enters) → destroy (1 target)
+OK       Phlage, Titan of Fire's Fury {1}{R}{W} — Legendary Creature — Elder Giant
+  ✓ When Phlage enters, sacrifice it unless it escaped.
+      trigger (enters) → sacrificeSelf, unless it escaped
+  ✓ Whenever Phlage enters or attacks, it deals 3 damage to any target an…
+      trigger (enters/attacks) → damage+gainLife (1 target) | damage+gainLife (1 target)
+  ✓ Escape—{R}{R}{W}{W}, Exile five other cards from your graveyard.
+      escape {R}{R}{W}{W}: cast from the graveyard, exiling 5
 OK       Screaming Nemesis {2}{R} — Creature — Spirit
   ✓ Haste
       keyword
@@ -51,6 +70,18 @@ OK       Tamiyo, Inquisitive Student // Tamiyo, Seasoned Scholar {U} — Legenda
       trigger (attacks) → token
   ✓ When you draw your third card in a turn, exile Tamiyo, then return he…
       trigger (youDrawNth) → flickerTransformed
+OK       Underworld Breach {1}{R} — Enchantment
+  ✓ Each nonland card in your graveyard has escape. The escape cost is eq…
+      rule for the game: graveyardEscape
+  ✓ At the beginning of the end step, sacrifice this enchantment.
+      trigger (endStep) → sacrificeSelf
+OK       Uro, Titan of Nature's Wrath {1}{G}{U} — Legendary Creature — Elder Giant
+  ✓ When Uro enters, sacrifice it unless it escaped.
+      trigger (enters) → sacrificeSelf, unless it escaped
+  ✓ Whenever Uro enters or attacks, you gain 3 life and draw a card, then…
+      trigger (enters/attacks) → gainLife+draw+putFromHand | gainLife+draw+putFromHand
+  ✓ Escape—{G}{G}{U}{U}, Exile five other cards from your graveyard.
+      escape {G}{G}{U}{U}: cast from the graveyard, exiling 5
 
-9 cards: 9 ok, 0 partial, 0 not simulated, 0 can't be cast
+14 cards: 13 ok, 1 partial, 0 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

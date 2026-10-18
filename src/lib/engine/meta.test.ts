@@ -5045,3 +5045,80 @@ describe('Metagame audit 2026-10-18 evening, second batch', () => {
     expect(flipped.counters.loyalty).toBeGreaterThan(0);
   });
 });
+
+describe('Casting from the graveyard: escape, Underworld Breach, Lurrus', () => {
+  const cards = JSON.parse(readFileSync(new URL('./fixtures/metagame-2026-10-18.json', import.meta.url), 'utf8')) as Card[];
+  const real = (name: string, manaCost?: string) => {
+    const c = cards.find((x) => x.name.startsWith(name))!;
+    return manaCost === undefined ? c : { ...c, manaCost };
+  };
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 10 && (s.stack.length || s.triggered?.length) && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  const forest = card({ name: 'Forest', typeLine: 'Basic Land — Forest' });
+  const bear = creature('Bear', 2, 2, { manaCost: '{1}', cmc: 2 });
+  const opt = spell('Opt', '{0}', 'Draw a card.');
+  const rite = spell('Rite', '{0}', 'Add {R}.', 'Sorcery');
+  const rock = card({ name: 'Rock', typeLine: 'Artifact', manaCost: '{1}', cmc: 1 });
+
+  it('Nethergoyf: escape, exiling other cards with four or more card types among them', () => {
+    let s = board({ mana: 3, grave: [real('Nethergoyf'), forest, bear, opt] });
+    // Three card types among the others: not enough.
+    expect(castOptions(s, 0, 'g0')).toEqual([]);
+    s.players[0].graveyard.push({ iid: 'g9', card: rite });
+    const escape = castOptions(s, 0, 'g0');
+    expect(escape).toHaveLength(1);
+    s = apply(s, { type: 'cast', iid: 'g0', alt: escape[0].alt });
+    expect(s.pending?.choice).toMatchObject({ purpose: 'escapeExile', min: 1, max: 4 });
+    expect(errorOf(() => apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['g1', 'g2'] } }))).toBe('escapeTypes');
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['g1', 'g2', 'g3', 'g9'] } }));
+    expect(perm(s, 'Nethergoyf')).toBeDefined();
+    expect(s.players[0].exile).toHaveLength(4);
+  });
+
+  it('Underworld Breach: nonland cards in your graveyard escape for their mana cost and three other cards; it goes at the end step', () => {
+    const bolt = spell('Lightning Bolt', '{0}', 'Lightning Bolt deals 3 damage to any target.');
+    let s = board({ mine: [real('Underworld Breach')], grave: [bolt, forest, forest, forest, forest] });
+    // A land can't be cast.
+    expect(castOptions(s, 0, 'g1')).toEqual([]);
+    const escape = castOptions(s, 0, 'g0');
+    expect(escape).toHaveLength(1);
+    s = apply(s, { type: 'cast', iid: 'g0', alt: escape[0].alt, targets: [[{ kind: 'player', player: 1 }]] });
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['g1', 'g2', 'g3'] } }));
+    expect(s.players[1].life).toBe(17);
+    // Escaped: back to the graveyard (not exiled like flashback), and castable again.
+    expect(s.players[0].graveyard.map((c) => c.card.name).sort()).toEqual(['Forest', 'Lightning Bolt']);
+    expect(castOptions(s, 0, 'g0')).toEqual([]);
+    for (let i = 0; i < 30 && s.turn === 1; i++) s = !s.priority && s.step === 'attack' ? apply(s, { type: 'declareAttackers', attackers: [] }) : apply(s, s.pending ? { type: 'choose', answer: { kind: 'cards', iids: [] } } : { type: 'pass' });
+    expect(perm(s, 'Underworld Breach')).toBeUndefined();
+  });
+
+  it('Lurrus: once during each of your turns, a permanent spell with mana value 2 or less from your graveyard', () => {
+    let s = board({ mana: 4, mine: [real('Lurrus of the Dream-Den')], grave: [bear, rock, creature('Ogre', 3, 3, { manaCost: '{3}', cmc: 3 }), opt] });
+    expect([castOptions(s, 0, 'g0').length, castOptions(s, 0, 'g1').length, castOptions(s, 0, 'g2').length, castOptions(s, 0, 'g3').length]).toEqual([1, 1, 0, 0]);
+    s = resolve(apply(s, { type: 'cast', iid: 'g0' }));
+    expect(perm(s, 'Bear')).toBeDefined();
+    // Once each turn.
+    expect(castOptions(s, 0, 'g1')).toEqual([]);
+  });
+
+  it('Phlage: sacrificed when cast from the hand, stays when it escaped', () => {
+    let s = board({ hand: [real('Phlage, Titan of Fire\'s Fury', '{0}')] });
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    for (let i = 0; i < 10 && (s.stack.length || s.triggered?.length); i++) {
+      s = s.pending?.choice.kind === 'targets' ? apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'player', player: 1 }]] } }) : settle(apply(s, { type: 'pass' }));
+    }
+    expect(perm(s, 'Phlage, Titan of Fire\'s Fury')).toBeUndefined();
+    expect(s.players[1].life).toBe(17);
+    // Escaped: it stays.
+    const phlage = { ...real('Phlage, Titan of Fire\'s Fury'), oracleText: real('Phlage, Titan of Fire\'s Fury').oracleText.replace('{R}{R}{W}{W}', '{0}') };
+    s = board({ grave: [phlage, forest, forest, forest, forest, forest] });
+    s = apply(s, { type: 'cast', iid: 'g0', alt: castOptions(s, 0, 'g0')[0].alt });
+    s = apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['g1', 'g2', 'g3', 'g4', 'g5'] } });
+    for (let i = 0; i < 10 && (s.stack.length || s.triggered?.length); i++) {
+      s = s.pending?.choice.kind === 'targets' ? apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'player', player: 1 }]] } }) : settle(apply(s, { type: 'pass' }));
+    }
+    expect(perm(s, 'Phlage, Titan of Fire\'s Fury')).toBeDefined();
+  });
+});

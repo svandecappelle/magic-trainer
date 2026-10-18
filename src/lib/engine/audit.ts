@@ -40,7 +40,7 @@ function effectsText(spec: AbilitySpec): string | null {
   if (spec.modal) return `choose ${spec.modal.min}–${spec.modal.max} modes`;
   const targets = spec.targets.length ? ` (${spec.targets.length} target${spec.targets.length > 1 ? 's' : ''})` : '';
   const c = spec.condition;
-  const cond = !c ? '' : c.tapped ? ', if tapped' : c.cast ? ', if cast' : c.delirium ? ', with delirium' : `, if ${c.lost ? 'life gained and lost' : `${c.gained}+ life gained`} this turn`;
+  const cond = !c ? '' : c.tapped ? ', if tapped' : c.cast ? ', if cast' : c.delirium ? ', with delirium' : c.notEscaped ? ', unless it escaped' : `, if ${c.lost ? 'life gained and lost' : `${c.gained}+ life gained`} this turn`;
   const kinds = spec.effects.map((e) => (e.kind === 'tap' && e.untap ? 'untap' : e.kind)).join('+');
   return kinds + targets + (spec.mayPay ? `, may pay ${spec.mayPay}` : spec.optional ? ', optional' : '') + cond;
 }
@@ -84,6 +84,7 @@ function keywordLine(card: Card, line: string, one: Card): LineReport | null {
     if (k === 'split second') return hasSplitSecond(one);
     // Alternative costs: evoke, warp, web-slinging, cleave.
     if (k === 'evoke' || k === 'warp' || k === 'web-slinging' || k === 'cleave' || k === 'impending') return castInfo(card).alts.length > 0;
+    if (k === 'escape') return castInfo(card).alts.some((a) => a.kind === 'escape');
     if (k === 'cumulative upkeep') return triggersOf(one).some((tr) => tr.ability.effects.some((x) => x.kind === 'cumulativeUpkeep'));
     if (k === 'devoid') return true; // the card's colors are already none
     if (k === 'metalcraft') return manaConditions(one).some((c) => 'artifacts' in c);
@@ -207,6 +208,11 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   if (returnsExiledWhenLeaving(one)) return { text: line, status: 'ok', how: 'what it exiled returns when it leaves' };
   if (fadingOf(one)) return { text: line, status: 'ok', how: `fading ${fadingOf(one)}` };
   if (vanishingOf(one)) return { text: line, status: 'ok', how: `vanishing ${vanishingOf(one)}` };
+  // Escape: "Escape—{2}{B}, Exile …" (its cost has a comma: not a keyword list).
+  const escape = /^Escape—/.test(line) ? castInfo(one).alts.find((a) => a.kind === 'escape') : undefined;
+  if (escape?.kind === 'escape') return { text: line, status: 'ok', how: `escape ${escape.cost}: cast from the graveyard, exiling ${escape.exile || `cards with ${escape.minTypes} card types`}` };
+  // Lurrus: there is no companion here (the card is played from the deck).
+  if (/^Companion — /.test(line)) return { text: line, status: 'notSimulated', how: 'companion not simulated (played from the deck)' };
   // Birgi: boast isn't simulated, so boasting twice changes nothing.
   if (/^Creatures you control can boast twice during each of your turns rather than once\.$/.test(line)) return { text: line, status: 'notSimulated', how: 'boast not simulated' };
   if (hasEnlist(one)) return { text: line, status: 'ok', how: 'enlist: may tap a creature that doesn\'t attack, adding its power' };

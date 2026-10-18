@@ -469,13 +469,18 @@ counter on this creature" as a cost), Obsidian Charmaw ({1} less per opponent's 
 Nemesis (the damage it's dealt goes on; a player hit can't gain life for the rest of the game), Tamiyo (exiled and back
 transformed when you draw your third card in a turn). Fixture `metagame-2026-10-18` (the cards of these two batches).
 
+Casting from the graveyard: escape (Nethergoyf's "any number of other cards with four or more card types among
+them", Uro's and Phlage's five cards; escaped instants and sorceries go back to the graveyard), "sacrifice it unless it
+escaped" (Phlage, Uro), Underworld Breach (every nonland card in your graveyard escapes for its mana cost and three other
+cards), Lurrus (once during each of your turns, a permanent spell with mana value 2 or less; its companion line isn't
+simulated: it is played from the deck). Uro's "then you may put a land card from your hand onto the battlefield".
+
 Approximations: Moonshadow's trigger counts as "together" every card put into the graveyard before it goes on the
 stack (an effect that mills, then discards, triggers it once).
 
 Still open, playing wrongly, most played first (see `audit-reports/2026-10-18/report.md`):
-- [ ] Nethergoyf (escape with four card types exiled), Detective's Phoenix (bestow, collect evidence, from the
-  graveyard)
-- [ ] cEDH: Lurrus and Underworld Breach (casting from the graveyard), Tinder Wall ("Sacrifice this creature: Add
+- [ ] Detective's Phoenix (bestow, collect evidence, from the graveyard)
+- [ ] cEDH: Tinder Wall ("Sacrifice this creature: Add
   {R}{R}"), Grand Abolisher, Necropotence (skip your draw step), The Cabbage Merchant, Shang-Chi (haste for abilities)
 
 ## Tezzeret artifacts (a user's deck, `deck-2.txt`)

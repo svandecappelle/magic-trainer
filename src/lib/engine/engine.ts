@@ -51,6 +51,8 @@ export interface Permanent extends CardInst {
   stateTriggered?: boolean;
   /** Berserk: the last turn it attacked. */
   attackedOnTurn?: number;
+  /** Cast for its escape cost (Phlage, Uro: "unless it escaped"). */
+  escaped?: boolean;
   /** Fear of Missing Out: its latest attack is its first this turn. */
   firstAttack?: boolean;
   /** Jeweled Amulet: the type of mana last spent on its charge ability. */
@@ -126,6 +128,10 @@ export interface StackItem extends CardInst {
   fromHand?: string;
   /** Jeweled Amulet: the type of mana spent on the ability. */
   notedMana?: Color;
+  /** Cast for an escape cost. */
+  escaped?: boolean;
+  /** Cast with flashback (its own, or Snapcaster Mage's): exiled as it leaves the stack. */
+  flashback?: boolean;
   /** Might of Old Krosa: cast during its controller's main phase. */
   castInMain?: boolean;
   /** Green Sun's Zenith: shuffled into its owner's library as it resolves. */
@@ -218,6 +224,8 @@ export interface PlayerState {
   landPlayed: boolean;
   /** Lands played this turn (Exploration allows a second one). */
   landsThisTurn?: number;
+  /** Lurrus: the turn its permission was used. */
+  lurrusOnTurn?: number;
   /** Screaming Nemesis: "they can't gain life for the rest of the game". */
   cantGainLife?: boolean;
   /** Hope of Ghirapur: this player can't cast noncreature spells until the turn of this player begins. */
@@ -344,6 +352,7 @@ export type ChoicePurpose =
   | 'mayPay' // Mana Vault: "you may pay {4}. If you do, …"
   | 'enlist' // enlist: which creature to tap as this one attacks, or none
   | 'distributeTwo' // Bounty of the Hunt with two targets: which one gets two counters
+  | 'escapeExile' // escape: the other cards to exile from the graveyard
   | 'triggerMode'; // a modal trigger ("When … enters, choose one —"): which mode
 
 /** Where "arrange" choices may put cards (scry: top/bottom, surveil: top/graveyard). */
@@ -683,7 +692,7 @@ export type Action =
 /** Why an action was refused. Rendered in the player's language (src/i18n). */
 export type GameErrorCode =
   | 'gameOver' | 'keepFirst' | 'notMulliganTime' | 'noMoreMulligans' | 'chooseBottom' | 'notInHand'
-  | 'landTiming' | 'landAlreadyPlayed' | 'notALand' | 'notASpell' | 'sorcerySpeed' | 'castTiming' | 'sorceryOnly' | 'nameStopped' | 'mustAttack' | 'noCounterToRemove' | 'nothingToExile' | 'threshold' | 'delirium'
+  | 'landTiming' | 'landAlreadyPlayed' | 'notALand' | 'notASpell' | 'sorcerySpeed' | 'castTiming' | 'sorceryOnly' | 'nameStopped' | 'mustAttack' | 'noCounterToRemove' | 'nothingToExile' | 'threshold' | 'delirium' | 'escapeTypes'
   | 'noLandToReturn' | 'onlyNotYourTurn' | 'noCardToExile' | 'noTappedCreature'
   | 'needsTarget' | 'tooManyTargets' | 'targetMustBe' | 'illegalTarget' | 'notEnoughMana' | 'chosenManaShort' | 'declareBlockersFirst'
   | 'notAttackStep' | 'cannotAttack' | 'notBlockStep' | 'notAttacking' | 'menace' | 'cannotBlock'
@@ -1246,8 +1255,26 @@ function extraCostProblem(s: GameState, p: PlayerId, extra: AdditionalCost, iid:
   return null;
 }
 
+/**
+ * The alternative costs of a card cast from `from`: its own, and Underworld Breach's escape for a nonland card in its
+ * controller's graveyard (the last one).
+ */
+export function altsFor(s: GameState, p: PlayerId, card: Card, face: number, from: CastZone | undefined): AltCost[] {
+  const own = castInfo(card, face).alts;
+  const breach = from === 'graveyard' && !isLand(faceCard(card, face)) && withRule(s, 'graveyardEscape').some((x) => x.controller === p);
+  return breach ? [...own, { kind: 'escape', cost: '', exile: 3 }] : own;
+}
+
+/** Lurrus: `p` may cast this permanent card from their graveyard now (once each of their turns, mana value 2 or less). */
+function lurrusCast(s: GameState, p: PlayerId, card: Card): boolean {
+  return isActivePlayer(s, p) && s.players[p].lurrusOnTurn !== s.turn && !isInstantOrSorcery(card) && !isLand(card) && card.cmc <= 2
+    && withRule(s, 'lurrus').some((x) => x.controller === p);
+}
+
 function altMana(c: Card, alt: AltCost, x: number): Cost {
   if (alt.kind === 'mana') return parseCost(alt.cost);
+  // Escape: its own mana, or the card's mana cost (Underworld Breach).
+  if (alt.kind === 'escape') return alt.cost ? parseCost(alt.cost) : costWithX(c, x);
   if (alt.kind === 'phyrexian') {
     const cost = parseCost(c.manaCost.split('//')[0].replace(/\{[WUBRG]\/P\}/g, ''));
     return { ...cost, generic: cost.generic + x * xCount(c) };
@@ -1264,6 +1291,13 @@ function altCostProblem(s: GameState, p: PlayerId, alt: AltCost, iid: string, fr
     return me.hand.some((c) => c.iid !== iid && cardColors(c.card).includes(alt.color)) ? null : 'noCardToExile';
   }
   if (alt.kind === 'phyrexian') return me.life >= 2 * alt.n ? null : 'notEnoughLife';
+  if (alt.kind === 'escape') {
+    if (from !== 'graveyard') return 'castTiming';
+    const others = me.graveyard.filter((c) => c.iid !== iid);
+    if (others.length < Math.max(1, alt.exile)) return 'notEnoughInGraveyard';
+    if (alt.minTypes && new Set(others.flatMap((c) => cardTypes(c.card))).size < alt.minTypes) return 'escapeTypes';
+    return null;
+  }
   if (alt.kind === 'opponentGainsLife') return s.battlefield.some((x) => x.controller === p && hasSubtype(x.card, alt.subtype)) ? null : 'noLandToReturn';
   if (alt.name === 'warp' && from !== 'hand') return 'castTiming';
   if (alt.name === 'webSlinging' && !s.battlefield.some((x) => x.controller === p && x.tapped && isCreature(x.card))) return 'noTappedCreature';
@@ -1284,6 +1318,13 @@ function payAltCost(d: GameState, p: PlayerId, alt: AltCost, item: StackItem, na
   if (alt.kind === 'phyrexian') {
     changeLife(d, p, -2 * alt.n);
     return false;
+  }
+  // Escape: the other cards to exile from the graveyard.
+  if (alt.kind === 'escape') {
+    item.escaped = true;
+    const options = me.graveyard.filter((c) => c.iid !== item.iid);
+    const n = alt.exile;
+    return ask({ kind: 'cards', player: p, purpose: 'escapeExile', min: n || 1, max: n || options.length, options, params: { card, n, ...(alt.minTypes ? { types: alt.minTypes } : {}) } });
   }
   // Invigorate: "you may have an opponent gain 3 life" (the first opponent).
   if (alt.kind === 'opponentGainsLife') {
@@ -1347,7 +1388,7 @@ export function castCost(s: GameState, p: PlayerId, card: Card, opt: { face?: nu
   const c = faceCard(card, face);
   // An alternative cost: no mana (Daze, evoke…), its own mana (cleave, warp, web-slinging), or the mana cost without
   // its Phyrexian symbols (paid with life).
-  const alt = opt.alt === undefined ? undefined : info.alts[opt.alt];
+  const alt = opt.alt === undefined ? undefined : altsFor(s, p, card, face, opt.from)[opt.alt];
   // Malcolm: free; airbend: {2}; plot: free.
   const exiled = opt.from === 'exile' && opt.iid ? s.players[p].exile.find((x) => x.iid === opt.iid) : undefined;
   const fixed = opt.from === 'graveyard' && opt.iid && s.castNow?.iid === opt.iid ? '' : exiled?.castFor?.cost;
@@ -1460,7 +1501,10 @@ export function castSource(s: GameState, p: PlayerId, iid: string): { inst: Card
   const inGrave = ps.graveyard.find((c) => c.iid === iid);
   // Grafdigger's Cage: "Players can't cast spells from graveyards or libraries."
   const now = s.castNow?.player === p && s.castNow.iid === iid;
-  if (inGrave && (castInfo(inGrave.card).flashback || inGrave.flashbackOnTurn === s.turn || now) && !withRule(s, 'noCastingFromGraveyardsLibraries').length) return { inst: inGrave, from: 'graveyard' };
+  // Escape (Nethergoyf, Underworld Breach), Lurrus.
+  const graveCast = inGrave && (castInfo(inGrave.card).flashback || inGrave.flashbackOnTurn === s.turn || now
+    || altsFor(s, p, inGrave.card, 0, 'graveyard').some((a) => a.kind === 'escape') || lurrusCast(s, p, inGrave.card));
+  if (inGrave && graveCast && !withRule(s, 'noCastingFromGraveyardsLibraries').length) return { inst: inGrave, from: 'graveyard' };
   // An adventurer, or a warped card on a later turn.
   const inExile = ps.exile.find((c) => c.iid === iid && (c.adventure || (c.warpedOnTurn !== undefined && s.turn > c.warpedOnTurn)
     || (c.castFor && (c.castFor.afterTurn === undefined || s.turn > c.castFor.afterTurn)) || c.playableOnTurn === s.turn));
@@ -1498,7 +1542,9 @@ export function castOptions(s: GameState, p: PlayerId, iid: string): CastOption[
     if (info.unknownCost && !isInstantOrSorcery(c)) continue;
     const extra = info.additional;
     if (extra && (extra.kind === 'either' ? extra.options : [extra]).every((o) => extraCostProblem(s, p, o, iid, c.name))) continue;
-    for (const kicked of info.kicker ? [false, true] : [false]) {
+    // From the graveyard without flashback (Snapcaster Mage, Malcolm) or Lurrus: only its escape costs.
+    const normal = from !== 'graveyard' || !!info.flashback || inst.flashbackOnTurn === s.turn || s.castNow?.iid === iid || lurrusCast(s, p, c);
+    for (const kicked of !normal ? [] : info.kicker ? [false, true] : [false]) {
       const cost = castCost(s, p, inst.card, { face, kicked, from, iid });
       if (!findPayment(castSources(s, p, inst.card, iid, face), cost)) continue;
       if (!usefulTargets(s, p, inst.card, { face, kicked })) continue;
@@ -1515,7 +1561,7 @@ export function castOptions(s: GameState, p: PlayerId, iid: string): CastOption[
     }
     // Alternative costs (not with kicker): Daze, Force of Negation, evoke, cleave, warp, web-slinging, Phyrexian mana.
     if (inst.castFor || s.castNow?.iid === iid) continue; // its cost is already set
-    info.alts.forEach((alt, i) => {
+    altsFor(s, p, inst.card, face, from).forEach((alt, i) => {
       if (altCostProblem(s, p, alt, iid, from)) return;
       const cost = castCost(s, p, inst.card, { face, from, iid, alt: i });
       if (!findPayment(castSources(s, p, inst.card, iid, face), cost)) return;
@@ -2387,7 +2433,7 @@ export function paymentFor(s: GameState, p: PlayerId, action: Action): { sources
     if (!src) return null;
     const face = action.face ?? 0;
     const info = castInfo(src.inst.card, face);
-    const alt = action.alt !== undefined && info.alts[action.alt] ? action.alt : undefined;
+    const alt = action.alt !== undefined && altsFor(s, p, src.inst.card, face, src.from)[action.alt] ? action.alt : undefined;
     const kicked = !!action.kicked && !!info.kicker && alt === undefined;
     const x = xCount(faceCard(src.inst.card, face)) ? (action.x ?? 0) : 0;
     const exiled = info.exileDiscount && action.exiled ? action.exiled : 0;
@@ -2478,8 +2524,10 @@ function putOntoBattlefield(d: GameState, inst: CardInst, controller: PlayerId, 
   enterBattlefield(d, inst, controller, opts);
 }
 
-function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, opts: { x?: number; tapped?: boolean; cast?: boolean } = {}): Permanent {
+function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, opts: { x?: number; tapped?: boolean; cast?: boolean; escaped?: boolean } = {}): Permanent {
   const perm = newPermanent(inst, controller, d.turn);
+  // Phlage, Uro: "unless it escaped".
+  if (opts.escaped) perm.escaped = true;
   if (isLand(inst.card)) d.players[controller].landEnteredOnTurn = d.turn;
   // Sunderflock: "if you cast it".
   if (opts.cast) perm.cast = true;
@@ -2797,6 +2845,7 @@ function conditionMet(d: GameState, p: PlayerId, cond: AbilitySpec['condition'],
   if (cond.tapped && !(source && findPermanent(d, source)?.tapped)) return false;
   if (cond.cast && !(source && findPermanent(d, source)?.cast)) return false;
   if (cond.delirium && !delirium(d, p)) return false;
+  if (cond.notEscaped && source && findPermanent(d, source)?.escaped) return false;
   return (ps.gainedThisTurn ?? 0) >= (cond.gained ?? 0) && (!cond.lost || (ps.lostThisTurn ?? 0) > 0);
 }
 
@@ -3434,7 +3483,8 @@ function putAwaySpell(d: GameState, item: StackItem, resolved: boolean) {
   if (resolved && item.toLibrary) {
     ps.library = shuffle([...ps.library, inst], () => random(d));
     log(d, { k: 'shuffledIn', card: item.card.name });
-  } else if (item.from === 'graveyard' && !item.castNow) putInZone(d, item.controller, inst, 'exile');
+    // Flashback: exiled. Escaped (an instant or sorcery) or cast with Lurrus: back to the graveyard.
+  } else if (item.flashback) putInZone(d, item.controller, inst, 'exile');
   else if (resolved && item.face && isAdventure(item.card)) ps.exile.push({ ...inst, adventure: true });
   else putInZone(d, item.controller, inst, 'graveyard');
 }
@@ -4811,7 +4861,7 @@ function resolvePermanentSpell(d: GameState, item: StackItem, reason: WindowReas
     return;
   }
   log(d, { k: 'enters', card: faceName(item.card, item.face ?? 0) });
-  const perm = enterBattlefield(d, { iid: item.iid, card, ...(item.commander ? { commander: true } : {}) }, item.controller, { x: item.x, cast: !item.copy });
+  const perm = enterBattlefield(d, { iid: item.iid, card, ...(item.commander ? { commander: true } : {}) }, item.controller, { x: item.x, cast: !item.copy, escaped: !!item.escaped });
   if (card !== item.card) perm.printed = item.card;
   // Evoke: "When it enters, if its evoke cost was paid, its controller sacrifices it." Warp: exiled at the next end step.
   const paid = item.alt === undefined ? undefined : castInfo(item.card, item.face ?? 0).alts[item.alt];
@@ -5438,7 +5488,7 @@ export function apply(state: GameState, action: Action): GameState {
         }
         log(d, { k: 'enters', card: own.name });
         if (model) log(d, { k: 'copied', card: own.name, as: model.card.name });
-        const perm = enterBattlefield(d, { iid: item.iid, card: copy, ...(item.commander ? { commander: true } : {}) }, item.controller, { x: item.x, cast: !item.copy });
+        const perm = enterBattlefield(d, { iid: item.iid, card: copy, ...(item.commander ? { commander: true } : {}) }, item.controller, { x: item.x, cast: !item.copy, escaped: !!item.escaped });
         if (model) perm.printed = item.card;
         // "When you do, exile that card." (at once: not a trigger of its own)
         if (dead) {
@@ -5453,10 +5503,21 @@ export function apply(state: GameState, action: Action): GameState {
         const extra = castInfo(item.card, item.face ?? 0).additional;
         const chosen = extra?.kind === 'either' ? extra.options[action.answer.yes ? 0 : 1] : undefined;
         if (!chosen || !payExtraCost(d, p, chosen, item, named)) finishCast(d, item, named);
-      } else if (pending.resume === 'castCost' && action.answer.kind === 'cards' && ['returnLandCost', 'exileFromHandCost', 'returnCreatureCost'].includes(pending.choice.purpose)) {
+      } else if (pending.resume === 'castCost' && action.answer.kind === 'cards' && ['returnLandCost', 'exileFromHandCost', 'returnCreatureCost', 'escapeExile'].includes(pending.choice.purpose)) {
         // An alternative cost: an Island (or a tapped creature) back to its owner's hand, or a card exiled from the hand.
         const picked = action.answer.iids[0];
-        if (pending.choice.purpose === 'exileFromHandCost') {
+        if (pending.choice.purpose === 'escapeExile') {
+          // Escape: the cards chosen, with Nethergoyf's "four or more card types among them".
+          const ps = d.players[p];
+          const chosen = action.answer.iids.map((iid) => ps.graveyard.find((c) => c.iid === iid)!);
+          const types = Number(pending.choice.params?.types ?? 0);
+          if (types && new Set(chosen.flatMap((c) => cardTypes(c.card))).size < types) throw new IllegalAction('escapeTypes', { card: String(pending.choice.params?.card) });
+          for (const inst of chosen) {
+            ps.graveyard = ps.graveyard.filter((c) => c !== inst);
+            ps.exile.push(inst);
+            log(d, { k: 'exiledCard', card: inst.card.name });
+          }
+        } else if (pending.choice.purpose === 'exileFromHandCost') {
           for (const iid of action.answer.iids) {
             const inst = d.players[p].hand.find((c) => c.iid === iid)!;
             d.players[p].hand = d.players[p].hand.filter((c) => c !== inst);
@@ -5561,8 +5622,13 @@ export function apply(state: GameState, action: Action): GameState {
         throw new IllegalAction('castTiming');
       }
       const info = castInfo(inst.card, face);
-      const altIndex = action.alt !== undefined && info.alts[action.alt] ? action.alt : undefined;
-      const alt = altIndex === undefined ? undefined : info.alts[altIndex];
+      const alts = altsFor(d, p, inst.card, face, from);
+      const altIndex = action.alt !== undefined && alts[action.alt] ? action.alt : undefined;
+      const alt = altIndex === undefined ? undefined : alts[altIndex];
+      // From the graveyard: flashback, Snapcaster Mage, Malcolm, Lurrus, or an escape cost.
+      if (from === 'graveyard' && !castNow && !info.flashback && inst.flashbackOnTurn !== d.turn && alt?.kind !== 'escape' && !lurrusCast(d, p, card)) {
+        throw new IllegalAction('castTiming');
+      }
       if (alt) {
         const problem = altCostProblem(d, p, alt, inst.iid, from);
         if (problem) throw new IllegalAction(problem as GameErrorCode, { card: card.name });
@@ -5620,7 +5686,11 @@ export function apply(state: GameState, action: Action): GameState {
         return !(src?.units ?? [src?.colors ?? []])[m.index]?.some((c) => c !== 'C');
       });
       if (from === 'hand') me.hand = me.hand.filter((c) => c.iid !== inst.iid);
-      else if (from === 'graveyard') me.graveyard = me.graveyard.filter((c) => c.iid !== inst.iid);
+      else if (from === 'graveyard') {
+        me.graveyard = me.graveyard.filter((c) => c.iid !== inst.iid);
+        // Lurrus: used for this turn (unless another permission was).
+        if (!castNow && !info.flashback && inst.flashbackOnTurn !== d.turn && alt?.kind !== 'escape') me.lurrusOnTurn = d.turn;
+      }
       else if (from === 'command') {
         me.command = me.command!.filter((c) => c.iid !== inst.iid);
         me.commanderCasts = { ...me.commanderCasts, [inst.iid]: (me.commanderCasts?.[inst.iid] ?? 0) + 1 };
@@ -5636,6 +5706,7 @@ export function apply(state: GameState, action: Action): GameState {
         ...(inst.commander ? { commander: true } : {}), ...(noMana ? { noMana } : {}), ...(noColoredMana ? { noColoredMana } : {}), ...(splitSecond ? { splitSecond } : {}),
         ...(isMainStep(d) && isActivePlayer(d, p) ? { castInMain: true } : {}), ...(uncounterable ? { uncounterable } : {}),
         ...(altIndex !== undefined ? { alt: altIndex } : {}), ...(castNow ? { castNow } : {}),
+        ...(from === 'graveyard' && !castNow && alt?.kind !== 'escape' && (info.flashback || inst.flashbackOnTurn === d.turn) ? { flashback: true } : {}),
       };
       delete d.castNow;
       if (alt && payAltCost(d, p, alt, item, named)) break;

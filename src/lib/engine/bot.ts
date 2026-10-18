@@ -1034,6 +1034,23 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
         const best = [...options].sort((a, b) => worth(b.card) - worth(a.card))[0];
         return { kind: 'cards', iids: best ? [best.iid] : [] };
       }
+      if (choice.purpose === 'escapeExile') {
+        // Escape: the least useful cards; Nethergoyf: one of each card type until there are enough.
+        const n = Number(choice.params?.n ?? 0);
+        const types = Number(choice.params?.types ?? 0);
+        const cheap = [...options].sort((a, b) => cardWorth(a.card) - cardWorth(b.card));
+        if (!types) return { kind: 'cards', iids: cheap.slice(0, n).map((c) => c.iid) };
+        const picked: typeof options = [];
+        const seen = new Set<string>();
+        for (const c of cheap) {
+          if (seen.size >= types) break;
+          if (cardTypes(c.card).some((t) => !seen.has(t))) {
+            picked.push(c);
+            for (const t of cardTypes(c.card)) seen.add(t);
+          }
+        }
+        return { kind: 'cards', iids: picked.map((c) => c.iid) };
+      }
       if (choice.purpose === 'distributeTwo') {
         // Bounty of the Hunt: two counters on the best creature.
         const best = [...options].sort((a, b) => creatureValue(b.card) - creatureValue(a.card))[0];
