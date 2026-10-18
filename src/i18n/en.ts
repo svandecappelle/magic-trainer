@@ -798,6 +798,7 @@ export const en = {
       returnFromGraveyard: (p: { card: string }) => `${p.card}: return a card from your graveyard to your hand?`,
       reflexiveSacrifice: (p: { card: string }) => `${p.card}: sacrifice a creature to use its ability? (Pick none to decline.)`,
       reflexiveRemoveCounter: (p: { card: string }) => `${p.card}: remove a counter from it to use its ability?`,
+      attachToToken: (p: { card: string; from: string }) => `Attach ${p.card} to the new token? (No: it stays on ${p.from}.)`,
       exploreMill: (p: { card: string }) => `Explore: put ${p.card} into your graveyard? (No: it stays on top of your library.)`,
       color: (p: { card: string }) => `${p.card}: choose a color.`,
       basicType: (p: { card: string }) => `${p.card}: choose a basic land type (it makes that land's mana).`,

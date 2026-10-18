@@ -1,7 +1,7 @@
 import type { Card } from '../../types';
 import {
   activatedOf, auraTarget, castInfo, gainsLifeFromDamage, castSpec, entersAsCopy, entersCounters, entersTappedRule, beginsWithLuck, discardsLandInstead, manaConditions, stateMana, doesntUntap, frontText, gameRulesOf, isInstantOrSorcery,
-  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, chosenNameTax, namesAnyCard, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, extraManaOf, manaMultiplier, choosesColor, counterMana, diamondMana, reconfiguresEnchanted, entersPrepared, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, returnsExiledWhenLeaving, fadingOf, type AbilitySpec,
+  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, chosenNameTax, namesAnyCard, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, extraManaOf, manaMultiplier, choosesColor, counterMana, diamondMana, restrictedMana, reconfiguresEnchanted, entersPrepared, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, returnsExiledWhenLeaving, fadingOf, type AbilitySpec,
 } from './rules';
 
 /**
@@ -151,6 +151,11 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   if (choosesColor(one) && extraManaOf(card)?.add === 'chosen') return { text: line, status: 'ok', how: 'chooses a color as it enters (its mana)' };
   // Arena of Glory: "{R}, {T}, Exert this land: Add {R}{R}. If any of that mana is spent on a creature spell, it gains haste …"
   if (/^[^:]*\bExert this [a-z]+: Add /.test(line)) return { text: line, status: 'notSimulated', how: 'mana ability with exert, not simulated' };
+  const restricted = restrictedMana(one);
+  if (restricted) {
+    const what = [restricted.spell && 'some spells', restricted.ability && 'some abilities'].filter(Boolean).join(' or ');
+    return { text: line, status: 'ok', how: `mana: ${restricted.units.map((u) => u.join('/')).join(' ')}, only for ${what} (chosen automatically when paying)` };
+  }
   if (diamondMana(one)) return { text: line, status: 'ok', how: 'mana: three of one color, discarding the hand (activated by hand only, never to pay automatically)' };
   const wall = counterMana(one);
   if (wall) return { text: line, status: 'ok', how: `mana: ${wall}, putting a -0/-1 counter on it, once each turn (spent last)` };

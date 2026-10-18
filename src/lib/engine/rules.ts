@@ -177,6 +177,38 @@ export function legendaryMana(card: Card): Color[] | null {
     ? ['W', 'U', 'B', 'R', 'G'] : null;
 }
 
+/** Mana that can only be spent on some spells or abilities: the units, and what they may pay for. */
+export interface RestrictedMana {
+  units: Color[][];
+  /** The spells it may pay for ("artifact spells"). */
+  spell?: TargetFilter;
+  /** The abilities it may pay for, by their source ("abilities of creature sources"). */
+  ability?: TargetFilter;
+}
+
+const COLORLESS_ELDRAZI: TargetFilter = { subtypes: ['eldrazi'], nonColors: ['W', 'U', 'B', 'R', 'G'] };
+const MANA_USES: [RegExp, Omit<RestrictedMana, 'units'>][] = [
+  [/^cast artifact spells$/i, { spell: { types: ['artifact'] } }],
+  [/^cast a creature spell$/i, { spell: { types: ['creature'] } }],
+  [/^cast a legendary spell$/i, { spell: { legendary: true } }],
+  [/^cast colorless Eldrazi spells or activate abilities of colorless Eldrazi$/i, { spell: COLORLESS_ELDRAZI, ability: COLORLESS_ELDRAZI }],
+  [/^activate abilities of creature sources$/i, { ability: { types: ['creature'] } }],
+];
+
+/**
+ * Mishra's Workshop: "{T}: Add {C}{C}{C}. Spend this mana only to cast artifact spells." Eldrazi Temple, Herd Heirloom,
+ * Plaza of Heroes, Shang-Chi. (Cavern of Souls and Delighted Halfling: chosenTypeMana and legendaryMana.)
+ */
+export function restrictedMana(card: Card): RestrictedMana | null {
+  for (const line of frontText(card).split('\n')) {
+    const m = line.match(/^\{T\}: Add ([^.]+)\. Spend this mana only to ([^.,]+)\.$/);
+    const units = m && parseManaText(m[1]);
+    const use = m && MANA_USES.find(([re]) => re.test(m[2]));
+    if (units && use) return { units, ...use[1] };
+  }
+  return null;
+}
+
 export const isLegendary = (card: Card) => /\bLegendary\b/.test(card.typeLine.split('//')[0]);
 
 /** A mana ability "{T}: Add …" (or a basic land type) without a life cost. */
@@ -541,6 +573,8 @@ export type Effect =
   | { kind: 'putFromHand'; filter: TargetFilter }
   /** Equip: attach the ability's source to the target. */
   | { kind: 'attach'; to: Affected }
+  /** Cori-Steel Cutter: "You may attach this Equipment to it." (the token just created; asked when already attached) */
+  | { kind: 'attachToToken' }
   /** Chrome Mox: "you may exile a nonartifact, nonland card from your hand" (remembered by the source: imprint). */
   | { kind: 'exileFromHand'; filter: TargetFilter }
   /**
@@ -1331,6 +1365,8 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
   scan(new RegExp(`(?:^|[.,] *|then )mill (${AMOUNT}) cards?`, 'gi'), (m) => ({ kind: 'mill', n: toAmount(m[1]), to: 'you' }));
   scan(/\bscry (\d+|X)\b/gi, (m) => ({ kind: 'scry', n: toAmount(m[1]) }));
   // "Investigate" (Thraben Inspector): create a Clue token.
+  // Cori-Steel Cutter: "create a 1/1 white Monk creature token with prowess. You may attach this Equipment to it."
+  scan(/(?<=token[^.]*\. )You may attach this Equipment to it(?=\.)/g, () => ({ kind: 'attachToToken' }));
   scan(/(?:^|[.,] *|then )investigate(?= *\.|$)/gi, () => ({ kind: 'token', n: 1, token: PREDEFINED_TOKENS.clue }));
   // "Then amass Orcs 1." (the type in the plural: Orcs, Zombies).
   scan(/(?:^|[.] *)(?:Then )?amass ([A-Z][a-z]+?)(?:e?s)? (\d+)(?=\.|$)/g, (m) => ({ kind: 'amass', subtype: m[1], n: Number(m[2]) }));
@@ -1909,8 +1945,8 @@ export type TriggerEvent =
   | { on: StepEvent; whose: 'you' | 'each' | 'opponent' }
   /** A Saga's chapter: lore counters reach `n` ("I — …", "II, III — …"). */
   | { on: 'chapter'; n: number }
-  /** Whenever you cast a spell matching the card words ("noncreature", "instant or sorcery"). */
-  | { on: 'cast'; filter: TargetFilter }
+  /** Whenever you cast a spell matching the card words ("noncreature", "instant or sorcery"); `nth`: only your second spell each turn (flurry). */
+  | { on: 'cast'; filter: TargetFilter; nth?: number }
   /** Whenever you gain life. */
   | { on: 'gainLife' }
   /** "Whenever you attack": once when its controller declares one or more attackers. */
@@ -1933,7 +1969,7 @@ export type TriggerEvent =
   /** Sowing Mycospawn: "When you cast this spell, …" (`kicked`: "if it was kicked"). */
   | { on: 'castSelf'; kicked?: boolean }
   /** Rhystic Study: "Whenever an opponent casts a spell, …" (the ability's slot 0 is that player); Esper Sentinel: only their first noncreature spell each turn. */
-  | { on: 'opponentCasts'; filter: TargetFilter; firstNoncreature?: boolean };
+  | { on: 'opponentCasts'; filter: TargetFilter; firstNoncreature?: boolean; nth?: number };
 
 export interface TriggerSpec {
   event: TriggerEvent;
@@ -2310,6 +2346,16 @@ export function triggersOf(card: Card): TriggerSpec[] {
     const gain = line.match(/^Whenever you gain life, (.+)$/i);
     if (gain) {
       out.push({ event: { on: 'gainLife' }, ability: triggerAbility(gain[1], name, true) });
+      continue;
+    }
+    // Flurry: "Whenever you cast your second spell each turn, …"; Kraum: "Whenever an opponent casts their second spell
+    // each turn"; Lotho: "Whenever a player casts …" (both).
+    const second = line.replace(/^Flurry — /, '').match(/^Whenever (you cast your|an opponent casts their|a player casts their) second spell each turn, (.+)$/i);
+    if (second) {
+      const ability = triggerAbility(second[2], name, true);
+      const who = second[1].toLowerCase();
+      if (who !== 'an opponent casts their') out.push({ event: { on: 'cast', filter: {}, nth: 2 }, ability });
+      if (who !== 'you cast your') out.push({ event: { on: 'opponentCasts', filter: {}, nth: 2 }, ability: { ...ability, targets: [] } });
       continue;
     }
     // Magecraft: "Whenever you cast or copy …" (copies aren't simulated, casting is).

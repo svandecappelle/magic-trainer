@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
 import { activationProblem, actor, apply, findPermanent, hasKw, paymentFor, canBlock, canCastNow, castCost, castSource, canTapForMana, type Answer, castOptions, canPay, canActivateDiamond, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
 import { botAction } from './bot';
-import { activatedOf, castInfo, cloneOf, entersTappedRule, gameRulesOf, castSpec, finalChapter, hasKeyword, isCreature, PREDEFINED_TOKENS, tokenCard, type TargetSpec, manaUnits, extraManaOf, manaMultiplier, filterMana, paidAnyColor, parseAbilityText, spellSpec, triggersOf } from './rules';
+import { activatedOf, castInfo, cloneOf, entersTappedRule, gameRulesOf, castSpec, finalChapter, hasKeyword, isCreature, PREDEFINED_TOKENS, tokenCard, type TargetSpec, manaUnits, restrictedMana, extraManaOf, manaMultiplier, filterMana, paidAnyColor, parseAbilityText, spellSpec, triggersOf } from './rules';
 
 // Cards from Standard decks on mtgtop8 (Oct 2026), with their Oracle text.
 let n = 0;
@@ -3640,5 +3640,98 @@ describe('metagame audit 2026-10-17, fifth batch', () => {
     expect(s.players[0].pool?.map((m) => m.colors)).toEqual([['R'], ['R'], ['R']]);
     expect(s.players[0].hand).toHaveLength(0);
     expect(s.players[0].graveyard.map((c) => c.card.name).sort()).toEqual(['Giant', 'Lion\'s Eye Diamond', 'Swamp']);
+  });
+});
+
+describe('metagame audit 2026-10-18', () => {
+  const mountain = card({ name: 'Mountain', typeLine: 'Basic Land — Mountain' });
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 12 && (s.stack.length || s.triggered?.length) && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  const workshop = card({ name: 'Mishra\'s Workshop', typeLine: 'Land', oracleText: '{T}: Add {C}{C}{C}. Spend this mana only to cast artifact spells.' });
+  const temple = card({
+    name: 'Eldrazi Temple', typeLine: 'Land',
+    oracleText: '{T}: Add {C}.\n{T}: Add {C}{C}. Spend this mana only to cast colorless Eldrazi spells or activate abilities of colorless Eldrazi.',
+  });
+  const golem = card({ name: 'Golem', typeLine: 'Artifact Creature — Golem', manaCost: '{3}', cmc: 3, power: '3', toughness: '3' });
+  const ogre = creature('Ogre', 3, 3, { manaCost: '{3}', cmc: 3 });
+
+  it('Mishra\'s Workshop: three mana for artifact spells only', () => {
+    expect(restrictedMana(workshop)).toEqual({ units: [['C'], ['C'], ['C']], spell: { types: ['artifact'] } });
+    let s = board({ mine: [workshop], hand: [golem, ogre] });
+    expect(canPay(s, 0, ogre)).toBe(false);
+    expect(canPay(s, 0, golem)).toBe(true);
+    expect(canTapForMana(s, perm(s, 'Mishra\'s Workshop')!)).toBe(false);
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    expect(perm(s, 'Mishra\'s Workshop')!.tapped).toBe(true);
+    expect(s.players[0].pool ?? []).toEqual([]);
+  });
+
+  it('Eldrazi Temple: {C}{C} for colorless Eldrazi, {C} otherwise', () => {
+    const eldrazi = card({ name: 'Thought-Knot Seer', typeLine: 'Creature — Eldrazi', manaCost: '{3}{C}', cmc: 4, power: '4', toughness: '4' });
+    const red = card({ name: 'Red Eldrazi', typeLine: 'Creature — Eldrazi', manaCost: '{2}{R}', cmc: 3, colors: ['R'], power: '3', toughness: '3' });
+    let s = board({ mine: [temple, ...[1, 2].map(() => swamp)], hand: [eldrazi, ogre, red] });
+    expect(unitsOf(s, perm(s, 'Eldrazi Temple')!)).toEqual([['C']]);
+    expect(unitsOf(s, perm(s, 'Eldrazi Temple')!, eldrazi)).toEqual([['C'], ['C']]);
+    expect(canPay(s, 0, eldrazi)).toBe(true);
+    expect(canPay(s, 0, ogre)).toBe(true);
+    // A colored Eldrazi gets only {C}.
+    expect(unitsOf(s, perm(s, 'Eldrazi Temple')!, red)).toEqual([['C']]);
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    expect(s.battlefield.filter((x) => x.tapped).map((x) => x.card.name).sort()).toEqual(['Eldrazi Temple', 'Swamp', 'Swamp']);
+  });
+
+  it('Shang-Chi: its mana only pays for abilities of creatures', () => {
+    const shang = card({
+      name: 'Shang-Chi, Master of Kung Fu', typeLine: 'Legendary Creature — Human Warrior Hero', manaCost: '{1}{G}', cmc: 2, power: '2', toughness: '2',
+      oracleText: 'You may activate abilities of creatures you control as though those creatures had haste.\n{T}: Add two mana of any one color. Spend this mana only to activate abilities of creature sources.',
+    });
+    const pumper = creature('Pumper', 1, 1, { oracleText: '{2}: This creature gets +1/+1 until end of turn.' });
+    const rock = card({ name: 'Rock', typeLine: 'Artifact', oracleText: '{2}: You gain 1 life.' });
+    const s = board({ mine: [shang, pumper, rock], hand: [ogre] });
+    expect(canPay(s, 0, ogre)).toBe(false);
+    expect(activationProblem(s, 0, perm(s, 'Pumper')!, 0)).toBeNull();
+    expect(activationProblem(s, 0, perm(s, 'Rock')!, 0)).toBe('notEnoughMana');
+  });
+
+  const cutter = card({
+    name: 'Cori-Steel Cutter', typeLine: 'Artifact — Equipment', manaCost: '{1}{R}', cmc: 2,
+    oracleText: 'Equipped creature gets +1/+1 and has trample and haste.\nFlurry — Whenever you cast your second spell each turn, create a 1/1 white Monk creature token with prowess. You may attach this Equipment to it. (Whenever you cast a noncreature spell, the token gets +1/+1 until end of turn.)\nEquip {1}{R}',
+  });
+
+  it('Cori-Steel Cutter: a Monk on the second spell each turn, the Equipment attached to it', () => {
+    expect(triggersOf(cutter).map((t) => t.event)).toEqual([{ on: 'cast', filter: {}, nth: 2 }]);
+    expect(triggersOf(cutter)[0].ability.effects.map((e) => e.kind)).toEqual(['token', 'attachToToken']);
+    const shock = spell('Shock', '{R}', 'Shock deals 2 damage to any target.');
+    let s = board({ mine: [cutter, ...[1, 2, 3].map(() => mountain)], hand: [shock, { ...shock, name: 'Shock Two' }, { ...shock, name: 'Shock Three' }] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'player', player: 1 }]] }));
+    expect(s.battlefield.some((x) => x.card.name === 'Monk')).toBe(false);
+    s = resolve(apply(s, { type: 'cast', iid: 'h1', targets: [[{ kind: 'player', player: 1 }]] }));
+    const monk = s.battlefield.find((x) => x.card.name === 'Monk')!;
+    expect(perm(s, 'Cori-Steel Cutter')!.attachedTo).toBe(monk.iid);
+    // The third spell: no Monk.
+    s = resolve(apply(s, { type: 'cast', iid: 'h2', targets: [[{ kind: 'player', player: 1 }]] }));
+    expect(s.battlefield.filter((x) => x.card.name === 'Monk')).toHaveLength(1);
+  });
+
+  it('Cori-Steel Cutter already equipping a creature: its controller is asked', () => {
+    const shock = spell('Shock', '{R}', 'Shock deals 2 damage to any target.');
+    const bear = creature('Bear', 2, 2);
+    let s = board({ mine: [cutter, bear, ...[1, 2].map(() => mountain)], hand: [shock, { ...shock, name: 'Shock Two' }] });
+    perm(s, 'Cori-Steel Cutter')!.attachedTo = iidOf(s, 'Bear');
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'player', player: 1 }]] }));
+    s = resolve(apply(s, { type: 'cast', iid: 'h1', targets: [[{ kind: 'player', player: 1 }]] }));
+    expect(s.pending?.choice).toMatchObject({ purpose: 'attachToToken' });
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'yesNo', yes: false } }));
+    expect(perm(s, 'Cori-Steel Cutter')!.attachedTo).toBe(iidOf(s, 'Bear'));
+    expect(s.battlefield.some((x) => x.card.name === 'Monk')).toBe(true);
+  });
+
+  it('Kraum and Lotho: the second spell of an opponent, of any player', () => {
+    const kraum = card({ name: 'Kraum', typeLine: 'Legendary Creature — Zombie Horror', oracleText: 'Flying, haste\nWhenever an opponent casts their second spell each turn, draw a card.' });
+    const lotho = card({ name: 'Lotho', typeLine: 'Legendary Creature — Halfling Rogue', oracleText: 'Whenever a player casts their second spell each turn, you lose 1 life and create a Treasure token.' });
+    expect(triggersOf(kraum).map((t) => t.event.on)).toEqual(['opponentCasts']);
+    expect(triggersOf(lotho).map((t) => t.event.on)).toEqual(['cast', 'opponentCasts']);
   });
 });

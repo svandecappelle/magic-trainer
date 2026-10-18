@@ -43,6 +43,7 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
     case 'reflexiveSacrifice': return t.game.choice.reflexiveSacrifice({ card: card(String(p.card)) });
     case 'reflexiveRemoveCounter': return t.game.choice.reflexiveRemoveCounter({ card: card(String(p.card)) });
     case 'exploreMill': return t.game.choice.exploreMill({ card: card(String(p.card)) });
+    case 'attachToToken': return t.game.choice.attachToToken({ card: card(String(p.card)), from: card(String(p.from)) });
     case 'color':
     case 'manaColor': return t.game.choice.color({ card: card(String(p.card)) });
     case 'basicType': return t.game.choice.basicType({ card: card(String(p.card)) });

@@ -1182,6 +1182,8 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
       }
       // Ponder: the top cards were just arranged, keep them.
       if (choice.purpose === 'mayShuffle') return { kind: 'yesNo', yes: false };
+      // Cori-Steel Cutter: it stays on the creature it already equips.
+      if (choice.purpose === 'attachToToken') return { kind: 'yesNo', yes: false };
       // Paying to keep our spell is worth it; our own "you may" abilities are used.
       // Shock lands: pay while life is comfortable.
       if (choice.purpose === 'payLife') return { kind: 'yesNo', yes: !safe && s.players[choice.player].life > 10 };

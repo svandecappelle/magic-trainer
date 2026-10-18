@@ -804,6 +804,7 @@ export const fr: Messages = {
       returnFromGraveyard: (p) => `${p.card} : renvoyer une carte de votre cimetière dans votre main ?`,
       reflexiveSacrifice: (p) => `${p.card} : sacrifier une créature pour utiliser sa capacité ? (Aucune pour refuser.)`,
       reflexiveRemoveCounter: (p) => `${p.card} : retirer un marqueur pour utiliser sa capacité ?`,
+      attachToToken: (p) => `Attacher ${p.card} au nouveau jeton ? (Non : il reste sur ${p.from}.)`,
       exploreMill: (p) => `Explorer : mettre ${p.card} dans votre cimetière ? (Non : elle reste au-dessus de votre bibliothèque.)`,
       color: (p) => `${p.card} : choisissez une couleur.`,
       basicType: (p) => `${p.card} : choisissez un type de terrain de base (il produit le mana de ce terrain).`,

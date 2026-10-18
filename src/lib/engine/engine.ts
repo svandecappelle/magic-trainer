@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, counterMana, choosesColor, diamondMana, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, counterMana, choosesColor, diamondMana, restrictedMana, type RestrictedMana, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type AltCost, type CastInfo, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -269,6 +269,7 @@ export type ChoicePurpose =
   | 'exileCost' // a spell's additional cost: exile cards from your graveyard
   | 'costChoice' // a spell's additional cost "A or B": yes pays the first
   | 'creatureType' // Cavern of Souls: "choose a creature type"
+  | 'attachToToken' // Cori-Steel Cutter: "You may attach this Equipment to it."
   | 'manaColor' // Utopia Sprawl: "As this Aura enters, choose a color."
   | 'cardName' // Pithing Needle: "choose a card name"
   | 'spellName' // Meddling Mage: "choose a nonland card name"
@@ -351,6 +352,8 @@ export interface Resolving {
   stopped?: boolean;
   /** The cards this resolution discarded (Malcolm: "the discarded card"). */
   discarded?: string[];
+  /** The last token it created (Cori-Steel Cutter: "You may attach this Equipment to it"). */
+  lastToken?: string;
   reason: WindowReason;
 }
 
@@ -722,8 +725,8 @@ const protectedFrom = (perm: Permanent, source: Card) =>
  * The mana one tap of `perm` makes, with what tapping it adds: Nyxbloom Ancient's three times as much, then Wild
  * Growth's, Badgermole Cub's and Kinnan's additional mana.
  */
-export function unitsOf(s: GameState, perm: Permanent, spell?: Card): Color[][] {
-  let units = ownUnits(s, perm, spell);
+export function unitsOf(s: GameState, perm: Permanent, spell?: Card, ability?: Card): Color[][] {
+  let units = ownUnits(s, perm, spell, ability);
   if (!units.length) return units;
   // "If you tap a permanent for mana, it produces three times as much of that mana instead."
   for (const x of s.battlefield) {
@@ -748,7 +751,7 @@ export function unitsOf(s: GameState, perm: Permanent, spell?: Card): Color[][] 
  * The mana `perm`'s own ability makes (Command Tower: in its controller's commander's colors). Starting Town's colors
  * that cost life are left out when its controller can't pay that life.
  */
-function ownUnits(s: GameState, perm: Permanent, spell?: Card): Color[][] {
+function ownUnits(s: GameState, perm: Permanent, spell?: Card, ability?: Card): Color[][] {
   const identity = s.players[perm.controller]?.identity;
   // Magus of the Moon: a nonbasic land only makes {R} (Yavimaya and Urborg still add their types).
   if (mooned(s, perm.card)) return landTypeMana(s, [[moonType(s, perm.card) === 'island' ? 'U' : 'R']]);
@@ -805,6 +808,14 @@ function ownUnits(s: GameState, perm: Permanent, spell?: Card): Color[][] {
   // Delighted Halfling: any color for a legendary spell.
   const legend = legendaryMana(perm.card);
   if (legend && spell && isLegendary(spell)) units = [[...new Set([...(units[0] ?? []), ...legend])]];
+  // Mishra's Workshop: "Spend this mana only to cast artifact spells." Its mana for such a spell (or ability): the bigger
+  // ability, or one more color for a one-mana one (Herd Heirloom).
+  const restricted = restrictedMana(perm.card);
+  if (restricted && manaUseFits(restricted, spell, ability)) {
+    const more = restricted.units;
+    if (more.length > units.length) units = more;
+    else if (more.length === 1 && units.length === 1) units = [[...new Set([...units[0], ...more[0]])]];
+  }
   const pain = manaPain(perm.card, identity);
   if (pain && s.players[perm.controller].life < pain.life) units = units.map((u) => u.filter((c) => !pain.colors.includes(c)));
   // Sunbillow Verge: "{T}: Add {R}. Activate only if you control a Mountain or a Plains."
@@ -875,6 +886,12 @@ export function delirium(s: GameState, p: PlayerId): boolean {
   return types.size >= 4;
 }
 
+/** Can mana that is "spent only to …" pay for this spell or this ability (its source)? */
+function manaUseFits(r: RestrictedMana, spell?: Card, ability?: Card): boolean {
+  const fits = (card: Card, f: TargetFilter) => cardMatches(card, f) && !f.nonColors?.some((c) => cardColors(card).includes(c));
+  return spell ? !!r.spell && fits(spell, r.spell) : !!ability && !!r.ability && fits(ability, r.ability);
+}
+
 /**
  * Yavimaya (Forest) and Urborg (Swamp): each land has that type too, its mana as one more choice for a land making one
  * mana per tap.
@@ -885,7 +902,7 @@ function landTypeMana(s: GameState, units: Color[][]): Color[][] {
 }
 
 /** A card with a mana ability of its own (then it's never tapped to pay for Springleaf Drum's mana). */
-const makesMana = (card: Card) => manaUnits(card).length > 0 || !!tapsAnotherForMana(card) || !!stateMana(card) || !!chosenTypeMana(card) || !!filterMana(card) || paidAnyColor(card);
+const makesMana = (card: Card) => manaUnits(card).length > 0 || !!restrictedMana(card) || !!tapsAnotherForMana(card) || !!stateMana(card) || !!chosenTypeMana(card) || !!filterMana(card) || paidAnyColor(card);
 
 /**
  * Springleaf Drum, Gene Pollinator: the untapped permanents (creatures for the Drum) `perm` may tap along with itself:
@@ -915,8 +932,8 @@ function filterHelpers(s: GameState, perm: Permanent): Permanent[] {
 }
 
 /** Can this permanent be tapped for mana now? */
-export const canTapForMana = (s: GameState, perm: Permanent) =>
-  !perm.tapped && !(isCreature(perm.card) && perm.sick && !hasKw(perm, 'haste')) && unitsOf(s, perm).length > 0 && !activationsForbidden(s, perm) &&
+export const canTapForMana = (s: GameState, perm: Permanent, spell?: Card, ability?: Card) =>
+  !perm.tapped && !(isCreature(perm.card) && perm.sick && !hasKw(perm, 'haste')) && unitsOf(s, perm, spell, ability).length > 0 && !activationsForbidden(s, perm) &&
   s.players[perm.controller].life >= manaLifeCost(perm.card);
 
 /**
@@ -1013,7 +1030,7 @@ const graveyardExiled = (s: GameState, owner: PlayerId) =>
   withRule(s, 'opponentGraveyardsExiled').some((x) => teamOf(s, x.controller) !== teamOf(s, owner));
 
 /** What `p` can pay with: mana in their pool ("pool:N"), then untapped mana sources. */
-export function manaSources(s: GameState, p: PlayerId, spell?: Card): ManaSource[] {
+export function manaSources(s: GameState, p: PlayerId, spell?: Card, ability?: Card): ManaSource[] {
   const life = s.players[p].life;
   const pool = (s.players[p].pool ?? []).map((m, i): ManaSource => {
     // Cavern of Souls' mana kept in the pool: its colors only for a creature spell of the chosen type.
@@ -1025,9 +1042,9 @@ export function manaSources(s: GameState, p: PlayerId, spell?: Card): ManaSource
     return { iid: `pool:${i}`, colors: m.colors, ...(m.pain ? { pain: m.pain } : {}) };
   });
   const perms = s.battlefield
-    .filter((x) => x.controller === p && canTapForMana(s, x))
+    .filter((x) => x.controller === p && canTapForMana(s, x, spell, ability))
     .map((x): ManaSource => {
-      const units = unitsOf(s, x, spell);
+      const units = unitsOf(s, x, spell, ability);
       const pain = painOf(s, x);
       return {
         iid: x.iid, colors: [...new Set(units.flat())], ...(units.length > 1 ? { units } : {}), ...(painfulMana(x) ? { last: true } : {}), ...(pain ? { pain } : {}),
@@ -1428,7 +1445,8 @@ const freeEquip = (s: GameState, p: PlayerId) =>
  * paying to become a creature (it would be tapped to attack or block).
  */
 const sourcesFor = (s: GameState, perm: Permanent, spec: ActivatedSpec) => {
-  const mana = manaSources(s, perm.controller).filter((m) => !((spec.cost.tap || spec.ability.effects.some((e) => e.kind === 'animate' && e.to === 'self')) && m.iid === perm.iid));
+  // Eldrazi Temple, Shang-Chi: mana only for abilities of some sources.
+  const mana = manaSources(s, perm.controller, undefined, perm.card).filter((m) => !((spec.cost.tap || spec.ability.effects.some((e) => e.kind === 'animate' && e.to === 'self')) && m.iid === perm.iid));
   if (!spec.cost.waterbend) return mana;
   // Waterbend: each untapped artifact or creature (that isn't already a mana source) can be tapped to pay {1}; not the
   // permanent itself (Aang would no longer attack after transforming).
@@ -2615,7 +2633,8 @@ function fireCast(d: GameState, p: PlayerId, card: Card) {
   for (const x of d.battlefield) {
     if (teamOf(d, x.controller) === teamOf(d, p)) continue;
     for (const t of triggersOf(x.card)) {
-      if (t.event.on === 'opponentCasts' && cardMatches(card, t.event.filter) && (!t.event.firstNoncreature || d.players[p].noncreatureThisTurn === 1)) {
+      if (t.event.on === 'opponentCasts' && cardMatches(card, t.event.filter) && (!t.event.firstNoncreature || d.players[p].noncreatureThisTurn === 1)
+        && (!t.event.nth || d.players[p].spellsThisTurn === t.event.nth)) {
         // Its slot 0 (if any) is the player who cast it ("unless that player pays").
         (d.triggered ??= []).push({ source: { iid: x.iid, card: x.card }, controller: x.controller, ability: t.ability, targets: t.ability.targets.length ? [[{ kind: 'player', player: p }]] : [] });
       }
@@ -2624,7 +2643,7 @@ function fireCast(d: GameState, p: PlayerId, card: Card) {
   for (const x of [...d.battlefield, ...emblemSources(d)]) {
     if (x.controller !== p) continue;
     for (const t of triggersOf(x.card)) {
-      if (t.event.on === 'cast' && cardMatches(card, t.event.filter)) queueTrigger(d, x, p, t.ability);
+      if (t.event.on === 'cast' && cardMatches(card, t.event.filter) && (!t.event.nth || d.players[p].spellsThisTurn === t.event.nth)) queueTrigger(d, x, p, t.ability);
     }
   }
 }
@@ -3784,6 +3803,18 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       }
       break;
     }
+    case 'attachToToken': {
+      const src = item.source ? findPermanent(d, item.source) : undefined;
+      const token = r.lastToken ? findPermanent(d, r.lastToken) : undefined;
+      if (!src || !token || token.controller !== src.controller) break;
+      // Already on a creature: its controller chooses.
+      const host = src.attachedTo ? findPermanent(d, src.attachedTo) : undefined;
+      if (host && answer?.kind !== 'yesNo') return { kind: 'yesNo', player: src.controller, purpose: 'attachToToken', params: { card: src.card.name, from: host.card.name } };
+      if (host && answer?.kind === 'yesNo' && !answer.yes) break;
+      src.attachedTo = token.iid;
+      log(d, { k: 'attached', card: src.card.name, to: token.card.name });
+      break;
+    }
     case 'poison':
       for (const p of players) addPoison(d, p, amount(d, r, e.n));
       break;
@@ -3984,6 +4015,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         // "tapped and attacking": attacking (the defending player) without having been declared, so no attack trigger.
         if (e.attacking && d.attackers.length) d.attackers = [...d.attackers, token.iid];
         if (e.sacrificeAtEnd) (d.sacrificeAtEnd ??= []).push(token.iid);
+        r.lastToken = token.iid;
       }
       if (n > 0) log(d, { k: 'token', p: owner, card: e.token.name, n });
       break;

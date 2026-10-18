@@ -392,11 +392,17 @@ Still open, playing wrongly, most played first (see `audit-reports/2026-10-17/re
 simulated main deck copies: Standard 60%, Pioneer 51%, Modern 62%, Legacy 63%, Vintage 62%, Pauper 55%, Premodern 66%,
 Duel Commander 67%, cEDH 57%.
 
+Fixed: mana that can only be spent on some spells or abilities (Mishra's Workshop, Eldrazi Temple, Herd Heirloom,
+Plaza of Heroes, Rockface Village, Shang-Chi; the payment planner offers it only for those), "Whenever you cast your
+second spell each turn" (Cori-Steel Cutter's flurry, with its Equipment moved to the Monk, asked when it already equips
+a creature; Kraum and Lotho for an opponent's or any player's).
+
+Approximations: restricted mana is only used while paying (tapped by hand, Mishra's Workshop makes nothing and Eldrazi
+Temple {C}); what a payment leaves of it is lost (Mishra's Workshop paying for a two-mana artifact), or left
+unrestricted (Eldrazi Temple's second {C}). Shang-Chi's "two mana of any one color" may be two colors. The bot keeps
+Cori-Steel Cutter on the creature it equips.
+
 Still open, playing wrongly, most played first (see `audit-reports/2026-10-18/report.md`):
-- [ ] Spending restrictions on mana: Eldrazi Temple ("only to cast colorless Eldrazi spells…"), Mishra's Workshop
-  ("only to cast artifact spells"), Shang-Chi (only for creature abilities): that mana is ignored for now (Eldrazi
-  Temple makes only {C}; Mishra's Workshop and Shang-Chi make nothing)
-- [ ] Cori-Steel Cutter (12): flurry ("Whenever you cast your second spell each turn")
 - [ ] Monument to Endurance (12): "Whenever you discard a card, choose one that hasn't been chosen this turn"
 - [ ] Superior Spider-Man (12), Phantasmal Image, Flesh Duplicate: clones with more than added types
 - [ ] Sewer-veillance Cam (11): "When this artifact enters or leaves the battlefield, you may tap or untap target creature"
