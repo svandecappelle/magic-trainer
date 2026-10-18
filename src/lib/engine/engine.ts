@@ -1793,7 +1793,7 @@ export function activatable(s: GameState, p: PlayerId): { perm: Permanent; index
   return s.battlefield.flatMap((perm) =>
     perm.controller !== p ? [] : activatedOf(perm.card).flatMap((spec, index) =>
       spec.ability.effects.length && !activationProblem(s, p, perm, index) &&
-      spec.ability.targets.every((slot) => legalTargets(s, p, slot).length >= slot.min)
+      spec.ability.targets.every((slot) => legalTargets(s, p, slot, perm.iid, perm.card).length >= slot.min)
         ? [{ perm, index, spec }] : []),
   );
 }

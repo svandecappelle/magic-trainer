@@ -440,7 +440,7 @@ Sneaky Snacker (a trigger from the graveyard on your third card drawn in a turn)
 
 Approximations: Incubation Druid's three mana may be of different types; a mana that could have been colored counts as
 colored for Void Mirror (the caster picks); the end step move of Glimpse the Impossible isn't a trigger on the stack.
-The bot never activates Phyrexian Devourer (free abilities aren't planned).
+The bot grows Phyrexian Devourer only while its power is 2 or less.
 
 cEDH: Birgi (its {R} lasts until end of turn, not emptied as steps and phases end; boast isn't simulated, so "boast
 twice" does nothing), Samut (split second for your instants and sorceries, and the keyword itself: no spell and no
@@ -504,6 +504,11 @@ exiled by discarding is playable until your next end step).
 
 Approximations: Murktide Regent sees cards leave the graveyard at the next state check (one leaving and coming back in
 between is missed). Kaito's ninjutsu isn't simulated.
+
+The bot uses the new abilities: Hope of Ghirapur's lock, Necropotence (three cards a turn at most, with 12 life or more),
+Relic of Progenitus (a card of a non-empty graveyard; all graveyards when the opponents' hold four cards), Phyrexian
+Devourer, Talon Gates of Madara, bestow (on its best creature). Activated abilities check their targets with their
+source (Hope of Ghirapur). 40 bot-vs-bot games with these cards run to the end without errors.
 
 Approximations: Moonshadow's trigger counts as "together" every card put into the graveyard before it goes on the
 stack (an effect that mills, then discards, triggers it once).
@@ -620,7 +625,7 @@ the end without errors.
 Approximations: Berserk can't be cast in any second main phase (combat damage is then over); Jeweled Amulet notes the
 first mana spent (a mana that could be several colors: its first one); phased-out permanents are simply set aside
 (effects that count "until your next turn" from them aren't adjusted); saddle isn't simulated (the Pilot only crews).
-The bot never activates Hope of Ghirapur or Talon Gates' {4} ability.
+The bot sacrifices Hope of Ghirapur after hitting a player, and puts Talon Gates of Madara onto the battlefield at the end of the opponent's turn.
 
 ## Comprehensive Rules audit (CR 2026-09-25)
 

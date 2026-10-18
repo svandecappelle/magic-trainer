@@ -409,6 +409,16 @@ function chooseMainPhaseSpell(s: GameState, me: PlayerId): Action | null {
         if (host) return castAction(c, [[{ kind: 'permanent', iid: host.iid }]]);
         continue;
       }
+      // Bestow (Detective's Phoenix): an Aura on our best creature; another permanent cast with a target: skipped.
+      const spec = castSpec(c.card, { face: c.opt.face, kicked: c.opt.kicked, alt: c.opt.alt });
+      if (spec.targets.length) {
+        const host = legalTargets(s, me, spec.targets[0], undefined, card)
+          .flatMap((t) => (t.kind === 'permanent' ? [findPermanent(s, t.iid)!] : []))
+          .filter((x) => x.controller === me && isCreature(x.card))
+          .sort((a, b) => creatureValue(b.card) - creatureValue(a.card))[0];
+        if (host && spec.targets.length === 1 && (s.step === 'main1' || s.step === 'main2')) return castAction(c, [[{ kind: 'permanent', iid: host.iid }]]);
+        continue;
+      }
       if (s.step === 'main2' || (isCreature(card) && hasKeyword(card, 'haste'))) return castAction(c);
       continue;
     }
@@ -538,6 +548,8 @@ function intentOf(e: Effect): Intent {
   switch (e.kind) {
     case 'damage': case 'destroy': case 'counter': case 'loseLife': case 'mill': case 'discard': case 'bounce': case 'bounceAll': case 'sacrifice':
     case 'poison': case 'gainControl': case 'flickerAtEnd': case 'airbend': case 'plot': case 'setBasePT':
+    // Hope of Ghirapur, Relic of Progenitus, Talon Gates of Madara: on the opponent.
+    case 'noNoncreatureSpells': case 'exileOwnGraveCard': case 'phaseOut':
       return 'harm';
     case 'tap':
       return e.untap ? 'neutral' : 'harm';
@@ -636,6 +648,8 @@ interface Play {
   act: (targets: Target[][], x: number) => Action;
   /** The card targeting, for protection from its colors. */
   source?: Card;
+  /** The permanent whose ability it is (Hope of Ghirapur: "a player dealt combat damage by Hope of Ghirapur"). */
+  selfIid?: string;
 }
 
 function castWithGoodTarget(s: GameState, me: PlayerId, inst: { iid: string; card: Card }, among?: Permanent[]): Action | null {
@@ -700,7 +714,7 @@ function playWithGoodTarget(s: GameState, me: PlayerId, play: Play, among?: Perm
       .sort((a, b) => creatureValue(b.card) - creatureValue(a.card));
     return theirs.length >= slot.min ? cast([theirs.slice(0, slot.max).map(asTarget)]) : null;
   }
-  const target = chooseTarget(s, me, spec, among, play.source);
+  const target = chooseTarget(s, me, spec, among, play.source, play.selfIid);
   return target === null ? null : cast([[asTarget(target)]]);
 }
 
@@ -734,12 +748,13 @@ function chooseFight(s: GameState, me: PlayerId, spec: AbilitySpec, e: Extract<E
 }
 
 /** The best target for slot 0 of a spell, among legal ones (and `among`, if given). */
-function chooseTarget(s: GameState, me: PlayerId, spec: AbilitySpec, among?: Permanent[], source?: Card): Permanent | PlayerId | null {
-  const opp = firstOpponent(s, me);
+function chooseTarget(s: GameState, me: PlayerId, spec: AbilitySpec, among?: Permanent[], source?: Card, selfIid?: string): Permanent | PlayerId | null {
   const slot = spec.targets[0];
   const onSlot = spec.effects.filter((e) => 'to' in e && typeof e.to === 'object' && e.to.slot === 0);
   const harm = onSlot.some((e) => intentOf(e) === 'harm');
-  const legal = legalTargets(s, me, slot, undefined, source);
+  const legal = legalTargets(s, me, slot, selfIid, source);
+  // An opponent who can be targeted (Hope of Ghirapur: only one it dealt combat damage to).
+  const opp = legal.find((t): t is { kind: 'player'; player: PlayerId } => t.kind === 'player' && !friend(s, me, t.player))?.player ?? firstOpponent(s, me);
   const perms = legal
     .filter((t) => t.kind === 'permanent')
     .map((t) => findPermanent(s, (t as { iid: string }).iid)!)
@@ -754,6 +769,8 @@ function chooseTarget(s: GameState, me: PlayerId, spec: AbilitySpec, among?: Per
     const p = lethal || (harm && !onSlot.some((e) => e.kind === 'draw')) ? opp : me;
     if (!canPick(p)) return null;
     if (onSlot.some((e) => e.kind === 'discard') && !s.players[opp].hand.length) return null;
+    // Relic of Progenitus: only with something to exile.
+    if (onSlot.some((e) => e.kind === 'exileOwnGraveCard') && !s.players[opp].graveyard.length) return null;
     return p;
   }
   if (harm) {
@@ -794,16 +811,22 @@ const isLandSearch = (spec: AbilitySpec) =>
 // ---------- Activated abilities ----------
 
 /** Abilities the bot may use now, with the rules it follows for their costs. */
-function abilityPlays(s: GameState, me: PlayerId): (Play & { perm: Permanent; index: number; equip: boolean; tapsCreature: boolean; sacrifice: boolean; spendable: boolean })[] {
+function abilityPlays(s: GameState, me: PlayerId): (Play & { perm: Permanent; index: number; equip: boolean; tapsCreature: boolean; sacrifice: boolean; spendable: boolean; sacrificeForLock: boolean })[] {
   return activatable(s, me)
-    // Never pay life (it could loop until death), except a little for a fetch land.
-    .filter(({ spec }) => !spec.cost.life || (isLandSearch(spec.ability) && s.players[me].life > 6))
+    // Never pay life (it could loop until death), except a little for a fetch land, and Necropotence's cards (three a
+    // turn at most, with 12 life or more).
+    .filter(({ spec }) => !spec.cost.life || (isLandSearch(spec.ability) && s.players[me].life > 6)
+      || (spec.ability.effects.some((e) => e.kind === 'exileTopUntilEndStep') && s.players[me].life >= 12 && (s.handAtEndStep ?? []).filter((x) => x.p === me).length < 3))
     // Discarding for an ability (Psychic Frog, Survival of the Fittest) isn't planned by the bot.
     .filter(({ spec }) => !spec.cost.discard)
     // Wishclaw Talisman goes to the opponent: not planned by the bot.
     .filter(({ spec }) => !spec.ability.effects.some((e) => e.kind === 'opponentGainsSource'))
     // Free abilities could repeat forever; loyalty abilities are once a turn and handled by usePlaneswalkers.
-    .filter(({ spec }) => (spec.cost.tap || spec.cost.mana || spec.cost.sacrificeSelf) && spec.cost.loyalty === undefined)
+    // Phyrexian Devourer: grows while its power is 2 or less (a card would have to be worth 5 to reach 7).
+    .filter(({ perm, spec }) => ((spec.cost.tap || spec.cost.mana || spec.cost.sacrificeSelf || spec.cost.life) && spec.cost.loyalty === undefined)
+      || (spec.cost.exileTop && powerOf(perm) <= 2 && s.players[me].library.length > 10))
+    // Relic of Progenitus: exiling all graveyards only when the opponents' hold four cards or more.
+    .filter(({ spec }) => !spec.ability.effects.some((e) => e.kind === 'exileGraveyards') || opponentsOf(s, me).reduce((n, o) => n + s.players[o].graveyard.length, 0) >= 4)
     // Becoming a creature until end of turn (Iron Man Armor) isn't planned by the bot; Vehicles are crewed by crewVehicles.
     .filter(({ spec }) => !spec.ability.effects.some((e) => e.kind === 'animate'))
     // Ghost Vacuum: only with creature cards exiled with it.
@@ -821,6 +844,9 @@ function abilityPlays(s: GameState, me: PlayerId): (Play & { perm: Permanent; in
       maxX: abilityMaxX(s, perm, index),
       tapsCreature: spec.cost.tap && isCreature(perm.card),
       sacrifice: spec.cost.sacrificeSelf || !!spec.cost.sacrifice,
+      selfIid: perm.iid,
+      /** Hope of Ghirapur: sacrificed for its lock, not as removal. */
+      sacrificeForLock: spec.ability.effects.some((e) => e.kind === 'noNoncreatureSpells' || e.kind === 'exileGraveyards'),
       /** Clue, Food, fetch lands: made to be sacrificed. */
       spendable: (isToken(perm.card) && !isCreature(perm.card) && !spec.cost.sacrifice) || isLandSearch(spec.ability),
       act: (targets: Target[][], x: number): Action => ({
@@ -840,7 +866,8 @@ function channelPlays(s: GameState, me: PlayerId): Play[] {
     const channel = castInfo(c.card).channel;
     const cost = channel && channelCost(s, me, c.card);
     if (!channel || !cost || !findPayment(manaSources(s, me), cost)) return [];
-    if (isLandCard(c.card) && !s.players[me].landPlayed && landsInHand <= 1) return [];
+    // A land kept for the land drop (Talon Gates of Madara's {4} puts it onto the battlefield instead: no loss).
+    if (isLandCard(c.card) && !channel.keepsCard && !s.players[me].landPlayed && landsInHand <= 1) return [];
     return [{ spec: channel.ability, source: c.card, hasX: false, maxX: 0, act: (targets: Target[][]): Action => ({ type: 'channel', iid: c.iid, ...(targets.length ? { targets } : {}) }) }];
   });
 }
@@ -867,13 +894,15 @@ function useAbility(s: GameState, me: PlayerId, among?: Permanent[]): Action | n
     const action = playWithGoodTarget(s, me, play, affordable ? (among ? among.filter((x) => affordable.includes(x)) : affordable) : among);
     if (!action) continue;
     const removal = hitsTheirPermanent(s, me, action);
-    if (play.sacrifice && !removal && !doomed(play.perm) && !(play.spendable && freeTime)) continue;
+    if (play.sacrifice && !removal && !doomed(play.perm) && !(play.spendable && freeTime) && !play.sacrificeForLock) continue;
     if (play.tapsCreature && !removal && !freeTime) continue;
     return action;
   }
   for (const play of channelPlays(s, me)) {
     const action = playWithGoodTarget(s, me, play, among);
     if (action && hitsTheirPermanent(s, me, action)) return action;
+    // Talon Gates of Madara: onto the battlefield with spare mana at the end of the opponent's turn.
+    if (action && play.spec.effects.some((e) => e.kind === 'putSelfFromHand') && s.priority?.reason === 'end' && !isActivePlayer(s, me) && !among) return action;
   }
   return null;
 }

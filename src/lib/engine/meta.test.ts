@@ -5407,3 +5407,62 @@ describe('Granted abilities, bestow, Kaito, Murktide Regent, Inti', () => {
     expect(castOptions(s, 0, 'l2')).toEqual([]);
   });
 });
+
+describe('The bot uses the new abilities', () => {
+  const cards = JSON.parse(readFileSync(new URL('./fixtures/metagame-2026-10-18.json', import.meta.url), 'utf8')) as Card[];
+  const landfall = JSON.parse(readFileSync(new URL('./fixtures/duel-commander-landfall-2026-10.json', import.meta.url), 'utf8')) as Card[];
+  const real = (name: string) => [...cards, ...landfall].find((x) => x.name.startsWith(name))!;
+  /** The bot (player 1) acting in its own main phase. */
+  const botTurn = (s: GameState) => {
+    s.active = 1;
+    s.turnHead = 1;
+    s.players[1].landPlayed = true;
+    return s;
+  };
+
+  it('Hope of Ghirapur: sacrificed to lock the player it hit', () => {
+    const s = botTurn(board({ theirs: [real('Hope of Ghirapur')] }));
+    s.step = 'main2';
+    expect(botAction(s)).toMatchObject({ type: 'pass' });
+    s.combatDamagedBy = { [iidOf(s, 'Hope of Ghirapur')]: [0] };
+    expect(botAction(s)).toMatchObject({ type: 'activate', iid: iidOf(s, 'Hope of Ghirapur'), targets: [[{ kind: 'player', player: 0 }]] });
+  });
+
+  it('Necropotence: cards for life while it has 12 or more, three a turn at most', () => {
+    const s = botTurn(board({ theirs: [real('Necropotence')] }));
+    s.step = 'main2';
+    expect(botAction(s)).toMatchObject({ type: 'activate', iid: iidOf(s, 'Necropotence') });
+    s.handAtEndStep = [0, 1, 2].map((i) => ({ p: 1, iid: `x${i}` }));
+    expect(botAction(s)).toMatchObject({ type: 'pass' });
+    s.handAtEndStep = [];
+    s.players[1].life = 11;
+    expect(botAction(s)).toMatchObject({ type: 'pass' });
+  });
+
+  it('Relic of Progenitus: a card of the opponent\'s graveyard; all graveyards only when theirs is full', () => {
+    const s = botTurn(board({ theirs: [real('Relic of Progenitus')], oppMana: 1 }));
+    s.step = 'main2';
+    expect(botAction(s)).toMatchObject({ type: 'pass' });
+    s.players[0].graveyard = [0, 1].map((i) => ({ iid: `g${i}`, card: creature('Bear', 2, 2) }));
+    expect(botAction(s)).toMatchObject({ type: 'activate', index: 0, targets: [[{ kind: 'player', player: 0 }]] });
+  });
+
+  it('Phyrexian Devourer: grows while its power is 2 or less', () => {
+    const devourer = card({
+      name: 'Phyrexian Devourer', typeLine: 'Artifact Creature — Phyrexian Construct', manaCost: '{6}', cmc: 6, power: '1', toughness: '1',
+      oracleText: 'When this creature\'s power is 7 or greater, sacrifice it.\nExile the top card of your library: Put X +1/+1 counters on this creature, where X is the exiled card\'s mana value.',
+    });
+    const s = botTurn(board({ theirs: [devourer] }));
+    s.step = 'main2';
+    expect(botAction(s)).toMatchObject({ type: 'activate', iid: iidOf(s, 'Phyrexian Devourer') });
+    perm(s, 'Phyrexian Devourer')!.counters = { '+1/+1': 3 };
+    expect(botAction(s)).toMatchObject({ type: 'pass' });
+  });
+
+  it('Talon Gates of Madara: put onto the battlefield for {4} at the end of the opponent\'s turn', () => {
+    const s = board({ oppMana: 4 });
+    s.players[1].hand = [{ iid: 'o0', card: real('Talon Gates of Madara') }];
+    s.priority = { player: 1, passes: 0, reason: 'end' };
+    expect(botAction(s)).toMatchObject({ type: 'channel', iid: 'o0' });
+  });
+});
