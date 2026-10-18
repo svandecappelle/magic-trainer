@@ -3735,3 +3735,141 @@ describe('metagame audit 2026-10-18', () => {
     expect(triggersOf(lotho).map((t) => t.event.on)).toEqual(['cast', 'opponentCasts']);
   });
 });
+
+describe('Tezzeret artifacts deck (deck-2)', () => {
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 12 && (s.stack.length || s.triggered?.length) && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  const plains = card({ name: 'Plains', typeLine: 'Basic Land — Plains' });
+  const rock = (name: string) => card({ name, typeLine: 'Artifact', manaCost: '{1}', cmc: 1 });
+  const bear = creature('Bear', 2, 2);
+  const crown = card({ name: 'Crown of Empires', typeLine: 'Artifact', manaCost: '{2}', cmc: 2, oracleText: '{3}, {T}: Tap target creature. Gain control of that creature instead if you control artifacts named Scepter of Empires and Throne of Empires.' });
+  const scepter = card({ name: 'Scepter of Empires', typeLine: 'Artifact', manaCost: '{3}', cmc: 3, oracleText: '{T}: This artifact deals 1 damage to target player or planeswalker. It deals 3 damage instead if you control artifacts named Crown of Empires and Throne of Empires.' });
+  const throne = card({ name: 'Throne of Empires', typeLine: 'Artifact', manaCost: '{4}', cmc: 4, oracleText: '{1}, {T}: Create a 1/1 white Soldier creature token. Create five of those tokens instead if you control artifacts named Crown of Empires and Scepter of Empires.' });
+
+  it('Phyrexian Metamorph: a copy of an artifact or creature that is also an artifact', () => {
+    const metamorph = card({
+      name: 'Phyrexian Metamorph', typeLine: 'Artifact Creature — Phyrexian Shapeshifter', manaCost: '{3}{U/P}', cmc: 4, power: '0', toughness: '0',
+      oracleText: '({U/P} can be paid with either {U} or 2 life.)\nYou may have this creature enter as a copy of any artifact or creature on the battlefield, except it\'s an artifact in addition to its other types.',
+    });
+    expect(cloneOf(metamorph)).toMatchObject({ filter: { types: ['artifact', 'creature'] }, artifact: true });
+    let s = board({ mana: 4, hand: [{ ...metamorph, manaCost: '{4}' }], theirs: [bear], mine: [scepter] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    expect(s.pending?.choice).toMatchObject({ purpose: 'clone' });
+    expect((s.pending!.choice as { options: { iid: string }[] }).options.map((o) => o.iid).sort()).toEqual([iidOf(s, 'Bear'), iidOf(s, 'Scepter of Empires')].sort());
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: [iidOf(s, 'Bear')] } }));
+    const copy = s.battlefield.filter((x) => x.card.name === 'Bear').find((x) => x.controller === 0)!;
+    expect(copy.card.typeLine).toBe('Artifact Creature');
+    expect(powerOf(copy)).toBe(2);
+  });
+
+  it('Wall of Essence: gains life equal to the combat damage it is dealt', () => {
+    const wall = card({ name: 'Wall of Essence', typeLine: 'Creature — Wall', manaCost: '{1}{W}', cmc: 2, power: '0', toughness: '4', keywords: ['Defender'], oracleText: 'Defender (This creature can\'t attack.)\nWhenever this creature is dealt combat damage, you gain that much life.' });
+    let s = board({ mine: [wall], theirs: [creature('Ogre', 3, 3)] });
+    s.active = 1;
+    s.players[1].landPlayed = true;
+    s.step = 'main1';
+    s = apply(s, { type: 'pass' });
+    for (let i = 0; i < 5 && (s.priority || s.step !== 'attack'); i++) s = apply(s, { type: 'pass' });
+    s = apply(s, { type: 'declareAttackers', attackers: [iidOf(s, 'Ogre')] });
+    for (let i = 0; i < 6 && !(s.step === 'block' && !s.priority); i++) s = apply(s, { type: 'pass' });
+    s = apply(s, { type: 'declareBlockers', blocks: { [iidOf(s, 'Ogre')]: [iidOf(s, 'Wall of Essence')] } });
+    for (let i = 0; i < 10 && s.step !== 'main2'; i++) s = apply(s, { type: 'pass' });
+    expect(s.players[0].life).toBe(23);
+    expect(perm(s, 'Wall of Essence')!.damage).toBe(3);
+  });
+
+  it('Tezzeret, Betrayer of Flesh: the first artifact ability each turn costs {2} less; +1 discards one artifact or two cards', () => {
+    const tezzeret = card({
+      name: 'Tezzeret, Betrayer of Flesh', typeLine: 'Legendary Planeswalker — Tezzeret', manaCost: '{2}{U}{U}', cmc: 4, loyalty: '4',
+      oracleText: 'The first activated ability of an artifact you activate each turn costs {2} less to activate.\n+1: Draw two cards. Then discard two cards unless you discard an artifact card.\n−2: Target artifact becomes an artifact creature. If it isn\'t a Vehicle, it has base power and toughness 4/4.\n−6: You get an emblem with "Whenever an artifact you control becomes tapped, draw a card."',
+    });
+    expect(gameRulesOf(tezzeret)).toEqual(['firstArtifactAbilityCostsLess']);
+    let s = board({ mana: 1, mine: [tezzeret, throne] });
+    perm(s, 'Tezzeret, Betrayer of Flesh')!.counters = { loyalty: 4 };
+    // {1} for Throne: free with the discount (so the Swamp stays untapped).
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Throne of Empires'), index: 0 }));
+    expect(s.battlefield.filter((x) => x.card.name === 'Soldier')).toHaveLength(1);
+    expect(perm(s, 'Swamp')!.tapped).toBe(false);
+    // +1: two cards drawn, then one artifact discarded is enough.
+    s.players[0].library = [{ iid: 'l0', card: rock('Ornithopter') }, { iid: 'l1', card: plains }, ...s.players[0].library];
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Tezzeret, Betrayer of Flesh'), index: 0 }));
+    expect(s.pending?.choice).toMatchObject({ purpose: 'discardUnlessArtifact', min: 1, max: 2 });
+    // One land alone isn't enough: asked again.
+    s = apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['l1'] } });
+    expect(s.pending?.choice).toMatchObject({ purpose: 'discardUnlessArtifact' });
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['l0'] } }));
+    expect(s.players[0].hand.map((c) => c.card.name)).toEqual(['Plains']);
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toEqual(['Ornithopter']);
+  });
+
+  it('Tezzeret the Seeker: −X puts an artifact with mana value X or less onto the battlefield', () => {
+    const seeker = card({
+      name: 'Tezzeret the Seeker', typeLine: 'Legendary Planeswalker — Tezzeret', manaCost: '{3}{U}{U}', cmc: 5, loyalty: '4',
+      oracleText: '+1: Untap up to two target artifacts.\n−X: Search your library for an artifact card with mana value X or less, put it onto the battlefield, then shuffle.\n−5: Artifacts you control become artifact creatures with base power and toughness 5/5 until end of turn.',
+    });
+    expect(activatedOf(seeker)[1].cost).toMatchObject({ loyalty: 0, loyaltyX: true });
+    let s = board({ mine: [seeker] });
+    perm(s, 'Tezzeret the Seeker')!.counters = { loyalty: 4 };
+    s.players[0].library = [{ iid: 'l0', card: throne }, { iid: 'l1', card: scepter }, ...s.players[0].library];
+    expect(errorOf(() => apply(s, { type: 'activate', iid: iidOf(s, 'Tezzeret the Seeker'), index: 1, x: 5 }))).toBe('notEnoughLoyalty');
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Tezzeret the Seeker'), index: 1, x: 3 }));
+    expect(perm(s, 'Tezzeret the Seeker')!.counters.loyalty).toBe(1);
+    // Throne (4) is too expensive.
+    expect((s.pending!.choice as { options: { iid: string }[] }).options.map((o) => o.iid)).toEqual(['l1']);
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['l1'] } }));
+    expect(perm(s, 'Scepter of Empires')).toBeDefined();
+  });
+
+  it('Dispatch: tap target creature; exile it with three or more artifacts', () => {
+    const dispatch = spell('Dispatch', '{W}', 'Tap target creature.\nMetalcraft — If you control three or more artifacts, exile that creature.');
+    let s = board({ mine: [plains, rock('A'), rock('B')], hand: [dispatch], theirs: [bear] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] }));
+    expect(perm(s, 'Bear')!.tapped).toBe(true);
+    s = board({ mine: [plains, rock('A'), rock('B'), rock('C')], hand: [dispatch], theirs: [bear] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] }));
+    expect(perm(s, 'Bear')).toBeUndefined();
+    expect(s.players[1].exile.map((c) => c.card.name)).toEqual(['Bear']);
+  });
+
+  it('Turn Aside: counters only a spell that targets a permanent you control', () => {
+    const turnAside = spell('Turn Aside', '{U}', 'Counter target spell that targets a permanent you control.');
+    const bolt = spell('Bolt', '{R}', 'Bolt deals 3 damage to any target.');
+    const mountain = card({ name: 'Mountain', typeLine: 'Basic Land — Mountain' });
+    // I Bolt; the opponent has Turn Aside for its Bear.
+    const bolts = (target: (s: GameState) => { kind: 'player'; player: PlayerId } | { kind: 'permanent'; iid: string }) => {
+      let s = board({ mine: [mountain], theirs: [bear, island], hand: [bolt], oppHand: [turnAside] });
+      return apply(s, { type: 'cast', iid: 'h0', targets: [[target(s)]] });
+    };
+    // Bolt at the opponent: not a permanent they control.
+    // (Turn Aside has no legal target: the opponent isn't even asked, and the Bolt resolves.)
+    let s = bolts(() => ({ kind: 'player', player: 1 }));
+    expect(s.players[1].life).toBe(17);
+    expect(s.players[1].hand.map((c) => c.card.name)).toEqual(['Turn Aside']);
+    // Bolt at their Bear: countered.
+    s = bolts((t) => ({ kind: 'permanent', iid: iidOf(t, 'Bear') }));
+    s = apply(s, { type: 'cast', iid: 'o0', targets: [[{ kind: 'spell', iid: s.stack[0].iid }]] });
+    for (let i = 0; i < 6 && s.stack.length; i++) s = apply(s, { type: 'pass' });
+    expect(perm(s, 'Bear')).toBeDefined();
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toEqual(['Bolt']);
+  });
+
+  it('Crown, Scepter and Throne of Empires: more with the other two', () => {
+    expect(activatedOf(scepter)[0].ability.insteadIfNamed).toEqual({ names: ['Crown of Empires', 'Throne of Empires'], effects: [{ kind: 'damage', amount: 3, to: { slot: 0 } }] });
+    // Alone: 1 damage, a tap, one Soldier.
+    let s = board({ mana: 4, mine: [scepter, crown, rock('A')], theirs: [bear] });
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Scepter of Empires'), index: 0, targets: [[{ kind: 'player', player: 1 }]] }));
+    expect(s.players[1].life).toBe(19);
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Crown of Empires'), index: 0, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] }));
+    expect(perm(s, 'Bear')).toMatchObject({ tapped: true, controller: 1 });
+    // All three: 3 damage, the creature stolen, five Soldiers.
+    s = board({ mana: 5, mine: [scepter, crown, throne], theirs: [bear] });
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Scepter of Empires'), index: 0, targets: [[{ kind: 'player', player: 1 }]] }));
+    expect(s.players[1].life).toBe(17);
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Crown of Empires'), index: 0, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] }));
+    expect(perm(s, 'Bear')!.controller).toBe(0);
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Throne of Empires'), index: 0 }));
+    expect(s.battlefield.filter((x) => x.card.name === 'Soldier')).toHaveLength(5);
+  });
+});

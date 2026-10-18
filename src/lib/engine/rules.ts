@@ -33,6 +33,13 @@ export function hasKeyword(card: Card, kw: Keyword): boolean {
 export const gainsLifeFromDamage = (card: Card) =>
   selfWords(card.name).some((w) => new RegExp(`^Whenever ${escapeRe(w)} deals damage, you gain that much life\\.$`, 'mi').test(frontText(card)));
 
+/**
+ * Wall of Essence: "Whenever this creature is dealt combat damage, you gain that much life." Gained with the damage (no
+ * trigger on the stack), like Exalted Angel.
+ */
+export const gainsLifeFromCombatDamageTaken = (card: Card) =>
+  selfWords(card.name).some((w) => new RegExp(`^Whenever ${escapeRe(w)} is dealt combat damage, you gain that much life\\.$`, 'mi').test(frontText(card)));
+
 export const hasFirstStrike = (card: Card) => hasKeyword(card, 'first strike') || hasKeyword(card, 'double strike');
 
 function parseStat(value: string | undefined, fallback: number): number {
@@ -422,6 +429,8 @@ export interface TargetFilter {
   maxPowerOrToughness?: number;
   /** Wash Away: "that wasn't cast from its owner's hand". */
   notCastFromHand?: boolean;
+  /** Turn Aside: "spell that targets a permanent you control". */
+  targetsYourPermanent?: boolean;
   maxManaValue?: number;
   minManaValue?: number;
   /** "with mana cost {0} or {1}" (Urza's Saga): exactly one of these mana costs. */
@@ -512,13 +521,15 @@ export type Effect =
   /** "gets +N/+N (and gains …) until end of turn". Negative values shrink. */
   | { kind: 'pump'; power: number; toughness: number; keywords: Keyword[]; to: Affected }
   /** `untilLeaves`: exiled until the ability's source leaves the battlefield (Seam Rip). */
-  | { kind: 'destroy'; exile: boolean; to: Affected; untilLeaves?: boolean }
+  /** `ifArtifacts`: Dispatch's metalcraft, "If you control three or more artifacts, exile that creature." */
+  | { kind: 'destroy'; exile: boolean; to: Affected; untilLeaves?: boolean; ifArtifacts?: number }
   | { kind: 'draw'; n: Amount; to: Affected }
   | { kind: 'gainLife'; n: Amount; to: Affected }
   | { kind: 'loseLife'; n: Amount; to: Affected }
   | { kind: 'addCounters'; counter: CounterKind; n: Amount; to: Affected }
   /** `filter` limits what the spell's controller may pick ("a nonland card") with casterChooses. */
-  | { kind: 'discard'; n: Amount; to: Affected; mode: DiscardMode; filter?: TargetFilter }
+  /** `unlessFilter`: Tezzeret, Betrayer of Flesh: "discard two cards unless you discard an artifact card" (one such card instead). */
+  | { kind: 'discard'; n: Amount; to: Affected; mode: DiscardMode; filter?: TargetFilter; unlessFilter?: TargetFilter }
   | { kind: 'mill'; n: Amount; to: Affected }
   | { kind: 'scry'; n: Amount }
   /**
@@ -735,6 +746,11 @@ export interface AbilitySpec {
   /** A Saga's chapter ability: its Saga isn't sacrificed while it waits or is on the stack. */
   chapter?: number;
   /**
+   * Crown, Scepter and Throne of Empires: "… instead if you control artifacts named Scepter of Empires and Throne of
+   * Empires": these effects replace `effects` when its controller does as it resolves.
+   */
+  insteadIfNamed?: { names: string[]; effects: Effect[] };
+  /**
    * A modal trigger: its modes, chosen as it goes on the stack. A mode with no effects isn't understood and can't be
    * chosen.
    */
@@ -803,6 +819,8 @@ export function parseTargetPhrase(phrase: string): TargetSpec | null {
   const isKeyword = (w: string): w is Keyword => (KEYWORDS as readonly string[]).includes(w);
   // Each returns false when the clause isn't understood.
   const suffixes: [RegExp, (m: RegExpMatchArray) => boolean][] = [
+    // Turn Aside: "spell that targets a permanent you control" (before "you control": it's not the spell's controller).
+    [/ that targets a permanent you control$/, () => !!(filter.targetsYourPermanent = true)],
     [/ you control$/, () => !!(filter.controller = 'you')],
     [/ (?:an opponent controls|you don't control|your opponents control)$/, () => !!(filter.controller = 'opponent')],
     [/ with mana value (\d+) or less$/, (m) => ((filter.maxManaValue = Number(m[1])), true)],
@@ -995,6 +1013,34 @@ function selfWords(name: string): string[] {
  * "Goblin Guide gets +1/+1" or "put a +1/+1 counter on this creature" can refer to it.
  */
 export function parseAbilityText(text: string, self?: string): AbilitySpec {
+  // Tezzeret, Betrayer of Flesh: "Draw two cards. Then discard two cards unless you discard an artifact card."
+  const unlessArtifact = text.match(/^(.+?\.) Then discard two cards unless you discard an artifact card\.$/);
+  if (unlessArtifact) {
+    const base = parseAbilityText(unlessArtifact[1], self);
+    return base.effects.length && !base.targets.length
+      ? { ...base, effects: [...base.effects, { kind: 'discard', n: 2, to: 'you', mode: 'choose', unlessFilter: { types: ['artifact'] } }] } : NO_EFFECT;
+  }
+  // Crown of Empires: "Tap target creature. Gain control of that creature instead if you control artifacts named Scepter
+  // of Empires and Throne of Empires." Scepter: "It deals 3 damage instead …"; Throne: "Create five of those tokens instead …"
+  const named = text.match(/^(.+?\.) ([^.]+?) instead if you control artifacts named ([^.]+?) and ([^.]+?)\.$/);
+  if (named) {
+    const base = parseAbilityText(named[1], self);
+    const more = named[2];
+    const damage = more.match(/^It deals (\d+) damage$/);
+    const tokens = more.match(/^Create (one|two|three|four|five|six|seven|eight|nine|ten) of those tokens$/);
+    const effects: Effect[] | null = damage && base.effects.length === 1 && base.effects[0].kind === 'damage' ? [{ ...base.effects[0], amount: Number(damage[1]) }]
+      : tokens && base.effects.length === 1 && base.effects[0].kind === 'token' ? [{ ...base.effects[0], n: toNumber(tokens[1]) }]
+      : /^Gain control of that creature$/.test(more) && base.targets.length === 1 && base.targets[0].kind === 'creature' ? [{ kind: 'gainControl', to: { slot: 0 }, untilEndOfTurn: false }]
+      : null;
+    return effects && base.effects.length ? { ...base, insteadIfNamed: { names: [named[3], named[4]], effects } } : NO_EFFECT;
+  }
+  // Dispatch: "Tap target creature.\nMetalcraft — If you control three or more artifacts, exile that creature."
+  const metalcraft = text.match(/^([^]+?)\s*\nMetalcraft — If you control three or more artifacts, exile that creature\.$/);
+  if (metalcraft) {
+    const spec = parseAbilityText(metalcraft[1], self);
+    const one = spec.targets.length === 1 && spec.targets[0].max === 1 && spec.effects.length > 0;
+    return one ? { ...spec, effects: [...spec.effects, { kind: 'destroy', exile: true, to: { slot: 0 }, ifArtifacts: 3 }] } : NO_EFFECT;
+  }
   // Germinate Recruits: "Create X … tokens, where X is the amount of life you gained this turn."
   const lifeX = /, where X is the amount of life you gained this turn(?=\.)/;
   if (lifeX.test(text)) {
@@ -1213,11 +1259,13 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     return units && { kind: 'addMana', units };
   });
   // "Search your library for a basic land card, put it onto the battlefield tapped, then shuffle."
-  scan(new RegExp(`\\bsearch your library for (up to ${NUMBER} |an? |${NUMBER} )([a-z ,-]+?) cards?(?: with mana value (\\d+) or less| with mana cost ((?:\\{\\d+\\})(?: or \\{\\d+\\})*))?, (?:reveal (?:it|them|that card|those cards), )?(?:and )?put (?:it|them|that card|those cards) (into your hand|onto the battlefield( tapped)?)(?:,? (?:then|and) shuffle)?`, 'gi'), (m) => {
+  scan(new RegExp(`\\bsearch your library for (up to ${NUMBER} |an? |${NUMBER} )([a-z ,-]+?) cards?(?: with mana value (\\d+|X) or less| with mana cost ((?:\\{\\d+\\})(?: or \\{\\d+\\})*))?, (?:reveal (?:it|them|that card|those cards), )?(?:and )?put (?:it|them|that card|those cards) (into your hand|onto the battlefield( tapped)?)(?:,? (?:then|and) shuffle)?`, 'gi'), (m) => {
     const count = m[1].trim().replace(/^up to /i, '');
     const filter = librarySearchFilter(m[2]);
     if (!filter) return null;
-    if (m[3]) filter.maxManaValue = Number(m[3]);
+    // Tezzeret the Seeker: "with mana value X or less" (X as activated).
+    if (m[3] === 'X') filter.maxManaValueX = true;
+    else if (m[3]) filter.maxManaValue = Number(m[3]);
     // Urza's Saga: "an artifact card with mana cost {0} or {1}".
     if (m[4]) filter.manaCosts = m[4].split(' or ');
     return { kind: 'search', n: toNumber(count), filter, dest: m[5].toLowerCase() === 'into your hand' ? 'hand' : 'battlefield', tapped: !!m[6] };
@@ -1986,12 +2034,16 @@ export interface TriggerSpec {
  * replacements, references to the triggering object). Such abilities are not simulated rather
  * than simulated wrongly.
  */
+/** Crown, Scepter and Throne of Empires: "… instead if you control artifacts named … and …" (see parseAbilityText). */
+const EMPIRES = /\. [^.]+? instead if you control artifacts named [^.]+? and [^.]+?(?=\.$)/;
+/** Tezzeret, Betrayer of Flesh: "Then discard two cards unless you discard an artifact card." */
+const UNLESS_ARTIFACT = / Then discard two cards unless you discard an artifact card(?=\.$)/;
 const UNSUPPORTED_WORDS = /\b(?:if|unless|for each|where|instead|that (?:creature|card|player|land|spell|permanent)|those|otherwise|this way|exiled with)\b/i;
 /** Wordings the effect parser would misread. Quoted text is an ability given to something else (a token), read on its own. */
 const UNSUPPORTED = {
   test: (text: string) => {
     let rest = text;
-    for (const handled of [CONTROLLER_SEARCH, REVEAL_FOUND, SURVEIL_TO_HAND, THORIN_ATTACH, BECOMES_CREATURE, LAND_BECOMES, TRADE_FOR_CARD, COUNTER_DEST, TIDEBINDER, POWER_LIFE, PHELIA, CITY_COPIES, GHOST_VACUUM, MALCOLM, FLICKER, BLACK_SUN]) rest = rest.replace(handled, '');
+    for (const handled of [CONTROLLER_SEARCH, REVEAL_FOUND, SURVEIL_TO_HAND, THORIN_ATTACH, BECOMES_CREATURE, LAND_BECOMES, TRADE_FOR_CARD, COUNTER_DEST, TIDEBINDER, POWER_LIFE, PHELIA, CITY_COPIES, GHOST_VACUUM, MALCOLM, FLICKER, BLACK_SUN, EMPIRES, UNLESS_ARTIFACT]) rest = rest.replace(handled, '');
     return UNSUPPORTED_WORDS.test(rest.replace(/"[^"]*"/g, '""'));
   },
 };
@@ -2384,6 +2436,8 @@ export interface ActivationCost {
   life: number;
   /** Loyalty ability: loyalty counters added (positive) or removed (negative). */
   loyalty?: number;
+  /** Tezzeret the Seeker: "−X: …" (X more loyalty removed, X chosen as it's activated). */
+  loyaltyX?: boolean;
   /** Crew N: tap untapped creatures you control with total power N or more (chosen when activating). */
   crew?: number;
   /** Parallax Wave: "Remove a fade counter from this enchantment". */
@@ -2467,7 +2521,13 @@ export function activatedOf(card: Card): ActivatedSpec[] {
       out.push({ text: line, cost: { mana: '', tap: false, sacrificeSelf: false, life: 0, loyalty: n }, ability, sorcery: true, once: false });
       continue;
     }
-    if (/^(?:\[|[+−])/.test(m[1])) continue; // "−X: …" and other loyalty costs
+    // Tezzeret the Seeker: "−X: Search your library for an artifact card with mana value X or less, …"
+    if (/^[−-]X$/.test(m[1].trim())) {
+      const ability = UNSUPPORTED.test(text) ? NO_EFFECT : parseAbilityText(text, name);
+      out.push({ text: line, cost: { mana: '', tap: false, sacrificeSelf: false, life: 0, loyalty: 0, loyaltyX: true }, ability, sorcery: true, once: false });
+      continue;
+    }
+    if (/^(?:\[|[+−])/.test(m[1])) continue; // other loyalty costs
     if (/\badd \{|\badd (?:one|two|three) mana|\badd [a-z]+ mana/i.test(text)) continue; // mana ability
     const cost: ActivationCost = { mana: '', tap: false, sacrificeSelf: false, life: 0 };
     let ok = true;
@@ -3106,6 +3166,8 @@ export type GameRule =
   | 'landsAreSwamps'
   /** Cryptolith Rite, Enduring Vitality: "Creatures you control have "{T}: Add one mana of any color."" */
   | 'creaturesTapForAnyColor'
+  /** Tezzeret, Betrayer of Flesh: "The first activated ability of an artifact you activate each turn costs {2} less to activate." */
+  | 'firstArtifactAbilityCostsLess'
   /** Karn, the Great Creator: "Activated abilities of artifacts your opponents control can't be activated." */
   | 'opponentsArtifactAbilitiesForbidden'
   /** Cursed Totem: "Activated abilities of creatures can't be activated." (mana abilities included) */
@@ -3187,6 +3249,7 @@ const GAME_RULES: [RegExp, GameRule][] = [
   [/^Combat damage can't be prevented\.$/m, 'combatDamageCantBePrevented'],
   [/^You may play an additional land on each of your turns\.$/m, 'extraLand'],
   [/^Creatures you control have "\{T\}: Add one mana of any color\."$/m, 'creaturesTapForAnyColor'],
+  [/^The first activated ability of an artifact you activate each turn costs \{2\} less to activate\.$/m, 'firstArtifactAbilityCostsLess'],
   [/^Damage can't be prevented\.$/m, 'damageCantBePrevented'],
 ];
 
@@ -3222,11 +3285,16 @@ export const entersAsBirdCopy = (card: Card) =>
  * (Glasspool Mimic: "a creature you control"; Clever Impersonator: "any nonland permanent"; Copy Enchantment: "any
  * enchantment"), and the creature types added by "except it's a Shapeshifter Rogue in addition to its other types".
  */
-export function cloneOf(card: Card): { filter: TargetFilter; mine: boolean; subtypes: string[] } | null {
-  const m = frontText(card).match(/^You may have (?:this (?:creature|artifact|enchantment)|[^.]+?) enter(?: the battlefield)? as a copy of (any creature|a creature you control|any nonland permanent|any artifact|any enchantment)(?: on the battlefield)?(?:, except (?:it's|they're) an? ([A-Z][a-z]+(?: [A-Z][a-z]+)*) in addition to (?:its|their) other types)?\.$/m);
+export function cloneOf(card: Card): { filter: TargetFilter; mine: boolean; subtypes: string[]; artifact?: boolean } | null {
+  const m = frontText(card).match(/^You may have (?:this (?:creature|artifact|enchantment)|[^.]+?) enter(?: the battlefield)? as a copy of (any creature|a creature you control|any nonland permanent|any artifact or creature|any artifact|any enchantment)(?: on the battlefield)?(?:, except (?:it's|they're) an? ([A-Z][a-z]+(?: [A-Z][a-z]+)*|artifact) in addition to (?:its|their) other types)?\.$/m);
   if (!m) return null;
   const what = m[1];
-  const filter: TargetFilter = what === 'any nonland permanent' ? { nonTypes: ['land'] } : { types: [what.split(' ').pop() === 'enchantment' ? 'enchantment' : what.split(' ').pop() === 'artifact' ? 'artifact' : 'creature'] };
+  const filter: TargetFilter = what === 'any nonland permanent' ? { nonTypes: ['land'] }
+    // Phyrexian Metamorph: "any artifact or creature".
+    : what === 'any artifact or creature' ? { types: ['artifact', 'creature'] }
+    : { types: [what.split(' ').pop() === 'enchantment' ? 'enchantment' : what.split(' ').pop() === 'artifact' ? 'artifact' : 'creature'] };
+  // Phyrexian Metamorph: "except it's an artifact in addition to its other types" (a card type, not a subtype).
+  if (m[2] === 'artifact') return { filter, mine: false, subtypes: [], artifact: true };
   return { filter, mine: what === 'a creature you control', subtypes: m[2] ? m[2].split(' ') : [] };
 }
 

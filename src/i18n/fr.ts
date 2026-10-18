@@ -776,6 +776,7 @@ export const fr: Messages = {
       putFromHand: (p) => `${p.card} : mettez un équipement de votre main sur le champ de bataille (ou rien).`,
       cumulativeUpkeep: (p) => `${p.card} : entretien cumulatif (${p.n} marqueurs d'âge). Payer ${p.cost}, ou le sacrifier ?`,
       discard: (p) => `Défaussez ${plural(p.n, 'carte', 'cartes')}.`,
+      discardUnlessArtifact: (p) => `Défaussez ${plural(p.n, 'carte', 'cartes')}, ou une carte d'artefact.`,
       discardChosen: (p) => `${p.who} révèle sa main : choisissez ${plural(p.n, 'carte', 'cartes')} à défausser.`,
       scry: (p) => `Regard ${p.n} : gardez des cartes au-dessus (dans l'ordre) ou mettez-les en dessous.`,
       surveil: (p) => `Surveillance ${p.n} : gardez des cartes au-dessus (dans l'ordre) ou mettez-les au cimetière.`,

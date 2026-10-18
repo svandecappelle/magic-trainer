@@ -5,7 +5,7 @@ import {
 } from './engine';
 import {
   activatedOf, auraTarget, castInfo, castSpec, creatureValue, modeSets, faceCard, findPayment, hasInstantSpeed, isAdventure, isPlaneswalker, isSaga, isToken, staticsOf, hasKeyword, isCreature, isInstantOrSorcery, isLandCard, manaColors,
-  cardColors, reconfiguresEnchanted, choosesBasicType, discardsLandInstead, parseCost, spellSpec, stateMana, planPayment, type AbilitySpec, type Amount, type Color, type Effect, type ManaSource,
+  cardColors, cardTypes, reconfiguresEnchanted, choosesBasicType, discardsLandInstead, parseCost, spellSpec, stateMana, planPayment, type AbilitySpec, type Amount, type Color, type Effect, type ManaSource,
 } from './rules';
 import type { Card } from '../../types';
 
@@ -489,7 +489,8 @@ function animateLands(s: GameState, me: PlayerId): Action | null {
 function usePlaneswalkers(s: GameState, me: PlayerId): Action | null {
   const byWalker = new Map<string, ReturnType<typeof activatable>>();
   for (const a of activatable(s, me)) {
-    if (a.spec.cost.loyalty === undefined) continue;
+    // Tezzeret the Seeker's −X isn't planned by the bot.
+    if (a.spec.cost.loyalty === undefined || a.spec.cost.loyaltyX) continue;
     byWalker.set(a.perm.iid, [...(byWalker.get(a.perm.iid) ?? []), a]);
   }
   for (const abilities of byWalker.values()) {
@@ -1119,6 +1120,10 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
       } else if (!safe && choice.purpose === 'discardChosen') {
         // Take their best card: the most expensive spell.
         options.sort((a, b) => b.card.cmc - a.card.cmc);
+      } else if (choice.purpose === 'discardUnlessArtifact') {
+        // Tezzeret, Betrayer of Flesh: the cheapest artifact card, otherwise two cards.
+        const artifact = options.filter((c) => cardTypes(c.card).includes('artifact')).sort((a, b) => a.card.cmc - b.card.cmc)[0];
+        return { kind: 'cards', iids: artifact ? [artifact.iid] : options.slice(0, choice.max).map((c) => c.iid) };
       } else if (!safe && (choice.purpose === 'cleanupDiscard' || choice.purpose === 'discard' || choice.purpose === 'discardCost')) {
         // Discard what we can use least: extra lands beyond what the hand needs, then the most expensive spells.
         const lands = options.filter((c) => isLandCard(c.card));

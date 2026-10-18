@@ -770,6 +770,7 @@ export const en = {
       putFromHand: (p: { card: string }) => `${p.card}: put an Equipment card from your hand onto the battlefield (or choose nothing).`,
       cumulativeUpkeep: (p: { card: string; cost: string; n: number }) => `${p.card}: cumulative upkeep (${p.n} age counters). Pay ${p.cost}, or sacrifice it?`,
       discard: (p: { n: number }) => `Discard ${plural(p.n, 'card', 'cards')}.`,
+      discardUnlessArtifact: (p: { n: number }) => `Discard ${plural(p.n, 'card', 'cards')}, or one artifact card.`,
       discardChosen: (p: { n: number; who: string }) => `${p.who} reveals their hand: choose ${plural(p.n, 'card', 'cards')} for them to discard.`,
       scry: (p: { n: number }) => `Scry ${p.n}: keep cards on top (in order) or put them on the bottom.`,
       surveil: (p: { n: number }) => `Surveil ${p.n}: keep cards on top (in order) or put them into your graveyard.`,

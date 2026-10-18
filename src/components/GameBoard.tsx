@@ -514,7 +514,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice, readOnly
     const spec = activatedOf(perm.card)[index];
     const problem = activationProblem(g, me, perm, index, x ?? 0);
     if (problem) return setError({ code: problem, params: { card: show.name(perm.card) } });
-    if (x === undefined && spec.cost.mana.includes('{X}')) {
+    if (x === undefined && (spec.cost.mana.includes('{X}') || spec.cost.loyaltyX)) {
       const max = abilityMaxX(g, perm, index);
       return setXPick({ iid: perm.iid, card: perm.card, x: max, max, ability: index });
     }

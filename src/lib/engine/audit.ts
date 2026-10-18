@@ -1,6 +1,6 @@
 import type { Card } from '../../types';
 import {
-  activatedOf, auraTarget, castInfo, gainsLifeFromDamage, castSpec, entersAsCopy, entersCounters, entersTappedRule, beginsWithLuck, discardsLandInstead, manaConditions, stateMana, doesntUntap, frontText, gameRulesOf, isInstantOrSorcery,
+  activatedOf, auraTarget, castInfo, gainsLifeFromDamage, gainsLifeFromCombatDamageTaken, castSpec, entersAsCopy, entersCounters, entersTappedRule, beginsWithLuck, discardsLandInstead, manaConditions, stateMana, doesntUntap, frontText, gameRulesOf, isInstantOrSorcery,
   KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, chosenNameTax, namesAnyCard, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, extraManaOf, manaMultiplier, choosesColor, counterMana, diamondMana, restrictedMana, reconfiguresEnchanted, entersPrepared, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, returnsExiledWhenLeaving, fadingOf, type AbilitySpec,
 } from './rules';
 
@@ -112,6 +112,9 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
       : { text: line, status: 'notSimulated', how: `trigger (${event}), effect not simulated` };
   }
   if (gainsLifeFromDamage(one)) return { text: line, status: 'ok', how: 'gains life equal to the damage dealt (as lifelink)' };
+  // Vedalken Shackles: goes with its control ability, which isn't simulated.
+  if (/^You may choose not to untap (?:this [a-z]+|.+?) during your untap step\.$/.test(line)) return { text: line, status: 'notSimulated', how: 'may stay tapped: not simulated' };
+  if (gainsLifeFromCombatDamageTaken(one)) return { text: line, status: 'ok', how: 'gains life equal to the combat damage it is dealt (no trigger on the stack)' };
   const discount = castInfo(one).graveDiscount;
   if (discount) return { text: line, status: 'ok', how: `costs {1} less for each ${'types' in discount ? 'card type' : 'matching card'} in your graveyard` };
   const channel = castInfo(one).channel;

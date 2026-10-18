@@ -21,6 +21,7 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
     case 'payOrDraw': return t.game.choice.payOrDraw({ card: card(String(p.card)), n });
     case 'payLifeOrCounter': return t.game.choice.payLifeOrCounter({ card: card(String(p.card)), n });
     case 'discard': return t.game.choice.discard({ n });
+    case 'discardUnlessArtifact': return t.game.choice.discardUnlessArtifact({ n });
     case 'discardChosen': return t.game.choice.discardChosen({ n, who: names[Number(p.p) as 0 | 1] });
     case 'scry': return t.game.choice.scry({ n });
     case 'surveil': return t.game.choice.surveil({ n });

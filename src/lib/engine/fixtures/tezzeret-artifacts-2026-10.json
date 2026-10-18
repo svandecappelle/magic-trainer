@@ -1,0 +1,311 @@
+[
+ {
+  "id": "7ab1a074-9d92-4125-9200-84cd035f8f53",
+  "name": "Buried Ruin",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}: Add {C}.\n{2}, {T}, Sacrifice this land: Return target artifact card from your graveyard to your hand.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "eoc",
+  "setName": "Edge of Eternities Commander",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "d4e36991-7b9f-4cc7-8da2-55b8baf19d70",
+  "name": "Crown of Empires",
+  "manaCost": "{2}",
+  "cmc": 2,
+  "typeLine": "Artifact",
+  "oracleText": "{3}, {T}: Tap target creature. Gain control of that creature instead if you control artifacts named Scepter of Empires and Throne of Empires.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "m12",
+  "setName": "Magic 2012",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "99d30a21-b003-4a17-a4c5-97811f230896",
+  "name": "Dispatch",
+  "manaCost": "{W}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Tap target creature.\nMetalcraft — If you control three or more artifacts, exile that creature.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "msc",
+  "setName": "Marvel Super Heroes Commander",
+  "rarity": "uncommon",
+  "keywords": [
+   "Metalcraft"
+  ]
+ },
+ {
+  "id": "44e49332-b1e1-4b88-b508-516b55c67a1d",
+  "name": "Fabricate",
+  "manaCost": "{2}{U}",
+  "cmc": 3,
+  "typeLine": "Sorcery",
+  "oracleText": "Search your library for an artifact card, reveal it, put it into your hand, then shuffle.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "hop",
+  "setName": "Planechase",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "9de5fadd-4559-479f-b45d-abe792f0f6e5",
+  "name": "Glacial Floodplain",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Snow Land — Plains Island",
+  "oracleText": "({T}: Add {W} or {U}.)\nThis land enters tapped.",
+  "colors": [],
+  "colorIdentity": [
+   "U",
+   "W"
+  ],
+  "setCode": "khm",
+  "setName": "Kaldheim",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "1335d293-3dd2-4f13-bd2c-22181f4528ee",
+  "name": "Island",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Basic Land — Island",
+  "oracleText": "({T}: Add {U}.)",
+  "colors": [],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "mdd",
+  "setName": "Marvel: Darkhold Destiny",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "a564c2e8-f49f-4ed7-850f-7c8bc92e4926",
+  "name": "Phyrexian Metamorph",
+  "manaCost": "{3}{U/P}",
+  "cmc": 4,
+  "typeLine": "Artifact Creature — Phyrexian Shapeshifter",
+  "oracleText": "({U/P} can be paid with either {U} or 2 life.)\nYou may have this creature enter as a copy of any artifact or creature on the battlefield, except it's an artifact in addition to its other types.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "eoc",
+  "setName": "Edge of Eternities Commander",
+  "rarity": "rare",
+  "power": "0",
+  "toughness": "0",
+  "keywords": []
+ },
+ {
+  "id": "09ac862f-0a51-44dd-b86f-9412b8218b13",
+  "name": "Plains",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Basic Land — Plains",
+  "oracleText": "({T}: Add {W}.)",
+  "colors": [],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "mdd",
+  "setName": "Marvel: Darkhold Destiny",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "54f1aaef-94cc-45ab-99c9-8ffdcf331a7b",
+  "name": "Scepter of Empires",
+  "manaCost": "{3}",
+  "cmc": 3,
+  "typeLine": "Artifact",
+  "oracleText": "{T}: This artifact deals 1 damage to target player or planeswalker. It deals 3 damage instead if you control artifacts named Crown of Empires and Throne of Empires.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "m12",
+  "setName": "Magic 2012",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "3bfa5ebc-5623-4eec-89ea-dc187489ee4a",
+  "name": "Snow-Covered Island",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Basic Snow Land — Island",
+  "oracleText": "({T}: Add {U}.)",
+  "colors": [],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "khm",
+  "setName": "Kaldheim",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "afd2730f-878e-47ee-ad2a-73f8fa4e0794",
+  "name": "Snow-Covered Plains",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Basic Snow Land — Plains",
+  "oracleText": "({T}: Add {W}.)",
+  "colors": [],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "khm",
+  "setName": "Kaldheim",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "cf339735-eb1a-46f0-8c3e-eae06f278eca",
+  "name": "Tezzeret the Seeker",
+  "manaCost": "{3}{U}{U}",
+  "cmc": 5,
+  "typeLine": "Legendary Planeswalker — Tezzeret",
+  "oracleText": "+1: Untap up to two target artifacts.\n−X: Search your library for an artifact card with mana value X or less, put it onto the battlefield, then shuffle.\n−5: Artifacts you control become artifact creatures with base power and toughness 5/5 until end of turn.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "mm2",
+  "setName": "Modern Masters 2015",
+  "rarity": "mythic",
+  "loyalty": "4",
+  "keywords": []
+ },
+ {
+  "id": "35f30004-13e0-42c1-9842-eea52793fcfc",
+  "name": "Tezzeret, Betrayer of Flesh",
+  "manaCost": "{2}{U}{U}",
+  "cmc": 4,
+  "typeLine": "Legendary Planeswalker — Tezzeret",
+  "oracleText": "The first activated ability of an artifact you activate each turn costs {2} less to activate.\n+1: Draw two cards. Then discard two cards unless you discard an artifact card.\n−2: Target artifact becomes an artifact creature. If it isn't a Vehicle, it has base power and toughness 4/4.\n−6: You get an emblem with \"Whenever an artifact you control becomes tapped, draw a card.\"",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "mkc",
+  "setName": "Murders at Karlov Manor Commander",
+  "rarity": "mythic",
+  "loyalty": "4",
+  "keywords": []
+ },
+ {
+  "id": "87352716-4cf6-4b2f-bb0a-b7aafae64478",
+  "name": "Throne of Empires",
+  "manaCost": "{4}",
+  "cmc": 4,
+  "typeLine": "Artifact",
+  "oracleText": "{1}, {T}: Create a 1/1 white Soldier creature token. Create five of those tokens instead if you control artifacts named Crown of Empires and Scepter of Empires.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "m12",
+  "setName": "Magic 2012",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "3b7573c2-484c-4b4e-9c26-0f005bd1daee",
+  "name": "Turn Aside",
+  "manaCost": "{U}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Counter target spell that targets a permanent you control.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "emn",
+  "setName": "Eldritch Moon",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "e3257833-b237-49ef-856a-3c1d1c752cf8",
+  "name": "Vedalken Shackles",
+  "manaCost": "{3}",
+  "cmc": 3,
+  "typeLine": "Artifact",
+  "oracleText": "You may choose not to untap this artifact during your untap step.\n{2}, {T}: Gain control of target creature with power less than or equal to the number of Islands you control for as long as this artifact remains tapped.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "mma",
+  "setName": "Modern Masters",
+  "rarity": "mythic",
+  "keywords": []
+ },
+ {
+  "id": "94b05805-e2af-4048-b7c7-1dbd188ba0f6",
+  "name": "Wall of Essence",
+  "manaCost": "{1}{W}",
+  "cmc": 2,
+  "typeLine": "Creature — Wall",
+  "oracleText": "Defender (This creature can't attack.)\nWhenever this creature is dealt combat damage, you gain that much life.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "tpr",
+  "setName": "Tempest Remastered",
+  "rarity": "uncommon",
+  "power": "0",
+  "toughness": "4",
+  "keywords": [
+   "Defender"
+  ]
+ },
+ {
+  "id": "3d134bb2-17ec-4e65-976e-f06fa983f3fb",
+  "name": "Wall of Omens",
+  "manaCost": "{1}{W}",
+  "cmc": 2,
+  "typeLine": "Creature — Wall",
+  "oracleText": "Defender\nWhen this creature enters, draw a card.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "tdc",
+  "setName": "Tarkir: Dragonstorm Commander",
+  "rarity": "uncommon",
+  "power": "0",
+  "toughness": "4",
+  "keywords": [
+   "Defender"
+  ]
+ }
+]

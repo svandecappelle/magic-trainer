@@ -415,6 +415,24 @@ Still open, playing wrongly, most played first (see `audit-reports/2026-10-18/re
 - [ ] cEDH: Underworld Breach (escape for every card), Birgi, Lurrus, Samut (split second for your spells), Biomancer's
   Familiar
 
+## Tezzeret artifacts (a user's deck, `deck-2.txt`)
+
+Audited (fixture `tezzeret-artifacts-2026-10`): 6 of 16 cards fully simulated before, 13 after. Fixed: Phyrexian
+Metamorph (a copy of an artifact or creature, also an artifact), Wall of Essence (life equal to the combat damage it is
+dealt, no trigger on the stack), Tezzeret, Betrayer of Flesh (the first artifact ability each turn costs {2} less; +1
+discards one artifact card or two cards), Tezzeret the Seeker's −X (an artifact with mana value X or less onto the
+battlefield), Dispatch (metalcraft: exile), Turn Aside ("spell that targets a permanent you control"), Crown, Scepter
+and Throne of Empires (more with the other two: the creature stolen, 3 damage, five Soldiers).
+
+Approximations: Tezzeret's discount isn't used up by a mana ability (tapping an artifact for mana first); the bot
+never activates Tezzeret the Seeker's −X.
+
+Still open:
+- [ ] Vedalken Shackles: control "for as long as this artifact remains tapped", power up to the number of Islands; "You
+  may choose not to untap this artifact"
+- [ ] Tezzeret, Betrayer of Flesh's −2 (an artifact becomes a 4/4 artifact creature) and −6 (an emblem: draw when an
+  artifact becomes tapped); Tezzeret the Seeker's −5 (artifacts become 5/5 creatures until end of turn)
+
 ## Commander: Aang, Swift Savior (a user's deck, `deck.txt`)
 
 Fixtures: `commander-aang-2026-10`. Fixed (they played wrongly): Harbinger of the Seas (nonbasic lands are Islands),

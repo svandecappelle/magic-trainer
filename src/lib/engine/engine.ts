@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, counterMana, choosesColor, diamondMana, restrictedMana, type RestrictedMana, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, counterMana, choosesColor, diamondMana, gainsLifeFromCombatDamageTaken, restrictedMana, type RestrictedMana, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type AltCost, type CastInfo, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -198,6 +198,8 @@ export interface PlayerState {
   enduringStory?: boolean;
   /** Equip abilities activated this turn (Kíli: "the first equip ability you activate each turn"). */
   equipsThisTurn?: number;
+  /** Tezzeret, Betrayer of Flesh: activated abilities of artifacts this player activated this turn. */
+  artifactAbilitiesThisTurn?: number;
   /** Emblems (Chandra's −7): cards with the emblem's ability. */
   emblems?: Card[];
 }
@@ -253,6 +255,7 @@ export type ChoicePurpose =
   | 'tuckTop' // Subtlety: put your spell on top of your library (or the bottom)?
   | 'cumulativeUpkeep' // pay the cumulative upkeep, or sacrifice the permanent
   | 'discard' // "discard a card": the discarding player chooses
+  | 'discardUnlessArtifact' // Tezzeret, Betrayer of Flesh: two cards, or one artifact card
   | 'discardChosen' // Duress: the spell's controller chooses from a revealed hand
   | 'scry'
   | 'surveil'
@@ -354,6 +357,8 @@ export interface Resolving {
   discarded?: string[];
   /** The last token it created (Cori-Steel Cutter: "You may attach this Equipment to it"). */
   lastToken?: string;
+  /** Crown of Empires: its "instead" effects apply (decided as it starts resolving). */
+  instead?: boolean;
   reason: WindowReason;
 }
 
@@ -1421,6 +1426,8 @@ function abilityCost(s: GameState, perm: Permanent, spec: ActivatedSpec, x = 0, 
   if (spec.discountPer) generic -= matching(s, p, spec.discountPer).filter((x) => x.controller === p).length;
   // Anointed Peacekeeper: {2} more for the abilities of a source with the chosen name.
   generic += nameTax(s, p, printedCard(perm).name, 'abilities');
+  // Tezzeret, Betrayer of Flesh: the first artifact ability each turn costs {2} less.
+  if (cardTypes(perm.card).includes('artifact') && !s.players[p].artifactAbilitiesThisTurn && withRule(s, 'firstArtifactAbilityCostsLess').some((x) => x.controller === p)) generic -= 2;
   if (spec.equip) {
     if (freeEquip(s, p)) return { generic: 0, colored: [] };
     const reduction = (c: Permanent) => equipDiscount(c.card) + (spec.equip!.perColor ? cardColors(c.card).length : 0);
@@ -1472,7 +1479,7 @@ export function activationProblem(s: GameState, p: PlayerId, perm: Permanent, in
   if (spec.cost.loyalty !== undefined) {
     // One loyalty ability per planeswalker each turn.
     if (perm.used?.some((i) => activatedOf(perm.card)[i]?.cost.loyalty !== undefined)) return 'onceEachTurn';
-    if ((perm.counters.loyalty ?? 0) + spec.cost.loyalty < 0) return 'notEnoughLoyalty';
+    if ((perm.counters.loyalty ?? 0) + spec.cost.loyalty - (spec.cost.loyaltyX ? x : 0) < 0) return 'notEnoughLoyalty';
   }
   if (spec.cost.life && s.players[p].life < spec.cost.life) return 'notEnoughLife';
   if (spec.cost.removeCounter && !perm.counters[spec.cost.removeCounter]) return 'noCounterToRemove';
@@ -1487,6 +1494,8 @@ export function activationProblem(s: GameState, p: PlayerId, perm: Permanent, in
 /** The largest X `p` can pay for an ability with {X} in its cost. */
 export function abilityMaxX(s: GameState, perm: Permanent, index: number): number {
   const spec = activatedOf(perm.card)[index];
+  // Tezzeret the Seeker's −X: up to its loyalty.
+  if (spec?.cost.loyaltyX) return perm.counters.loyalty ?? 0;
   if (!spec?.cost.mana.includes('{X}')) return 0;
   let x = 0;
   while (findPayment(sourcesFor(s, perm, spec), abilityCost(s, perm, spec, x + 1))) x++;
@@ -1605,6 +1614,8 @@ function matchesFilter(s: GameState, f: TargetFilter, caster: PlayerId, x: CardI
   if (f.maxPowerOrToughness !== undefined && pow > f.maxPowerOrToughness && (perm ? toughnessOf(perm) : toughness(x.card)) > f.maxPowerOrToughness) return false;
   // Wash Away: "that wasn't cast from its owner's hand" (a spell; `from` is set for other zones).
   if (f.notCastFromHand && !(x as StackItem).from) return false;
+  // Turn Aside: a spell with a target that is a permanent `caster` controls.
+  if (f.targetsYourPermanent && !((x as StackItem).targets ?? []).flat().some((t) => t.kind === 'permanent' && findPermanent(s, t.iid)?.controller === caster)) return false;
   // Battlefield-only conditions.
   if (f.tapped !== undefined && perm?.tapped !== f.tapped) return false;
   if (f.token !== undefined && (!perm || isToken(printedCard(perm)) !== f.token)) return false;
@@ -1890,6 +1901,7 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
     delete ps.gainedThisTurn;
     delete ps.lostThisTurn;
     delete ps.equipsThisTurn;
+    delete ps.artifactAbilitiesThisTurn;
   }
   emptyPools(d);
   for (const perm of d.battlefield) {
@@ -2179,7 +2191,7 @@ export function paymentFor(s: GameState, p: PlayerId, action: Action): { sources
     const perm = findPermanent(s, action.iid);
     const spec = perm && activatedOf(perm.card)[action.index];
     if (!perm || !spec) return null;
-    const x = spec.cost.mana.includes('{X}') ? (action.x ?? 0) : 0;
+    const x = spec.cost.mana.includes('{X}') || spec.cost.loyaltyX ? (action.x ?? 0) : 0;
     const first = action.targets?.[0]?.[0];
     const equipped = spec.equip && first?.kind === 'permanent' ? findPermanent(s, first.iid) : undefined;
     return { sources: sourcesFor(s, perm, spec), cost: abilityCost(s, perm, spec, x, equipped) };
@@ -2931,6 +2943,8 @@ function dealDamage(d: GameState, source: CardInst, controller: PlayerId, target
     target.damage += amount;
     if (hasKw(source, 'deathtouch')) target.deathtouched = true;
     log(d, { k: 'damage', card: source.card.name, n: amount, target: target.card.name });
+    // Wall of Essence: "Whenever this creature is dealt combat damage, you gain that much life."
+    if (combat && gainsLifeFromCombatDamageTaken(target.card) && !mooned(d, target.card)) changeLife(d, target.controller, amount);
   }
   if (hasKw(source, 'lifelink')) changeLife(d, controller, amount);
 }
@@ -3215,6 +3229,8 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
     case 'destroy':
       // "until this enchantment leaves the battlefield": nothing is exiled if it already left.
       if (e.untilLeaves && !(item.source && findPermanent(d, item.source))) break;
+      // Dispatch's metalcraft: three or more artifacts as it resolves.
+      if (e.ifArtifacts && d.battlefield.filter((x) => x.controller === caster && cardTypes(x.card).includes('artifact')).length < e.ifArtifacts) break;
       for (const perm of perms) {
         if (!e.exile && hasKw(perm, 'indestructible')) continue;
         removePermanent(d, perm, e.exile ? 'exile' : 'graveyard');
@@ -3292,7 +3308,8 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       const ps = d.players[searcher];
       // Ashiok, Dream Render: an opponent's own spells and abilities can't make them search.
       if (searcher === caster && withRule(d, 'opponentsCantSearch').some((x) => teamOf(d, x.controller) !== teamOf(d, searcher))) break;
-      const found = ps.library.filter((c) => cardMatches(c.card, e.filter));
+      // Tezzeret the Seeker: "with mana value X or less".
+      const found = ps.library.filter((c) => cardMatches(c.card, e.filter) && (!e.filter.maxManaValueX || c.card.cmc <= (item.x ?? 0)));
       if (found.length && (!answer || answer.kind !== 'cards')) {
         return { kind: 'cards', player: searcher, purpose: 'search', min: 0, max: Math.min(e.n, found.length), options: found, params: { n: e.n } };
       }
@@ -3371,6 +3388,16 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         const options = e.mode === 'casterChooses' && e.filter ? hand.filter((c) => cardMatches(c.card, e.filter!)) : hand;
         const n = Math.min(amount(d, r, e.n), options.length);
         if (!n) continue;
+        // Tezzeret, Betrayer of Flesh: one artifact card instead of two cards.
+        const unless = e.unlessFilter;
+        if (unless && hand.some((c) => cardMatches(c.card, unless))) {
+          const picked = answer?.kind === 'cards' ? answer.iids.map((iid) => hand.find((c) => c.iid === iid)) : [];
+          const ok = picked.length > 0 && picked.every(Boolean) && (picked.length === n || (picked.length === 1 && cardMatches(picked[0]!.card, unless)));
+          if (!ok) {
+            r.sub = i;
+            return { kind: 'cards', player: p, purpose: 'discardUnlessArtifact', min: 1, max: n, options: [...hand], params: { n, p } };
+          }
+        }
         if (!answer || answer.kind !== 'cards') {
           r.sub = i;
           const chooser = e.mode === 'casterChooses' ? caster : p;
@@ -4139,7 +4166,12 @@ function resolvePermanentSpell(d: GameState, item: StackItem, reason: WindowReas
 function continueResolving(d: GameState, answer?: Answer) {
   const r = d.resolving!;
   const spec = specOf(r.item);
-  const effects = spec.effects;
+  // Crown of Empires: "… instead if you control artifacts named Scepter of Empires and Throne of Empires".
+  const named = spec.insteadIfNamed;
+  if (named && r.instead === undefined) {
+    r.instead = named.names.every((n) => d.battlefield.some((x) => x.controller === r.item.controller && x.card.name === n && cardTypes(x.card).includes('artifact')));
+  }
+  const effects = named && r.instead ? named.effects : spec.effects;
   if (spec.optional && !r.accepted) {
     // Mana Vault: "you may pay {4}. If you do, …": not offered when it can't be paid.
     const cost = spec.mayPay ? parseCost(spec.mayPay) : undefined;
@@ -4633,6 +4665,14 @@ export function apply(state: GameState, action: Action): GameState {
           const [types, subtypes] = copy.typeLine.split(' // ')[0].split(' — ');
           copy = { ...copy, typeLine: `${types} — ${[subtypes, ...added].filter(Boolean).join(' ')}` };
         }
+        // Phyrexian Metamorph: "except it's an artifact in addition to its other types".
+        if (model && cloneOf(own)?.artifact && !cardTypes(copy).includes('artifact')) {
+          const [types, subtypes] = copy.typeLine.split(' // ')[0].split(' — ');
+          const words = types.split(' ');
+          const at = words.findIndex((w) => /^(Creature|Enchantment|Land|Planeswalker|Battle)$/.test(w));
+          words.splice(at < 0 ? words.length : at, 0, 'Artifact');
+          copy = { ...copy, typeLine: [words.join(' '), subtypes].filter(Boolean).join(' — ') };
+        }
         log(d, { k: 'enters', card: own.name });
         if (model) log(d, { k: 'copied', card: own.name, as: model.card.name });
         const perm = enterBattlefield(d, { iid: item.iid, card: copy, ...(item.commander ? { commander: true } : {}) }, item.controller, { x: item.x });
@@ -4871,7 +4911,7 @@ export function apply(state: GameState, action: Action): GameState {
       const perm = findPermanent(d, action.iid);
       if (!perm) throw new IllegalAction('noSuchAbility');
       const spec = activatedOf(perm.card)[action.index];
-      const x = spec?.cost.mana.includes('{X}') ? (action.x ?? 0) : 0;
+      const x = spec?.cost.mana.includes('{X}') || spec?.cost.loyaltyX ? (action.x ?? 0) : 0;
       if (!Number.isInteger(x) || x < 0) throw new IllegalAction('badX');
       const problem = activationProblem(d, p, perm, action.index, x);
       if (problem) throw new IllegalAction(problem, { card: perm.card.name });
@@ -4881,18 +4921,20 @@ export function apply(state: GameState, action: Action): GameState {
       const equipped = spec.equip && first?.kind === 'permanent' ? findPermanent(d, first.iid) : undefined;
       if (!pay(d, p, chosenSources(sourcesFor(d, perm, spec), action.pay), abilityCost(d, perm, spec, x, equipped))) throw unpaid(action.pay, perm.card.name);
       if (spec.equip) me.equipsThisTurn = (me.equipsThisTurn ?? 0) + 1;
+      if (cardTypes(perm.card).includes('artifact')) me.artifactAbilitiesThisTurn = (me.artifactAbilitiesThisTurn ?? 0) + 1;
       if (spec.cost.tap) tapPermanent(d, perm);
       if (spec.cost.life) changeLife(d, p, -spec.cost.life);
       if (spec.once || spec.cost.loyalty !== undefined) perm.used = [...(perm.used ?? []), action.index];
       if (spec.cost.loyalty !== undefined) {
-        perm.counters = { ...perm.counters, loyalty: (perm.counters.loyalty ?? 0) + spec.cost.loyalty };
-        log(d, { k: 'loyalty', card: perm.card.name, n: spec.cost.loyalty });
+        const n = spec.cost.loyalty - (spec.cost.loyaltyX ? x : 0);
+        perm.counters = { ...perm.counters, loyalty: (perm.counters.loyalty ?? 0) + n };
+        log(d, { k: 'loyalty', card: perm.card.name, n });
       }
       const named = targets.flat().map((t) => targetName(d, t));
       d.abilities = (d.abilities ?? 0) + 1;
       const item: StackItem = {
         iid: `${perm.iid}-ability-${d.abilities}`, card: perm.card, controller: p, targets, ability: spec.ability, source: perm.iid,
-        ...(spec.cost.mana.includes('{X}') ? { x } : {}),
+        ...(spec.cost.mana.includes('{X}') || spec.cost.loyaltyX ? { x } : {}),
       };
       if (spec.cost.crew !== undefined) {
         // Crew N: the player picks the creatures to tap.
