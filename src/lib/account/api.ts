@@ -26,6 +26,20 @@ export interface SharedDeck {
   owner: { name: string; avatarUrl: string | null };
 }
 
+/** A replay shared by its owner: anyone with /replay/<shareId> can watch it (server/replays.ts). */
+export interface ReplayShare {
+  replayId: string;
+  shareId: string;
+  title: string;
+  at: number;
+}
+
+/** A shared replay as anyone reads it: the replay file (lib/replay.ts packReplay) and its owner. */
+export interface SharedReplay {
+  data: string;
+  owner: { name: string; avatarUrl: string | null };
+}
+
 export type SavedDeck = Deck & { version: number };
 export interface DeletedDeck {
   id: string;
@@ -98,6 +112,10 @@ export const accountApi = {
   share: (id: string) => request<DeckShare>('PUT', `/api/decks/${id}/share`),
   unshare: (id: string) => request<void>('DELETE', `/api/decks/${id}/share`),
   shared: (shareId: string) => request<SharedDeck>('GET', `/api/shared/${encodeURIComponent(shareId)}`),
+  replayShares: () => request<{ shares: ReplayShare[] }>('GET', '/api/replays'),
+  shareReplay: (data: string) => request<ReplayShare>('POST', '/api/replays', { data }),
+  unshareReplay: (shareId: string) => request<void>('DELETE', `/api/replays/${encodeURIComponent(shareId)}`),
+  sharedReplay: (shareId: string) => request<SharedReplay>('GET', `/api/shared-replays/${encodeURIComponent(shareId)}`),
   collection: (since: number | null) => request<CollectionChanges>('GET', `/api/collection${since === null ? '' : `?since=${since}`}`),
   patchCollection: (changes: { cardId: string; qty: number; foilQty: number }[]) => request<{ count: number }>('PATCH', '/api/collection', changes),
   history: () => request<{ results: MatchResult[] }>('GET', '/api/history'),

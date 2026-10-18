@@ -5,6 +5,7 @@ import { deckSummary, Pips } from '../components/DeckBits';
 import { CopyButton } from '../components/SharePanel';
 import { useT } from '../i18n';
 import { loginUrl } from '../lib/account/api';
+import { replayShareUrl, useReplayShares } from '../lib/account/replayShares';
 import { shareUrl, useShares } from '../lib/account/shares';
 import { listResults, summarize, syncResults, winRate, type MatchResult } from '../lib/history';
 import { deleteAccount, logout, syncNow, useAccount } from '../store/useAccount';
@@ -16,6 +17,7 @@ export function Profile() {
   const { enabled, user, status } = useAccount();
   const decks = useApp((s) => s.decks);
   const { shares, share, unshare, error } = useShares();
+  const replays = useReplayShares();
   const [results, setResults] = useState<MatchResult[]>(listResults);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -126,6 +128,28 @@ export function Profile() {
           </ul>
         )}
       </section>
+
+      {user && (
+        <section>
+          <h2>{t.replayShare.mine}</h2>
+          {replays.error && <div className="error small">{t.share.failed}</div>}
+          {replays.shares.size === 0 ? (
+            <p className="muted small">{t.replayShare.none} <Link to="/history">{t.profile.fullHistory}</Link></p>
+          ) : (
+            <ul className="plain-list profile-decks">
+              {[...replays.shares.values()].map((r) => (
+                <li key={r.shareId}>
+                  <Link to={`/replay/${r.shareId}`} className="profile-deck-name">{r.title}</Link>
+                  <span className="small muted">{new Date(r.at).toLocaleDateString()}</span>
+                  <span className="spacer" />
+                  <CopyButton text={replayShareUrl(r.shareId)} className="secondary small" label={t.share.copyLink} />
+                  <button type="button" className="secondary small" disabled={busy === r.replayId} onClick={() => run(r.replayId, replays.unshare)}>{t.share.stop}</button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {user && (
         <section>

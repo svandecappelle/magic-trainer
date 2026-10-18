@@ -1,16 +1,24 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { GameBoard } from './GameBoard';
 import type { PlayerId } from '../lib/engine/engine';
-import { downloadReplay, replayStates, type ReplayFile } from '../lib/replay';
+import { downloadReplay, replayStates, saveReplay, type ReplayFile } from '../lib/replay';
+import type { SharedReplay } from '../lib/account/api';
+import { ReplaySharePanel } from './SharePanel';
 import { useT } from '../i18n';
 
 /** Steps per second when playing the replay on its own. */
 const SPEEDS = [1, 2, 4, 8];
 
-/** A replay on the game table: step through it, play it, see it from any seat. */
-export function ReplayViewer({ file }: { file: ReplayFile }) {
+/**
+ * A replay on the game table: step through it, play it, see it from any seat. `owner`: a replay someone shared
+ * (/replay/<id>), to watch, save or download; otherwise one of the browser's, to share.
+ */
+export function ReplayViewer({ file, owner }: { file: ReplayFile; owner?: SharedReplay['owner'] }) {
   const t = useT();
+  const navigate = useNavigate();
+  const [sharing, setSharing] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
   const { states, diverged } = useMemo(() => replayStates(file), [file]);
   const last = states.length - 1;
   const [at, setAt] = useState(0);
@@ -78,10 +86,18 @@ export function ReplayViewer({ file }: { file: ReplayFile }) {
         </select>
       </label>
       {diverged && <div className="error small">{t.history.diverged}</div>}
+      {owner && <span className="small">{t.replayShare.by(owner.name)}</span>}
       <div className="row replay-links">
+        {owner ? (
+          <button type="button" onClick={() => (saveReplay(file) ? navigate(`/history/replay/${file.id}`) : setSaveFailed(true))}>{t.replayShare.save}</button>
+        ) : (
+          <button type="button" className="secondary" onClick={() => setSharing(!sharing)}>{t.share.button}</button>
+        )}
         <button type="button" className="secondary" onClick={() => downloadReplay(file)}>{t.history.download}</button>
-        <Link to="/history" className="button secondary">{t.history.back}</Link>
+        {!owner && <Link to="/history" className="button secondary">{t.history.back}</Link>}
       </div>
+      {saveFailed && <div className="error small">{t.history.storageFull}</div>}
+      {sharing && <ReplaySharePanel file={file} onClose={() => setSharing(false)} />}
     </div>
   );
 

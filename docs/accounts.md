@@ -225,7 +225,8 @@ sequenceDiagram
 
 ## HTTP API
 
-All JSON. Routes under `/api` need a session (401 otherwise), except `/api/me` and `/api/shared/:shareId`.
+All JSON. Routes under `/api` need a session (401 otherwise), except `/api/me`, `/api/shared/:shareId` and
+`/api/shared-replays/:shareId`.
 
 | Method | Path                          | Purpose                                                        |
 | ------ | ----------------------------- | -------------------------------------------------------------- |
@@ -245,6 +246,10 @@ All JSON. Routes under `/api` need a session (401 otherwise), except `/api/me` a
 | PATCH  | `/api/collection`             | `[{ cardId, qty, foilQty }]`, absolute values (0 and 0 removes); returns `{ count }` |
 | GET    | `/api/history`                | `{ results }`: the account's match results, most recent first (the last 1 000) |
 | POST   | `/api/history`                | `[result]` of matches against the bot (up to 200); a match already there is left as it is; returns `{ count }` |
+| GET    | `/api/replays`                | `{ shares: [{ replayId, shareId, title, at }] }`: the user's shared replays, most recent first |
+| POST   | `/api/replays`                | `{ data }` (a replay file, `packReplay`): shares it; returns `{ replayId, shareId, title, at }` (the same `shareId` for a replay shared again) |
+| DELETE | `/api/replays/:shareId`       | Stops sharing (204): the link stops working, the replay is deleted from the server |
+| GET    | `/api/shared-replays/:shareId` | Public, no session: `{ data, owner: { name, avatarUrl } }`; 404 once no longer shared |
 
 - Decks come back with full card data (`cards.data`), in the client's `Deck` shape.
 - Unknown card ids are fetched from Scryfall before saving. If Scryfall is unreachable, the API answers 503 and
@@ -261,6 +266,12 @@ All JSON. Routes under `/api` need a session (401 otherwise), except `/api/me` a
   the latest version of the deck, shows its owner's display name and avatar (nothing else about the account: the
   profile page `/profile` is private) and offers to copy it into one's own decks. Public reads are limited to 120 per
   minute per address.
+- Shared replays (`replay_shares`, migration 007): replays live in the browser, so sharing one sends it to the server
+  (gzipped). The page `/replay/<shareId>` plays it like the history's replay viewer, with its owner's name, and offers
+  to save it in the browser or download it. The replay shows every card, hidden ones included: the share panel says
+  so. The server checks it is a replay file of the current rules version and keeps only card images from
+  `https://cards.scryfall.io/` (the file is written by its sender, and the page loads the images it names). Limits: 3 MB
+  per replay, 50 shared replays per user, 30 shares per minute per user, 60 public reads per minute per address.
 
 ## Sync in the browser
 

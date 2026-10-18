@@ -13,6 +13,7 @@ import { Online } from './pages/Online';
 import { Play } from './pages/Play';
 import { Profile } from './pages/Profile';
 import { SharedDeck } from './pages/SharedDeck';
+import { SharedReplay } from './pages/SharedReplay';
 import { initAccount } from './store/useAccount';
 
 /** The tab bar on phones: each section with a stroke icon. */
@@ -91,6 +92,7 @@ export function App() {
           <Route path="/history/replay/:replayId" element={<History />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/shared/:shareId" element={<SharedDeck />} />
+          <Route path="/replay/:shareId" element={<SharedReplay />} />
         </Routes>
       </main>
       <footer className="muted small">
