@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { GameBoard } from './GameBoard';
 import type { PlayerId } from '../lib/engine/engine';
 import { downloadReplay, replayStates, saveReplay, type ReplayFile } from '../lib/replay';
+import { ownerNamed } from '../lib/replayNames';
 import type { SharedReplay } from '../lib/account/api';
 import { ReplaySharePanel } from './SharePanel';
 import { useT } from '../i18n';
@@ -14,8 +15,9 @@ const SPEEDS = [1, 2, 4, 8];
  * A replay on the game table: step through it, play it, see it from any seat. `owner`: a replay someone shared
  * (/replay/<id>), to watch, save or download; otherwise one of the browser's, to share.
  */
-export function ReplayViewer({ file, owner }: { file: ReplayFile; owner?: SharedReplay['owner'] }) {
+export function ReplayViewer({ file: own, owner }: { file: ReplayFile; owner?: SharedReplay['owner'] }) {
   const t = useT();
+  const file = useMemo(() => (owner ? ownerNamed(own, owner.name) : own), [own, owner]);
   const navigate = useNavigate();
   const [sharing, setSharing] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
@@ -89,7 +91,7 @@ export function ReplayViewer({ file, owner }: { file: ReplayFile; owner?: Shared
       {owner && <span className="small">{t.replayShare.by(owner.name)}</span>}
       <div className="row replay-links">
         {owner ? (
-          <button type="button" onClick={() => (saveReplay(file) ? navigate(`/history/replay/${file.id}`) : setSaveFailed(true))}>{t.replayShare.save}</button>
+          <button type="button" onClick={() => (saveReplay(own) ? navigate(`/history/replay/${own.id}`) : setSaveFailed(true))}>{t.replayShare.save}</button>
         ) : (
           <button type="button" className="secondary" onClick={() => setSharing(!sharing)}>{t.share.button}</button>
         )}
@@ -103,7 +105,8 @@ export function ReplayViewer({ file, owner }: { file: ReplayFile; owner?: Shared
 
   return (
     <div className="page play">
-      <GameBoard game={game} me={seat} readOnly={seat === file.me ? 'replay' : 'spectator'} onAction={() => {}} notice={controls} />
+      {/* A shared replay: the viewer isn't a player of it ("their turn", never "your turn"). */}
+      <GameBoard game={game} me={seat} readOnly={seat === file.me && !owner ? 'replay' : 'spectator'} onAction={() => {}} notice={controls} />
     </div>
   );
 }

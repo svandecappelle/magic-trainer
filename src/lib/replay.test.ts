@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { botAction } from './engine/bot';
 import { actor, apply, newGame } from './engine/engine';
 import { nextState, newReplay, packReplay, replayStates, ReplayFileError, unpackReplay, type ReplayFile } from './replay';
+import { ownerNamed } from './replayNames';
 import type { Card } from '../types';
 
 const forest: Card = {
@@ -47,5 +48,17 @@ describe('replays', () => {
     expect(replayStates({ ...back, end: { ...back.end, log: back.end.log + 1 } }).diverged).toBe(true);
     expect(() => unpackReplay('{"cards":[],"data":{"x":1}}')).toThrow(ReplayFileError);
     expect(() => unpackReplay('not json')).toThrow(ReplayFileError);
+  });
+});
+
+describe('shared replays', () => {
+  it('name the owner\'s seat where the game stored "You" (any language), not real names', () => {
+    const { file } = playedGame();
+    const named = (name: string) => ({ ...file, replay: { ...file.replay, start: { ...file.replay.start, players: file.replay.start.players.map((p, i) => (i === 0 ? { ...p, name } : p)) } } });
+    expect(ownerNamed(named('You'), 'Alice').replay.start.players.map((p) => p.name)).toEqual(['Alice', 'B']);
+    expect(ownerNamed(named('Vous'), 'Alice').replay.start.players[0].name).toBe('Alice');
+    expect(ownerNamed(named('You & Ally'), 'Alice').replay.start.players[0].name).toBe('Alice & Ally');
+    expect(ownerNamed(named('Bob'), 'Alice').replay.start.players[0].name).toBe('Bob');
+    expect(replayStates(ownerNamed(named('You'), 'Alice')).diverged).toBe(false);
   });
 });
