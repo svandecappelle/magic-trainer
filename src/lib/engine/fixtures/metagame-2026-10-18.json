@@ -1,0 +1,218 @@
+[
+ {
+  "id": "4ec912d5-cbe7-4d07-9ece-b03ac02d3055",
+  "name": "Dark Matter Manipulator",
+  "manaCost": "{B}",
+  "cmc": 1,
+  "typeLine": "Creature — Human Warlock",
+  "oracleText": "When this creature enters, mill three cards.\nThis creature gets +2/+0 for every seven cards in your graveyard.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "rare",
+  "power": "1",
+  "toughness": "2",
+  "keywords": [
+   "Mill"
+  ]
+ },
+ {
+  "id": "9d48aaff-46ab-411b-9456-171d4709f951",
+  "name": "Fear of Missing Out",
+  "manaCost": "{1}{R}",
+  "cmc": 2,
+  "typeLine": "Enchantment Creature — Nightmare",
+  "oracleText": "When this creature enters, discard a card, then draw a card.\nDelirium — Whenever this creature attacks for the first time each turn, if there are four or more card types among cards in your graveyard, untap target creature. After this phase, there is an additional combat phase.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "dsk",
+  "setName": "Duskmourn: House of Horror",
+  "rarity": "rare",
+  "power": "2",
+  "toughness": "3",
+  "keywords": [
+   "Delirium"
+  ]
+ },
+ {
+  "id": "22589a81-3ea8-4e78-98c9-c015e7539cf9",
+  "name": "Devoted Druid",
+  "manaCost": "{1}{G}",
+  "cmc": 2,
+  "typeLine": "Creature — Elf Druid",
+  "oracleText": "{T}: Add {G}.\nPut a -1/-1 counter on this creature: Untap this creature.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "ecc",
+  "setName": "Lorwyn Eclipsed Commander",
+  "rarity": "uncommon",
+  "power": "0",
+  "toughness": "2",
+  "keywords": []
+ },
+ {
+  "id": "ee6d08be-a6fc-44a5-932d-b6a8705534c0",
+  "name": "Obsidian Charmaw",
+  "manaCost": "{3}{R}{R}",
+  "cmc": 5,
+  "typeLine": "Creature — Dragon",
+  "oracleText": "This spell costs {1} less to cast for each land your opponents control that could produce {C}.\nFlying\nWhen this creature enters, destroy target nonbasic land an opponent controls.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "mh2",
+  "setName": "Modern Horizons 2",
+  "rarity": "rare",
+  "power": "4",
+  "toughness": "4",
+  "keywords": [
+   "Flying"
+  ]
+ },
+ {
+  "id": "ce35e6fb-ff54-44c4-a216-7ddd37f46882",
+  "name": "Screaming Nemesis",
+  "manaCost": "{2}{R}",
+  "cmc": 3,
+  "typeLine": "Creature — Spirit",
+  "oracleText": "Haste\nWhenever this creature is dealt damage, it deals that much damage to any other target. If a player is dealt damage this way, they can't gain life for the rest of the game.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "dsk",
+  "setName": "Duskmourn: House of Horror",
+  "rarity": "mythic",
+  "power": "3",
+  "toughness": "3",
+  "keywords": [
+   "Haste"
+  ]
+ },
+ {
+  "id": "2a717b98-cdac-416d-bf6c-f6b6638e65d1",
+  "name": "Tamiyo, Inquisitive Student // Tamiyo, Seasoned Scholar",
+  "manaCost": "{U}",
+  "cmc": 1,
+  "typeLine": "Legendary Creature — Moonfolk Wizard // Legendary Planeswalker — Tamiyo",
+  "oracleText": "Flying\nWhenever Tamiyo attacks, investigate. (Create a Clue token. It's an artifact with \"{2}, Sacrifice this token: Draw a card.\")\nWhen you draw your third card in a turn, exile Tamiyo, then return her to the battlefield transformed under her owner's control.\n//\n+2: Until your next turn, whenever a creature attacks you or a planeswalker you control, it gets -1/-0 until end of turn.\n−3: Return target instant or sorcery card from your graveyard to your hand. If it's a green card, add one mana of any color.\n−7: Draw cards equal to half the number of cards in your library, rounded up. You get an emblem with \"You have no maximum hand size.\"",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "G",
+   "U"
+  ],
+  "setCode": "mh3",
+  "setName": "Modern Horizons 3",
+  "rarity": "mythic",
+  "power": "0",
+  "toughness": "3",
+  "layout": "transform",
+  "faces": [
+   {
+    "name": "Tamiyo, Inquisitive Student",
+    "manaCost": "{U}",
+    "typeLine": "Legendary Creature — Moonfolk Wizard",
+    "oracleText": "Flying\nWhenever Tamiyo attacks, investigate. (Create a Clue token. It's an artifact with \"{2}, Sacrifice this token: Draw a card.\")\nWhen you draw your third card in a turn, exile Tamiyo, then return her to the battlefield transformed under her owner's control.",
+    "colors": [
+     "U"
+    ],
+    "power": "0",
+    "toughness": "3",
+    "imageSmall": "https://cards.scryfall.io/small/front/2/a/2a717b98-cdac-416d-bf6c-f6b6638e65d1.jpg?1791803860",
+    "imageNormal": "https://cards.scryfall.io/normal/front/2/a/2a717b98-cdac-416d-bf6c-f6b6638e65d1.jpg?1791803860"
+   },
+   {
+    "name": "Tamiyo, Seasoned Scholar",
+    "manaCost": "",
+    "typeLine": "Legendary Planeswalker — Tamiyo",
+    "oracleText": "+2: Until your next turn, whenever a creature attacks you or a planeswalker you control, it gets -1/-0 until end of turn.\n−3: Return target instant or sorcery card from your graveyard to your hand. If it's a green card, add one mana of any color.\n−7: Draw cards equal to half the number of cards in your library, rounded up. You get an emblem with \"You have no maximum hand size.\"",
+    "colors": [
+     "G",
+     "U"
+    ],
+    "loyalty": "2",
+    "imageSmall": "https://cards.scryfall.io/small/back/2/a/2a717b98-cdac-416d-bf6c-f6b6638e65d1.jpg?1791803860",
+    "imageNormal": "https://cards.scryfall.io/normal/back/2/a/2a717b98-cdac-416d-bf6c-f6b6638e65d1.jpg?1791803860"
+   }
+  ],
+  "keywords": [
+   "Flying",
+   "Investigate",
+   "Transform"
+  ]
+ },
+ {
+  "id": "1f0d2e8e-c8f2-4b31-a6ba-6283fc8740d4",
+  "name": "Chalice of the Void",
+  "manaCost": "{X}{X}",
+  "cmc": 0,
+  "typeLine": "Artifact",
+  "oracleText": "This artifact enters with X charge counters on it.\nWhenever a player casts a spell with mana value equal to the number of charge counters on this artifact, counter that spell.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "a25",
+  "setName": "Masters 25",
+  "rarity": "mythic",
+  "keywords": []
+ },
+ {
+  "id": "2573e694-eaa0-42ca-b470-2ab507cbcec1",
+  "name": "Moonshadow",
+  "manaCost": "{B}",
+  "cmc": 1,
+  "typeLine": "Creature — Elemental",
+  "oracleText": "Menace\nThis creature enters with six -1/-1 counters on it.\nWhenever one or more permanent cards are put into your graveyard from anywhere while this creature has a -1/-1 counter on it, remove a -1/-1 counter from this creature.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "ecl",
+  "setName": "Lorwyn Eclipsed",
+  "rarity": "mythic",
+  "power": "7",
+  "toughness": "7",
+  "keywords": [
+   "Menace"
+  ]
+ },
+ {
+  "id": "059164e1-894d-4586-9800-e60d6fbd6eb6",
+  "name": "Shifting Woodland",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "This land enters tapped unless you control a Forest.\n{T}: Add {G}.\nDelirium — {2}{G}{G}: This land becomes a copy of target permanent card in your graveyard until end of turn. Activate only if there are four or more card types among cards in your graveyard.",
+  "colors": [],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "mh3",
+  "setName": "Modern Horizons 3",
+  "rarity": "rare",
+  "keywords": [
+   "Delirium"
+  ]
+ }
+]

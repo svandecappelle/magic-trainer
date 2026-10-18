@@ -51,6 +51,8 @@ export interface Permanent extends CardInst {
   stateTriggered?: boolean;
   /** Berserk: the last turn it attacked. */
   attackedOnTurn?: number;
+  /** Fear of Missing Out: its latest attack is its first this turn. */
+  firstAttack?: boolean;
   /** Jeweled Amulet: the type of mana last spent on its charge ability. */
   noted?: Color;
   /** Scythecat Cub: how many times its ability resolved on turn `turn`. */
@@ -179,6 +181,8 @@ export interface Triggered {
   targets?: Target[][];
   /** A "one or more" trigger: its source and index, so creatures dying together trigger it once. */
   batch?: string;
+  /** Screaming Nemesis: the damage it was dealt (the ability's X). */
+  x?: number;
 }
 
 /** One mana in a pool: its possible colors, and the permanent that made it (to untap it again). */
@@ -214,6 +218,8 @@ export interface PlayerState {
   landPlayed: boolean;
   /** Lands played this turn (Exploration allows a second one). */
   landsThisTurn?: number;
+  /** Screaming Nemesis: "they can't gain life for the rest of the game". */
+  cantGainLife?: boolean;
   /** Hope of Ghirapur: this player can't cast noncreature spells until the turn of this player begins. */
   noNoncreatureUntil?: PlayerId;
   /** Groundswell's landfall: the last turn a land entered the battlefield under their control. */
@@ -486,6 +492,8 @@ export type LogEntry =
   | { k: 'becomesCreature'; card: string }
   | { k: 'crewed'; card: string }
   | { k: 'shuffledIn'; card: string }
+  | { k: 'cantGainLife'; p: PlayerId }
+  | { k: 'extraCombat' }
   | { k: 'reshaped'; card: string }
   | { k: 'phasedOut'; card: string }
   | { k: 'phasedIn'; card: string }
@@ -614,6 +622,8 @@ export interface GameState {
   returnAtEnd?: { iid: string; owner: PlayerId; source?: string; controller: PlayerId; counterIfYours: boolean }[];
   /** Counter for ability ids on the stack. */
   abilities?: number;
+  /** Fear of Missing Out: additional combat phases still to come this turn. */
+  extraCombats?: number;
   /** Berserk: creatures destroyed at the next end step (if they attacked this turn). */
   destroyAtEnd?: { iid: string; ifAttacked: boolean }[];
   /** Bounty of the Hunt: +1/+1 counters removed at the next cleanup step. */
@@ -1368,6 +1378,8 @@ export function castCost(s: GameState, p: PlayerId, card: Card, opt: { face?: nu
     + graveDiscount(s, p, info.graveDiscount)
     // Sunderflock: "the greatest mana value among Elementals you control".
     + (info.greatestMvDiscount ? Math.max(0, ...s.battlefield.filter((x) => x.controller === p && cardMatches(x.card, info.greatestMvDiscount!)).map((x) => printedCard(x).cmc)) : 0)
+    // Obsidian Charmaw: {1} less for each land an opponent controls that could produce {C}.
+    + (info.opponentLandsDiscount ? s.battlefield.filter((x) => teamOf(s, x.controller) !== teamOf(s, p) && isLand(x.card) && ownUnits(s, x).flat().includes(info.opponentLandsDiscount!)).length : 0)
     // Bilbo: {1} less for a spell cast from anywhere but the hand.
     + (opt.from && opt.from !== 'hand' ? withRule(s, 'notFromHandCostsLess').filter((x) => x.controller === p).length : 0);
   // Commander tax: {2} more for each previous cast from the command zone; Defense Grid: {3} more off its caster's turn;
@@ -2011,7 +2023,12 @@ function fireDraw(d: GameState, p: PlayerId, firstInDrawStep: boolean) {
   const nth = d.players[p].drawnThisTurn ?? 0;
   // Sneaky Snacker: "When you draw your third card in a turn, return this card from your graveyard …"
   for (const c of d.players[p].graveyard) {
-    for (const t of triggersOf(c.card)) if (t.event.on === 'youDrawNth' && t.event.nth === nth) queueTrigger(d, c, p, t.ability);
+    for (const t of triggersOf(c.card)) if (t.event.on === 'youDrawNth' && t.event.fromGraveyard && t.event.nth === nth) queueTrigger(d, c, p, t.ability);
+  }
+  // Tamiyo: "When you draw your third card in a turn, …" (on the battlefield).
+  for (const x of d.battlefield) {
+    if (x.controller !== p) continue;
+    for (const t of triggersOf(x.card)) if (t.event.on === 'youDrawNth' && !t.event.fromGraveyard && t.event.nth === nth) queueTrigger(d, x, p, t.ability);
   }
   for (const x of d.battlefield) {
     for (const t of triggersOf(x.card)) {
@@ -2779,6 +2796,7 @@ function conditionMet(d: GameState, p: PlayerId, cond: AbilitySpec['condition'],
   const ps = d.players[p];
   if (cond.tapped && !(source && findPermanent(d, source)?.tapped)) return false;
   if (cond.cast && !(source && findPermanent(d, source)?.cast)) return false;
+  if (cond.delirium && !delirium(d, p)) return false;
   return (ps.gainedThisTurn ?? 0) >= (cond.gained ?? 0) && (!cond.lost || (ps.lostThisTurn ?? 0) > 0);
 }
 
@@ -3012,6 +3030,7 @@ function pushAbility(d: GameState, t: Triggered, targets: Target[][]) {
   d.abilities = (d.abilities ?? 0) + 1;
   d.stack.push({
     iid: `${t.source.iid}-ability-${d.abilities}`, card: t.source.card, controller: t.controller, targets, ability: t.ability, source: t.source.iid, triggered: true,
+    ...(t.x !== undefined ? { x: t.x } : {}),
   });
   const named = targets.flat().map((tg) => targetName(d, tg));
   log(d, { k: 'triggers', card: t.source.card.name, ...(named.length ? { targets: named } : {}) });
@@ -3205,6 +3224,7 @@ function refreshStatics(d: GameState) {
       const times = st.perEach ? matching(d, src.controller, st.perEach).filter((x) => x.controller === src.controller).length
         : st.perAttached ? d.battlefield.filter((x) => x.attachedTo === src.iid && /\b(?:Aura|Equipment)\b/.test(x.card.typeLine.split('//')[0])).length
         : st.perCounter ? (src.counters[st.perCounter] ?? 0)
+        : st.perGraveCards ? Math.floor(d.players[src.controller].graveyard.length / st.perGraveCards)
         : st.perGraveType ? new Set((st.perGraveType === 'you' ? [src.controller] : playersOf(d)).flatMap((q) => d.players[q].graveyard.flatMap((c) => cardTypes(c.card)))).size
         : 1;
       for (const h of hosts) {
@@ -3227,6 +3247,18 @@ function refreshStatics(d: GameState) {
 
 function dealDamage(d: GameState, source: CardInst, controller: PlayerId, target: Permanent | PlayerId, amount: number, combat = false) {
   if (amount <= 0) return;
+  const before = typeof target === 'number' ? 0 : target.damage + (target.counters['-1/-1'] ?? 0);
+  applyDamage(d, source, controller, target, amount, combat);
+  // Screaming Nemesis: "Whenever this creature is dealt damage, it deals that much damage to …"
+  if (typeof target !== 'number') {
+    const dealt = target.damage + (target.counters['-1/-1'] ?? 0) - before;
+    for (const t of dealt > 0 ? triggersOf(target.card) : []) {
+      if (t.event.on === 'dealtDamage') (d.triggered ??= []).push({ source: { iid: target.iid, card: target.card }, controller: target.controller, ability: t.ability, x: dealt });
+    }
+  }
+}
+
+function applyDamage(d: GameState, source: CardInst, controller: PlayerId, target: Permanent | PlayerId, amount: number, combat: boolean) {
   // Mjölnir: "Double all damage equipped creature would deal." (the creature, or its own ability.)
   const dealer = findPermanent(d, source.iid) ?? ((source as StackItem).source ? findPermanent(d, (source as StackItem).source!) : undefined);
   if (dealer?.statics?.doubleDamage) amount *= 2;
@@ -3293,8 +3325,8 @@ function addPoison(d: GameState, p: PlayerId, n: number) {
 
 /** Life changes; teammates share their life total. */
 function changeLife(d: GameState, p: PlayerId, delta: number) {
-  // Sunspine Lynx: "Players can't gain life."
-  if (delta > 0 && withRule(d, 'noLifeGain').length) return;
+  // Sunspine Lynx: "Players can't gain life."; Screaming Nemesis: "can't gain life for the rest of the game".
+  if (delta > 0 && (withRule(d, 'noLifeGain').length || d.players[p].cantGainLife)) return;
   for (const q of teamPlayers(d, p)) d.players[q].life += delta;
   const ps = d.players[p];
   if (delta > 0) ps.gainedThisTurn = (ps.gainedThisTurn ?? 0) + delta;
@@ -3652,6 +3684,34 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       ps.hand = ps.hand.filter((c) => c !== inst);
       log(d, { k: 'enters', card: inst.card.name });
       enterBattlefield(d, inst, caster);
+      break;
+    }
+    case 'noLifeGain':
+      for (const q of players) {
+        d.players[q].cantGainLife = true;
+        log(d, { k: 'cantGainLife', p: q });
+      }
+      break;
+    case 'extraCombat':
+      // "After this phase, there is an additional combat phase."
+      d.extraCombats = (d.extraCombats ?? 0) + 1;
+      break;
+    case 'flickerTransformed': {
+      // Tamiyo: exiled, then back as a new object on her other face (a planeswalker: its starting loyalty).
+      const src = item.source ? findPermanent(d, item.source) : undefined;
+      if (!src) break;
+      const owner = src.owner ?? src.controller;
+      const full = printedCard(src);
+      removePermanent(d, src, 'exile');
+      log(d, { k: 'exiled', card: src.card.name });
+      const ps = d.players[owner];
+      const inst = ps.exile.find((c) => c.iid === src.iid);
+      if (!inst || cardFaces(full).length < 2) break;
+      ps.exile = ps.exile.filter((c) => c !== inst);
+      const back = enterBattlefield(d, { iid: inst.iid, card: faceCard(full, 1) }, owner);
+      back.printed = full;
+      back.transformed = true;
+      log(d, { k: 'transformed', card: full.name.split(' // ')[0], into: back.card.name.split(' // ')[0] });
       break;
     }
     case 'removeCounterSelf': {
@@ -4901,6 +4961,27 @@ function passOnce(d: GameState) {
   else closeWindow(d, pr.reason);
 }
 
+/** A combat phase begins: "at the beginning of combat" triggers, then attackers (skipped when nothing can attack). */
+function beginCombat(d: GameState) {
+  // "At the beginning of combat on your turn" (Chandra): the active player gets priority with them on the stack.
+  fireStep(d, 'beginCombat');
+  if (d.triggered?.length) d.priority = { player: d.active, passes: 0, reason: 'combat' };
+  else if (teamPlayers(d, d.active).some((q) => creaturesOf(d, q).some(canAttack))) openForOpponents(d, 'combat');
+  else afterCombat(d);
+}
+
+/** A combat phase ended: an additional one (Fear of Missing Out), or the second main phase. */
+function afterCombat(d: GameState) {
+  if (d.extraCombats) {
+    d.extraCombats--;
+    log(d, { k: 'extraCombat' });
+    d.step = 'main1';
+    beginCombat(d);
+    return;
+  }
+  d.step = 'main2';
+}
+
 /** Everyone passed with an empty stack: the game moves on. */
 function closeWindow(d: GameState, reason: WindowReason) {
   // A window closing ends its step (the main phase goes on after a main-phase spell).
@@ -4934,7 +5015,7 @@ function closeWindow(d: GameState, reason: WindowReason) {
     d.attackers = [];
     delete d.attackTargets;
     d.blocks = {};
-    d.step = 'main2';
+    afterCombat(d);
   } else if (reason === 'end') {
     endTurn(d);
   }
@@ -4988,7 +5069,10 @@ function declareAttacks(d: GameState, p: PlayerId, ids: string[], pw: Record<str
   // Everything declared becomes attacking at once.
   for (const head of plan) {
     const mine = head.ids.map((iid) => findPermanent(d, iid)).filter((a): a is Permanent => !!a && a.controller === head.p && canAttack(a));
-    for (const a of mine) a.attackedOnTurn = d.turn;
+    for (const a of mine) {
+      a.firstAttack = a.attackedOnTurn !== d.turn;
+      a.attackedOnTurn = d.turn;
+    }
     for (const a of mine) if (!hasKw(a, 'vigilance')) tapPermanent(d, a);
     d.attackers = [...d.attackers, ...mine.map((a) => a.iid)];
     const targets = { ...(d.attackTargets ?? {}) };
@@ -5041,7 +5125,11 @@ function enlist(d: GameState, attacker: Permanent, other: Permanent) {
 /** The attackers are declared: attack triggers, then the attacking team gets priority. */
 function attacked(d: GameState) {
   const attackers = d.attackers.map((iid) => findPermanent(d, iid)).filter((a): a is Permanent => !!a);
-  for (const a of attackers) fireObject(d, 'attacks', a);
+  for (const a of attackers) {
+    fireObject(d, 'attacks', a);
+    // Fear of Missing Out: "Whenever this creature attacks for the first time each turn".
+    if (a.firstAttack) for (const t of triggersOf(a.card)) if (t.event.on === 'attacksFirstTime') queueTrigger(d, a, a.controller, t.ability);
+  }
   // "Whenever you attack": each player who attacked with at least one creature.
   for (const q of new Set(attackers.map((a) => a.controller))) {
     for (const x of d.battlefield) {
@@ -5656,6 +5744,11 @@ export function apply(state: GameState, action: Action): GameState {
         };
         break;
       }
+      // Devoted Druid: "Put a -1/-1 counter on this creature" (it may die of it: after the ability is put on the stack).
+      if (spec.cost.putCounter) {
+        perm.counters = { ...perm.counters, [spec.cost.putCounter]: (perm.counters[spec.cost.putCounter] ?? 0) + 1 };
+        log(d, { k: 'counters', card: perm.card.name, counter: spec.cost.putCounter, n: 1 });
+      }
       // Parallax Wave: "Remove a fade counter from this enchantment".
       const removed = spec.cost.removeCounter;
       if (removed) perm.counters = { ...perm.counters, [removed]: (perm.counters[removed] ?? 1) - 1 };
@@ -5739,12 +5832,7 @@ export function apply(state: GameState, action: Action): GameState {
         d.turnHead = d.active;
         delete d.headsDone;
         emptyPools(d);
-        // "At the beginning of combat on your turn" (Chandra): the active player gets priority with them on the stack.
-        fireStep(d, 'beginCombat');
-        if (d.triggered?.length) d.priority = { player: d.active, passes: 0, reason: 'combat' };
-        // Skip combat entirely when nothing can attack.
-        else if (teamPlayers(d, d.active).some((q) => creaturesOf(d, q).some(canAttack))) openForOpponents(d, 'combat');
-        else d.step = 'main2';
+        beginCombat(d);
       } else if (d.step === 'attack') {
         declareAttacks(d, p, [], {});
       } else if (d.step === 'main2') {

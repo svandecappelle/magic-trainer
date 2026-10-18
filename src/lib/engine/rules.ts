@@ -583,6 +583,12 @@ export type Effect =
   | { kind: 'chargeAmulet' }
   /** Moonshadow: "remove a -1/-1 counter from this creature". */
   | { kind: 'removeCounterSelf'; counter: CounterKind }
+  /** Screaming Nemesis: "they can't gain life for the rest of the game" (a player hit). */
+  | { kind: 'noLifeGain'; to: Affected }
+  /** Fear of Missing Out: "After this phase, there is an additional combat phase." */
+  | { kind: 'extraCombat' }
+  /** Tamiyo: "exile Tamiyo, then return her to the battlefield transformed under her owner's control". */
+  | { kind: 'flickerTransformed' }
   /** Shifting Woodland: "This land becomes a copy of target permanent card in your graveyard until end of turn." */
   | { kind: 'becomeCopy'; to: Affected }
   /**
@@ -855,7 +861,8 @@ export interface AbilitySpec {
    * "if you gained life this turn" (gained: 1), "if you've gained 3 or more life", "if you gained and lost life";
    * Mana Vault: "if this artifact is tapped" (tapped).
    */
-  condition?: { gained?: number; lost?: boolean; tapped?: boolean; cast?: boolean };
+  /** `delirium`: Fear of Missing Out's "if there are four or more card types among cards in your graveyard". */
+  condition?: { gained?: number; lost?: boolean; tapped?: boolean; cast?: boolean; delirium?: boolean };
   /** A Saga's chapter ability: its Saga isn't sacrificed while it waits or is on the stack. */
   chapter?: number;
   /**
@@ -2081,6 +2088,8 @@ export interface CastInfo {
   graveDiscount?: { filter: TargetFilter } | { types: true } | { adventure: true };
   /** Sunderflock: "{X} less, where X is the greatest mana value among Elementals you control". */
   greatestMvDiscount?: TargetFilter;
+  /** Obsidian Charmaw: "{1} less to cast for each land your opponents control that could produce {C}". */
+  opponentLandsDiscount?: Color;
 }
 
 const MODE_COUNTS: Record<string, [number, number]> = {
@@ -2129,6 +2138,7 @@ export function castInfo(card: Card, face = 0): CastInfo {
       info.channel = { cost: m[1], ability: UNSUPPORTED.test(body.replace(CONTROLLER_SEARCH, '')) ? NO_EFFECT : parseAbilityText(body, selfName(c)), legendaryDiscount: discount.test(m[2]), keyword: line.startsWith('Channel') };
     } else if (/^Affinity for artifacts$/i.test(line)) info.affinity = { types: ['artifact'] };
     else if (/^This spell costs \{1\} less to cast for each card type among cards in your graveyard\.$/i.test(line)) info.graveDiscount = { types: true };
+    else if ((m = line.match(/^This spell costs \{1\} less to cast for each land your opponents control that could produce \{([WUBRGC])\}\.$/))) info.opponentLandsDiscount = m[1] as Color;
     else if (/^This spell costs \{X\} less to cast, where X is the number of cards in your graveyard that are instant cards, sorcery cards, and\/or have an Adventure\.$/i.test(line)) info.graveDiscount = { adventure: true };
     else if ((m = line.match(/^This spell costs \{X\} less to cast, where X is the greatest mana value among ([A-Z][a-z]+)s you control\.$/))) {
       info.greatestMvDiscount = { subtypes: [m[1].toLowerCase()] };
@@ -2362,7 +2372,7 @@ export type TriggerEvent =
   /** Vexing Bauble: "Whenever a player casts a spell, if no mana was spent to cast it, …" (the ability's slot 0 is that spell). */
   | { on: 'castWithoutMana'; colored?: boolean }
   /** Sneaky Snacker: "When you draw your third card in a turn, return this card from your graveyard …" (from the graveyard). */
-  | { on: 'youDrawNth'; nth: number; fromGraveyard: true }
+  | { on: 'youDrawNth'; nth: number; fromGraveyard: boolean }
   /**
    * City of Brass: "Whenever this land becomes tapped, …" (not when it enters tapped); Tezzeret's emblem: "Whenever an
    * artifact you control becomes tapped" (`which`).
@@ -2384,6 +2394,10 @@ export type TriggerEvent =
    * artifact, …" (the ability's slot 0 is that spell).
    */
   | { on: 'castMvCounters'; counter: CounterKind }
+  /** Screaming Nemesis: "Whenever this creature is dealt damage, …" (the ability's X is that much damage). */
+  | { on: 'dealtDamage' }
+  /** Fear of Missing Out: "Whenever this creature attacks for the first time each turn, …" */
+  | { on: 'attacksFirstTime' }
   /**
    * Moonshadow: "Whenever one or more permanent cards are put into your graveyard from anywhere while this creature has
    * a -1/-1 counter on it, …" (once for cards put there together).
@@ -2781,6 +2795,39 @@ export function triggersOf(card: Card): TriggerSpec[] {
       out.push({ event: { on: 'yourCreatureTargeted' }, ability: triggerAbility(line.replace(/^[^,]+, /, ''), name, true) });
       continue;
     }
+    // Screaming Nemesis: "Whenever this creature is dealt damage, it deals that much damage to any other target. If a
+    // player is dealt damage this way, they can't gain life for the rest of the game."
+    const nemesis = line.match(/^Whenever (.+?) is dealt damage, it deals that much damage to any other target\.( If a player is dealt damage this way, they can't gain life for the rest of the game\.)?$/i);
+    if (nemesis && selves.includes(nemesis[1].toLowerCase())) {
+      out.push({
+        event: { on: 'dealtDamage' },
+        ability: { targets: [{ kind: 'any', min: 1, max: 1, filter: { other: true } }], effects: [{ kind: 'damage', amount: 'X', to: { slot: 0 } }, ...(nemesis[2] ? [{ kind: 'noLifeGain' as const, to: { slot: 0 } }] : [])] },
+      });
+      continue;
+    }
+    // Fear of Missing Out: "Whenever this creature attacks for the first time each turn, if there are four or more card
+    // types among cards in your graveyard, untap target creature. After this phase, there is an additional combat phase."
+    const fomo = line.match(/^Whenever (.+?) attacks for the first time each turn, (if there are four or more card types among cards in your graveyard, )?untap target creature\. After this phase, there is an additional combat phase\.$/i);
+    if (fomo && selves.includes(fomo[1].toLowerCase())) {
+      out.push({
+        event: { on: 'attacksFirstTime' },
+        ability: {
+          targets: [{ kind: 'creature', min: 1, max: 1, filter: {} }], effects: [{ kind: 'tap', untap: true, to: { slot: 0 } }, { kind: 'extraCombat' }],
+          ...(fomo[2] ? { condition: { delirium: true } } : {}),
+        },
+      });
+      continue;
+    }
+    // Tamiyo, Inquisitive Student: "When you draw your third card in a turn, exile Tamiyo, then return her to the
+    // battlefield transformed under her owner's control."
+    const flips = line.match(/^When you draw your (second|third|fourth) card in a turn, exile (.+?), then return (?:her|him|it|them) to the battlefield transformed under (?:her|his|its|their) owner's control\.$/i);
+    if (flips && selves.includes(flips[2].toLowerCase())) {
+      out.push({
+        event: { on: 'youDrawNth', nth: { second: 2, third: 3, fourth: 4 }[flips[1].toLowerCase() as 'second' | 'third' | 'fourth'], fromGraveyard: false },
+        ability: { targets: [], effects: [{ kind: 'flickerTransformed' }] },
+      });
+      continue;
+    }
     // Chalice of the Void: "Whenever a player casts a spell with mana value equal to the number of charge counters on this
     // artifact, counter that spell."
     if (/^Whenever a player casts a spell with mana value equal to the number of charge counters on this artifact, counter that spell\.$/i.test(line)) {
@@ -2983,6 +3030,8 @@ export interface ActivationCost {
   discardFilter?: TargetFilter;
   /** Waterbend {N}: each artifact or creature tapped while paying pays for {1}. */
   waterbend?: boolean;
+  /** Devoted Druid: "Put a -1/-1 counter on this creature". */
+  putCounter?: CounterKind;
   /** Phyrexian Devourer: "Exile the top card of your library". */
   exileTop?: boolean;
 }
@@ -3104,6 +3153,7 @@ export function activatedOf(card: Card): ActivatedSpec[] {
         } else ok = false;
       }
       else if (/^exile the top card of your library$/i.test(p)) cost.exileTop = true;
+      else if (/^put a -1\/-1 counter on /i.test(p) && selves.includes(p.replace(/^put a -1\/-1 counter on /i, '').toLowerCase())) cost.putCounter = '-1/-1';
       // Wishclaw Talisman: "Remove a wish counter from this artifact".
       else if (/^remove an? (fade|age|lore|wish) counter from /i.test(p) && selves.includes(p.replace(/^remove an? \w+ counter from /i, '').toLowerCase())) {
         cost.removeCounter = p.match(/^remove an? (\w+)/i)![1].toLowerCase() as CounterKind;
@@ -3298,6 +3348,8 @@ export interface StaticSpec {
    * (Barrowgoyf, Tarmogoyf: `all`).
    */
   perGraveType?: 'you' | 'all';
+  /** Dark Matter Manipulator: "for every seven cards in your graveyard". */
+  perGraveCards?: number;
   keywords: Keyword[];
   /** "has … ward {2}" (Lavaspur Boots, Sheltered by Ghosts). */
   ward?: number;
@@ -3395,6 +3447,12 @@ export function staticsOf(card: Card): StaticSpec[] {
     const cant = line.match(new RegExp(`^(?:${selves}) can't (attack or block|attack|block)\\.$`, 'i'));
     if (cant) {
       out.push({ who: 'self', power: 0, toughness: 0, keywords: [], ...(/attack/i.test(cant[1]) ? { cantAttack: true } : {}), ...(/block/i.test(cant[1]) ? { cantBlock: true } : {}) });
+      continue;
+    }
+    // Dark Matter Manipulator: "This creature gets +2/+0 for every seven cards in your graveyard."
+    const perGrave = line.match(new RegExp(`^(?:${selves}) gets \\+(\\d+)\\/\\+(\\d+) for every (\\w+) cards in your graveyard\\.$`, 'i'));
+    if (perGrave) {
+      out.push({ who: 'self', power: Number(perGrave[1]), toughness: Number(perGrave[2]), keywords: [], perGraveCards: toNumber(perGrave[3]) });
       continue;
     }
     // Barrowgoyf: "Barrowgoyf's power is equal to the number of card types among cards in all graveyards and its

@@ -8,7 +8,7 @@ import { auditCard, formatAudit } from './audit';
  * read shows up as a diff of the .audit.txt file: check it, then accept it with `npx vitest run -u`.
  * Add decks with `npm run audit-cards -- <deck or mtgtop8 URL> --save src/lib/engine/fixtures/<name>.json`.
  */
-const FIXTURES = ['standard-2026-10', 'standard-wlifegain-2026-10', 'standard-dwarves-2026-10', 'commander-aang-2026-10', 'tezzeret-artifacts-2026-10', 'duel-commander-landfall-2026-10'];
+const FIXTURES = ['standard-2026-10', 'standard-wlifegain-2026-10', 'standard-dwarves-2026-10', 'commander-aang-2026-10', 'tezzeret-artifacts-2026-10', 'duel-commander-landfall-2026-10', 'metagame-2026-10-18'];
 
 describe('card audit', () => {
   for (const name of FIXTURES) {
@@ -26,7 +26,7 @@ describe('card audit', () => {
     });
     expect(auditCard(card('Flying\nWhen this creature enters, draw a card.')).status).toBe('ok');
     expect(auditCard(card('Bushido 1')).lines[0]).toMatchObject({ status: 'notSimulated', how: 'keyword not simulated: bushido' });
-    expect(auditCard(card('This creature gets +2/+0 for every seven cards in your graveyard.')).lines[0].status).toBe('unread');
+    expect(auditCard(card('This creature gets +2/+0 for every seven lands you control.')).lines[0].status).toBe('unread');
     expect(auditCard(card('Destroy target creature. Its controller loses 3 life.', 'Instant')).status).toBe('none');
     expect(auditCard(card('As an additional cost to cast this spell, behold a Dragon.')).status).toBe('refused');
   });

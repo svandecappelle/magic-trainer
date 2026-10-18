@@ -268,11 +268,6 @@ PARTIAL  Dalkovan Encampment  — Land
       mana: W
   ✗ {2}{W}, {T}: Whenever you attack this turn, create two 1/1 red Warrio…
       activated ability, effect not simulated
-PARTIAL  Dark Matter Manipulator {B} — Creature — Human Warlock
-  ✓ When this creature enters, mill three cards.
-      trigger (enters) → mill
-  ? This creature gets +2/+0 for every seven cards in your graveyard.
-      not read by the engine
 PARTIAL  Deadly Cover-Up {3}{B}{B} — Sorcery
   ✓ As an additional cost to cast this spell, you may collect evidence 6.
       optional cost, never paid
@@ -598,6 +593,11 @@ OK       Curious Farm Animals {W} — Creature — Boar Elk Bird Ox
       trigger (dies) → gainLife
   ✓ {2}, Sacrifice this creature: Destroy up to one target artifact or en…
       activated → destroy (1 target)
+OK       Dark Matter Manipulator {B} — Creature — Human Warlock
+  ✓ When this creature enters, mill three cards.
+      trigger (enters) → mill
+  ✓ This creature gets +2/+0 for every seven cards in your graveyard.
+      static ability
 OK       Day of Black Sun {X}{B}{B} — Sorcery
   ✓ Each creature with mana value X or less loses all abilities until end…
       spell → loseAbilitiesDestroy
@@ -961,5 +961,5 @@ OK       Zoraline, Cosmos Caller {1}{W}{B} — Legendary Creature — Bat Cleric
   ✓ Whenever Zoraline enters or attacks, you may pay {W}{B} and 2 life. W…
       trigger (enters/attacks) → reflexive | reflexive
 
-178 cards: 96 ok, 42 partial, 40 not simulated, 0 can't be cast
+178 cards: 97 ok, 41 partial, 40 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

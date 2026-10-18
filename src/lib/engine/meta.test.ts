@@ -4951,3 +4951,97 @@ describe('Metagame audit 2026-10-18 evening: Chalice of the Void, Moonshadow, Sh
     expect(findPermanent(s, copy.iid)!.card.name).toBe('Shifting Woodland');
   });
 });
+
+describe('Metagame audit 2026-10-18 evening, second batch', () => {
+  const cards = JSON.parse(readFileSync(new URL('./fixtures/metagame-2026-10-18.json', import.meta.url), 'utf8')) as Card[];
+  const real = (name: string, manaCost?: string) => {
+    const c = cards.find((x) => x.name.startsWith(name))!;
+    return manaCost === undefined ? c : { ...c, manaCost };
+  };
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 10 && (s.stack.length || s.triggered?.length) && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  const target = (s: GameState, name: string) => [[{ kind: 'permanent' as const, iid: iidOf(s, name) }]];
+  const forest = card({ name: 'Forest', typeLine: 'Basic Land — Forest' });
+  const wastes = card({ name: 'Wastes', typeLine: 'Basic Land', oracleText: '{T}: Add {C}.' });
+  const toCombat = (s: GameState) => {
+    s = apply(s, { type: 'pass' });
+    for (let i = 0; i < 5 && (s.priority || s.step !== 'attack'); i++) s = apply(s, { type: 'pass' });
+    return s;
+  };
+  const finishCombat = (s: GameState) => {
+    for (let i = 0; i < 20 && s.step !== 'main2' && !(s.step === 'attack' && !s.priority); i++) {
+      s = s.pending?.choice.kind === 'targets' ? s : !s.priority && s.step === 'block' ? apply(s, { type: 'declareBlockers', blocks: {} }) : apply(s, { type: 'pass' });
+    }
+    return s;
+  };
+
+  it('Dark Matter Manipulator: +2/+0 for every seven cards in your graveyard', () => {
+    let s = board({ mana: 1, mine: [real('Dark Matter Manipulator')], grave: Array(13).fill(forest) });
+    s = apply(s, { type: 'tapForMana', iid: iidOf(s, 'Swamp') });
+    expect(powerOf(perm(s, 'Dark Matter Manipulator')!)).toBe(3);
+    s.players[0].graveyard.push({ iid: 'g99', card: forest });
+    s = apply(s, { type: 'pass' });
+    expect(powerOf(perm(s, 'Dark Matter Manipulator')!)).toBe(5);
+  });
+
+  it('Devoted Druid: a -1/-1 counter untaps it; the second one kills it', () => {
+    let s = board({ mine: [real('Devoted Druid')] });
+    const druid = iidOf(s, 'Devoted Druid');
+    s = apply(s, { type: 'tapForMana', iid: druid });
+    s = resolve(apply(s, { type: 'activate', iid: druid, index: 0 }));
+    expect(perm(s, 'Devoted Druid')).toMatchObject({ tapped: false, counters: { '-1/-1': 1 } });
+    s = resolve(apply(s, { type: 'activate', iid: druid, index: 0 }));
+    expect(perm(s, 'Devoted Druid')).toBeUndefined();
+  });
+
+  it('Obsidian Charmaw: {1} less for each land an opponent controls that could produce {C}', () => {
+    const s = board({ mana: 3, theirs: [wastes, wastes], hand: [real('Obsidian Charmaw', '{5}')] });
+    expect(castOptions(s, 0, 'h0')).not.toEqual([]);
+    expect(castOptions(board({ mana: 3, theirs: [wastes], hand: [real('Obsidian Charmaw', '{5}')] }), 0, 'h0')).toEqual([]);
+  });
+
+  it('Screaming Nemesis: the damage it is dealt goes to another target; a player hit can\'t gain life for the rest of the game', () => {
+    let s = board({ mine: [real('Screaming Nemesis')], hand: [spell('Shock', '{0}', 'Shock deals 2 damage to any target.'), spell('Salve', '{0}', 'Target player gains 4 life.')] });
+    s = apply(s, { type: 'cast', iid: 'h0', targets: target(s, 'Screaming Nemesis') });
+    for (let i = 0; i < 10 && !s.pending && (s.stack.length || s.triggered?.length); i++) s = apply(s, { type: 'pass' });
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'player', player: 1 }]] } }));
+    expect(s.players[1]).toMatchObject({ life: 18, cantGainLife: true });
+    s = resolve(apply(s, { type: 'cast', iid: 'h1', targets: [[{ kind: 'player', player: 1 }]] }));
+    expect(s.players[1].life).toBe(18);
+  });
+
+  it('Fear of Missing Out: with delirium, its first attack each turn untaps a creature and adds a combat phase', () => {
+    const fomo = real('Fear of Missing Out');
+    const kinds = [forest, creature('Bear', 2, 2), spell('Opt', '{U}', 'Draw a card.'), spell('Rite', '{R}', 'Add {R}.', 'Sorcery')];
+    for (const withDelirium of [true, false]) {
+      let s = toCombat(board({ mine: [fomo], grave: withDelirium ? kinds : kinds.slice(0, 3) }));
+      s = apply(s, { type: 'declareAttackers', attackers: [iidOf(s, 'Fear of Missing Out')] });
+      for (let i = 0; i < 6 && !s.pending && (s.stack.length || s.triggered?.length); i++) s = apply(s, { type: 'pass' });
+      if (s.pending?.choice.kind === 'targets') s = apply(s, { type: 'choose', answer: { kind: 'targets', targets: target(s, 'Fear of Missing Out') } });
+      s = finishCombat(s);
+      if (withDelirium) {
+        // The second combat: it attacks again (untapped), with no new trigger.
+        expect([s.step, s.priority, perm(s, 'Fear of Missing Out')!.tapped]).toEqual(['attack', null, false]);
+        s = apply(s, { type: 'declareAttackers', attackers: [iidOf(s, 'Fear of Missing Out')] });
+        expect(s.pending).toBeFalsy();
+        s = finishCombat(s);
+        expect([s.step, s.players[1].life]).toEqual(['main2', 16]);
+      } else {
+        expect([s.step, s.players[1].life]).toEqual(['main2', 18]);
+      }
+    }
+  });
+
+  it('Tamiyo: drawing a third card in a turn exiles her and returns her transformed', () => {
+    const draw2 = spell('Divination', '{0}', 'Draw two cards.', 'Sorcery');
+    let s = board({ mine: [real('Tamiyo, Inquisitive Student')], hand: [draw2, draw2] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    expect(s.battlefield.find((x) => x.card.name.startsWith('Tamiyo, Inquisitive Student'))).toBeDefined();
+    s = resolve(apply(s, { type: 'cast', iid: 'h1' }));
+    const flipped = s.battlefield.find((x) => x.card.name.startsWith('Tamiyo, Seasoned Scholar'))!;
+    expect(flipped).toMatchObject({ transformed: true });
+    expect(flipped.counters.loyalty).toBeGreaterThan(0);
+  });
+});

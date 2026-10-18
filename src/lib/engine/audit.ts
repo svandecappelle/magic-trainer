@@ -40,7 +40,7 @@ function effectsText(spec: AbilitySpec): string | null {
   if (spec.modal) return `choose ${spec.modal.min}–${spec.modal.max} modes`;
   const targets = spec.targets.length ? ` (${spec.targets.length} target${spec.targets.length > 1 ? 's' : ''})` : '';
   const c = spec.condition;
-  const cond = !c ? '' : c.tapped ? ', if tapped' : c.cast ? ', if cast' : `, if ${c.lost ? 'life gained and lost' : `${c.gained}+ life gained`} this turn`;
+  const cond = !c ? '' : c.tapped ? ', if tapped' : c.cast ? ', if cast' : c.delirium ? ', with delirium' : `, if ${c.lost ? 'life gained and lost' : `${c.gained}+ life gained`} this turn`;
   const kinds = spec.effects.map((e) => (e.kind === 'tap' && e.untap ? 'untap' : e.kind)).join('+');
   return kinds + targets + (spec.mayPay ? `, may pay ${spec.mayPay}` : spec.optional ? ', optional' : '') + cond;
 }
@@ -124,6 +124,7 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   const discount = castInfo(one).graveDiscount;
   if (discount) return { text: line, status: 'ok', how: `costs {1} less for each ${'types' in discount ? 'card type' : 'matching card'} in your graveyard` };
   if (castInfo(one).greatestMvDiscount) return { text: line, status: 'ok', how: 'costs {X} less: the greatest mana value among matching permanents you control' };
+  if (castInfo(one).opponentLandsDiscount) return { text: line, status: 'ok', how: `costs {1} less for each opponent's land that could make {${castInfo(one).opponentLandsDiscount}}` };
   const channel = castInfo(one).channel;
   if (channel) {
     const read = effectsText(channel.ability);

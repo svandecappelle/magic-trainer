@@ -1,0 +1,56 @@
+OK       Chalice of the Void {X}{X} — Artifact
+  ✓ This artifact enters with X charge counters on it.
+      enters with X charge counters
+  ✓ Whenever a player casts a spell with mana value equal to the number o…
+      trigger (castMvCounters) → counter (1 target)
+OK       Dark Matter Manipulator {B} — Creature — Human Warlock
+  ✓ When this creature enters, mill three cards.
+      trigger (enters) → mill
+  ✓ This creature gets +2/+0 for every seven cards in your graveyard.
+      static ability
+OK       Devoted Druid {1}{G} — Creature — Elf Druid
+  ✓ {T}: Add {G}.
+      mana: G
+  ✓ Put a -1/-1 counter on this creature: Untap this creature.
+      activated → untap
+OK       Fear of Missing Out {1}{R} — Enchantment Creature — Nightmare
+  ✓ When this creature enters, discard a card, then draw a card.
+      trigger (enters) → discard+draw
+  ✓ Delirium — Whenever this creature attacks for the first time each tur…
+      trigger (attacksFirstTime) → untap+extraCombat (1 target), with delirium
+OK       Moonshadow {B} — Creature — Elemental
+  ✓ Menace
+      keyword
+  ✓ This creature enters with six -1/-1 counters on it.
+      enters with 6 -1/-1 counters
+  ✓ Whenever one or more permanent cards are put into your graveyard from…
+      trigger (permanentCardsToGraveyard) → removeCounterSelf
+OK       Obsidian Charmaw {3}{R}{R} — Creature — Dragon
+  ✓ This spell costs {1} less to cast for each land your opponents contro…
+      costs {1} less for each opponent's land that could make {C}
+  ✓ Flying
+      keyword
+  ✓ When this creature enters, destroy target nonbasic land an opponent c…
+      trigger (enters) → destroy (1 target)
+OK       Screaming Nemesis {2}{R} — Creature — Spirit
+  ✓ Haste
+      keyword
+  ✓ Whenever this creature is dealt damage, it deals that much damage to …
+      trigger (dealtDamage) → damage+noLifeGain (1 target)
+OK       Shifting Woodland  — Land
+  ✓ This land enters tapped unless you control a Forest.
+      enters tapped (unlessSubtypes)
+  ✓ {T}: Add {G}.
+      mana: G
+  ✓ Delirium — {2}{G}{G}: This land becomes a copy of target permanent ca…
+      activated → becomeCopy (1 target)
+OK       Tamiyo, Inquisitive Student // Tamiyo, Seasoned Scholar {U} — Legendary Creature — Moonfolk Wizard // Legendary Planeswalker — Tamiyo (other faces not audited)
+  ✓ Flying
+      keyword
+  ✓ Whenever Tamiyo attacks, investigate.
+      trigger (attacks) → token
+  ✓ When you draw your third card in a turn, exile Tamiyo, then return he…
+      trigger (youDrawNth) → flickerTransformed
+
+9 cards: 9 ok, 0 partial, 0 not simulated, 0 can't be cast
+✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)
