@@ -234,6 +234,9 @@ function chooseLand(s: GameState, me: PlayerId): { iid: string; face: number } |
     if (state === 'perArtifact') return ['U'];
     return isSaga(c) && !manaColors(c).length ? ['C'] : manaColors(c, player.identity);
   };
+  // A land exiled "you may play those cards this turn" (Glimpse the Impossible) first: it would be lost.
+  const exiled = player.exile.find((c) => c.playableOnTurn === s.turn && isLandCard(c.card));
+  if (exiled) return { iid: exiled.iid, face: 0 };
   const lands = player.hand.filter((c) => isLandCard(c.card) && colorsOf(c.card).length);
   if (!lands.length) {
     // A modal double-faced card with a land on its back, when there's no other land to play.

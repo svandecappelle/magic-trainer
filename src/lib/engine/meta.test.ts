@@ -4302,3 +4302,134 @@ describe('Metagame audit 2026-10-18: clones and enlist', () => {
     expect(perm(t, 'Llanowar Elves')!.tapped).toBe(false);
   });
 });
+
+describe('Metagame audit 2026-10-18: Eldrazi and single cards', () => {
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 10 && (s.stack.length || s.triggered?.length) && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  const endTurn = (s: GameState) => {
+    const turn = s.turn;
+    for (let i = 0; i < 40 && s.turn === turn && s.winner === null; i++) {
+      s = s.pending ? apply(s, { type: 'choose', answer: s.pending.choice.kind === 'yesNo' ? { kind: 'yesNo', yes: true } : { kind: 'cards', iids: [] } })
+        : !s.priority && s.step === 'attack' ? apply(s, { type: 'declareAttackers', attackers: [] })
+        : apply(s, { type: 'pass' });
+    }
+    return s;
+  };
+  const named = (s: GameState, name: string) => s.battlefield.filter((x) => x.card.name === name);
+  const forest = card({ name: 'Forest', typeLine: 'Basic Land — Forest' });
+
+  it('Warping Wail: the Scion mode (its ability in a sentence of its own)', () => {
+    const wail = spell('Warping Wail', '{1}{C}', '({C} represents colorless mana.)\nChoose one —\n• Exile target creature with power or toughness 1 or less.\n• Counter target sorcery spell.\n• Create a 1/1 colorless Eldrazi Scion creature token. It has "Sacrifice this token: Add {C}."');
+    let s = board({ hand: [{ ...wail, manaCost: '{0}' }] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', modes: [2] }));
+    const [scion] = named(s, 'Eldrazi Scion');
+    expect(scion.card).toMatchObject({ typeLine: 'Token Creature — Eldrazi Scion', oracleText: 'Sacrifice this token: Add {C}.' });
+    expect([powerOf(scion), toughnessOf(scion)]).toEqual([1, 1]);
+    expect(canPay(s, 0, creature('Golem', 1, 1))).toBe(true);
+  });
+
+  it('Malevolent Rumble: a permanent card into the hand, the rest into the graveyard, and a Spawn', () => {
+    const rumble = spell('Malevolent Rumble', '{1}{G}', 'Reveal the top four cards of your library. You may put a permanent card from among them into your hand. Put the rest into your graveyard. Create a 0/1 colorless Eldrazi Spawn creature token with "Sacrifice this token: Add {C}."', 'Sorcery');
+    expect(spellSpec(rumble).effects.map((e) => e.kind)).toEqual(['dig', 'token']);
+    let s = board({ hand: [{ ...rumble, manaCost: '{0}' }] });
+    const bolt = spell('Lightning Bolt', '{R}', 'Lightning Bolt deals 3 damage to any target.');
+    const bear = creature('Bear', 2, 2);
+    s.players[0].library = [bolt, bear, swamp, bolt, swamp].map((c, i) => ({ iid: `l${i}`, card: c }));
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    // The Bolts can't be taken.
+    expect((s.pending!.choice as { options: { iid: string }[] }).options.map((o) => o.iid)).toEqual(['l1', 'l2']);
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['l1'] } }));
+    expect(s.players[0].hand.map((c) => c.card.name)).toEqual(['Bear']);
+    expect(s.players[0].graveyard.map((c) => c.card.name).sort()).toEqual(['Lightning Bolt', 'Lightning Bolt', 'Malevolent Rumble', 'Swamp']);
+    expect(s.players[0].library.map((c) => c.iid)).toEqual(['l4']);
+    expect(named(s, 'Eldrazi Spawn')).toHaveLength(1);
+  });
+
+  it('Glimpse the Impossible: three cards playable this turn; those left go to the graveyard at the end step, a Spawn each', () => {
+    const glimpse = spell('Glimpse the Impossible', '{2}{R}', 'Exile the top three cards of your library. You may play those cards this turn. At the beginning of the next end step, if any of those cards remain exiled, put them into your graveyard, then create a 0/1 colorless Eldrazi Spawn creature token for each card put into your graveyard this way. Those tokens have "Sacrifice this token: Add {C}."', 'Sorcery');
+    expect(spellSpec(glimpse).effects).toEqual([{ kind: 'impulse', n: 3, spawnAtEnd: true }]);
+    let s = board({ mana: 1, hand: [{ ...glimpse, manaCost: '{0}' }] });
+    const bear = creature('Bear', 2, 2, { manaCost: '{B}' });
+    const ogre = creature('Ogre', 3, 3, { manaCost: '{5}', cmc: 5 });
+    s.players[0].library = [bear, swamp, ogre, swamp].map((c, i) => ({ iid: `l${i}`, card: c }));
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    expect(s.players[0].exile.map((c) => c.iid)).toEqual(['l0', 'l1', 'l2']);
+    // The land is played from exile, the Bear cast from there.
+    s = apply(s, { type: 'playLand', iid: 'l1' });
+    s = resolve(apply(s, { type: 'cast', iid: 'l0' }));
+    expect(perm(s, 'Bear')).toBeDefined();
+    expect(named(s, 'Swamp')).toHaveLength(2);
+    // The Ogre is too expensive: at the end step it goes to the graveyard, and a Spawn is made.
+    s = endTurn(s);
+    expect(s.players[0].exile).toEqual([]);
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toContain('Ogre');
+    expect(named(s, 'Eldrazi Spawn')).toHaveLength(1);
+    // Not playable any more on a later turn.
+    s.players[0].exile.push({ iid: 'x0', card: ogre, playableOnTurn: 1 });
+    expect(castOptions(s, 0, 'x0')).toEqual([]);
+  });
+
+  it('Incubation Druid: one mana of a type a land could make; three with a +1/+1 counter', () => {
+    const druid = card({
+      name: 'Incubation Druid', typeLine: 'Creature — Elf Druid', manaCost: '{1}{G}', cmc: 2, power: '0', toughness: '2',
+      oracleText: '{T}: Add one mana of any type that a land you control could produce. If this creature has a +1/+1 counter on it, add three mana of that type instead.\n{3}{G}{G}: Adapt 3. (If this creature has no +1/+1 counters on it, put three +1/+1 counters on it.)',
+    });
+    const s = board({ mana: 1, mine: [druid, forest] });
+    expect(unitsOf(s, perm(s, 'Incubation Druid')!)).toEqual([['B', 'G']]);
+    perm(s, 'Incubation Druid')!.counters = { '+1/+1': 3 };
+    expect(unitsOf(s, perm(s, 'Incubation Druid')!)).toEqual([['B', 'G'], ['B', 'G'], ['B', 'G']]);
+  });
+
+  it('Phyrexian Devourer: counters equal to the exiled card\'s mana value; sacrificed at power 7 or more', () => {
+    const devourer = card({
+      name: 'Phyrexian Devourer', typeLine: 'Artifact Creature — Phyrexian Construct', manaCost: '{6}', cmc: 6, power: '1', toughness: '1',
+      oracleText: 'When this creature\'s power is 7 or greater, sacrifice it.\nExile the top card of your library: Put X +1/+1 counters on this creature, where X is the exiled card\'s mana value.',
+    });
+    expect(activatedOf(devourer)[0].cost).toMatchObject({ exileTop: true });
+    let s = board({ mine: [devourer] });
+    s.players[0].library = [{ iid: 'l0', card: creature('Ogre', 3, 3, { cmc: 5 }) }, { iid: 'l1', card: creature('Bear', 2, 2, { cmc: 2 }) }, ...s.players[0].library];
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Phyrexian Devourer'), index: 0 }));
+    expect(s.players[0].exile.map((c) => c.card.name)).toEqual(['Ogre']);
+    expect(powerOf(perm(s, 'Phyrexian Devourer')!)).toBe(6);
+    // 6 + 2: sacrificed.
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Phyrexian Devourer'), index: 0 }));
+    expect(perm(s, 'Phyrexian Devourer')).toBeUndefined();
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toEqual(['Phyrexian Devourer']);
+    // An empty library: it can't be activated.
+    const t = board({ mine: [devourer] });
+    t.players[0].library = [];
+    expect(errorOf(() => apply(t, { type: 'activate', iid: iidOf(t, 'Phyrexian Devourer'), index: 0 }))).toBe('nothingToExile');
+  });
+
+  it('Sneaky Snacker: back from the graveyard tapped when you draw your third card in a turn', () => {
+    const snacker = card({
+      name: 'Sneaky Snacker', typeLine: 'Creature — Faerie Rogue', manaCost: '{U}{B}', cmc: 2, power: '2', toughness: '1', keywords: ['Flying'],
+      oracleText: 'Flying\nWhen you draw your third card in a turn, return this card from your graveyard to the battlefield tapped.',
+    });
+    const draw2 = spell('Divination', '{0}', 'Draw two cards.', 'Sorcery');
+    let s = board({ grave: [snacker], hand: [draw2, draw2] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    expect(perm(s, 'Sneaky Snacker')).toBeUndefined();
+    // The third and fourth cards: it triggers once.
+    s = resolve(apply(s, { type: 'cast', iid: 'h1' }));
+    expect(perm(s, 'Sneaky Snacker')!.tapped).toBe(true);
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toEqual(['Divination', 'Divination']);
+  });
+
+  it('Void Mirror: counters a spell cast without colored mana', () => {
+    const mirror = card({ name: 'Void Mirror', typeLine: 'Artifact', manaCost: '{2}', cmc: 2, oracleText: 'Whenever a player casts a spell, if no colored mana was spent to cast it, counter that spell.' });
+    const wastes = card({ name: 'Wastes', typeLine: 'Basic Land', oracleText: '{T}: Add {C}.' });
+    const golem = creature('Golem', 1, 1, { manaCost: '{1}', cmc: 1 });
+    const bear = creature('Bear', 2, 2, { manaCost: '{1}', cmc: 1 });
+    let s = board({ theirs: [mirror], mine: [wastes], hand: [golem] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    expect(perm(s, 'Golem')).toBeUndefined();
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toEqual(['Golem']);
+    // Generic mana paid with a Swamp: colored mana was spent.
+    s = board({ mana: 1, theirs: [mirror], hand: [bear] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    expect(perm(s, 'Bear')).toBeDefined();
+  });
+});

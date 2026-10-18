@@ -178,7 +178,7 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   if (fromHand) return { text: line, status: 'ok', how: `mana: ${fromHand}, exiling it from the hand (spent last)` };
   const state = stateMana(one);
   if (state) {
-    const how = { imprinted: 'the colors of the exiled card', legends: 'the colors of your legendary creatures and planeswalkers', luck: 'C, any color with a luck counter', perArtifact: 'U for each artifact you control', mining: 'any color, removing a mining counter (sacrificed after the last)', reflect: 'one mana of a type your other lands could make', perCreature: 'G for each creature you control', perElf: 'G for each Elf on the battlefield', opponentLands: 'a color an opponent\'s land could make' }[state];
+    const how = { imprinted: 'the colors of the exiled card', legends: 'the colors of your legendary creatures and planeswalkers', luck: 'C, any color with a luck counter', perArtifact: 'U for each artifact you control', mining: 'any color, removing a mining counter (sacrificed after the last)', reflect: 'one mana of a type your other lands could make', reflectThree: 'one mana of a type your lands could make, three with a +1/+1 counter', perCreature: 'G for each creature you control', perElf: 'G for each Elf on the battlefield', opponentLands: 'a color an opponent\'s land could make' }[state];
     return { text: line, status: 'ok', how: `mana: ${how}` };
   }
   if (gameRulesOf(one).includes('creaturesTapForAnyColor')) return { text: line, status: 'ok', how: 'rule for the game: your creatures tap for any color' };

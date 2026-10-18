@@ -497,7 +497,8 @@ export type Affected = { slot: number } | 'you' | 'each-opponent' | 'each-player
 /** A number in rules text; "X" is the value chosen when casting. */
 /** A number, X (paid when cast), or the life its controller gained this turn (Germinate Recruits). */
 /** `sacrificed`: Obsessive Pursuit's "the number of permanents you've sacrificed this turn". */
-export type Amount = number | 'X' | 'lifeGained' | 'sacrificed';
+/** `exiledMv`: Phyrexian Devourer's "where X is the exiled card's mana value" (the card exiled to pay the cost). */
+export type Amount = number | 'X' | 'lifeGained' | 'sacrificed' | 'exiledMv';
 
 /** Which permanents an "all …" / "each …" effect touches, e.g. "creatures you don't control". */
 export interface Selector {
@@ -613,6 +614,8 @@ export type Effect =
   | { kind: 'fade' }
   /** Vanishing: a time counter removed; sacrificed when the last one is. */
   | { kind: 'vanish' }
+  /** Sneaky Snacker: this card, if still in its owner's graveyard, onto the battlefield (`tapped`). */
+  | { kind: 'returnFromOwnGraveyard'; tapped: boolean }
   /** "Recruit": draw a card, then discard a card; a nonland card discarded makes a 1/1 white Human Soldier. */
   | { kind: 'recruit' }
   /** Teferi, Time Raveler's +1: "Until your next turn, you may cast sorcery spells as though they had flash." */
@@ -629,7 +632,12 @@ export type Effect =
    */
   /** `n`: a number, or the lands you control (Consult the Star Charts). */
   /** `spellsTake`: Flow State takes that many with an instant card and a sorcery card in your graveyard. */
-  | { kind: 'dig'; n: number | 'lands'; take: number; optional: boolean; filter?: TargetFilter; spellsTake?: number }
+  | { kind: 'dig'; n: number | 'lands'; take: number; optional: boolean; filter?: TargetFilter; spellsTake?: number; rest?: 'graveyard' }
+  /**
+   * "Exile the top three cards of your library. You may play those cards this turn." Glimpse the Impossible
+   * (`spawnAtEnd`): at the next end step, those still exiled go to the graveyard, an Eldrazi Spawn for each.
+   */
+  | { kind: 'impulse'; n: number; spawnAtEnd?: boolean }
   /**
    * Until end of turn, a noncreature permanent becomes a creature: Iron Man Armor ("becomes a 0/0 Construct Hero
    * artifact creature with flying and \"…\""), crewed Vehicles and Chandra's ("becomes an artifact creature").
@@ -1048,6 +1056,9 @@ function selfWords(name: string): string[] {
  * "Goblin Guide gets +1/+1" or "put a +1/+1 counter on this creature" can refer to it.
  */
 export function parseAbilityText(text: string, self?: string): AbilitySpec {
+  // Warping Wail: "Create a 1/1 colorless Eldrazi Scion creature token. It has \"Sacrifice this token: Add {C}.\"" is
+  // read as "… token with \"…\"".
+  text = text.replace(/(creature tokens?)\. (?:It has|They have) ("[^"]+")/g, '$1 with $2');
   // Tezzeret, Betrayer of Flesh's −2: "Target artifact becomes an artifact creature. If it isn't a Vehicle, it has base
   // power and toughness 4/4." (for good)
   const tezzeret = text.match(/^Target artifact becomes an artifact creature\. If it isn't a Vehicle, it has base power and toughness (\d+)\/(\d+)\.$/);
@@ -1360,6 +1371,14 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     const filter = revealFilter(m[2]);
     return filter && { kind: 'dig', n: toNumber(m[1]), take: 1, optional: true, filter };
   });
+  // Malevolent Rumble: "Reveal the top four cards of your library. You may put a permanent card from among them into your
+  // hand. Put the rest into your graveyard."
+  scan(/\bReveal the top (\w+) cards of your library\. You may put an? ([a-z ]+?) card from among them into your hand\. Put the rest into your graveyard\./gi, (m) => {
+    const filter = m[2] === 'permanent' ? { nonTypes: ['instant', 'sorcery'] as CardType[] } : cardWordsFilter(m[2]);
+    return filter && { kind: 'dig', n: toNumber(m[1]), take: 1, optional: true, filter, rest: 'graveyard' };
+  });
+  // Exile the top cards, playable this turn (see IMPULSE).
+  scan(new RegExp(IMPULSE.source, 'g'), (m) => ({ kind: 'impulse', n: m[1] ? toNumber(m[1]) : 1, ...(m[2] ? { spawnAtEnd: true } : {}) }));
   // Stock Up: "Look at the top five cards of your library. Put two of them into your hand and the rest on the bottom of
   // your library in any order."
   // Sleight of Hand: "Put one of them into your hand and the other on the bottom of your library."
@@ -2084,7 +2103,9 @@ export type TriggerEvent =
   /** "Whenever you attack": once when its controller declares one or more attackers. */
   | { on: 'youAttack' }
   /** Vexing Bauble: "Whenever a player casts a spell, if no mana was spent to cast it, …" (the ability's slot 0 is that spell). */
-  | { on: 'castWithoutMana' }
+  | { on: 'castWithoutMana'; colored?: boolean }
+  /** Sneaky Snacker: "When you draw your third card in a turn, return this card from your graveyard …" (from the graveyard). */
+  | { on: 'youDrawNth'; nth: number; fromGraveyard: true }
   /**
    * City of Brass: "Whenever this land becomes tapped, …" (not when it enters tapped); Tezzeret's emblem: "Whenever an
    * artifact you control becomes tapped" (`which`).
@@ -2096,6 +2117,8 @@ export type TriggerEvent =
   | { on: 'becomesTarget' }
   /** Guardian of New Benalia: "Whenever this creature enlists a creature, …" */
   | { on: 'enlists' }
+  /** Phyrexian Devourer: "When this creature's power is 7 or greater, …" (a state trigger, checked with state-based actions). */
+  | { on: 'powerAtLeast'; n: number }
   /** Monument to Endurance: "Whenever you discard a card, …" (once per card). */
   | { on: 'youDiscard' }
   /** Biotech Specialist: "Whenever you sacrifice an artifact, …"; The Sackville-Bagginses: "a token" (`token`). */
@@ -2138,12 +2161,19 @@ const UNLESS_ARTIFACT = / Then discard two cards unless you discard an artifact 
 /** Tezzeret, Betrayer of Flesh's −2 and Obsessive Pursuit's attack trigger (see parseAbilityText). */
 const TEZZERET_ANIMATE = /^Target artifact becomes an artifact creature\. If it isn't a Vehicle, it has base power and toughness \d+\/\d+\.$/;
 const PURSUIT = /, where X is the number of permanents you've sacrificed this turn\. If X is \w+ or more, that creature gains lifelink until end of turn/;
+/**
+ * "Exile the top card of your library. You may play it this turn."; Glimpse the Impossible: "… At the beginning of the
+ * next end step, if any of those cards remain exiled, put them into your graveyard, then create a 0/1 colorless Eldrazi
+ * Spawn creature token for each card put into your graveyard this way. Those tokens have \"Sacrifice this token: Add
+ * {C}.\"" (see the impulse effect).
+ */
+const IMPULSE = /\bExile the top (?:card|(\w+) cards) of your library\. You may play (?:it|them|those cards) this turn\.( At the beginning of the next end step, if any of those cards remain exiled, put them into your graveyard, then create a 0\/1 colorless Eldrazi Spawn creature token for each card put into your graveyard this way\. Those tokens have "Sacrifice this token: Add \{C\}\.")?/;
 const UNSUPPORTED_WORDS = /\b(?:if|unless|for each|where|instead|that (?:creature|card|player|land|spell|permanent)|those|otherwise|this way|exiled with)\b/i;
 /** Wordings the effect parser would misread. Quoted text is an ability given to something else (a token), read on its own. */
 const UNSUPPORTED = {
   test: (text: string) => {
     let rest = text;
-    for (const handled of [CONTROLLER_SEARCH, REVEAL_FOUND, SURVEIL_TO_HAND, THORIN_ATTACH, BECOMES_CREATURE, LAND_BECOMES, TRADE_FOR_CARD, COUNTER_DEST, TIDEBINDER, POWER_LIFE, PHELIA, CITY_COPIES, GHOST_VACUUM, MALCOLM, FLICKER, BLACK_SUN, EMPIRES, UNLESS_ARTIFACT, TEZZERET_ANIMATE, PURSUIT]) rest = rest.replace(handled, '');
+    for (const handled of [CONTROLLER_SEARCH, REVEAL_FOUND, SURVEIL_TO_HAND, THORIN_ATTACH, BECOMES_CREATURE, LAND_BECOMES, TRADE_FOR_CARD, COUNTER_DEST, TIDEBINDER, POWER_LIFE, PHELIA, CITY_COPIES, GHOST_VACUUM, MALCOLM, FLICKER, BLACK_SUN, EMPIRES, UNLESS_ARTIFACT, TEZZERET_ANIMATE, PURSUIT, IMPULSE]) rest = rest.replace(handled, '');
     return UNSUPPORTED_WORDS.test(rest.replace(/"[^"]*"/g, '""'));
   },
 };
@@ -2442,6 +2472,20 @@ export function triggersOf(card: Card): TriggerSpec[] {
       continue;
     }
 
+    // Sneaky Snacker: "When you draw your third card in a turn, return this card from your graveyard to the battlefield tapped."
+    const snack = line.match(/^When you draw your (second|third|fourth) card in a turn, return this card from your graveyard to the battlefield( tapped)?\.$/i);
+    if (snack) {
+      out.push({
+        event: { on: 'youDrawNth', nth: { second: 2, third: 3, fourth: 4 }[snack[1].toLowerCase() as 'second' | 'third' | 'fourth'], fromGraveyard: true },
+        ability: { targets: [], effects: [{ kind: 'returnFromOwnGraveyard', tapped: !!snack[2] }] },
+      });
+      continue;
+    }
+    // Phyrexian Devourer: "When this creature's power is 7 or greater, sacrifice it." (a state trigger, see powerLimit)
+    if (powerLimitLine(line, selves)) {
+      out.push({ event: { on: 'powerAtLeast', n: powerLimitLine(line, selves)! }, ability: { targets: [], effects: [{ kind: 'sacrificeSelf' }] } });
+      continue;
+    }
     // Phantasmal Image's copies: "When this creature becomes the target of a spell or ability, sacrifice it."
     const targeted = line.match(/^When(?:ever)? (.+?) becomes the target of a spell or ability, (.+)$/i);
     if (targeted && selves.includes(targeted[1].toLowerCase())) {
@@ -2531,10 +2575,12 @@ export function triggersOf(card: Card): TriggerSpec[] {
       continue;
     }
 
-    // Vexing Bauble: "Whenever a player casts a spell, if no mana was spent to cast it, counter that spell."
-    if (/^Whenever a player casts a spell, if no mana was spent to cast it, counter that spell\.$/i.test(line)) {
+    // Vexing Bauble: "Whenever a player casts a spell, if no mana was spent to cast it, counter that spell."; Void Mirror:
+    // "if no colored mana was spent to cast it".
+    const noMana = line.match(/^Whenever a player casts a spell, if no (colored )?mana was spent to cast it, counter that spell\.$/i);
+    if (noMana) {
       out.push({
-        event: { on: 'castWithoutMana' },
+        event: { on: 'castWithoutMana', ...(noMana[1] ? { colored: true } : {}) },
         ability: { targets: [{ kind: 'spell', min: 1, max: 1, filter: {} }], effects: [{ kind: 'counter', to: { slot: 0 } }] },
       });
       continue;
@@ -2627,6 +2673,8 @@ export interface ActivationCost {
   discardFilter?: TargetFilter;
   /** Waterbend {N}: each artifact or creature tapped while paying pays for {1}. */
   waterbend?: boolean;
+  /** Phyrexian Devourer: "Exile the top card of your library". */
+  exileTop?: boolean;
 }
 
 export interface ActivatedSpec {
@@ -2739,6 +2787,7 @@ export function activatedOf(card: Card): ActivatedSpec[] {
           cost.discardFilter = filter;
         } else ok = false;
       }
+      else if (/^exile the top card of your library$/i.test(p)) cost.exileTop = true;
       // Wishclaw Talisman: "Remove a wish counter from this artifact".
       else if (/^remove an? (fade|age|lore|wish) counter from /i.test(p) && selves.includes(p.replace(/^remove an? \w+ counter from /i, '').toLowerCase())) {
         cost.removeCounter = p.match(/^remove an? (\w+)/i)![1].toLowerCase() as CounterKind;
@@ -2761,6 +2810,14 @@ export function activatedOf(card: Card): ActivatedSpec[] {
     const yourTurn = /Activate only during your turn/i.test(text);
     if (/Activate (?:only|this ability only)/i.test(text.replace(/Activate only (?:as a sorcery|once each turn|during your turn)\.?/gi, ''))) continue;
     text = text.replace(/\s*Activate (?:only|this ability only)[^.]*\./gi, '').trim();
+    // Phyrexian Devourer: "Put X +1/+1 counters on this creature, where X is the exiled card's mana value."
+    if (cost.exileTop) {
+      const counters = text.match(/^Put X \+1\/\+1 counters on (.+?), where X is the exiled card's mana value\.$/i);
+      if (counters && selves.includes(counters[1].toLowerCase())) {
+        out.push({ text: line, cost, ability: { targets: [], effects: [{ kind: 'addCounters', counter: '+1/+1', n: 'exiledMv', to: 'self' }] }, sorcery, once });
+      }
+      continue;
+    }
     // Seasoned Hallowblade: "Tap this creature. It gains indestructible until end of turn." (read as Iron-Shield Elf's)
     text = text.replace(/^Tap this creature\. It gains ([a-z ,]+ until end of turn)\.$/i, 'This creature gains $1. Tap it.');
     const optional = /^you may /i.test(text);
@@ -2810,7 +2867,7 @@ export function doublesEquippedTriggers(card: Card): boolean {
  * Amber "{T}: Add one mana of any color among legendary creatures and planeswalkers you control." (legends),
  * Gemstone Caverns (luck: any color with a luck counter, otherwise {C}).
  */
-export function stateMana(card: Card): 'imprinted' | 'legends' | 'luck' | 'perArtifact' | 'mining' | 'reflect' | 'perCreature' | 'perElf' | 'opponentLands' | null {
+export function stateMana(card: Card): 'imprinted' | 'legends' | 'luck' | 'perArtifact' | 'mining' | 'reflect' | 'reflectThree' | 'perCreature' | 'perElf' | 'opponentLands' | null {
   const text = frontText(card);
   // Priest of Titania: "{T}: Add {G} for each Elf on the battlefield."
   if (/^\{T\}: Add \{G\} for each Elf on the battlefield\.$/m.test(text)) return 'perElf';
@@ -2820,6 +2877,8 @@ export function stateMana(card: Card): 'imprinted' | 'legends' | 'luck' | 'perAr
   if (/^\{T\}: Add one mana of any color that a land an opponent controls could produce\.$/m.test(text)) return 'opponentLands';
   // Reflecting Pool: "{T}: Add one mana of any type that a land you control could produce."
   if (/^\{T\}: Add one mana of any type that a land you control could produce\.$/m.test(text)) return 'reflect';
+  // Incubation Druid: "… If this creature has a +1/+1 counter on it, add three mana of that type instead."
+  if (/^\{T\}: Add one mana of any type that a land you control could produce\. If this creature has a \+1\/\+1 counter on it, add three mana of that type instead\.$/m.test(text)) return 'reflectThree';
   // Gemstone Mine: "{T}, Remove a mining counter from this land: Add one mana of any color. If there are no mining
   // counters on this land, sacrifice it."
   if (/^\{T\}, Remove a mining counter from this land: Add one mana of any color\. If there are no mining counters on this land, sacrifice it\.$/m.test(text)) return 'mining';
@@ -3257,6 +3316,12 @@ export const returnsExiledWhenLeaving = (card: Card) =>
 export function fadingOf(card: Card): number {
   const m = frontText(card).match(/^Fading (\d+)$/m);
   return m ? Number(m[1]) : 0;
+}
+
+/** "When this creature's power is 7 or greater, sacrifice it." → 7 (the line's subject is one of `selves`). */
+function powerLimitLine(line: string, selves: string[]): number | null {
+  const m = line.match(/^When (.+?)'s power is (\d+) or greater, sacrifice it\.$/i);
+  return m && selves.includes(m[1].toLowerCase()) ? Number(m[2]) : null;
 }
 
 /** Vanishing N: "This permanent enters with N time counters on it." */

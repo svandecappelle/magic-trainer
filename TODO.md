@@ -432,10 +432,17 @@ Approximations: Superior Spider-Man exiles the card at once (not a reflexive tri
 has when it is tapped; vanishing sacrifices in the same ability that removes the last counter. The bot enlists its
 strongest creature without a tap ability, and doesn't plan attacks around enlist.
 
+Eldrazi and single cards: Warping Wail's Scion ("It has \"…\"" read as "with \"…\""), Malevolent Rumble (the rest into
+the graveyard), Glimpse the Impossible (cards playable from exile this turn, lands too; the rest to the graveyard at the
+next end step, a Spawn each), Incubation Druid (three mana with a +1/+1 counter), Phyrexian Devourer ("Exile the top
+card of your library" as a cost, X its mana value; "When this creature's power is 7 or greater", a state trigger),
+Sneaky Snacker (a trigger from the graveyard on your third card drawn in a turn), Void Mirror (no colored mana spent).
+
+Approximations: Incubation Druid's three mana may be of different types; a mana that could have been colored counts as
+colored for Void Mirror (the caster picks); the end step move of Glimpse the Impossible isn't a trigger on the stack.
+The bot never activates Phyrexian Devourer (free abilities aren't planned).
+
 Still open, playing wrongly, most played first (see `audit-reports/2026-10-18/report.md`):
-- [ ] Eldrazi Scion (Warping Wail: "It has \"Sacrifice this token: Add {C}.\"" in its own sentence); Glimpse the
-  Impossible, Malevolent Rumble; Incubation Druid's mana with a +1/+1 counter
-- [ ] Phyrexian Devourer, Sneaky Snacker, Void Mirror
 - [ ] cEDH: Underworld Breach (escape for every card), Birgi, Lurrus, Samut (split second for your spells), Biomancer's
   Familiar
 

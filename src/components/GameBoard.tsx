@@ -363,7 +363,8 @@ export function GameBoard({ game: g, me, onAction, endControls, notice, readOnly
   /** Every way to play a card right now (land faces, casts, cycling). */
   function playItems(iid: string, card: Card) {
     const items: { key: string; label: string; run: () => void }[] = [];
-    const inHand = g.players[me].hand.some((c) => c.iid === iid);
+    // Glimpse the Impossible: a land exiled "you may play those cards this turn".
+    const inHand = g.players[me].hand.some((c) => c.iid === iid) || g.players[me].exile.some((c) => c.iid === iid && c.playableOnTurn === g.turn);
     if (inHand && canPlayLand) {
       for (const face of landFaces(card)) {
         items.push({ key: `land${face}`, label: t.game.playAsLand(show.name(faceCard(card, face))), run: () => act({ type: 'playLand', iid, ...(face ? { face } : {}) }) });
@@ -1206,8 +1207,10 @@ export function GameBoard({ game: g, me, onAction, endControls, notice, readOnly
               <div className="zone-cards">
                 {zoneCards(zoneView.p, zoneView.zone).length === 0 && <span className="muted">{t.game.emptyZone}</span>}
                 {[...zoneCards(zoneView.p, zoneView.zone)].reverse().map((c: CardInst) => {
-                  // Flashback cards in your graveyard and adventurers in your exile can be cast from here.
-                  const castable = zoneView.p === me && castOptions(g, me, c.iid).length > 0;
+                  // Flashback cards in your graveyard and adventurers in your exile can be cast from here (and lands
+                  // exiled "you may play those cards this turn" played).
+                  const castable = zoneView.p === me && (castOptions(g, me, c.iid).length > 0
+                    || (zoneView.zone === 'exile' && c.playableOnTurn === g.turn && canPlayLand && landFaces(c.card).length > 0));
                   return (
                     <img
                       key={c.iid}

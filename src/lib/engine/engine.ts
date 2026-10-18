@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, counterMana, choosesColor, diamondMana, sacrificeMana, mayStayTapped, gainsLifeFromCombatDamageTaken, restrictedMana, type RestrictedMana, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, vanishingOf, hasEnlist, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, counterMana, choosesColor, diamondMana, sacrificeMana, mayStayTapped, gainsLifeFromCombatDamageTaken, restrictedMana, type RestrictedMana, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, type TokenSpec, vanishingOf, hasEnlist, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type AltCost, type CastInfo, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -26,6 +26,8 @@ export interface CardInst {
    * Interrupter's plot (free, as a sorcery, on a later turn than `afterTurn`).
    */
   castFor?: { cost: string; afterTurn?: number; sorcery?: boolean };
+  /** "Exile the top card of your library. You may play it this turn.": playable from exile on that turn. */
+  playableOnTurn?: number;
 }
 
 /** A lasting change to a permanent's power, toughness or abilities. */
@@ -43,6 +45,8 @@ export interface Boost {
 
 export interface Permanent extends CardInst {
   controller: PlayerId;
+  /** Phyrexian Devourer: its "power is 7 or greater" state trigger is waiting (it triggers again once it drops below). */
+  stateTriggered?: boolean;
   tapped: boolean;
   /** Summoning sick: entered this turn, can't attack or tap for mana. */
   sick: boolean;
@@ -100,6 +104,10 @@ export interface Permanent extends CardInst {
 
 export interface StackItem extends CardInst {
   controller: PlayerId;
+  /** Phyrexian Devourer: the mana value of the card exiled to pay the ability's cost. */
+  exiledMv?: number;
+  /** Void Mirror: no colored mana was spent to cast it. */
+  noColoredMana?: boolean;
   /** Chosen targets, one list per target slot of the spell or ability. */
   targets: Target[][];
   /** Set for an ability: the rules to resolve. `card` is its source, which stays where it is. */
@@ -560,6 +568,8 @@ export interface GameState {
   sacrificeAtEnd?: string[];
   /** Warp: permanents exiled at the beginning of the next end step (castable from exile on a later turn). */
   warpAtEnd?: string[];
+  /** Glimpse the Impossible: cards exiled this turn, put into the graveyard at the next end step (a Spawn each). */
+  impulseAtEnd?: { p: PlayerId; iids: string[] }[];
   /** Phelia: cards exiled until the next end step, then returned under their owner's control. */
   /** Malcolm: this card may be cast for free by this player now (the next action, else the chance is gone). */
   castNow?: { player: PlayerId; iid: string };
@@ -801,12 +811,14 @@ function ownUnits(s: GameState, perm: Permanent, spell?: Card, ability?: Card): 
       .flatMap((x) => ownUnits(s, x).flat())
       .filter((c) => c !== 'C');
     units = colors.length ? [[...new Set(colors)]] : [];
-  } else if (state === 'reflect') {
+  } else if (state === 'reflect' || state === 'reflectThree') {
     // Reflecting Pool: the types the other lands could make (other Pools aside: they add nothing new).
     const types = s.battlefield
       .filter((x) => x.controller === perm.controller && isLandCard(x.card) && stateMana(x.card) !== 'reflect')
       .flatMap((x) => ownUnits(s, x).flat());
     units = types.length ? [[...new Set(types)]] : [];
+    // Incubation Druid: "If this creature has a +1/+1 counter on it, add three mana of that type instead."
+    if (state === 'reflectThree' && units.length && perm.counters['+1/+1']) units = [units[0], units[0], units[0]];
   } else if (state === 'mining') {
     units = perm.counters.mining ? [['W', 'U', 'B', 'R', 'G']] : [];
   } else if (state === 'perArtifact') {
@@ -1366,7 +1378,7 @@ export function castSource(s: GameState, p: PlayerId, iid: string): { inst: Card
   if (inGrave && (castInfo(inGrave.card).flashback || inGrave.flashbackOnTurn === s.turn || now) && !withRule(s, 'noCastingFromGraveyardsLibraries').length) return { inst: inGrave, from: 'graveyard' };
   // An adventurer, or a warped card on a later turn.
   const inExile = ps.exile.find((c) => c.iid === iid && (c.adventure || (c.warpedOnTurn !== undefined && s.turn > c.warpedOnTurn)
-    || (c.castFor && (c.castFor.afterTurn === undefined || s.turn > c.castFor.afterTurn))));
+    || (c.castFor && (c.castFor.afterTurn === undefined || s.turn > c.castFor.afterTurn)) || c.playableOnTurn === s.turn));
   if (inExile) return { inst: inExile, from: 'exile' };
   const inCommand = ps.command?.find((c) => c.iid === iid);
   if (inCommand) return { inst: inCommand, from: 'command' };
@@ -1508,6 +1520,7 @@ export function activationProblem(s: GameState, p: PlayerId, perm: Permanent, in
   }
   if (spec.cost.life && s.players[p].life < spec.cost.life) return 'notEnoughLife';
   if (spec.cost.removeCounter && !perm.counters[spec.cost.removeCounter]) return 'noCounterToRemove';
+  if (spec.cost.exileTop && !s.players[p].library.length) return 'nothingToExile';
   if (spec.cost.exileFromGraveyard && s.players[p].graveyard.filter((c) => cardMatches(c.card, spec.cost.exileFromGraveyard!)).length < (spec.cost.exileCount ?? 1)) return 'nothingToExile';
   if (spec.cost.discard && discardOptions(s, p, spec).length < spec.cost.discard) return 'nothingToDiscard';
   if (spec.cost.sacrifice && !sacrificeOptions(s, perm, spec).length) return 'nothingToSacrifice';
@@ -1556,7 +1569,7 @@ function finishCast(d: GameState, item: StackItem, named: LogTarget[]) {
     }
   }
   fireCast(d, p, card);
-  if (item.noMana) fireCastWithoutMana(d, item);
+  if (item.noMana || item.noColoredMana) fireCastWithoutMana(d, item);
   fireWard(d, item);
   if (d.priority) {
     d.priority.passes = 0;
@@ -1897,6 +1910,10 @@ function draw(d: GameState, p: PlayerId, n: number, drawStep = false) {
 /** A card `p` drew: "whenever an opponent draws" (Orcish Bowmasters, Faerie Mastermind). */
 function fireDraw(d: GameState, p: PlayerId, firstInDrawStep: boolean) {
   const nth = d.players[p].drawnThisTurn ?? 0;
+  // Sneaky Snacker: "When you draw your third card in a turn, return this card from your graveyard …"
+  for (const c of d.players[p].graveyard) {
+    for (const t of triggersOf(c.card)) if (t.event.on === 'youDrawNth' && t.event.nth === nth) queueTrigger(d, c, p, t.ability);
+  }
   for (const x of d.battlefield) {
     for (const t of triggersOf(x.card)) {
       if (t.event.on !== 'opponentDraws') continue;
@@ -2657,6 +2674,10 @@ function emblemSources(d: GameState): Permanent[] {
   })));
 }
 
+const ELDRAZI_SPAWN: TokenSpec = {
+  name: 'Eldrazi Spawn', typeLine: 'Token Creature — Eldrazi Spawn', colors: [], power: 0, toughness: 1, keywords: [], oracleText: 'Sacrifice this token: Add {C}.',
+};
+
 /** The beginning of the active player's upkeep or end step. */
 function fireStep(d: GameState, on: StepEvent) {
   // Mobilize tokens: "Sacrifice them at the beginning of the next end step."
@@ -2671,6 +2692,21 @@ function fireStep(d: GameState, on: StepEvent) {
       log(d, { k: 'exiled', card: perm.card.name });
     }
     delete d.warpAtEnd;
+  }
+  // Glimpse the Impossible: the cards still exiled go to the graveyard, then an Eldrazi Spawn for each.
+  if (on === 'endStep' && d.impulseAtEnd?.length) {
+    for (const { p, iids } of d.impulseAtEnd) {
+      const ps = d.players[p];
+      const left = ps.exile.filter((c) => iids.includes(c.iid));
+      ps.exile = ps.exile.filter((c) => !left.includes(c));
+      for (const c of left) putInZone(d, p, c, 'graveyard');
+      for (let i = 0; i < left.length; i++) {
+        d.abilities = (d.abilities ?? 0) + 1;
+        enterBattlefield(d, { iid: `token-${d.abilities}`, card: tokenCard(ELDRAZI_SPAWN) }, p);
+      }
+      if (left.length) log(d, { k: 'token', p, card: ELDRAZI_SPAWN.name, n: left.length });
+    }
+    delete d.impulseAtEnd;
   }
   // Impending: "At the beginning of your end step, remove a time counter from it." The last one: it is a creature.
   if (on === 'endStep') {
@@ -2744,7 +2780,7 @@ function fireCast(d: GameState, p: PlayerId, card: Card) {
 function fireCastWithoutMana(d: GameState, item: StackItem) {
   for (const x of d.battlefield) {
     for (const t of triggersOf(x.card)) {
-      if (t.event.on === 'castWithoutMana') {
+      if (t.event.on === 'castWithoutMana' && (item.noMana || t.event.colored)) {
         (d.triggered ??= []).push({ source: { iid: x.iid, card: x.card }, controller: x.controller, ability: t.ability, targets: [[{ kind: 'spell', iid: item.iid }]] });
       }
     }
@@ -2876,6 +2912,17 @@ function checkStateBased(d: GameState) {
       log(d, { k: 'destroyed', card: perm.card.name });
     } else if (sagaDone(d, perm)) {
       sacrifice(d, perm);
+    }
+  }
+  // Phyrexian Devourer: "When this creature's power is 7 or greater, sacrifice it." (once until it drops below)
+  for (const perm of d.battlefield) {
+    for (const t of triggersOf(perm.card)) {
+      if (t.event.on !== 'powerAtLeast') continue;
+      if (powerOf(perm) < t.event.n) delete perm.stateTriggered;
+      else if (!perm.stateTriggered) {
+        perm.stateTriggered = true;
+        queueTrigger(d, perm, perm.controller, t.ability);
+      }
     }
   }
   // Storied: "If you control three or more artifacts, legendaries, and/or Sagas, you have an enduring story for the
@@ -3193,7 +3240,7 @@ function affected(d: GameState, r: Resolving, to: Affected): Affectable[] {
 
 const amount = (d: GameState, r: Resolving, a: Amount) =>
   a === 'X' ? (r.item.x ?? 0) : a === 'lifeGained' ? (d.players[r.item.controller].gainedThisTurn ?? 0)
-    : a === 'sacrificed' ? (d.players[r.item.controller].sacrificedThisTurn ?? 0) : a;
+    : a === 'sacrificed' ? (d.players[r.item.controller].sacrificedThisTurn ?? 0) : a === 'exiledMv' ? (r.item.exiledMv ?? 0) : a;
 
 function moveToGraveyard(d: GameState, p: PlayerId, inst: CardInst, from: 'hand' | 'library') {
   const ps = d.players[p];
@@ -3707,7 +3754,9 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       const chosen = options.filter((c) => picked.includes(c.iid));
       ps.library = ps.library.slice(top.length);
       ps.hand.push(...chosen);
-      ps.library.push(...shuffle(top.filter((c) => !chosen.includes(c)), () => random(d)));
+      // Malevolent Rumble: "Put the rest into your graveyard."
+      if (e.rest === 'graveyard') for (const c of top.filter((x) => !chosen.includes(x))) putInZone(d, caster, c, 'graveyard');
+      else ps.library.push(...shuffle(top.filter((c) => !chosen.includes(c)), () => random(d)));
       log(d, { k: 'dig', p: caster, n: top.length, took: chosen.length });
       break;
     }
@@ -3847,6 +3896,28 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       if (!src) break;
       if (src.counters.fade) src.counters = { ...src.counters, fade: src.counters.fade - 1 };
       else sacrifice(d, src);
+      break;
+    }
+    case 'impulse': {
+      // "Exile the top N cards of your library. You may play those cards this turn."
+      const ps = d.players[caster];
+      const top = ps.library.splice(0, e.n);
+      for (const c of top) {
+        c.playableOnTurn = d.turn;
+        ps.exile.push(c);
+        log(d, { k: 'exiled', card: c.card.name });
+      }
+      if (e.spawnAtEnd && top.length) (d.impulseAtEnd ??= []).push({ p: caster, iids: top.map((c) => c.iid) });
+      break;
+    }
+    case 'returnFromOwnGraveyard': {
+      // Sneaky Snacker: "return this card from your graveyard to the battlefield tapped" (if it's still there).
+      const ps = d.players[caster];
+      const inst = ps.graveyard.find((c) => c.iid === item.source);
+      if (!inst) break;
+      ps.graveyard = ps.graveyard.filter((c) => c !== inst);
+      log(d, { k: 'enters', card: inst.card.name });
+      enterBattlefield(d, { iid: inst.iid, card: inst.card }, caster, { tapped: e.tapped });
       break;
     }
     case 'vanish': {
@@ -4965,11 +5036,13 @@ export function apply(state: GameState, action: Action): GameState {
     case 'playLand': {
       if (d.priority || !isMainStep(d) || !isActivePlayer(d, p)) throw new IllegalAction('landTiming');
       if (me.landPlayed) throw new IllegalAction('landAlreadyPlayed');
-      const inst = me.hand.find((c) => c.iid === action.iid);
+      // Glimpse the Impossible: a land exiled "you may play those cards this turn".
+      const inst = me.hand.find((c) => c.iid === action.iid) ?? me.exile.find((c) => c.iid === action.iid && c.playableOnTurn === d.turn);
       const face = action.face ?? 0;
       if (!inst || !landFaces(inst.card).includes(face)) throw new IllegalAction('notALand');
       const land = faceCard(inst.card, face);
       me.hand = me.hand.filter((c) => c !== inst);
+      me.exile = me.exile.filter((c) => c !== inst);
       // Exploration: one more land each turn.
       me.landsThisTurn = (me.landsThisTurn ?? 0) + 1;
       me.landPlayed = me.landsThisTurn > withRule(d, 'extraLand').filter((x) => x.controller === p).length;
@@ -5042,7 +5115,8 @@ export function apply(state: GameState, action: Action): GameState {
       const discountColor = info.exileDiscount?.color;
       const exiled = discountColor && action.exiled ? action.exiled : 0;
       if (exiled && me.hand.filter((c) => c.iid !== inst.iid && cardColors(c.card).includes(discountColor!)).length < exiled) throw new IllegalAction('noCardToExile', { card: card.name });
-      const plan = planPayment(chosenSources(castSources(d, p, inst.card, inst.iid, face), action.pay), castCost(d, p, inst.card, { face, kicked, from, iid: inst.iid, alt: altIndex, exiled, ...(modes ? { modes } : {}) }, x));
+      const sources = chosenSources(castSources(d, p, inst.card, inst.iid, face), action.pay);
+      const plan = planPayment(sources, castCost(d, p, inst.card, { face, kicked, from, iid: inst.iid, alt: altIndex, exiled, ...(modes ? { modes } : {}) }, x));
       if (!plan) throw unpaid(action.pay, card.name);
       // Cavern of Souls' mana spent on a creature spell of the chosen type: it can't be countered.
       // Delighted Halfling's mana spent on a legendary spell: the same (counted for any of its mana).
@@ -5058,6 +5132,12 @@ export function apply(state: GameState, action: Action): GameState {
       payMana(d, p, plan);
       // Creatures tapped for convoke and cards exiled for delve aren't mana.
       const noMana = plan.every((m) => /^(?:convoke|delve):/.test(m.iid));
+      // Void Mirror: colored mana spent (a mana that could be colored counts: its caster picks the color).
+      const noColoredMana = plan.every((m) => {
+        if (/^(?:convoke|delve):/.test(m.iid)) return true;
+        const src = sources.find((x) => x.iid === m.iid);
+        return !(src?.units ?? [src?.colors ?? []])[m.index]?.some((c) => c !== 'C');
+      });
       if (from === 'hand') me.hand = me.hand.filter((c) => c.iid !== inst.iid);
       else if (from === 'graveyard') me.graveyard = me.graveyard.filter((c) => c.iid !== inst.iid);
       else if (from === 'command') {
@@ -5072,7 +5152,7 @@ export function apply(state: GameState, action: Action): GameState {
       const item: StackItem = {
         iid: from === 'prepared' ? `${inst.iid}-prepared-${d.abilities}` : inst.iid, card: inst.card, ...(from === 'prepared' ? { copy: true } : {}), controller: p, targets, ...(xCount(card) ? { x } : {}),
         ...(face ? { face } : {}), ...(modes ? { modes } : {}), ...(kicked ? { kicked } : {}), ...(from !== 'hand' ? { from } : {}),
-        ...(inst.commander ? { commander: true } : {}), ...(noMana ? { noMana } : {}), ...(uncounterable ? { uncounterable } : {}),
+        ...(inst.commander ? { commander: true } : {}), ...(noMana ? { noMana } : {}), ...(noColoredMana ? { noColoredMana } : {}), ...(uncounterable ? { uncounterable } : {}),
         ...(altIndex !== undefined ? { alt: altIndex } : {}), ...(castNow ? { castNow } : {}),
       };
       delete d.castNow;
@@ -5149,11 +5229,17 @@ export function apply(state: GameState, action: Action): GameState {
         perm.counters = { ...perm.counters, loyalty: (perm.counters.loyalty ?? 0) + n };
         log(d, { k: 'loyalty', card: perm.card.name, n });
       }
+      // Phyrexian Devourer: "Exile the top card of your library" (its mana value is X).
+      const exiledTop = spec.cost.exileTop ? me.library.shift() : undefined;
+      if (exiledTop) {
+        me.exile.push(exiledTop);
+        log(d, { k: 'exiled', card: exiledTop.card.name });
+      }
       const named = targets.flat().map((t) => targetName(d, t));
       d.abilities = (d.abilities ?? 0) + 1;
       const item: StackItem = {
         iid: `${perm.iid}-ability-${d.abilities}`, card: perm.card, controller: p, targets, ability: spec.ability, source: perm.iid,
-        ...(spec.cost.mana.includes('{X}') || spec.cost.loyaltyX ? { x } : {}),
+        ...(spec.cost.mana.includes('{X}') || spec.cost.loyaltyX ? { x } : {}), ...(exiledTop ? { exiledMv: exiledTop.card.cmc } : {}),
       };
       if (spec.cost.crew !== undefined) {
         // Crew N: the player picks the creatures to tap.
