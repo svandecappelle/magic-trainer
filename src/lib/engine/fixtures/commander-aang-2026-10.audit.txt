@@ -209,7 +209,7 @@ OK       Mystic Gate  — Land
   ✓ {T}: Add {C}.
       mana: C
   ✓ {W/U}, {T}: Add {W}{W}, {W}{U}, or {U}{U}.
-      mana: two W/U, paying {W/U} with another untapped land (chosen automatically)
+      mana: W/U W/U, paying {W/U} with another untapped land (chosen automatically)
 OK       Novice Inspector {W} — Creature — Human Detective
   ✓ When this creature enters, investigate.
       trigger (enters) → token

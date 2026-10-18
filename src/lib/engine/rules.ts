@@ -250,6 +250,11 @@ export interface ManaSource {
   last?: boolean;
   /** Starting Town: spending its mana as one of these colors costs this much life (see manaPain). */
   pain?: { life: number; colors: Color[] };
+  /**
+   * Talon Gates of Madara: "{1}, {T}: Add one mana of any color." Its one mana may be one of these colors instead,
+   * spending one other mana on it (Giant's Boulder: `colors` empty, only that way).
+   */
+  paid?: Color[];
 }
 
 /** One mana spent: unit `index` of source `iid`. */
@@ -266,11 +271,15 @@ export interface ManaPick {
  */
 export function planPayment(sources: ManaSource[], cost: Cost): ManaPick[] | null {
   const units = sources.flatMap((s) => (s.units ?? [s.colors]).map((colors, index) => ({
-    iid: s.iid, index, colors, pool: s.iid.startsWith('pool:'), size: (s.units ?? [s.colors]).length, last: !!s.last, pain: s.pain,
+    iid: s.iid, index, colors, pool: s.iid.startsWith('pool:'), size: (s.units ?? [s.colors]).length, last: !!s.last, pain: s.pain, paid: s.paid,
   })));
-  if (units.length < cost.generic + cost.colored.length) return null;
+  // Giant's Boulder makes mana only for another mana; delve cards and convoke creatures pay no mana ability's {1}.
+  const spendable = (u: (typeof units)[number]) => u.colors.length > 0 || !u.paid;
+  const feeable = (u: (typeof units)[number]) => u.colors.length > 0 && !/^(?:delve|convoke):/.test(u.iid);
+  if (units.filter(spendable).length < cost.generic + cost.colored.length) return null;
   // Pool first, then bigger sources (their other mana would be wasted), then the least flexible.
-  units.sort((a, b) => Number(b.pool) - Number(a.pool) || Number(a.last) - Number(b.last) || b.size - a.size || a.colors.length - b.colors.length);
+  units.sort((a, b) => Number(b.pool) - Number(a.pool) || Number(a.last) - Number(b.last) || b.size - a.size || a.colors.length - b.colors.length
+    || Number(!!a.paid) - Number(!!b.paid));
   const reqs = [...cost.colored].sort((a, b) => a.length - b.length);
   const used = new Set<number>();
   /** Life paid when unit `u` pays requirement `req`: only when none of its free colors can. */
@@ -281,9 +290,12 @@ export function planPayment(sources: ManaSource[], cost: Cost): ManaPick[] | nul
   // Mana that costs life is tried last for a colored requirement.
   const order = (req: Color[]) => units.map((_, u) => u).sort((a, b) => Number(lifeFor(a, req) > 0) - Number(lifeFor(b, req) > 0));
   const paidBy = new Map<number, Color[]>();
+  // Talon Gates' mana made a color: one more mana to spend for each.
+  let fees = 0;
+  const open = (ok: (u: (typeof units)[number]) => boolean) => units.filter((x, u) => !used.has(u) && ok(x)).length;
 
   const assign = (i: number): boolean => {
-    if (i === reqs.length) return true;
+    if (i === reqs.length) return open(spendable) >= cost.generic + fees && open(feeable) >= fees;
     for (const u of order(reqs[i])) {
       if (used.has(u) || !units[u].colors.some((c) => reqs[i].includes(c))) continue;
       used.add(u);
@@ -292,14 +304,23 @@ export function planPayment(sources: ManaSource[], cost: Cost): ManaPick[] | nul
       used.delete(u);
       paidBy.delete(u);
     }
+    for (const u of units.map((_, u) => u)) {
+      if (used.has(u) || !units[u].paid?.some((c) => reqs[i].includes(c))) continue;
+      used.add(u);
+      fees++;
+      if (assign(i + 1)) return true;
+      used.delete(u);
+      fees--;
+    }
     return false;
   };
   if (!assign(0)) return null;
 
-  // Generic mana: the pool, then sources already being tapped, then the rest in order.
+  // Talon Gates' fees first (real mana), then generic mana: the pool, then sources already being tapped, then the rest
+  // in order.
   const tapped = () => new Set([...used].map((u) => units[u].iid));
-  for (let n = 0; n < cost.generic; n++) {
-    const open = units.map((_, u) => u).filter((u) => !used.has(u));
+  for (let n = 0; n < fees + cost.generic; n++) {
+    const open = units.map((_, u) => u).filter((u) => !used.has(u) && (n < fees ? feeable(units[u]) : spendable(units[u])));
     if (!open.length) return null;
     const busy = tapped();
     // Mana that only comes for life (all its colors cost life) last.
@@ -2779,10 +2800,62 @@ export function reconfiguresEnchanted(card: Card): number | null {
   return m ? Number(m[1]) : null;
 }
 
-/** Mystic Gate: "{W/U}, {T}: Add {W}{W}, {W}{U}, or {U}{U}." The two colors of the filter. */
-export function filterMana(card: Card): [Color, Color] | null {
-  const m = frontText(card).match(/^\{([WUBRG])\/([WUBRG])\}, \{T\}: Add \{\1\}\{\1\}, \{\1\}\{\2\}, or \{\2\}\{\2\}\.$/m);
-  return m ? [m[1] as Color, m[2] as Color] : null;
+/**
+ * Filter lands: two mana for one other mana. Mystic Gate: "{W/U}, {T}: Add {W}{W}, {W}{U}, or {U}{U}." (the fee: one
+ * mana of the two colors); Skycloud Expanse: "{1}, {T}: Add {W}{U}." (the fee: any one mana, `fee` null).
+ */
+export function filterMana(card: Card): { fee: Color[] | null; units: Color[][] } | null {
+  const text = frontText(card);
+  const gate = text.match(/^\{([WUBRG])\/([WUBRG])\}, \{T\}: Add \{\1\}\{\1\}, \{\1\}\{\2\}, or \{\2\}\{\2\}\.$/m);
+  if (gate) {
+    const pair = [gate[1], gate[2]] as Color[];
+    return { fee: pair, units: [pair, pair] };
+  }
+  const two = text.match(/^\{1\}, \{T\}: Add \{([WUBRG])\}\{([WUBRG])\}\.$/m);
+  return two ? { fee: null, units: [[two[1] as Color], [two[2] as Color]] } : null;
+}
+
+/**
+ * Talon Gates of Madara, Giant's Boulder: "{1}, {T}: Add one mana of any color." Its mana costs one other mana (the
+ * payment planner spends that one too; see `paid` in ManaSource).
+ */
+export const paidAnyColor = (card: Card) => /^\{1\}, \{T\}: Add one mana of any color\.$/m.test(frontText(card));
+
+/** Extra mana when a permanent is tapped for mana (a triggered mana ability). */
+export interface ExtraMana {
+  /** Wild Growth: the enchanted permanent's taps; Badgermole Cub: its controller's; Mana Flare: anyone's. */
+  whose: 'enchanted' | 'yours' | 'anyones';
+  /** What is tapped: Badgermole Cub a creature, Kinnan a nonland permanent, Mana Flare a land. */
+  kind: 'land' | 'creature' | 'nonland' | 'permanent';
+  /** The mana added; 'same': one mana of a type that permanent produced (Kinnan, Mana Flare). */
+  add: Color[][] | 'same';
+}
+
+const extraManaText = (text: string): Color[][] | 'same' | null =>
+  /^(?:one )?(?:additional )?(?:one )?mana of any type that (?:land|permanent) produced$/i.test(text) ? 'same' : parseManaText(text);
+
+/**
+ * Wild Growth: "Whenever enchanted land is tapped for mana, its controller adds an additional {G}."
+ * Badgermole Cub: "Whenever you tap a creature for mana, add an additional {G}." Kinnan: "Whenever you tap a nonland
+ * permanent for mana, add one mana of any type that permanent produced." Mana Flare: "Whenever a player taps a land for
+ * mana, that player adds one mana of any type that land produced."
+ */
+export function extraManaOf(card: Card): ExtraMana | null {
+  for (const line of frontText(card).split('\n')) {
+    const aura = line.match(/^Whenever enchanted (land|creature|permanent) is tapped for mana, its controller adds an additional (.+)\.$/);
+    const tap = line.match(/^Whenever (you tap|a player taps) an? (land|creature|nonland permanent|permanent) for mana, (?:that player adds|add) (?:an additional )?(.+)\.$/);
+    const add = aura ? extraManaText(aura[2]) : tap ? extraManaText(tap[3]) : null;
+    if (!add) continue;
+    if (aura) return { whose: 'enchanted', kind: aura[1] as ExtraMana['kind'], add };
+    return { whose: tap![1] === 'you tap' ? 'yours' : 'anyones', kind: tap![2] === 'nonland permanent' ? 'nonland' : tap![2] as ExtraMana['kind'], add };
+  }
+  return null;
+}
+
+/** Nyxbloom Ancient: "If you tap a permanent for mana, it produces three times as much of that mana instead." → 3. */
+export function manaMultiplier(card: Card): number {
+  const m = frontText(card).match(/^If you tap a permanent for mana, it produces (twice|three times) as much of that mana instead\.$/m);
+  return m ? (m[1] === 'twice' ? 2 : 3) : 1;
 }
 
 export function tapsAnotherForMana(card: Card): 'creature' | 'permanent' | null {

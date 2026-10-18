@@ -1,7 +1,7 @@
 import type { Card } from '../../types';
 import {
   activatedOf, auraTarget, castInfo, gainsLifeFromDamage, castSpec, entersAsCopy, entersCounters, entersTappedRule, beginsWithLuck, discardsLandInstead, manaConditions, stateMana, doesntUntap, frontText, gameRulesOf, isInstantOrSorcery,
-  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, chosenNameTax, namesAnyCard, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, reconfiguresEnchanted, entersPrepared, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, returnsExiledWhenLeaving, fadingOf, type AbilitySpec,
+  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, chosenNameTax, namesAnyCard, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, extraManaOf, manaMultiplier, reconfiguresEnchanted, entersPrepared, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, returnsExiledWhenLeaving, fadingOf, type AbilitySpec,
 } from './rules';
 
 /**
@@ -139,7 +139,21 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   if (blocksOnlyFlyers(one)) return { text: line, status: 'ok', how: 'blocks only creatures with flying' };
   if (legendaryMana(one)) return { text: line, status: 'ok', how: 'mana: any color for a legendary spell (it can\'t be countered)' };
   const filter = filterMana(one);
-  if (filter) return { text: line, status: 'ok', how: `mana: two ${filter.join('/')}, paying {${filter.join('/')}} with another untapped land (chosen automatically)` };
+  if (filter) {
+    const fee = filter.fee ? filter.fee.join('/') : '1';
+    return { text: line, status: 'ok', how: `mana: ${filter.units.map((u) => u.join('/')).join(' ')}, paying {${fee}} with another untapped land (chosen automatically)` };
+  }
+  if (paidAnyColor(one) && /^\{1\}, \{T\}: Add one mana of any color\.$/.test(line)) {
+    return { text: line, status: 'ok', how: 'mana: any color, paying {1} with other mana (chosen automatically when paying)' };
+  }
+  const extra = extraManaOf(one);
+  if (extra) {
+    const what = extra.add === 'same' ? 'one mana of a type it made' : extra.add.map((u) => u.join('/')).join(' ');
+    const whose = { enchanted: 'the enchanted permanent', yours: `a ${extra.kind} you control`, anyones: `any ${extra.kind}` }[extra.whose];
+    return { text: line, status: 'ok', how: `mana: ${what} more when ${whose} is tapped for mana` };
+  }
+  const times = manaMultiplier(one);
+  if (times > 1) return { text: line, status: 'ok', how: `mana: your permanents tapped for mana make ${times} times as much` };
   const tapsOther = tapsAnotherForMana(one);
   if (tapsOther) return { text: line, status: 'ok', how: `mana: any color, tapping another untapped ${tapsOther} that makes no mana (chosen automatically)` };
   const fromHand = handMana(one);

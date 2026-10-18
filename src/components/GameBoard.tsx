@@ -76,7 +76,7 @@ const paidWith = (sources: ManaSource[], cost: Cost, picked: string[]) => {
 function paymentChoice(sources: ManaSource[], cost: Cost): boolean {
   const plan = planPayment(sources, cost);
   if (!plan || cost.generic + cost.colored.length === 0) return false;
-  const helps = (m: ManaSource) => cost.generic > 0 || (m.units ?? [m.colors]).some((u) => u.some((c) => cost.colored.some((req) => req.includes(c))));
+  const helps = (m: ManaSource) => cost.generic > 0 || [...(m.units ?? [m.colors]), m.paid ?? []].some((u) => u.some((c) => cost.colored.some((req) => req.includes(c))));
   return new Set(sources.filter(helps).map((m) => m.iid)).size > new Set(plan.map((m) => m.iid)).size;
 }
 
@@ -697,7 +697,8 @@ export function GameBoard({ game: g, me, onAction, endControls, notice, readOnly
               <span className="pay-units">
                 {(m.units ?? [m.colors]).map((u, i) => (
                   <span key={i} className="pay-unit">
-                    {u.length >= 5 ? t.game.anyColor : u.map((c, j) => <span key={c}>{j > 0 && '/'}<ManaCost cost={`{${c}}`} /></span>)}
+                    {/* Giant's Boulder: any color, for another mana. */}
+                    {u.length >= 5 || (!u.length && m.paid) ? t.game.anyColor : u.map((c, j) => <span key={c}>{j > 0 && '/'}<ManaCost cost={`{${c}}`} /></span>)}
                   </span>
                 ))}
               </span>

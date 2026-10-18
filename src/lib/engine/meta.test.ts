@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
-import { activationProblem, actor, apply, findPermanent, hasKw, paymentFor, canBlock, canCastNow, castCost, castSource, canTapForMana, type Answer, castOptions, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
+import { activationProblem, actor, apply, findPermanent, hasKw, paymentFor, canBlock, canCastNow, castCost, castSource, canTapForMana, type Answer, castOptions, canPay, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
 import { botAction } from './bot';
-import { activatedOf, castInfo, cloneOf, entersTappedRule, gameRulesOf, castSpec, finalChapter, hasKeyword, isCreature, PREDEFINED_TOKENS, tokenCard, type TargetSpec, manaUnits, parseAbilityText, spellSpec, triggersOf } from './rules';
+import { activatedOf, castInfo, cloneOf, entersTappedRule, gameRulesOf, castSpec, finalChapter, hasKeyword, isCreature, PREDEFINED_TOKENS, tokenCard, type TargetSpec, manaUnits, extraManaOf, manaMultiplier, filterMana, paidAnyColor, parseAbilityText, spellSpec, triggersOf } from './rules';
 
 // Cards from Standard decks on mtgtop8 (Oct 2026), with their Oracle text.
 let n = 0;
@@ -3414,5 +3414,121 @@ describe('metagame audit 2026-10-17', () => {
     const copy = s.battlefield.filter((x) => x.card.name === 'Bear')[1];
     expect(copy.card.typeLine).toBe('Creature — Bear Shapeshifter Rogue');
     expect(powerOf(copy)).toBe(2);
+  });
+});
+
+describe('mana abilities costing mana, extra mana when tapped', () => {
+  const mountain = card({ name: 'Mountain', typeLine: 'Basic Land — Mountain' });
+  const forest = card({ name: 'Forest', typeLine: 'Basic Land — Forest' });
+  const talon = card({
+    name: 'Talon Gates of Madara', typeLine: 'Land — Gate',
+    oracleText: 'When this land enters, up to one target creature phases out.\n{T}: Add {C}.\n{1}, {T}: Add one mana of any color.\n{4}: Put this card from your hand onto the battlefield.',
+  });
+  const boulder = card({
+    name: 'Giant\'s Boulder', typeLine: 'Artifact', manaCost: '{1}', cmc: 1,
+    oracleText: 'When this artifact enters, scry 2.\n{1}, {T}: Add one mana of any color.\n{7}, {T}, Sacrifice this artifact: Destroy target permanent.',
+  });
+  const sprite = creature('Sprite', 1, 1, { manaCost: '{U}', cmc: 1 });
+  const golem = creature('Golem', 2, 2, { manaCost: '{2}', cmc: 2 });
+  const tapped = (s: GameState) => s.battlefield.filter((x) => x.controller === 0 && x.tapped).map((x) => x.card.name).sort();
+
+  it('Talon Gates of Madara: any color, spending one other mana on it', () => {
+    expect(paidAnyColor(talon)).toBe(true);
+    let s = board({ mine: [talon, mountain], hand: [sprite, golem] });
+    expect(canPay(s, 0, sprite)).toBe(true);
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    expect(tapped(s)).toEqual(['Mountain', 'Talon Gates of Madara']);
+    expect(s.players[0].pool ?? []).toEqual([]);
+    // Its {C} still counts as one mana for a generic cost.
+    s = board({ mine: [talon, mountain], hand: [golem] });
+    expect(canPay(s, 0, golem)).toBe(true);
+    // Alone, or with {U}{U} to pay out of two lands: not enough.
+    expect(canPay(board({ mine: [talon] }), 0, sprite)).toBe(false);
+    expect(canPay(board({ mine: [talon, mountain] }), 0, creature('Sphinx', 3, 3, { manaCost: '{U}{U}', cmc: 2 }))).toBe(false);
+  });
+
+  it('Giant\'s Boulder: no mana of its own, a color for one other mana', () => {
+    expect(canPay(board({ mine: [boulder] }), 0, sprite)).toBe(false);
+    expect(canPay(board({ mine: [boulder, mountain] }), 0, golem)).toBe(false);
+    let s = board({ mine: [boulder, mountain], hand: [sprite] });
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    expect(tapped(s)).toEqual(['Giant\'s Boulder', 'Mountain']);
+  });
+
+  it('Skycloud Expanse: {W}{U} for one other mana', () => {
+    const skycloud = card({ name: 'Skycloud Expanse', typeLine: 'Land', oracleText: '{1}, {T}: Add {W}{U}.' });
+    expect(filterMana(skycloud)).toEqual({ fee: null, units: [['W'], ['U']] });
+    const sphinx = creature('Sphinx', 3, 3, { manaCost: '{W}{U}', cmc: 2 });
+    expect(canPay(board({ mine: [skycloud] }), 0, sprite)).toBe(false);
+    let s = board({ mine: [skycloud, mountain], hand: [sphinx] });
+    expect(unitsOf(s, perm(s, 'Skycloud Expanse')!)).toEqual([['W'], ['U']]);
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    expect(tapped(s)).toEqual(['Mountain', 'Skycloud Expanse']);
+  });
+
+  const wildGrowth = card({
+    name: 'Wild Growth', typeLine: 'Enchantment — Aura', manaCost: '{G}', cmc: 1, keywords: ['Enchant'],
+    oracleText: 'Enchant land\nWhenever enchanted land is tapped for mana, its controller adds an additional {G}.',
+  });
+
+  it('Wild Growth: the enchanted land makes an additional {G}', () => {
+    expect(extraManaOf(wildGrowth)).toEqual({ whose: 'enchanted', kind: 'land', add: [['G']] });
+    const bear = creature('Bear', 2, 2, { manaCost: '{G}{G}', cmc: 2 });
+    let s = board({ mine: [mountain, wildGrowth], hand: [bear] });
+    perm(s, 'Wild Growth')!.attachedTo = iidOf(s, 'Mountain');
+    expect(unitsOf(s, perm(s, 'Mountain')!)).toEqual([['R'], ['G']]);
+    expect(canPay(s, 0, bear)).toBe(false);
+    s = apply(s, { type: 'tapForMana', iid: iidOf(s, 'Mountain') });
+    expect(s.players[0].pool?.map((m) => m.colors)).toEqual([['R'], ['G']]);
+    // Taken back: both mana leave the pool.
+    s = apply(s, { type: 'untapForMana', iid: iidOf(s, 'Mountain') });
+    expect(s.players[0].pool).toBeUndefined();
+    s = board({ mine: [forest, wildGrowth], hand: [bear] });
+    perm(s, 'Wild Growth')!.attachedTo = iidOf(s, 'Forest');
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    expect(s.players[0].hand).toHaveLength(0);
+    expect(tapped(s)).toEqual(['Forest']);
+  });
+
+  it('Badgermole Cub and Kinnan: more mana from creatures and nonland permanents', () => {
+    const cub = card({
+      name: 'Badgermole Cub', typeLine: 'Creature — Badger Mole', manaCost: '{1}{G}', cmc: 2, power: '2', toughness: '2',
+      oracleText: 'When this creature enters, earthbend 1. (Target land you control becomes a 0/0 creature with haste that\'s still a land. Put a +1/+1 counter on it. When it dies or is exiled, return it to the battlefield tapped.)\nWhenever you tap a creature for mana, add an additional {G}.',
+    });
+    const kinnan = card({
+      name: 'Kinnan, Bonder Prodigy', typeLine: 'Legendary Creature — Human Druid', manaCost: '{G}{U}', cmc: 2, power: '2', toughness: '2',
+      oracleText: 'Whenever you tap a nonland permanent for mana, add one mana of any type that permanent produced.\n{5}{G}{U}: Look at the top five cards of your library. You may put a non-Human creature card from among them onto the battlefield. Put the rest on the bottom of your library in a random order.',
+    });
+    const elf = creature('Llanowar Elves', 1, 1, { oracleText: '{T}: Add {G}.' });
+    const ring = card({ name: 'Sol Ring', typeLine: 'Artifact', oracleText: '{T}: Add {C}{C}.' });
+    expect(extraManaOf(cub)).toEqual({ whose: 'yours', kind: 'creature', add: [['G']] });
+    expect(extraManaOf(kinnan)).toEqual({ whose: 'yours', kind: 'nonland', add: 'same' });
+    let s = board({ mine: [cub, elf, forest] });
+    expect(unitsOf(s, perm(s, 'Llanowar Elves')!)).toEqual([['G'], ['G']]);
+    expect(unitsOf(s, perm(s, 'Forest')!)).toEqual([['G']]);
+    // An opponent's Cub doesn't help.
+    s = board({ mine: [elf], theirs: [cub] });
+    expect(unitsOf(s, perm(s, 'Llanowar Elves')!)).toEqual([['G']]);
+    s = board({ mine: [kinnan, ring, forest] });
+    expect(unitsOf(s, perm(s, 'Sol Ring')!)).toEqual([['C'], ['C'], ['C']]);
+    expect(unitsOf(s, perm(s, 'Forest')!)).toEqual([['G']]);
+  });
+
+  it('Nyxbloom Ancient triples its controller\'s mana; Mana Flare adds to every land', () => {
+    const nyxbloom = card({
+      name: 'Nyxbloom Ancient', typeLine: 'Enchantment Creature — Elemental', manaCost: '{4}{G}{G}{G}', cmc: 7, power: '5', toughness: '5', keywords: ['Trample'],
+      oracleText: 'Trample\nIf you tap a permanent for mana, it produces three times as much of that mana instead.',
+    });
+    const flare = card({
+      name: 'Mana Flare', typeLine: 'Enchantment', manaCost: '{2}{R}', cmc: 3,
+      oracleText: 'Whenever a player taps a land for mana, that player adds one mana of any type that land produced.',
+    });
+    expect(manaMultiplier(nyxbloom)).toBe(3);
+    let s = board({ mine: [nyxbloom, forest], theirs: [mountain] });
+    expect(unitsOf(s, perm(s, 'Forest')!)).toEqual([['G'], ['G'], ['G']]);
+    expect(unitsOf(s, perm(s, 'Mountain')!)).toEqual([['R']]);
+    s = board({ mine: [forest], theirs: [flare, mountain] });
+    expect(unitsOf(s, perm(s, 'Forest')!)).toEqual([['G'], ['G']]);
+    expect(unitsOf(s, perm(s, 'Mountain')!)).toEqual([['R'], ['R']]);
   });
 });

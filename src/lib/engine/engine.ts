@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type AltCost, type CastInfo, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -713,10 +713,34 @@ const protectedFrom = (perm: Permanent, source: Card) =>
   [...protectionsOf(perm.card), ...perm.boosts.flatMap((b) => b.protection ?? [])].some((c) => cardColors(source).includes(c));
 
 /**
- * The mana one tap of `perm` makes (Command Tower: in its controller's commander's colors). Starting Town's colors
- * that cost life are left out when its controller can't pay that life.
+ * The mana one tap of `perm` makes, with what tapping it adds: Nyxbloom Ancient's three times as much, then Wild
+ * Growth's, Badgermole Cub's and Kinnan's additional mana.
  */
 export function unitsOf(s: GameState, perm: Permanent, spell?: Card): Color[][] {
+  let units = ownUnits(s, perm, spell);
+  if (!units.length) return units;
+  // "If you tap a permanent for mana, it produces three times as much of that mana instead."
+  for (const x of s.battlefield) {
+    const n = x.controller === perm.controller ? manaMultiplier(x.card) : 1;
+    if (n > 1) units = units.flatMap((u) => Array.from({ length: n }, () => u));
+  }
+  const made = [...new Set(units.flat())];
+  const land = isLandCard(perm.card);
+  for (const x of s.battlefield) {
+    const extra = extraManaOf(x.card);
+    if (!extra) continue;
+    if (extra.whose === 'enchanted' ? x.attachedTo !== perm.iid : extra.whose === 'yours' && x.controller !== perm.controller) continue;
+    const kind = { land, creature: isCreature(perm.card), nonland: !land, permanent: true }[extra.kind];
+    if (kind) units = [...units, ...(extra.add === 'same' ? [made] : extra.add)];
+  }
+  return units;
+}
+
+/**
+ * The mana `perm`'s own ability makes (Command Tower: in its controller's commander's colors). Starting Town's colors
+ * that cost life are left out when its controller can't pay that life.
+ */
+function ownUnits(s: GameState, perm: Permanent, spell?: Card): Color[][] {
   const identity = s.players[perm.controller]?.identity;
   // Magus of the Moon: a nonbasic land only makes {R} (Yavimaya and Urborg still add their types).
   if (mooned(s, perm.card)) return landTypeMana(s, [[moonType(s, perm.card) === 'island' ? 'U' : 'R']]);
@@ -731,7 +755,7 @@ export function unitsOf(s: GameState, perm: Permanent, spell?: Card): Color[][] 
   if (tapsAnotherForMana(perm.card)) units = manaHelpers(s, perm).length ? [['W', 'U', 'B', 'R', 'G']] : [];
   // Mystic Gate: with another source to pay {W/U}, two mana of these colors (the other's mana is spent on the cost).
   const filter = filterMana(perm.card);
-  if (filter && filterHelpers(s, perm).length) units = [[...filter], [...filter]];
+  if (filter && filterHelpers(s, perm).length) units = filter.units.map((u) => [...u]);
   // Chrome Mox: the imprinted card's colors; Mox Amber: the colors of legendary creatures and planeswalkers.
   const state = stateMana(perm.card);
   if (state === 'perCreature') {
@@ -745,14 +769,14 @@ export function unitsOf(s: GameState, perm: Permanent, spell?: Card): Color[][] 
     // Fellwar Stone: the colors an opponent's land could make (Pools and Stones aside).
     const colors = s.battlefield
       .filter((x) => teamOf(s, x.controller) !== teamOf(s, perm.controller) && isLandCard(x.card) && stateMana(x.card) !== 'reflect')
-      .flatMap((x) => unitsOf(s, x).flat())
+      .flatMap((x) => ownUnits(s, x).flat())
       .filter((c) => c !== 'C');
     units = colors.length ? [[...new Set(colors)]] : [];
   } else if (state === 'reflect') {
     // Reflecting Pool: the types the other lands could make (other Pools aside: they add nothing new).
     const types = s.battlefield
       .filter((x) => x.controller === perm.controller && isLandCard(x.card) && stateMana(x.card) !== 'reflect')
-      .flatMap((x) => unitsOf(s, x).flat());
+      .flatMap((x) => ownUnits(s, x).flat());
     units = types.length ? [[...new Set(types)]] : [];
   } else if (state === 'mining') {
     units = perm.counters.mining ? [['W', 'U', 'B', 'R', 'G']] : [];
@@ -853,7 +877,7 @@ function landTypeMana(s: GameState, units: Color[][]): Color[][] {
 }
 
 /** A card with a mana ability of its own (then it's never tapped to pay for Springleaf Drum's mana). */
-const makesMana = (card: Card) => manaUnits(card).length > 0 || !!tapsAnotherForMana(card) || !!stateMana(card) || !!chosenTypeMana(card);
+const makesMana = (card: Card) => manaUnits(card).length > 0 || !!tapsAnotherForMana(card) || !!stateMana(card) || !!chosenTypeMana(card) || !!filterMana(card) || paidAnyColor(card);
 
 /**
  * Springleaf Drum, Gene Pollinator: the untapped permanents (creatures for the Drum) `perm` may tap along with itself:
@@ -868,8 +892,8 @@ function manaHelpers(s: GameState, perm: Permanent): Permanent[] {
 }
 
 /**
- * Mystic Gate: the untapped lands that can pay its {W/U} (one mana of a color, no life, no damage): the ones making
- * fewest colors first.
+ * Mystic Gate, Skycloud Expanse: the untapped lands that can pay its {W/U} or {1} (one mana, no life, no damage): the
+ * ones making fewest colors first.
  */
 function filterHelpers(s: GameState, perm: Permanent): Permanent[] {
   const filter = filterMana(perm.card);
@@ -877,7 +901,7 @@ function filterHelpers(s: GameState, perm: Permanent): Permanent[] {
   return s.battlefield
     .filter((x) => x.controller === perm.controller && x.iid !== perm.iid && isLandCard(x.card) && !filterMana(x.card) && canTapForMana(s, x) && !painfulMana(x) && !painOf(s, x) && !stateMana(x.card))
     .map((x) => ({ x, units: unitsOf(s, x) }))
-    .filter(({ units }) => units.length === 1 && units[0].some((c) => filter.includes(c)))
+    .filter(({ units }) => units.length === 1 && units[0].some((c) => !filter.fee || filter.fee.includes(c)))
     .sort((a, b) => a.units[0].length - b.units[0].length)
     .map(({ x }) => x);
 }
@@ -993,15 +1017,23 @@ export function manaSources(s: GameState, p: PlayerId, spell?: Card): ManaSource
       const pain = painOf(s, x);
       return {
         iid: x.iid, colors: [...new Set(units.flat())], ...(units.length > 1 ? { units } : {}), ...(painfulMana(x) ? { last: true } : {}), ...(pain ? { pain } : {}),
+        ...(units.length === 1 && paidAnyColor(x.card) ? { paid: [...COLORS] } : {}),
       };
     });
-  // Mystic Gate: its helper's mana is part of its own (the helper isn't a source by itself); alone it makes {C}.
+  // Giant's Boulder: no mana but "{1}, {T}: Add one mana of any color."
+  for (const x of s.battlefield) {
+    if (x.controller !== p || x.tapped || !paidAnyColor(x.card) || perms.some((m) => m.iid === x.iid) || activationsForbidden(s, x)) continue;
+    if (!(isCreature(x.card) && x.sick && !hasKw(x, 'haste'))) perms.push({ iid: x.iid, colors: [], paid: [...COLORS] });
+  }
+  // Mystic Gate: its helper's mana is part of its own (the helper isn't a source by itself); alone it makes {C}
+  // (Skycloud Expanse nothing).
   const filtering = new Set<string>();
   for (const src of perms) {
     const perm = s.battlefield.find((x) => x.iid === src.iid);
     if (!perm || !filterMana(perm.card)) continue;
     const helper = filterHelpers(s, perm).find((h) => !filtering.has(h.iid));
     if (helper) filtering.add(helper.iid);
+    else if (!manaUnits(perm.card).length) filtering.add(perm.iid);
     else {
       src.colors = ['C'];
       delete src.units;
@@ -2052,7 +2084,7 @@ function tapForManaOnly(d: GameState, perm: Permanent) {
   const helper = manaHelpers(d, perm)[0];
   if (helper) tapPermanent(d, helper);
   // Mystic Gate: the land paying {W/U} (when it makes two mana).
-  const filtered = filterMana(perm.card) && unitsOf(d, perm).length === 2 ? filterHelpers(d, perm)[0] : undefined;
+  const filtered = filterMana(perm.card) ? filterHelpers(d, perm)[0] : undefined;
   if (filtered) tapPermanent(d, filtered);
   tapPermanent(d, perm);
   // Gemstone Mine: a mining counter removed; sacrificed when none is left.
@@ -4808,7 +4840,8 @@ export function apply(state: GameState, action: Action): GameState {
       const typed = perm.chosenType ? chosenTypeMana(perm.card) : null;
       const legend = legendaryMana(perm.card);
       // Cavern of Souls, Delighted Halfling: the mana keeps both choices until spent ({C}, or a color for the right spell).
-      const units = typed || legend ? [[...new Set([...(unitsOf(d, perm)[0] ?? []), ...(typed ?? legend!)])]] : unitsOf(d, perm);
+      const own = unitsOf(d, perm);
+      const units = typed || legend ? [[...new Set([...(own[0] ?? []), ...(typed ?? legend!)])], ...own.slice(1)] : own;
       const pain = painOf(d, perm);
       const forType = typed ? { type: perm.chosenType!, colors: typed } : undefined;
       d.players[p].pool = [...(d.players[p].pool ?? []), ...units.map((colors) => ({ colors, source: perm.iid, ...(pain ? { pain } : {}), ...(forType ? { forType } : {}), ...(legend ? { forLegendary: legend } : {}) }))];

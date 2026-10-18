@@ -294,8 +294,8 @@ Left "not simulated" or found on the way:
 
 Still open, most played first:
 - [x] Quantum Riddler (6): Warp (cast for its warp cost, exiled at the end step, cast again later from exile)
-- [ ] Talon Gates of Madara (6): "{1}, {T}: Add one mana of any color" (mana costing mana), "up to one target creature
-  phases out", "{4}: Put this card from your hand onto the battlefield" (it makes only {C} for now)
+- [ ] Talon Gates of Madara (6): "up to one target creature phases out", "{4}: Put this card from your hand onto the
+  battlefield" (its mana done, 2026-10-17 fourth batch)
 
 ## Metagame audit 2026-10-16
 
@@ -314,7 +314,7 @@ Still open, playing wrongly, most played first (see `audit-reports/2026-10-16/re
 - [ ] Bilbo, Thief in the Night (4): cost reduction for spells cast from anywhere but the hand; casting from the
   graveyard when it attacks
 - [ ] Anointed Peacekeeper (4): look at a hand, any card name, costs {2} more
-- [ ] Badgermole Cub (4): earthbend; "Whenever you tap a creature for mana, add an additional {G}"
+- [ ] Badgermole Cub (4): earthbend (its extra {G} done, 2026-10-17 fourth batch)
 
 Second batch: Delighted Halfling (any color only for a legendary spell, which can't be countered), Mystic Remora
 (cumulative upkeep: age counters, pay or sacrifice; "unless that player pays {4}"), Yavimaya, Cradle of Growth (each
@@ -355,20 +355,29 @@ keyword lords ("Demons you control have …": Ardyn), "<name> can't block" (Skre
 creature card" as a cost), Seasoned Hallowblade, Priest of Titania ({G} per Elf), Disruptor Flute and Anointed
 Peacekeeper (the chosen name costs more; the Peacekeeper offers the opponent's hand first).
 
+Mana, fourth batch: mana abilities costing mana ("{1}, {T}: Add one mana of any color": Talon Gates of Madara, The
+Mycosynth Gardens, Conduit Pylons, Giant's Boulder; the payment planner spends one more mana for each such color) and
+Skycloud Expanse ("{1}, {T}: Add {W}{U}", like Mystic Gate); extra mana when a permanent is tapped for mana (Wild
+Growth and other Auras, Badgermole Cub, Kinnan, Mana Flare, Zendikar Resurgent) and Nyxbloom Ancient / Mana Reflection
+(three / two times as much).
+
 Approximations: Exalted Angel's "Whenever this creature deals damage, you gain that much life" is played as lifelink
 (no trigger on the stack); a creature making several mana keeps its own ability under Cryptolith Rite; the bot never
-activates abilities with a discard cost (Psychic Frog, Survival of the Fittest).
+activates abilities with a discard cost (Psychic Frog, Survival of the Fittest). Talon Gates tapped by hand (not while
+paying) makes {C}: its any-color mana is only chosen when paying. Kinnan's and Mana Flare's "one mana of any type that
+permanent produced" may be any of the colors it could make (Birds of Paradise tapped for {G}: Kinnan's mana may be
+blue). These extra mana abilities are not triggers on the log.
 
 Still open, playing wrongly, most played first (see `audit-reports/2026-10-17/report.md`):
-- [ ] Talon Gates of Madara (6), The Mycosynth Gardens, Giant's Boulder: "{1}, {T}: Add one mana of any color" (a mana
-  ability costing mana) makes nothing; Talon Gates' phasing and "{4}: Put this card from your hand onto the battlefield"
+- [ ] Talon Gates of Madara (6): its phasing and "{4}: Put this card from your hand onto the battlefield" (its mana done,
+  fourth batch); The Mycosynth Gardens becoming a copy of an artifact
 - [ ] Seasoned Cryomancer (5): stun counters; "When you discard one or more nonland cards this way"
-- [ ] Badgermole Cub (4): earthbend; "Whenever you tap a creature for mana, add an additional {G}"
+- [ ] Badgermole Cub (4): earthbend (its extra {G} done, 2026-10-17 fourth batch)
 - [ ] Lion's Eye Diamond (4), Arena of Glory (exert), Wall of Roots (a -0/-1 counter as a mana cost)
 - [ ] Clones with more than added types: Phantasmal Image (sacrificed when targeted), Flesh Duplicate (vanishing),
   Gigantoplasm, Superior Spider-Man (a creature card in a graveyard) — Glasspool Mimic, Clever Impersonator and Copy
   Enchantment done (third batch)
-- [ ] Kinnan, Nyxbloom Ancient, Wild Growth, Badgermole Cub: extra mana when a permanent is tapped for mana
+- [ ] Utopia Sprawl: "As this Aura enters, choose a color." (Wild Growth, Kinnan, Nyxbloom Ancient done, fourth batch)
 - [ ] Hypnotic Specter: "deals damage to an opponent, that player discards a card at random"
 
 ## Commander: Aang, Swift Savior (a user's deck, `deck.txt`)
