@@ -9,6 +9,66 @@ export interface AccountUser {
   avatarUrl: string | null;
   /** When the account was created (ms). */
   createdAt?: number;
+  /** An administrator (ADMIN_DISCORD_IDS): the /admin page. */
+  admin?: boolean;
+}
+
+/** The administration page's data (server/admin.ts). */
+export interface AdminOverview {
+  users: number;
+  newThisWeek: number;
+  activeToday: number;
+  active7d: number;
+  sessions: number;
+  online: { players: number; rooms: number };
+  matches7d: number;
+  botShare: number | null;
+  perDay: { day: string; bot: number; online: number }[];
+  storage: { decks: number; sharedDecks: number; sharedReplays: number; cards: number };
+  recentSignups: { name: string; avatarUrl: string | null; createdAt: number }[];
+}
+export interface AdminUser {
+  id: string;
+  name: string;
+  avatarUrl: string | null;
+  discord: string | null;
+  createdAt: number;
+  lastSeen: number | null;
+  decks: number;
+  matches: number;
+  sessions: number;
+  shares: number;
+  admin: boolean;
+}
+export interface AdminRoom {
+  id: string;
+  code: string;
+  players: { name: string; connected: boolean }[];
+  size: 2 | 4;
+  mode: string;
+  bestOf: 1 | 3;
+  score: number[];
+  turn: number | null;
+  clock: { player: string; kind: 'turn' | 'reconnect'; endsAt: number } | null;
+  watchers: number;
+  createdAt: number | null;
+}
+export interface AdminShare {
+  kind: 'deck' | 'replay';
+  shareId: string;
+  title: string;
+  owner: string;
+  at: number;
+}
+export interface AdminSystem {
+  version: string;
+  startedAt: number;
+  migrations: string[];
+  accounts: boolean;
+  admins: number;
+  cardCheck: string;
+  turnSeconds: number;
+  reconnectSeconds: number;
 }
 
 /** A deck shared by its owner: anyone with /shared/<shareId> can read it. */
@@ -112,6 +172,19 @@ export const accountApi = {
   share: (id: string) => request<DeckShare>('PUT', `/api/decks/${id}/share`),
   unshare: (id: string) => request<void>('DELETE', `/api/decks/${id}/share`),
   shared: (shareId: string) => request<SharedDeck>('GET', `/api/shared/${encodeURIComponent(shareId)}`),
+  admin: {
+    overview: () => request<AdminOverview>('GET', '/api/admin/overview'),
+    users: (q: string, sort: 'seen' | 'joined') => request<{ users: AdminUser[]; total: number }>('GET', `/api/admin/users?q=${encodeURIComponent(q)}&sort=${sort}`),
+    signOut: (id: string) => request<{ count: number }>('POST', `/api/admin/users/${id}/signout`),
+    unshare: (id: string) => request<{ count: number }>('POST', `/api/admin/users/${id}/unshare`),
+    deleteUser: (id: string) => request<void>('DELETE', `/api/admin/users/${id}`),
+    rooms: () => request<{ rooms: AdminRoom[] }>('GET', '/api/admin/rooms'),
+    closeRoom: (code: string) => request<void>('DELETE', `/api/admin/rooms/${encodeURIComponent(code)}`),
+    shares: (kind: 'decks' | 'replays', q: string) => request<{ shares: AdminShare[] }>('GET', `/api/admin/shares?kind=${kind}&q=${encodeURIComponent(q)}`),
+    stopShare: (kind: 'deck' | 'replay', shareId: string) => request<void>('DELETE', `/api/admin/shares/${kind}/${encodeURIComponent(shareId)}`),
+    system: () => request<AdminSystem>('GET', '/api/admin/system'),
+    maintenance: (task: 'sessions' | 'tombstones') => request<{ count: number }>('POST', `/api/admin/maintenance/${task}`),
+  },
   replayShares: () => request<{ shares: ReplayShare[] }>('GET', '/api/replays'),
   shareReplay: (data: string) => request<ReplayShare>('POST', '/api/replays', { data }),
   unshareReplay: (shareId: string) => request<void>('DELETE', `/api/replays/${encodeURIComponent(shareId)}`),

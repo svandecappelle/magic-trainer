@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { NavLink, Route, Routes } from 'react-router-dom';
 import { AccountMenu, LoginNotice } from './components/AccountMenu';
 import { LANGS, messagesFor, useLang, useT, type Lang } from './i18n';
+import { Admin } from './pages/Admin';
 import { Collection } from './pages/Collection';
 import { DeckEditor } from './pages/DeckEditor';
 import { Decks } from './pages/Decks';
@@ -91,6 +92,7 @@ export function App() {
           <Route path="/history" element={<History />} />
           <Route path="/history/replay/:replayId" element={<History />} />
           <Route path="/profile" element={<Profile />} />
+          <Route path="/admin/:tab?" element={<Admin />} />
           <Route path="/shared/:shareId" element={<SharedDeck />} />
           <Route path="/replay/:shareId" element={<SharedReplay />} />
         </Routes>

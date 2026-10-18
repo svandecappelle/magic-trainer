@@ -11,6 +11,7 @@ import { migrate, openDb, waitForDb } from './db/index';
 import { ROOM_KEEP_HOURS, roomStore } from './db/roomStore';
 import { historyRoutes, historyStore } from './history';
 import { replayRoutes } from './replays';
+import { adminRoutes } from './admin';
 import { sendJson } from './http';
 import { RoomManager, type Conn } from './rooms';
 
@@ -79,7 +80,8 @@ if (db) {
 }
 
 // Accounts: login with Discord (PUBLIC_URL, DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET), needs the database.
-const account = accounts({ pool: db, config: authConfig(process.env) });
+const authSettings = authConfig(process.env);
+const account = accounts({ pool: db, config: authSettings });
 if (db && !account.enabled) console.log('Accounts disabled: set PUBLIC_URL, DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET to enable them.');
 
 const server = createServer(async (req, res) => {
@@ -89,6 +91,7 @@ const server = createServer(async (req, res) => {
     if (await decks.handle(req, res, url)) return;
     if (await history.handle(req, res, url)) return;
     if (await replays.handle(req, res, url)) return;
+    if (await admin.handle(req, res, url)) return;
     if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { error: 'notFound' });
     serveStatic(res, url);
   } catch (e) {
@@ -123,6 +126,14 @@ const rooms = new RoomManager({
   emptyRoomTtlMs: ROOM_KEEP_HOURS * 3600_000,
   ...(store ? { store } : {}),
   ...(results ? { history: results } : {}),
+});
+// Administration (/admin): ADMIN_DISCORD_IDS lists the administrators' Discord ids. APP_VERSION: the deployed commit.
+const admin = adminRoutes({
+  pool: db, account, rooms, adminIds: authSettings?.adminDiscordIds ?? [],
+  system: {
+    version: process.env.APP_VERSION || 'unknown', startedAt: Date.now(), accounts: account.enabled, admins: authSettings?.adminDiscordIds?.length ?? 0,
+    cardCheck, turnSeconds: seconds(process.env.TURN_SECONDS, 120), reconnectSeconds: seconds(process.env.RECONNECT_SECONDS, 180),
+  },
 });
 if (store) {
   try {

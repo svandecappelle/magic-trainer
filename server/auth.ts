@@ -10,6 +10,8 @@ export interface AuthConfig {
   publicUrl: string;
   discordClientId: string;
   discordClientSecret: string;
+  /** ADMIN_DISCORD_IDS: the Discord ids of the administrators (the /admin page). */
+  adminDiscordIds?: string[];
 }
 
 export interface SessionUser {
@@ -18,6 +20,8 @@ export interface SessionUser {
   avatarUrl: string | null;
   /** When the account was created (ms), for the profile page. */
   createdAt: number;
+  /** Its Discord id is in ADMIN_DISCORD_IDS. */
+  admin?: boolean;
 }
 
 /** Discord's /users/@me (scope identify), the fields used. */
@@ -38,10 +42,15 @@ const DISCORD_API = 'https://discord.com/api/v10';
 
 /** The configuration from the environment, or null (accounts disabled) when a variable is missing. */
 export function authConfig(env: NodeJS.ProcessEnv): AuthConfig | null {
-  const { PUBLIC_URL, DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET } = env;
+  const { PUBLIC_URL, DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, ADMIN_DISCORD_IDS } = env;
   if (!PUBLIC_URL || !DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET) return null;
-  return { publicUrl: new URL(PUBLIC_URL).origin, discordClientId: DISCORD_CLIENT_ID, discordClientSecret: DISCORD_CLIENT_SECRET };
+  // Discord ids are numbers ("snowflakes"), separated by commas or spaces.
+  const admins = (ADMIN_DISCORD_IDS ?? '').split(/[\s,]+/).filter((id) => /^\d{5,25}$/.test(id));
+  return { publicUrl: new URL(PUBLIC_URL).origin, discordClientId: DISCORD_CLIENT_ID, discordClientSecret: DISCORD_CLIENT_SECRET, adminDiscordIds: admins };
 }
+
+/** Is the user (u.id) an administrator: a Discord identity listed in ADMIN_DISCORD_IDS ($3)? */
+const ADMIN_SQL = `EXISTS (SELECT 1 FROM identities i WHERE i.user_id = u.id AND i.provider = 'discord' AND i.provider_user_id = ANY($3::text[]))`;
 
 export function hashToken(token: string): Buffer {
   return createHash('sha256').update(token).digest();
@@ -135,12 +144,13 @@ export function accounts({ pool, config, fetch: fetchFn = fetch }: AccountsOptio
     if (!pool) return null;
     const token = parseCookies(req).get(SESSION_COOKIE);
     if (!token) return null;
-    const { rows } = await pool.query<{ id: string; name: string; avatar: string | null; created: Date; renew: boolean; seen: boolean }>(
+    const { rows } = await pool.query<{ id: string; name: string; avatar: string | null; created: Date; renew: boolean; seen: boolean; admin: boolean }>(
       `SELECT u.id, u.display_name AS name, u.avatar_url AS avatar, u.created_at AS created,
-              s.expires_at < now() + make_interval(days => $2) AS renew, s.last_seen_at < now() - interval '1 hour' AS seen
+              s.expires_at < now() + make_interval(days => $2) AS renew, s.last_seen_at < now() - interval '1 hour' AS seen,
+              ${ADMIN_SQL} AS admin
          FROM sessions s JOIN users u ON u.id = s.user_id
         WHERE s.token_hash = $1 AND s.expires_at > now()`,
-      [hashToken(token), RENEW_DAYS],
+      [hashToken(token), RENEW_DAYS, config?.adminDiscordIds ?? []],
     );
     const row = rows[0];
     if (!row) {
@@ -153,7 +163,7 @@ export function accounts({ pool, config, fetch: fetchFn = fetch }: AccountsOptio
     } else if (row.seen) {
       await pool.query(`UPDATE sessions SET last_seen_at = now() WHERE token_hash = $1`, [hashToken(token)]);
     }
-    return { id: row.id, name: row.name, avatarUrl: row.avatar, createdAt: row.created.getTime() };
+    return { id: row.id, name: row.name, avatarUrl: row.avatar, createdAt: row.created.getTime(), ...(row.admin ? { admin: true } : {}) };
   }
 
   /**

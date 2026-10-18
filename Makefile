@@ -90,7 +90,8 @@ app:
 	  echo "Created the database password in .env (keep this file: the database needs it)."
 	fi
 	echo "Building and starting the containers (app on 127.0.0.1:$(PORT), PostgreSQL)…"
-	MAGIC_TRAINER_PORT=$(PORT) $(COMPOSE) up -d --build
+	# The deployed commit, shown on the administration page.
+	APP_VERSION="$$(git rev-parse --short HEAD 2>/dev/null || true)" MAGIC_TRAINER_PORT=$(PORT) $(COMPOSE) up -d --build
 	# Wait until the app answers (the image runs the tests while building, so this is quick).
 	for i in $$(seq 1 30); do
 	  if curl -fsS -o /dev/null "http://127.0.0.1:$(PORT)/" 2>/dev/null; then echo "The app answers on port $(PORT)."; exit 0; fi

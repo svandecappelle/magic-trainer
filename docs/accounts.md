@@ -353,6 +353,8 @@ New environment variables:
 | `DISCORD_CLIENT_ID`     | `1234567890`                                  | Discord application                       |
 | `DISCORD_CLIENT_SECRET` | from the Discord portal                       | Secret, never sent to the browser         |
 | `POSTGRES_PASSWORD`     | random                                        | Used by both containers                   |
+| `ADMIN_DISCORD_IDS`     | `123456789012345678,223456789012345678`       | Administrators (the `/admin` page)        |
+| `APP_VERSION`           | set by `make app` (the git commit)            | Shown on the administration page         |
 
 Without `DATABASE_URL` or the Discord variables, the server starts as today, with accounts disabled (`/api/me`
 answers `{ user: null, enabled: false }` and the login button is hidden).
@@ -413,6 +415,30 @@ Secrets go in a `.env` file next to `docker-compose.yml` (git-ignored; a `.env.e
 
 `make backup [KEEP=14]` (`pg_dump -Fc` to `backups/`, from a daily cron) and `make restore FILE=…` (stops the app,
 empties the `public` schema, `pg_restore`, starts the app, which applies the newer migrations). See the README.
+
+## Administration
+
+Administrators are the accounts whose Discord user id is in `ADMIN_DISCORD_IDS` (comma or space separated; restart
+the app after changing it). Nothing in the database marks them, and nothing in the app can make someone an
+administrator. `/api/me` returns `admin: true` for them; their account menu links to `/admin`.
+
+| Method | Path                                    | Purpose                                                     |
+| ------ | --------------------------------------- | ----------------------------------------------------------- |
+| GET    | `/api/admin/overview`                   | Users, activity, online players, matches per day, storage   |
+| GET    | `/api/admin/users?q=&sort=seen\|joined` | The users (200 at most), with their decks, matches, shares  |
+| POST   | `/api/admin/users/:id/signout`          | Deletes all the user's sessions                             |
+| POST   | `/api/admin/users/:id/unshare`          | Stops all the user's shared decks and replays               |
+| DELETE | `/api/admin/users/:id`                  | Deletes the account and its data (like "Delete my account") |
+| GET    | `/api/admin/rooms`                      | The online rooms in the server's memory                     |
+| DELETE | `/api/admin/rooms/:code`                | Closes a room: its players and spectators are disconnected  |
+| GET    | `/api/admin/shares?kind=decks\|replays&q=` | Shared decks or replays (200 at most)                    |
+| DELETE | `/api/admin/shares/deck\|replay/:shareId` | Stops sharing it                                         |
+| GET    | `/api/admin/system`                     | Version, uptime, migrations, settings                       |
+| POST   | `/api/admin/maintenance/sessions\|tombstones` | Purges expired sessions or old deleted decks now      |
+
+Every route answers 401 without a session and 403 for a user who isn't an administrator; changes need our own
+`Origin` and are limited to 60 a minute. An administrator can't be signed out, unshared or deleted from the page (nor
+delete their own account there): that is done by removing them from `ADMIN_DISCORD_IDS` first.
 
 ## Implementation steps
 

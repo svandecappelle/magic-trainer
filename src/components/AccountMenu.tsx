@@ -50,6 +50,7 @@ export function AccountMenu() {
           <div className="account-name">{user.name}</div>
           <div className={`account-status ${state}`}>{statusText}</div>
           <Link to="/profile" role="menuitem" className="account-link" onClick={() => setOpen(false)}>{t.profile.title}</Link>
+          {user.admin && <Link to="/admin" role="menuitem" className="account-link" onClick={() => setOpen(false)}>🛡 {t.admin.title}</Link>}
           <button type="button" role="menuitem" onClick={() => void syncNow()} disabled={state === 'syncing'}>{t.account.syncNow}</button>
           <button type="button" role="menuitem" onClick={() => { setOpen(false); void logout(confirm(t.account.confirmRemoveLocal)); }}>{t.account.logout}</button>
           <button

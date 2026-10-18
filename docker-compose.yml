@@ -15,6 +15,9 @@ services:
       PUBLIC_URL: ${PUBLIC_URL:-}
       DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:-}
       DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
+      # Administrators (the /admin page): their Discord ids, separated by commas. APP_VERSION: set by make app.
+      ADMIN_DISCORD_IDS: ${ADMIN_DISCORD_IDS:-}
+      APP_VERSION: ${APP_VERSION:-}
     depends_on:
       postgres:
         condition: service_healthy

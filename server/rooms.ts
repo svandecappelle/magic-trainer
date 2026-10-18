@@ -64,6 +64,24 @@ interface Room {
   saveTimer?: ReturnType<typeof setTimeout>;
   /** Connections watching the game (no seat; they see no hand). */
   watchers?: Set<Conn>;
+  /** When it was created (ms; rooms saved before: unknown). */
+  createdAt?: number;
+}
+
+/** A room as the administration page lists it (server/admin.ts). */
+export interface AdminRoom {
+  id: string;
+  code: string;
+  players: { name: string; connected: boolean }[];
+  size: 2 | 4;
+  mode: string;
+  bestOf: 1 | 3;
+  score: number[];
+  /** The game in progress: its turn, and whose clock runs (a decision, or a player to come back). */
+  turn: number | null;
+  clock: { player: string; kind: 'turn' | 'reconnect'; endsAt: number } | null;
+  watchers: number;
+  createdAt: number | null;
 }
 
 /** What is saved of a room: everything but the connections and the timers. */
@@ -283,7 +301,7 @@ export class RoomManager {
     let code: string;
     do code = Array.from({ length: 5 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
     while (this.rooms.has(code));
-    const room: Room = { id: randomUUID(), code, seats: [], game: null, match: newMatch(bestOf), matchId: randomUUID(), replays: [], size, setup, mode };
+    const room: Room = { id: randomUUID(), code, seats: [], game: null, match: newMatch(bestOf), matchId: randomUUID(), replays: [], size, setup, mode, createdAt: Date.now() };
     this.rooms.set(code, room);
     this.byId.set(room.id, room);
     this.seat(conn, room, name, deckName, deck, side, commanders);
@@ -611,6 +629,31 @@ export class RoomManager {
     if (room.seats.some((s) => s.conn)) return;
     clearTimeout(room.expiry);
     room.expiry = setTimeout(() => this.deleteRoom(room), this.ttl);
+  }
+
+  /** The rooms for the administration page, the newest first. */
+  adminRooms(): AdminRoom[] {
+    return [...this.rooms.values()].map((room): AdminRoom => ({
+      id: room.id, code: room.code, size: room.size, mode: setupOf(room).mode, bestOf: room.match.bestOf, score: [...room.match.wins],
+      players: room.seats.map((s) => ({ name: s.name, connected: !!s.conn })),
+      turn: room.game && room.game.winner === null ? room.game.turn : null,
+      clock: room.clock ? { player: room.seats[room.clock.player]?.name ?? '?', kind: room.clock.kind, endsAt: room.clock.endsAt } : null,
+      watchers: room.watchers?.size ?? 0, createdAt: room.createdAt ?? null,
+    })).sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  }
+
+  /** An administrator closes a room: its players and spectators are told the game is gone. False: no such room. */
+  adminClose(code: string): boolean {
+    const room = this.rooms.get(code);
+    if (!room) return false;
+    for (const s of room.seats) {
+      if (!s.conn) continue;
+      this.where.delete(s.conn);
+      s.conn.send({ t: 'error', code: 'gameGone', lostRoom: true });
+      s.conn = null;
+    }
+    this.deleteRoom(room);
+    return true;
   }
 
   private deleteRoom(room: Room) {
