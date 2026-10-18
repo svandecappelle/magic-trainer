@@ -692,6 +692,8 @@ export type Action =
   | { type: 'cycle'; iid: string; pay?: string[] }
   /** Channel: discard a card from hand to activate its channel ability. */
   | { type: 'channel'; iid: string; targets?: Target[][]; pay?: string[] }
+  /** Ninjutsu: card `iid` from the hand, returning the unblocked attacker `attacker`. */
+  | { type: 'ninjutsu'; iid: string; attacker: string; pay?: string[] }
   /** Activate ability number `index` (in activatedOf order) of a permanent you control. */
   | { type: 'activate'; iid: string; index: number; targets?: Target[][]; x?: number; pay?: string[] }
   | { type: 'pass' }
@@ -2441,6 +2443,12 @@ function payMana(d: GameState, p: PlayerId, plan: ManaPick[]) {
   else delete ps.pool;
 }
 
+/** Ninjutsu: `p`'s unblocked attackers, once blockers are declared (before combat damage). */
+export function ninjutsuAttackers(s: GameState, p: PlayerId): Permanent[] {
+  if (s.step !== 'block' || s.priority?.reason !== 'block') return [];
+  return s.attackers.map((iid) => findPermanent(s, iid)).filter((a): a is Permanent => !!a && a.controller === p && !(s.blocks[a.iid]?.length));
+}
+
 /** Taps an untapped permanent: City of Brass's "whenever this land becomes tapped" triggers. */
 function tapPermanent(d: GameState, perm: Permanent) {
   if (perm.tapped) return;
@@ -3879,6 +3887,20 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       // Talon Gates of Madara: it (and what's attached to it) leaves the game's view until its controller's untap step.
       for (const perm of perms) phaseOut(d, perm);
       break;
+    case 'ninjutsuEnter': {
+      // Ninjutsu: tapped and attacking (unblocked: blockers were declared), if it's still in the hand.
+      const ps = d.players[caster];
+      const inst = ps.hand.find((c) => c.iid === item.fromHand);
+      if (!inst) break;
+      ps.hand = ps.hand.filter((c) => c !== inst);
+      log(d, { k: 'enters', card: inst.card.name });
+      const ninja = enterBattlefield(d, inst, caster, { tapped: true });
+      if (d.step === 'block') {
+        d.attackers = [...d.attackers, ninja.iid];
+        if (e.attacking && findPermanent(d, e.attacking)) d.attackTargets = { ...d.attackTargets, [ninja.iid]: e.attacking };
+      }
+      break;
+    }
     case 'putSelfFromHand': {
       // Talon Gates of Madara: "Put this card from your hand onto the battlefield." (if it's still there)
       const ps = d.players[caster];
@@ -5149,7 +5171,9 @@ function wantsPriority(d: GameState, p: PlayerId): boolean {
   if (activatable(d, p).length > 0 || [...ps.graveyard, ...ps.exile, ...(ps.command ?? [])].some((c) => castOptions(d, p, c.iid).length > 0)) return true;
   // Online: cards in hand and mana to cast one, whatever they are (a spell without mana, like Daze, needs full control).
   if (d.publicStops) return ps.hand.length > 0 && (!!ps.pool?.length || manaSources(d, p).some((m) => !m.iid.startsWith('hand:')));
-  return ps.hand.some((c) => castOptions(d, p, c.iid).length > 0);
+  return ps.hand.some((c) => castOptions(d, p, c.iid).length > 0)
+    // Ninjutsu: after blockers, with an unblocked attacker.
+    || (ninjutsuAttackers(d, p).length > 0 && ps.hand.some((c) => { const cost = castInfo(c.card).ninjutsu; return !!cost && !!findPayment(manaSources(d, p), parseCost(cost)); }));
 }
 
 function openWindow(d: GameState, reason: WindowReason, player: PlayerId, passes: number) {
@@ -5956,6 +5980,31 @@ export function apply(state: GameState, action: Action): GameState {
       } else {
         openWindow(d, 'main', nextPlayer(d, p), 0);
       }
+      break;
+    }
+
+    case 'ninjutsu': {
+      // "Return an unblocked attacker you control to hand: Put this card onto the battlefield from your hand tapped and
+      // attacking." Once blockers are declared.
+      const inst = me.hand.find((c) => c.iid === action.iid);
+      const cost = inst && castInfo(inst.card).ninjutsu;
+      if (!inst || !cost) throw new IllegalAction('noSuchAbility');
+      if (!ninjutsuAttackers(d, p).some((a) => a.iid === action.attacker)) throw new IllegalAction('activateTiming');
+      if (splitSecondOnStack(d)) throw new IllegalAction('activationForbidden');
+      if (!pay(d, p, chosenSources(manaSources(d, p), action.pay), parseCost(cost))) throw unpaid(action.pay, inst.card.name);
+      const attacker = findPermanent(d, action.attacker)!;
+      const attacking = d.attackTargets?.[attacker.iid];
+      d.attackers = d.attackers.filter((iid) => iid !== attacker.iid);
+      d.battlefield = d.battlefield.filter((x) => x !== attacker);
+      returnExiledUntil(d, attacker);
+      fireObject(d, 'leaves', attacker);
+      if (!isToken(printedCard(attacker))) putInZone(d, attacker.owner ?? attacker.controller, { iid: attacker.iid, card: printedCard(attacker) }, 'hand');
+      log(d, { k: 'bounced', card: attacker.card.name });
+      d.abilities = (d.abilities ?? 0) + 1;
+      finishActivation(d, {
+        iid: `${inst.iid}-ninjutsu-${d.abilities}`, card: inst.card, controller: p, targets: [], fromHand: inst.iid,
+        ability: { targets: [], effects: [{ kind: 'ninjutsuEnter', ...(attacking ? { attacking } : {}) }] },
+      }, []);
       break;
     }
 

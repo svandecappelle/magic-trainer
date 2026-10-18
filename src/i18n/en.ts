@@ -978,6 +978,8 @@ export const en = {
     cycleFor: (cost: string) => `Cycle (${cost})`,
     channelFor: (cost: string) => `Channel (${cost})`,
     discardFor: (cost: string) => `Discard to activate (${cost})`,
+    putOntoBattlefieldFor: (cost: string) => `Put onto the battlefield (${cost})`,
+    ninjutsuFor: (cost: string, attacker: string) => `Ninjutsu (${cost}), returning ${attacker}`,
     chosenTypeTitle: 'The creature type chosen as it entered',
     emblem: 'Emblem',
     modeNotSimulated: 'This mode is not simulated',

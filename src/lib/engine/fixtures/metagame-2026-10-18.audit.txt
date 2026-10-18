@@ -12,17 +12,6 @@ PARTIAL  Jace, Wielder of Mysteries {1}{U}{U}{U} — Legendary Planeswalker — 
       loyalty ability → mill+draw (1 target)
   ✗ −8: Draw seven cards. Then if your library has no cards in it, you wi…
       activated ability, effect not simulated
-PARTIAL  Kaito, Bane of Nightmares {2}{U}{B} — Legendary Planeswalker — Kaito
-  ✗ Ninjutsu {1}{U}{B}
-      keyword not simulated: ninjutsu
-  ✓ During your turn, as long as Kaito has one or more loyalty counters o…
-      a 3/4 Ninja creature during your turn (with loyalty)
-  ✓ +1: You get an emblem with "Ninjas you control get +1/+1."
-      loyalty ability → emblem
-  ✓ 0: Surveil 2. Then draw a card for each opponent who lost life this t…
-      loyalty ability → surveil+draw
-  ✓ −2: Tap target creature. Put two stun counters on it.
-      loyalty ability → tap+addCounters (1 target)
 PARTIAL  Lurrus of the Dream-Den {1}{W/B}{W/B} — Legendary Creature — Cat Nightmare
   ✗ Companion — Each permanent card in your starting deck has mana value …
       companion not simulated (played from the deck)
@@ -96,6 +85,17 @@ OK       Inti, Seneschal of the Sun {1}{R} — Legendary Creature — Human Knig
       trigger (youAttack) → reflexive
   ✓ Whenever you discard one or more cards, exile the top card of your li…
       trigger (youDiscard) → impulse
+OK       Kaito, Bane of Nightmares {2}{U}{B} — Legendary Planeswalker — Kaito
+  ✓ Ninjutsu {1}{U}{B}
+      keyword
+  ✓ During your turn, as long as Kaito has one or more loyalty counters o…
+      a 3/4 Ninja creature during your turn (with loyalty)
+  ✓ +1: You get an emblem with "Ninjas you control get +1/+1."
+      loyalty ability → emblem
+  ✓ 0: Surveil 2. Then draw a card for each opponent who lost life this t…
+      loyalty ability → surveil+draw
+  ✓ −2: Tap target creature. Put two stun counters on it.
+      loyalty ability → tap+addCounters (1 target)
 OK       Karn, Argent Defender {2} — Legendary Artifact Creature — Golem
   ✓ Artifacts and creatures entering the battlefield don't cause abilitie…
       rule for the game: noEntersTriggers
@@ -207,5 +207,5 @@ OK       Uro, Titan of Nature's Wrath {1}{G}{U} — Legendary Creature — Elder
   ✓ Escape—{G}{G}{U}{U}, Exile five other cards from your graveyard.
       escape {G}{G}{U}{U}: cast from the graveyard, exiling 5
 
-34 cards: 28 ok, 6 partial, 0 not simulated, 0 can't be cast
+34 cards: 29 ok, 5 partial, 0 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

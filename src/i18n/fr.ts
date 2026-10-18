@@ -986,6 +986,8 @@ export const fr: Messages = {
     cycleFor: (cost) => `Recycler (${cost})`,
     channelFor: (cost) => `Canaliser (${cost})`,
     discardFor: (cost) => `Défausser pour activer (${cost})`,
+    putOntoBattlefieldFor: (cost) => `Mettre sur le champ de bataille (${cost})`,
+    ninjutsuFor: (cost, attacker) => `Ninjutsu (${cost}), en renvoyant ${attacker}`,
     chosenTypeTitle: 'Le type de créature choisi à son arrivée',
     emblem: 'Emblème',
     modeNotSimulated: "Ce mode n'est pas simulé",

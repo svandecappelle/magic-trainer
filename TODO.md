@@ -503,7 +503,11 @@ Murktide Regent (counters for the instants and sorceries delved, and when one le
 exiled by discarding is playable until your next end step).
 
 Approximations: Murktide Regent sees cards leave the graveyard at the next state check (one leaving and coming back in
-between is missed). Kaito's ninjutsu isn't simulated.
+between is missed).
+
+Ninjutsu (Kaito, Ingenious Infiltrator, Moon-Circuit Hacker): after blockers, an unblocked attacker back to the hand and
+the Ninja tapped and attacking the same player or planeswalker; the bot swaps a weaker unblocked attacker for its Ninja.
+Talon Gates of Madara's ability is labelled "Put onto the battlefield" (not "Discard").
 
 The bot uses the new abilities: Hope of Ghirapur's lock, Necropotence (three cards a turn at most, with 12 life or more),
 Relic of Progenitus (a card of a non-empty graveyard; all graveyards when the opponents' hold four cards), Phyrexian

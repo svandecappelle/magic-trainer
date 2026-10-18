@@ -5466,3 +5466,41 @@ describe('The bot uses the new abilities', () => {
     expect(botAction(s)).toMatchObject({ type: 'channel', iid: 'o0' });
   });
 });
+
+describe('Ninjutsu', () => {
+  const ninja = creature('Ingenious Infiltrator', 2, 3, {
+    typeLine: 'Creature — Vedalken Ninja', manaCost: '{2}{U}{B}', cmc: 4,
+    oracleText: 'Ninjutsu {U}{B} ({U}{B}, Return an unblocked attacker you control to hand: Put this card onto the battlefield from your hand tapped and attacking.)\nWhenever a Ninja you control deals combat damage to a player, draw a card.',
+  });
+  const islandSwamp = card({ name: 'Watery Grave', typeLine: 'Land — Island Swamp', oracleText: '({T}: Add {U} or {B}.)' });
+  const toBlocks = (s: GameState, attackers: string[]) => {
+    s = apply(s, { type: 'pass' });
+    for (let i = 0; i < 6 && (s.priority || s.step !== 'attack'); i++) s = apply(s, { type: 'pass' });
+    s = apply(s, { type: 'declareAttackers', attackers });
+    // Until the window after blockers (the opponent has nothing to block with: no declaration).
+    for (let i = 0; i < 10 && s.priority?.reason !== 'block'; i++) s = !s.priority && s.step === 'block' ? apply(s, { type: 'declareBlockers', blocks: {} }) : apply(s, { type: 'pass' });
+    return s;
+  };
+
+  it('returns an unblocked attacker; the Ninja enters tapped and attacking, unblocked', () => {
+    let s = board({ mine: [creature('Rat', 1, 1), islandSwamp, islandSwamp], hand: [ninja] });
+    // Not before blockers.
+    expect(errorOf(() => apply(s, { type: 'ninjutsu', iid: 'h0', attacker: iidOf(s, 'Rat') }))).not.toBeNull();
+    s = toBlocks(s, [iidOf(s, 'Rat')]);
+    expect(s.priority?.reason).toBe('block');
+    s = apply(s, { type: 'ninjutsu', iid: 'h0', attacker: iidOf(s, 'Rat') });
+    for (let i = 0; i < 20 && s.step !== 'main2'; i++) s = s.pending ? apply(s, { type: 'choose', answer: { kind: 'yesNo', yes: true } }) : apply(s, { type: 'pass' });
+    for (let i = 0; i < 5 && (s.stack.length || s.triggered?.length); i++) s = settle(apply(s, { type: 'pass' }));
+    expect(s.players[0].hand.map((c) => c.card.name)).toContain('Rat');
+    expect(perm(s, 'Ingenious Infiltrator')!.tapped).toBe(true);
+    expect(s.players[1].life).toBe(18);
+    // Its trigger: a card.
+    expect(s.players[0].hand).toHaveLength(2);
+  });
+
+  it('the bot swaps a weaker unblocked attacker for its Ninja', () => {
+    let s = board({ mine: [creature('Rat', 1, 1), islandSwamp, islandSwamp], hand: [ninja] });
+    s = toBlocks(s, [iidOf(s, 'Rat')]);
+    expect(botAction(s)).toMatchObject({ type: 'ninjutsu', iid: 'h0', attacker: iidOf(s, 'Rat') });
+  });
+});

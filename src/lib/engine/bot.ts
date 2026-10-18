@@ -1,5 +1,5 @@
 import {
-  abilityMaxX, activatable, activationProblem, canPayAbility, actor, castSource, channelCost, crewOptions, crewPower, firstOpponent, mulliganBottom, isActivePlayer, opponentsOf, teamOf, canAttack, castCost, castOptions, castSources, findInGraveyard, landFaces, manaSources, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
+  abilityMaxX, activatable, activationProblem, canPayAbility, actor, castSource, channelCost, crewOptions, crewPower, ninjutsuAttackers, firstOpponent, mulliganBottom, isActivePlayer, opponentsOf, teamOf, canAttack, castCost, castOptions, castSources, findInGraveyard, landFaces, manaSources, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
   legalTargets, matching, maxX, powerOf, toughnessOf, xCount,
   type Action, type Answer, type CastOption, type CardInst, type Choice, type GameState, type Permanent, type PlayerId, type StackItem, type Target, type Triggered,
 } from './engine';
@@ -952,6 +952,16 @@ function respond(s: GameState, me: PlayerId): Action | null {
     }
     const shot = useAbility(s, me, attackers);
     if (shot) return shot;
+  }
+  // Ninjutsu: a Ninja worth more than an unblocked attacker takes its place.
+  if (reason === 'block' && isActivePlayer(s, me)) {
+    for (const c of s.players[me].hand) {
+      const cost = castInfo(c.card).ninjutsu;
+      if (!cost || !findPayment(manaSources(s, me), parseCost(cost))) continue;
+      const swap = ninjutsuAttackers(s, me).filter((a) => creatureValue(a.card) < creatureValue(c.card) || !isCreature(c.card))
+        .sort((a, b) => creatureValue(a.card) - creatureValue(b.card))[0];
+      if (swap) return { type: 'ninjutsu', iid: c.iid, attacker: swap.iid };
+    }
   }
   if (reason === 'block') {
     const trick = combatTrick(s, me, withEffect('pump', 'help'));

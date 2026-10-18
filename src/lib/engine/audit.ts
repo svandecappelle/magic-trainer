@@ -85,6 +85,7 @@ function keywordLine(card: Card, line: string, one: Card): LineReport | null {
     // Alternative costs: evoke, warp, web-slinging, cleave.
     if (k === 'evoke' || k === 'warp' || k === 'web-slinging' || k === 'cleave' || k === 'impending') return castInfo(card).alts.length > 0;
     if (k === 'escape') return castInfo(card).alts.some((a) => a.kind === 'escape');
+    if (k === 'ninjutsu') return !!castInfo(card).ninjutsu;
     if (k === 'bestow' || k === 'collect evidence') return castInfo(card).alts.some((a) => a.kind === 'bestow');
     if (k === 'cumulative upkeep') return triggersOf(one).some((tr) => tr.ability.effects.some((x) => x.kind === 'cumulativeUpkeep'));
     if (k === 'devoid') return true; // the card's colors are already none

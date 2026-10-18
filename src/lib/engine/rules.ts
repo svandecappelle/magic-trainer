@@ -580,6 +580,8 @@ export type Effect =
   | { kind: 'phaseOut'; to: Affected }
   /** Talon Gates of Madara: "{4}: Put this card from your hand onto the battlefield." */
   | { kind: 'putSelfFromHand' }
+  /** Ninjutsu: the Ninja from the hand onto the battlefield tapped and attacking (`attacking`: a planeswalker attacked). */
+  | { kind: 'ninjutsuEnter'; attacking?: string }
   /** Jeweled Amulet: "Put a charge counter on this artifact. Note the type of mana spent to pay this activation cost." */
   | { kind: 'chargeAmulet' }
   /**
@@ -2112,6 +2114,8 @@ export interface CastInfo {
    */
   /** `keepsCard`: Talon Gates of Madara's "{4}: Put this card from your hand onto the battlefield." (not discarded). */
   channel?: { cost: string; ability: AbilitySpec; legendaryDiscount: boolean; keyword: boolean; keepsCard?: boolean };
+  /** Ninjutsu {1}{U}{B}: "Return an unblocked attacker you control to hand: Put this card onto the battlefield from your hand tapped and attacking." */
+  ninjutsu?: string;
   /** Berserk: "Cast this spell only before the combat damage step." */
   beforeCombatDamage?: boolean;
   convoke: boolean;
@@ -2173,6 +2177,8 @@ export function castInfo(card: Card, face = 0): CastInfo {
     else if ((m = line.match(/^(Basic land|[A-Z][a-z]+)cycling ((?:\{[^}]+\})+)$/))) {
       // Landcycling and other typecycling (Step Through's "Wizardcycling {2}": search for a Wizard card).
       info.cycling = { cost: m[2], search: m[1] === 'Basic land' ? { basic: true, types: ['land'] } : { subtypes: [m[1].toLowerCase()] } };
+    } else if ((m = line.match(/^Ninjutsu ((?:\{[^}]+\})+)$/))) {
+      info.ninjutsu = m[1];
     } else if (/^Cast this spell only before the combat damage step\.$/.test(line)) {
       info.beforeCombatDamage = true;
     } else if ((m = line.match(/^((?:\{[^}]+\})+): Put this card from your hand onto the battlefield\.$/))) {

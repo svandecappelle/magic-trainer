@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom';
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import {
-  activatable, activationProblem, abilityMaxX, actor, altsFor, apply, canActivateDiamond, canAttack, canTapForMana, canUntapForMana, castCost, castOptions, castSource, castSources, channelCost, manaSources,
+  activatable, activationProblem, abilityMaxX, actor, altsFor, apply, ninjutsuAttackers, canActivateDiamond, canAttack, canTapForMana, canUntapForMana, castCost, castOptions, castSource, castSources, channelCost, manaSources,
   landFaces, findInGraveyard, legalTargets, canBlock, findPermanent, hasKw, IllegalAction, isActivePlayer, mulliganBottom, isLegalTarget, isMainStep, firstOpponent, opponentsOf, teammatesOf, teamPlayers, wonBy,
   paymentFor, powerOf, toughnessOf, unitsOf, xCount,
   type Action, type CardInst, type CastOption, type GameState, type Permanent, type PlayerId, type Target,
@@ -403,7 +403,14 @@ export function GameBoard({ game: g, me, onAction, endControls, notice, readOnly
     const channel = inHand ? castInfo(card).channel : undefined;
     const channelCostNow = channel && channelCost(g, me, card);
     if (channel && channelCostNow && cycleTiming && !g.pending && findPayment(manaSources(g, me), channelCostNow)) {
-      items.push({ key: 'channel', label: channel.keyword ? t.game.channelFor(channel.cost) : t.game.discardFor(channel.cost), run: () => beginChannel(iid, card) });
+      items.push({ key: 'channel', label: channel.keyword ? t.game.channelFor(channel.cost) : channel.keepsCard ? t.game.putOntoBattlefieldFor(channel.cost) : t.game.discardFor(channel.cost), run: () => beginChannel(iid, card) });
+    }
+    // Ninjutsu: an unblocked attacker back to the hand, this card attacking instead.
+    const ninjutsu = inHand ? castInfo(card).ninjutsu : undefined;
+    if (ninjutsu && !g.pending && iAct && findPayment(manaSources(g, me), parseCost(ninjutsu))) {
+      for (const a of ninjutsuAttackers(g, me)) {
+        items.push({ key: `ninjutsu${a.iid}`, label: t.game.ninjutsuFor(ninjutsu, show.nameOf(a.card.name)), run: () => act({ type: 'ninjutsu', iid, attacker: a.iid }) });
+      }
     }
     return items;
   }
