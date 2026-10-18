@@ -386,6 +386,29 @@ Still open, playing wrongly, most played first (see `audit-reports/2026-10-17/re
   Gigantoplasm, Superior Spider-Man (a creature card in a graveyard) — Glasspool Mimic, Clever Impersonator and Copy
   Enchantment done (third batch)
 
+## Metagame audit 2026-10-18
+
+`npm run audit-meta` after the fifth batch: 743 cards to fix (781 the day before), 263 playing wrongly (325). Fully
+simulated main deck copies: Standard 60%, Pioneer 51%, Modern 62%, Legacy 63%, Vintage 62%, Pauper 55%, Premodern 66%,
+Duel Commander 67%, cEDH 57%.
+
+Still open, playing wrongly, most played first (see `audit-reports/2026-10-18/report.md`):
+- [ ] Spending restrictions on mana: Eldrazi Temple ("only to cast colorless Eldrazi spells…"), Mishra's Workshop
+  ("only to cast artifact spells"), Shang-Chi (only for creature abilities): that mana is ignored for now (Eldrazi
+  Temple makes only {C}; Mishra's Workshop and Shang-Chi make nothing)
+- [ ] Cori-Steel Cutter (12): flurry ("Whenever you cast your second spell each turn")
+- [ ] Monument to Endurance (12): "Whenever you discard a card, choose one that hasn't been chosen this turn"
+- [ ] Superior Spider-Man (12), Phantasmal Image, Flesh Duplicate: clones with more than added types
+- [ ] Sewer-veillance Cam (11): "When this artifact enters or leaves the battlefield, you may tap or untap target creature"
+- [ ] Guardian of New Benalia (9): enlist
+- [ ] Eldrazi Spawn makers: Basking Broodscale, Glaring Fleshraker ("create a 0/1 Eldrazi Spawn" read as mana)
+- [ ] Hearth Elemental, Sunderflock: "costs {X} less, where X is …"
+- [ ] Obsessive Pursuit, Biotech Specialist, The Sackville-Bagginses: "when it enters and at the beginning of your
+  upkeep", "whenever you sacrifice an artifact / a token"
+- [ ] Phyrexian Devourer, Wishclaw Talisman ("enters with three wish counters"), Sneaky Snacker, Void Mirror
+- [ ] cEDH: Underworld Breach (escape for every card), Birgi, Lurrus, Samut (split second for your spells), Biomancer's
+  Familiar
+
 ## Commander: Aang, Swift Savior (a user's deck, `deck.txt`)
 
 Fixtures: `commander-aang-2026-10`. Fixed (they played wrongly): Harbinger of the Seas (nonbasic lands are Islands),
