@@ -422,9 +422,17 @@ Unfathomable Truths, Kozilek's Command's Spawn mode.
 Approximations: Eldrazi Spawn are sacrificed automatically when a payment needs them (after every other source); only
 counters put by an effect or adapt trigger Basking Broodscale (not ones it enters with).
 
+Clones and enlist: Phantasmal Image (an Illusion with "When this creature becomes the target of a spell or ability,
+sacrifice it.", a new trigger), Flesh Duplicate (vanishing 3 unless the creature has vanishing; vanishing itself),
+Superior Spider-Man (a 4/4 copy of a creature card in any graveyard, named Superior Spider-Man, that card exiled),
+Guardian of New Benalia (enlist, asked for each attacker with it once attackers are declared; "Whenever this creature
+enlists a creature").
+
+Approximations: Superior Spider-Man exiles the card at once (not a reflexive trigger); enlist adds the power the creature
+has when it is tapped; vanishing sacrifices in the same ability that removes the last counter. The bot enlists its
+strongest creature without a tap ability, and doesn't plan attacks around enlist.
+
 Still open, playing wrongly, most played first (see `audit-reports/2026-10-18/report.md`):
-- [ ] Superior Spider-Man (12), Phantasmal Image, Flesh Duplicate: clones with more than added types
-- [ ] Guardian of New Benalia (9): enlist
 - [ ] Eldrazi Scion (Warping Wail: "It has \"Sacrifice this token: Add {C}.\"" in its own sentence); Glimpse the
   Impossible, Malevolent Rumble; Incubation Druid's mana with a +1/+1 counter
 - [ ] Phyrexian Devourer, Sneaky Snacker, Void Mirror

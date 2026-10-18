@@ -1031,6 +1031,14 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
         const best = [...options].sort((a, b) => worth(b.card) - worth(a.card))[0];
         return { kind: 'cards', iids: best ? [best.iid] : [] };
       }
+      if (choice.purpose === 'enlist') {
+        if (safe) return { kind: 'cards', iids: [] };
+        // The strongest creature staying home, unless it has a tap ability (a mana creature, a looter).
+        const idle = options
+          .filter((c) => !activatedOf(c.card).some((a) => a.cost.tap) && !/\{T\}[^:\n]*: Add\b/.test(c.card.oracleText) && powerOf(findPermanent(s, c.iid)!) > 0)
+          .sort((a, b) => powerOf(findPermanent(s, b.iid)!) - powerOf(findPermanent(s, a.iid)!));
+        return { kind: 'cards', iids: idle.length ? [idle[0].iid] : [] };
+      }
       if (choice.purpose === 'crewCost') {
         // The weakest creatures that are enough; all of them when unsure (always enough: crewing was allowed).
         const n = Number(choice.params?.n ?? 0);

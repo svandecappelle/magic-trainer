@@ -1,7 +1,7 @@
 import type { Card } from '../../types';
 import {
-  activatedOf, auraTarget, castInfo, gainsLifeFromDamage, gainsLifeFromCombatDamageTaken, castSpec, entersAsCopy, entersCounters, entersTappedRule, beginsWithLuck, discardsLandInstead, manaConditions, stateMana, doesntUntap, frontText, gameRulesOf, isInstantOrSorcery,
-  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, chosenNameTax, namesAnyCard, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, extraManaOf, manaMultiplier, choosesColor, counterMana, diamondMana, restrictedMana, mayStayTapped, reconfiguresEnchanted, entersPrepared, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, returnsExiledWhenLeaving, fadingOf, type AbilitySpec,
+  activatedOf, auraTarget, castInfo, gainsLifeFromDamage, gainsLifeFromCombatDamageTaken, castSpec, cloneOf, entersCounters, entersTappedRule, beginsWithLuck, discardsLandInstead, manaConditions, stateMana, doesntUntap, frontText, gameRulesOf, isInstantOrSorcery,
+  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, chosenNameTax, namesAnyCard, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, extraManaOf, manaMultiplier, choosesColor, counterMana, diamondMana, restrictedMana, mayStayTapped, reconfiguresEnchanted, entersPrepared, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, returnsExiledWhenLeaving, fadingOf, vanishingOf, hasEnlist, type AbilitySpec,
 } from './rules';
 
 /**
@@ -76,6 +76,8 @@ function keywordLine(card: Card, line: string, one: Card): LineReport | null {
     if (k === 'storied') return isStoried(one);
     if (k === 'crew') return activatedOf(one).some((a) => a.cost.crew !== undefined);
     if (k === 'fading') return fadingOf(one) > 0;
+    if (k === 'vanishing') return vanishingOf(one) > 0;
+    if (k === 'enlist') return hasEnlist(one);
     // Alternative costs: evoke, warp, web-slinging, cleave.
     if (k === 'evoke' || k === 'warp' || k === 'web-slinging' || k === 'cleave' || k === 'impending') return castInfo(card).alts.length > 0;
     if (k === 'cumulative upkeep') return triggersOf(one).some((tr) => tr.ability.effects.some((x) => x.kind === 'cumulativeUpkeep'));
@@ -199,6 +201,8 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   if (illusionWhenLeaving(one)) return { text: line, status: 'ok', how: 'leaves: the exiled card\'s owner gets an X/X Illusion' };
   if (returnsExiledWhenLeaving(one)) return { text: line, status: 'ok', how: 'what it exiled returns when it leaves' };
   if (fadingOf(one)) return { text: line, status: 'ok', how: `fading ${fadingOf(one)}` };
+  if (vanishingOf(one)) return { text: line, status: 'ok', how: `vanishing ${vanishingOf(one)}` };
+  if (hasEnlist(one)) return { text: line, status: 'ok', how: 'enlist: may tap a creature that doesn\'t attack, adding its power' };
   // True-Name Nemesis: its two lines are read together.
   if (protectionFromChosenPlayer(card) && /choose a player|protection from the chosen player/.test(line)) return { text: line, status: 'ok', how: 'protection from a player chosen as it enters' };
   // Meddling Mage: its two lines are read together.
@@ -224,7 +228,15 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   const tapped = entersTappedRule(one);
   if (tapped) return { text: line, status: 'ok', how: `enters tapped (${tapped.kind})` };
   if (entersAsBirdCopy(one)) return { text: line, status: 'ok', how: 'enters as a copy (mana value up to the mana spent), a Bird with flying' };
-  if (entersAsCopy(one)) return { text: line, status: 'ok', how: 'enters as a copy' };
+  const clone = cloneOf(one);
+  if (clone) {
+    const extras = [
+      clone.name && `named ${clone.name}`, clone.pt && `${clone.pt[0]}/${clone.pt[1]}`, clone.subtypes.length && `also ${clone.subtypes.join(' ')}`,
+      clone.grants && `with "${clone.grants}"`, clone.vanishing && `vanishing ${clone.vanishing} unless it has vanishing`,
+    ].filter(Boolean);
+    const what = clone.graveyard ? 'a copy of a creature card in a graveyard (exiled)' : 'a copy';
+    return { text: line, status: 'ok', how: `enters as ${what}${extras.length ? `, ${extras.join(', ')}` : ''}` };
+  }
   // Handled by the counter effect itself (engine.ts), on any spell.
   if (/^This spell can't be countered\.$/.test(line)) return { text: line, status: 'ok', how: 'can\'t be countered' };
   if (spell) return null;

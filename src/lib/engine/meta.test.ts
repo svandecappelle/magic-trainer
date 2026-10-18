@@ -4158,3 +4158,147 @@ describe('metagame audit 2026-10-18, cost reductions and Eldrazi Spawn', () => {
     expect(s.players[1].life).toBe(18);
   });
 });
+
+describe('Metagame audit 2026-10-18: clones and enlist', () => {
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 10 && (s.stack.length || s.triggered?.length) && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  /** Passes (both players) until the turn ends. */
+  const endTurn = (s: GameState) => {
+    const turn = s.turn;
+    for (let i = 0; i < 40 && s.turn === turn && s.winner === null; i++) {
+      s = s.pending ? apply(s, { type: 'choose', answer: s.pending.choice.kind === 'yesNo' ? { kind: 'yesNo', yes: true } : { kind: 'cards', iids: [] } })
+        : !s.priority && s.step === 'attack' ? apply(s, { type: 'declareAttackers', attackers: [] })
+        : apply(s, { type: 'pass' });
+    }
+    return s;
+  };
+  const ogre = creature('Ogre', 3, 3, { typeLine: 'Creature — Ogre' });
+  const shock = spell('Shock', '{R}', 'Shock deals 2 damage to any target.');
+
+  it('Phantasmal Image: an Illusion copy, sacrificed when it becomes the target of a spell or ability', () => {
+    const image = card({
+      name: 'Phantasmal Image', typeLine: 'Creature — Illusion', manaCost: '{1}{U}', cmc: 2, power: '0', toughness: '0',
+      oracleText: 'You may have this creature enter as a copy of any creature on the battlefield, except it\'s an Illusion in addition to its other types and it has "When this creature becomes the target of a spell or ability, sacrifice it."',
+    });
+    expect(cloneOf(image)).toMatchObject({ subtypes: ['Illusion'], grants: 'When this creature becomes the target of a spell or ability, sacrifice it.' });
+    let s = board({ mana: 3, hand: [{ ...image, manaCost: '{2}' }, { ...shock, manaCost: '{1}' }], theirs: [ogre] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: [iidOf(s, 'Ogre')] } }));
+    const copy = s.battlefield.find((x) => x.card.name === 'Ogre' && x.controller === 0)!;
+    expect(copy.card.typeLine).toBe('Creature — Ogre Illusion');
+    expect(powerOf(copy)).toBe(3);
+    // Targeted by its own controller's Shock: sacrificed before it resolves (the Shock then has no target).
+    s = resolve(apply(s, { type: 'cast', iid: 'h1', targets: [[{ kind: 'permanent', iid: copy.iid }]] }));
+    expect(findPermanent(s, copy.iid)).toBeUndefined();
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toContain('Phantasmal Image');
+    // The original Ogre isn't affected by being targeted.
+    s.players[0].hand.push({ iid: 'h9', card: { ...shock, manaCost: '{0}' } });
+    s = resolve(apply(s, { type: 'cast', iid: 'h9', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Ogre') }]] }));
+    expect(perm(s, 'Ogre')!.damage).toBe(2);
+  });
+
+  it('Flesh Duplicate: a copy with vanishing 3 unless the creature has vanishing', () => {
+    const duplicate = card({
+      name: 'Flesh Duplicate', typeLine: 'Creature — Shapeshifter Rebel', manaCost: '{U}{U}', cmc: 2, power: '0', toughness: '0',
+      oracleText: 'You may have this creature enter as a copy of any creature on the battlefield, except it has vanishing 3 if that creature doesn\'t have vanishing. (A permanent with vanishing 3 enters with three time counters on it. At the beginning of your upkeep, remove a time counter from it. When the last is removed, sacrifice it.)',
+    });
+    expect(cloneOf(duplicate)).toMatchObject({ vanishing: 3, subtypes: [] });
+    let s = board({ mana: 2, hand: [{ ...duplicate, manaCost: '{2}' }], theirs: [ogre] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: [iidOf(s, 'Ogre')] } }));
+    const copy = s.battlefield.find((x) => x.card.name === 'Ogre' && x.controller === 0)!;
+    expect(copy.counters.time).toBe(3);
+    expect(triggersOf(copy.card).map((t) => t.ability.effects.map((e) => e.kind))).toEqual([['vanish']]);
+    // Each of its controller's upkeeps removes one; the last one: sacrificed.
+    copy.counters.time = 2;
+    s = endTurn(endTurn(s));
+    expect(findPermanent(s, copy.iid)?.counters.time).toBe(1);
+    s = endTurn(endTurn(s));
+    expect(findPermanent(s, copy.iid)).toBeUndefined();
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toContain('Flesh Duplicate');
+  });
+
+  it('Superior Spider-Man: a 4/4 copy of a creature card in a graveyard, named Superior Spider-Man, that card exiled', () => {
+    const spidey = card({
+      name: 'Superior Spider-Man', typeLine: 'Legendary Creature — Spider Human Hero', manaCost: '{2}{U}{B}', cmc: 4, power: '4', toughness: '4',
+      oracleText: 'Mind Swap — You may have Superior Spider-Man enter as a copy of any creature card in a graveyard, except his name is Superior Spider-Man and he\'s a 4/4 Spider Human Hero in addition to his other types. When you do, exile that card.',
+    });
+    expect(cloneOf(spidey)).toMatchObject({ graveyard: true, name: 'Superior Spider-Man', pt: [4, 4], subtypes: ['Spider', 'Human', 'Hero'] });
+    const titan = creature('Grave Titan', 6, 6, {
+      typeLine: 'Creature — Giant', keywords: ['Deathtouch'],
+      oracleText: 'Deathtouch\nWhenever Grave Titan enters or attacks, create two 2/2 black Zombie creature tokens.',
+    });
+    let s = board({ mana: 4, hand: [{ ...spidey, manaCost: '{4}' }], theirs: [ogre] });
+    s.players[1].graveyard = [{ iid: 'og0', card: titan }];
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    s = resolve(s);
+    expect(s.pending?.choice).toMatchObject({ purpose: 'clone' });
+    // Only creature cards in graveyards (not the Ogre on the battlefield).
+    expect((s.pending!.choice as { options: { iid: string }[] }).options.map((o) => o.iid)).toEqual(['og0']);
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['og0'] } }));
+    const copy = perm(s, 'Superior Spider-Man')!;
+    expect(copy.card.typeLine).toBe('Creature — Giant Spider Human Hero');
+    expect([powerOf(copy), toughnessOf(copy)]).toEqual([4, 4]);
+    expect(hasKw(copy, 'deathtouch')).toBe(true);
+    // Grave Titan's enters trigger, now his: two Zombies.
+    expect(s.battlefield.filter((x) => x.card.name === 'Zombie' && x.controller === 0)).toHaveLength(2);
+    expect(s.players[1].graveyard).toEqual([]);
+    expect(s.players[1].exile.map((c) => c.card.name)).toEqual(['Grave Titan']);
+  });
+
+  it('Guardian of New Benalia: enlist taps a creature that stays home, adding its power, and scries 2', () => {
+    const guardian = creature('Guardian of New Benalia', 2, 2, {
+      typeLine: 'Creature — Human Soldier', keywords: ['Enlist', 'Scry'],
+      oracleText: 'Enlist (As this creature attacks, you may tap a nonattacking creature you control without summoning sickness. When you do, add its power to this creature\'s until end of turn.)\nWhenever this creature enlists a creature, scry 2.\nDiscard a card: This creature gains indestructible until end of turn. Tap it.',
+    });
+    expect(triggersOf(guardian).map((t) => t.event.on)).toEqual(['enlists']);
+    let s = board({ mine: [guardian, ogre, creature('Fresh', 5, 5)] });
+    perm(s, 'Fresh')!.sick = true;
+    s = apply(s, { type: 'pass' });
+    for (let i = 0; i < 5 && (s.priority || s.step !== 'attack'); i++) s = apply(s, { type: 'pass' });
+    s = apply(s, { type: 'declareAttackers', attackers: [iidOf(s, 'Guardian of New Benalia')] });
+    // Only the Ogre: the other one has summoning sickness.
+    expect(s.pending?.choice).toMatchObject({ purpose: 'enlist' });
+    expect((s.pending!.choice as { options: { iid: string }[] }).options.map((o) => o.iid)).toEqual([iidOf(s, 'Ogre')]);
+    expect(errorOf(() => apply(s, { type: 'choose', answer: { kind: 'cards', iids: [iidOf(s, 'Fresh')] } }))).toBe('badChoice');
+    s = apply(s, { type: 'choose', answer: { kind: 'cards', iids: [iidOf(s, 'Ogre')] } });
+    expect(perm(s, 'Ogre')!.tapped).toBe(true);
+    for (let i = 0; i < 10 && !s.pending && (s.stack.length || s.triggered?.length); i++) s = apply(s, { type: 'pass' });
+    // Scry 2.
+    expect(s.pending?.choice.kind).toBe('arrange');
+    s = apply(s, { type: 'choose', answer: { kind: 'arrange', zones: { top: (s.pending!.choice as { cards: { iid: string }[] }).cards.map((c) => c.iid) } } });
+    for (let i = 0; i < 10 && !s.pending && (s.stack.length || s.triggered?.length); i++) s = apply(s, { type: 'pass' });
+    expect(powerOf(perm(s, 'Guardian of New Benalia')!)).toBe(5);
+    for (let i = 0; i < 20 && s.step !== 'main2'; i++) {
+      s = !s.priority && s.step === 'block' ? apply(s, { type: 'declareBlockers', blocks: {} }) : apply(s, { type: 'pass' });
+    }
+    expect(s.players[1].life).toBe(15);
+  });
+
+  it('enlist: no choice is asked without a creature to tap; the bot enlists its strongest idle creature', () => {
+    const guardian = creature('Guardian of New Benalia', 2, 2, {
+      typeLine: 'Creature — Human Soldier', keywords: ['Enlist'],
+      oracleText: 'Enlist (As this creature attacks, you may tap a nonattacking creature you control without summoning sickness. When you do, add its power to this creature\'s until end of turn.)',
+    });
+    let s = board({ mine: [guardian] });
+    s = apply(s, { type: 'pass' });
+    for (let i = 0; i < 5 && (s.priority || s.step !== 'attack'); i++) s = apply(s, { type: 'pass' });
+    s = apply(s, { type: 'declareAttackers', attackers: [iidOf(s, 'Guardian of New Benalia')] });
+    expect(s.pending).toBeFalsy();
+    for (let i = 0; i < 20 && s.step !== 'main2'; i++) {
+      s = !s.priority && s.step === 'block' ? apply(s, { type: 'declareBlockers', blocks: {} }) : apply(s, { type: 'pass' });
+    }
+    expect(s.players[1].life).toBe(18);
+
+    const elf = creature('Llanowar Elves', 1, 1, { oracleText: '{T}: Add {G}.' });
+    let t = board({ mine: [guardian, elf, ogre] });
+    t = apply(t, { type: 'pass' });
+    for (let i = 0; i < 5 && (t.priority || t.step !== 'attack'); i++) t = apply(t, { type: 'pass' });
+    t = apply(t, { type: 'declareAttackers', attackers: [iidOf(t, 'Guardian of New Benalia')] });
+    t = apply(t, botAction(t)!);
+    expect(perm(t, 'Ogre')!.tapped).toBe(true);
+    expect(perm(t, 'Llanowar Elves')!.tapped).toBe(false);
+  });
+});

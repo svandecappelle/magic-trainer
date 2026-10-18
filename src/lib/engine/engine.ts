@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, counterMana, choosesColor, diamondMana, sacrificeMana, mayStayTapped, gainsLifeFromCombatDamageTaken, restrictedMana, type RestrictedMana, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, counterMana, choosesColor, diamondMana, sacrificeMana, mayStayTapped, gainsLifeFromCombatDamageTaken, restrictedMana, type RestrictedMana, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, vanishingOf, hasEnlist, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type AltCost, type CastInfo, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -302,6 +302,7 @@ export type ChoicePurpose =
   | 'exileFromHand' // Chrome Mox: which card to exile (imprint), or none
   | 'discardLandInstead' // Mox Diamond: which land card to discard, or none (it goes to the graveyard)
   | 'mayPay' // Mana Vault: "you may pay {4}. If you do, …"
+  | 'enlist' // enlist: which creature to tap as this one attacks, or none
   | 'triggerMode'; // a modal trigger ("When … enters, choose one —"): which mode
 
 /** Where "arrange" choices may put cards (scry: top/bottom, surveil: top/graveyard). */
@@ -335,7 +336,7 @@ export interface Pending {
    * What continues once answered: the end of turn, the spell or ability being resolved, or a
    * triggered ability waiting for targets (`trigger`).
    */
-  resume: 'cleanup' | 'effect' | 'trigger' | 'activation' | 'legend' | 'payLife' | 'castCost' | 'clone' | 'discardLandInstead' | 'gemstoneCaverns' | 'damageOrder' | 'creatureType' | 'manaColor' | 'diamond' | 'cardName' | 'basicType' | 'chosenPlayer' | 'crew' | 'triggerMode';
+  resume: 'cleanup' | 'effect' | 'trigger' | 'activation' | 'legend' | 'payLife' | 'castCost' | 'clone' | 'discardLandInstead' | 'gemstoneCaverns' | 'damageOrder' | 'creatureType' | 'manaColor' | 'diamond' | 'cardName' | 'basicType' | 'chosenPlayer' | 'crew' | 'triggerMode' | 'enlist';
   /** For clone: the window the resolving spell belongs to. */
   reason?: WindowReason;
   /** For payLife: the land that entered. */
@@ -447,6 +448,7 @@ export type LogEntry =
   | { k: 'emblem'; p: PlayerId; card: string }
   | { k: 'becomesCreature'; card: string }
   | { k: 'crewed'; card: string }
+  | { k: 'enlisted'; card: string; other: string }
   | { k: 'dig'; p: PlayerId; n: number; took: number }
   /** Urza's Saga's chapters: the permanent gains an ability (its text). */
   | { k: 'gainsAbility'; card: string; text: string }
@@ -511,6 +513,8 @@ export interface GameState {
    * (tapped, "attacks" triggers) once the last head has declared.
    */
   attackPlan?: { p: PlayerId; ids: string[]; pw: Record<string, string> }[];
+  /** Attackers with enlist still to ask, in turn (see askEnlist). */
+  enlisting?: string[];
   battlefield: Permanent[];
   stack: StackItem[];
   active: PlayerId;
@@ -2336,6 +2340,9 @@ function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, op
   // Fading N: enters with N fade counters.
   const fading = fadingOf(inst.card);
   if (fading) perm.counters = { ...perm.counters, fade: fading };
+  // Vanishing N: enters with N time counters.
+  const vanishing = vanishingOf(inst.card);
+  if (vanishing) perm.counters = { ...perm.counters, time: vanishing };
   const counters = entersCounters(inst.card);
   if (counters) {
     const n = typeof counters.n === 'number' ? counters.n : (opts.x ?? 0);
@@ -2754,6 +2761,8 @@ function fireWard(d: GameState, item: StackItem) {
     if (t.kind !== 'permanent' || seen.has(t.iid)) continue;
     seen.add(t.iid);
     const perm = findPermanent(d, t.iid);
+    // Phantasmal Image: "When this creature becomes the target of a spell or ability, sacrifice it."
+    if (perm) for (const tr of triggersOf(perm.card)) if (tr.event.on === 'becomesTarget') queueTrigger(d, perm, perm.controller, tr.ability);
     if (!perm || perm.controller === item.controller) continue;
     // Its own ward, and each one granted (Lavaspur Boots, Hexing Squelcher): each triggers.
     const wards = [
@@ -3840,6 +3849,15 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       else sacrifice(d, src);
       break;
     }
+    case 'vanish': {
+      // Vanishing: a time counter removed; the last one: sacrificed.
+      const src = item.source ? findPermanent(d, item.source) : undefined;
+      if (!src?.counters.time) break;
+      src.counters = { ...src.counters, time: src.counters.time - 1 };
+      log(d, { k: 'counterRemoved', card: src.card.name, counter: 'time' });
+      if (!src.counters.time) sacrifice(d, src);
+      break;
+    }
     case 'recruit': {
       // Draw, then discard a card: a nonland one makes a 1/1 white Human Soldier.
       const ps = d.players[caster];
@@ -4247,10 +4265,13 @@ function resolvePermanentSpell(d: GameState, item: StackItem, reason: WindowReas
   const bird = entersAsBirdCopy(card);
   const spent = (() => { const c = costWithX(card, item.x ?? 0); return c.generic + c.colored.length; })();
   const clone = cloneOf(card);
-  const others = d.battlefield.filter((x) => (clone
-    // Not an Aura: it would need something to enchant.
-    ? cardMatches(x.card, clone.filter) && !(clone.mine && x.controller !== item.controller) && !/\bAura\b/.test(x.card.typeLine)
-    : isCreature(x.card) && (!bird || printedCard(x).cmc <= spent)));
+  const others: CardInst[] = clone?.graveyard
+    // Superior Spider-Man: "any creature card in a graveyard".
+    ? d.players.flatMap((q) => q.graveyard.filter((c) => isCreature(c.card)))
+    : d.battlefield.filter((x) => (clone
+      // Not an Aura: it would need something to enchant.
+      ? cardMatches(x.card, clone.filter) && !(clone.mine && x.controller !== item.controller) && !/\bAura\b/.test(x.card.typeLine)
+      : isCreature(x.card) && (!bird || printedCard(x).cmc <= spent)));
   if ((clone || bird) && others.length) {
     d.pending = {
       choice: { kind: 'cards', player: item.controller, purpose: 'clone', min: 0, max: 1, options: others, params: { card: card.name } },
@@ -4503,7 +4524,6 @@ function declareAttacks(d: GameState, p: PlayerId, ids: string[], pw: Record<str
   delete d.declared;
   delete d.declaring;
   // Everything declared becomes attacking at once.
-  const all: { p: PlayerId; attackers: Permanent[] }[] = [];
   for (const head of plan) {
     const mine = head.ids.map((iid) => findPermanent(d, iid)).filter((a): a is Permanent => !!a && a.controller === head.p && canAttack(a));
     for (const a of mine) if (!hasKw(a, 'vigilance')) tapPermanent(d, a);
@@ -4517,13 +4537,50 @@ function declareAttacks(d: GameState, p: PlayerId, ids: string[], pw: Record<str
       const walker = findPermanent(d, pwIid);
       if (a && walker && mine.includes(a)) log(d, { k: 'attackPlaneswalker', card: a.card.name, pw: walker.card.name });
     }
-    all.push({ p: head.p, attackers: mine });
   }
   d.blocks = {};
-  for (const { attackers } of all) for (const a of attackers) fireObject(d, 'attacks', a);
+  // Enlist: each attacker with it may tap a creature that doesn't attack (asked in turn).
+  d.enlisting = d.attackers.filter((iid) => hasEnlist(findPermanent(d, iid)!.card));
+  askEnlist(d);
+}
+
+/** Creatures `attacker` may enlist: untapped, not attacking, without summoning sickness. */
+function enlistable(d: GameState, attacker: Permanent): Permanent[] {
+  return creaturesOf(d, attacker.controller).filter((x) => !x.tapped && !d.attackers.includes(x.iid) && (!x.sick || hasKw(x, 'haste')));
+}
+
+/** The next attacker with enlist asks which creature to tap; once none is left, the attack triggers. */
+function askEnlist(d: GameState) {
+  while (d.enlisting?.length) {
+    const attacker = findPermanent(d, d.enlisting.shift()!);
+    const options = attacker ? enlistable(d, attacker) : [];
+    if (attacker && options.length) {
+      d.pending = {
+        choice: { kind: 'cards', player: attacker.controller, purpose: 'enlist', min: 0, max: 1, options, params: { card: attacker.card.name } },
+        resume: 'enlist', iid: attacker.iid,
+      };
+      return;
+    }
+  }
+  delete d.enlisting;
+  attacked(d);
+}
+
+/** `attacker` enlisted `other`: "When you do, add its power to this creature's until end of turn." */
+function enlist(d: GameState, attacker: Permanent, other: Permanent) {
+  tapPermanent(d, other);
+  log(d, { k: 'enlisted', card: attacker.card.name, other: other.card.name });
+  const n = powerOf(other);
+  if (n > 0) queueTrigger(d, attacker, attacker.controller, { targets: [], effects: [{ kind: 'pump', power: n, toughness: 0, keywords: [], to: 'self' }] });
+  for (const t of triggersOf(attacker.card)) if (t.event.on === 'enlists') queueTrigger(d, attacker, attacker.controller, t.ability);
+}
+
+/** The attackers are declared: attack triggers, then the attacking team gets priority. */
+function attacked(d: GameState) {
+  const attackers = d.attackers.map((iid) => findPermanent(d, iid)).filter((a): a is Permanent => !!a);
+  for (const a of attackers) fireObject(d, 'attacks', a);
   // "Whenever you attack": each player who attacked with at least one creature.
-  for (const { p: q, attackers } of all) {
-    if (!attackers.length) continue;
+  for (const q of new Set(attackers.map((a) => a.controller))) {
     for (const x of d.battlefield) {
       if (x.controller === q) for (const t of triggersOf(x.card)) if (t.event.on === 'youAttack') queueTrigger(d, x, q, t.ability);
     }
@@ -4728,6 +4785,15 @@ export function apply(state: GameState, action: Action): GameState {
           perm.chosenType = type;
           log(d, { k: 'chosenType', card: perm.card.name, type });
         }
+      } else if (pending.resume === 'enlist' && action.answer.kind === 'cards') {
+        const attacker = findPermanent(d, pending.iid!);
+        const picked = action.answer.iids[0];
+        if (picked) {
+          const other = attacker && enlistable(d, attacker).find((x) => x.iid === picked);
+          if (!attacker || !other) throw new IllegalAction('badChoice');
+          enlist(d, attacker, other);
+        }
+        askEnlist(d);
       } else if (pending.resume === 'crew' && action.answer.kind === 'cards') {
         const crew = action.answer.iids.map((iid) => findPermanent(d, iid)!);
         const n = Number(pending.choice.params?.n ?? 0);
@@ -4775,9 +4841,15 @@ export function apply(state: GameState, action: Action): GameState {
         }
       } else if (pending.resume === 'clone' && action.answer.kind === 'cards') {
         const item = pending.activation!.item;
-        const model = action.answer.iids[0] ? findPermanent(d, action.answer.iids[0]) : undefined;
         const own = castCard(item);
-        let copy = model ? { ...(printedCard(model)), id: model.card.id } : own;
+        const spec = cloneOf(own);
+        const picked = action.answer.iids[0];
+        // Superior Spider-Man: a creature card in a graveyard.
+        const owner = spec?.graveyard && picked ? d.players.findIndex((q) => q.graveyard.some((c) => c.iid === picked)) : -1;
+        const dead = owner >= 0 ? d.players[owner].graveyard.find((c) => c.iid === picked) : undefined;
+        if (spec?.graveyard && picked && !dead) throw new IllegalAction('badChoice');
+        const model = dead ?? (picked ? findPermanent(d, picked) : undefined);
+        let copy = dead ? faceCard(dead.card, 0) : model ? { ...(printedCard(model as Permanent)), id: model.card.id } : own;
         // Mockingbird: "except it's a Bird in addition to its other types and it has flying".
         if (model && entersAsBirdCopy(own)) {
           const [types, subtypes] = copy.typeLine.split(' // ')[0].split(' — ');
@@ -4786,14 +4858,27 @@ export function apply(state: GameState, action: Action): GameState {
             keywords: [...new Set([...(copy.keywords ?? []), 'Flying'])], oracleText: `Flying\n${copy.oracleText}`,
           };
         }
+        // Superior Spider-Man: "except his name is Superior Spider-Man and he's a 4/4". The copied text names him too.
+        if (model && spec?.name) {
+          const before = copy.name;
+          const short = before.split(',')[0];
+          const rename = (t: string) => t.split(before).join(spec.name!).split(short).join(spec.name!);
+          copy = { ...copy, name: spec.name, oracleText: rename(copy.oracleText), ...(spec.pt ? { power: String(spec.pt[0]), toughness: String(spec.pt[1]) } : {}) };
+        }
+        // Phantasmal Image: "and it has \"When this creature becomes the target of a spell or ability, sacrifice it.\""
+        if (model && spec?.grants) copy = { ...copy, oracleText: [copy.oracleText, spec.grants].filter(Boolean).join('\n') };
+        // Flesh Duplicate: "except it has vanishing 3 if that creature doesn't have vanishing".
+        if (model && spec?.vanishing && !vanishingOf(copy)) {
+          copy = { ...copy, oracleText: [copy.oracleText, `Vanishing ${spec.vanishing}`].filter(Boolean).join('\n'), keywords: [...(copy.keywords ?? []), 'Vanishing'] };
+        }
         // Glasspool Mimic: "except it's a Shapeshifter Rogue in addition to its other types".
-        const added = model ? cloneOf(own)?.subtypes ?? [] : [];
+        const added = model ? spec?.subtypes ?? [] : [];
         if (added.length) {
           const [types, subtypes] = copy.typeLine.split(' // ')[0].split(' — ');
           copy = { ...copy, typeLine: `${types} — ${[subtypes, ...added].filter(Boolean).join(' ')}` };
         }
         // Phyrexian Metamorph: "except it's an artifact in addition to its other types".
-        if (model && cloneOf(own)?.artifact && !cardTypes(copy).includes('artifact')) {
+        if (model && spec?.artifact && !cardTypes(copy).includes('artifact')) {
           const [types, subtypes] = copy.typeLine.split(' // ')[0].split(' — ');
           const words = types.split(' ');
           const at = words.findIndex((w) => /^(Creature|Enchantment|Land|Planeswalker|Battle)$/.test(w));
@@ -4804,6 +4889,12 @@ export function apply(state: GameState, action: Action): GameState {
         if (model) log(d, { k: 'copied', card: own.name, as: model.card.name });
         const perm = enterBattlefield(d, { iid: item.iid, card: copy, ...(item.commander ? { commander: true } : {}) }, item.controller, { x: item.x, cast: !item.copy });
         if (model) perm.printed = item.card;
+        // "When you do, exile that card." (at once: not a trigger of its own)
+        if (dead) {
+          d.players[owner].graveyard = d.players[owner].graveyard.filter((c) => c !== dead);
+          putInZone(d, owner, dead, 'exile');
+          log(d, { k: 'exiled', card: dead.card.name });
+        }
         afterResolving(d, pending.reason ?? 'main');
       } else if (pending.resume === 'castCost' && action.answer.kind === 'yesNo') {
         // "A or B": the caster chose which one to pay.

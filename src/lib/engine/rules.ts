@@ -611,6 +611,8 @@ export type Effect =
   | { kind: 'drawUnlessPays'; n: number; mana: number | 'power' }
   /** Fading: remove a fade counter from it; if you can't, sacrifice it. */
   | { kind: 'fade' }
+  /** Vanishing: a time counter removed; sacrificed when the last one is. */
+  | { kind: 'vanish' }
   /** "Recruit": draw a card, then discard a card; a nonland card discarded makes a 1/1 white Human Soldier. */
   | { kind: 'recruit' }
   /** Teferi, Time Raveler's +1: "Until your next turn, you may cast sorcery spells as though they had flash." */
@@ -2090,6 +2092,10 @@ export type TriggerEvent =
   | { on: 'becomesTapped'; which?: Selector }
   /** Basking Broodscale: "Whenever one or more +1/+1 counters are put on this creature, …" */
   | { on: 'countersPut' }
+  /** Phantasmal Image's copies: "When this creature becomes the target of a spell or ability, …" */
+  | { on: 'becomesTarget' }
+  /** Guardian of New Benalia: "Whenever this creature enlists a creature, …" */
+  | { on: 'enlists' }
   /** Monument to Endurance: "Whenever you discard a card, …" (once per card). */
   | { on: 'youDiscard' }
   /** Biotech Specialist: "Whenever you sacrifice an artifact, …"; The Sackville-Bagginses: "a token" (`token`). */
@@ -2333,6 +2339,11 @@ export function triggersOf(card: Card): TriggerSpec[] {
       out.push({ event: { on: 'upkeep', whose: 'you' }, ability: { targets: [], effects: [{ kind: 'fade' }] } });
       continue;
     }
+    // Vanishing N: "At the beginning of your upkeep, remove a time counter from it. When the last is removed, sacrifice it."
+    if (/^Vanishing \d+$/i.test(line)) {
+      out.push({ event: { on: 'upkeep', whose: 'you' }, ability: { targets: [], effects: [{ kind: 'vanish' }] } });
+      continue;
+    }
     // Cumulative upkeep {1}: "At the beginning of your upkeep, put an age counter on this permanent, then sacrifice it
     // unless you pay its upkeep cost for each age counter on it."
     const cumulative = line.match(/^Cumulative upkeep ((?:\{(?:\d+|[WUBRGC])\})+)$/i);
@@ -2431,6 +2442,18 @@ export function triggersOf(card: Card): TriggerSpec[] {
       continue;
     }
 
+    // Phantasmal Image's copies: "When this creature becomes the target of a spell or ability, sacrifice it."
+    const targeted = line.match(/^When(?:ever)? (.+?) becomes the target of a spell or ability, (.+)$/i);
+    if (targeted && selves.includes(targeted[1].toLowerCase())) {
+      out.push({ event: { on: 'becomesTarget' }, ability: triggerAbility(targeted[2], name, true) });
+      continue;
+    }
+    // Guardian of New Benalia: "Whenever this creature enlists a creature, scry 2."
+    const enlists = line.match(/^Whenever (.+?) enlists a creature, (.+)$/i);
+    if (enlists && selves.includes(enlists[1].toLowerCase())) {
+      out.push({ event: { on: 'enlists' }, ability: triggerAbility(enlists[2], name, true) });
+      continue;
+    }
     // Basking Broodscale: "Whenever one or more +1/+1 counters are put on this creature, …"
     const countersPut = line.match(/^Whenever one or more \+1\/\+1 counters are put on (.+?), (.+)$/i);
     if (countersPut && selves.includes(countersPut[1].toLowerCase())) {
@@ -3236,6 +3259,18 @@ export function fadingOf(card: Card): number {
   return m ? Number(m[1]) : 0;
 }
 
+/** Vanishing N: "This permanent enters with N time counters on it." */
+export function vanishingOf(card: Card): number {
+  const m = frontText(card).match(/^Vanishing (\d+)(?: \(|$)/m);
+  return m ? Number(m[1]) : 0;
+}
+
+/**
+ * Enlist: "As this creature attacks, you may tap a nonattacking creature you control without summoning sickness. When
+ * you do, add its power to this creature's until end of turn."
+ */
+export const hasEnlist = (card: Card) => /^Enlist(?: \(|$)/m.test(frontText(card));
+
 /** True-Name Nemesis: "As this creature enters, choose a player." and "This creature has protection from the chosen player." */
 export const protectionFromChosenPlayer = (card: Card) =>
   /^As this creature enters, choose a player\.$/m.test(frontText(card)) && /^This creature has protection from the chosen player\.$/m.test(frontText(card));
@@ -3442,13 +3477,38 @@ export function toxicOf(card: Card): number {
 export const entersAsBirdCopy = (card: Card) =>
   /^You may have this creature enter as a copy of any creature on the battlefield with mana value less than or equal to the amount of mana spent to cast this creature, except it's a Bird in addition to its other types and it has flying\.$/m.test(frontText(card));
 
+/** What a clone copies, and what its copy has in addition (see cloneOf). */
+export interface CloneSpec {
+  filter: TargetFilter;
+  mine: boolean;
+  subtypes: string[];
+  artifact?: boolean;
+  /** Phantasmal Image: "and it has \"When this creature becomes the target of a spell or ability, sacrifice it.\"" */
+  grants?: string;
+  /** Flesh Duplicate: "except it has vanishing 3 if that creature doesn't have vanishing". */
+  vanishing?: number;
+  /** Superior Spider-Man: a creature card in any graveyard, exiled once copied. */
+  graveyard?: boolean;
+  /** Superior Spider-Man: "except his name is Superior Spider-Man and he's a 4/4". */
+  name?: string;
+  pt?: [number, number];
+}
+
 /**
  * Clones: "You may have this creature enter as a copy of any creature on the battlefield." What may be copied
  * (Glasspool Mimic: "a creature you control"; Clever Impersonator: "any nonland permanent"; Copy Enchantment: "any
  * enchantment"), and the creature types added by "except it's a Shapeshifter Rogue in addition to its other types".
  */
-export function cloneOf(card: Card): { filter: TargetFilter; mine: boolean; subtypes: string[]; artifact?: boolean } | null {
-  const m = frontText(card).match(/^You may have (?:this (?:creature|artifact|enchantment)|[^.]+?) enter(?: the battlefield)? as a copy of (any creature|a creature you control|any nonland permanent|any artifact or creature|any artifact|any enchantment)(?: on the battlefield)?(?:, except (?:it's|they're) an? ([A-Z][a-z]+(?: [A-Z][a-z]+)*|artifact) in addition to (?:its|their) other types)?\.$/m);
+export function cloneOf(card: Card): CloneSpec | null {
+  const text = frontText(card).replace(/\s*\([^)]*\)/g, '');
+  // Superior Spider-Man: "Mind Swap — You may have Superior Spider-Man enter as a copy of any creature card in a
+  // graveyard, except his name is Superior Spider-Man and he's a 4/4 Spider Human Hero in addition to his other types.
+  // When you do, exile that card."
+  const grave = text.match(/^(?:[A-Z][A-Za-z' ]+ — )?You may have [^.]+? enter as a copy of any creature card in a graveyard, except (?:his|her|its) name is ([^.]+?) and (?:he's|she's|it's) an? (\d+)\/(\d+) ([A-Z][a-z]+(?: [A-Z][a-z]+)*) in addition to (?:his|her|its) other types\. When you do, exile that card\.$/m);
+  if (grave) {
+    return { filter: { types: ['creature'] }, mine: false, subtypes: grave[4].split(' '), graveyard: true, name: grave[1], pt: [Number(grave[2]), Number(grave[3])] };
+  }
+  const m = text.match(/^You may have (?:this (?:creature|artifact|enchantment)|[^.]+?) enter(?: the battlefield)? as a copy of (any creature|a creature you control|any nonland permanent|any artifact or creature|any artifact|any enchantment)(?: on the battlefield)?(?:, except (?:it's|they're) an? ([A-Z][a-z]+(?: [A-Z][a-z]+)*|artifact) in addition to (?:its|their) other types(?: and it has "([^"]+)")?|, except it has vanishing (\d+) if that creature doesn't have vanishing)?(?:\.|(?<=\."))$/m);
   if (!m) return null;
   const what = m[1];
   const filter: TargetFilter = what === 'any nonland permanent' ? { nonTypes: ['land'] }
@@ -3457,7 +3517,10 @@ export function cloneOf(card: Card): { filter: TargetFilter; mine: boolean; subt
     : { types: [what.split(' ').pop() === 'enchantment' ? 'enchantment' : what.split(' ').pop() === 'artifact' ? 'artifact' : 'creature'] };
   // Phyrexian Metamorph: "except it's an artifact in addition to its other types" (a card type, not a subtype).
   if (m[2] === 'artifact') return { filter, mine: false, subtypes: [], artifact: true };
-  return { filter, mine: what === 'a creature you control', subtypes: m[2] ? m[2].split(' ') : [] };
+  return {
+    filter, mine: what === 'a creature you control', subtypes: m[2] ? m[2].split(' ') : [],
+    ...(m[3] ? { grants: m[3] } : {}), ...(m[4] ? { vanishing: Number(m[4]) } : {}),
+  };
 }
 
 export const entersAsCopy = (card: Card) => !!cloneOf(card);

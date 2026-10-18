@@ -179,9 +179,6 @@ NONE     Steamcore Scholar {2}{U} — Creature — Weird Detective
 NONE     Strategic Betrayal {1}{B} — Sorcery
   ✗ Target opponent exiles a creature they control and their graveyard.
       spell not simulated
-NONE     Superior Spider-Man {2}{U}{B} — Legendary Creature — Spider Human Hero
-  ? Mind Swap — You may have Superior Spider-Man enter as a copy of any c…
-      not read by the engine
 NONE     Theorist's Sanctum  — Land — Island
   ? As this land enters, you may behold a Jace. If you don't, this land e…
       not read by the engine
@@ -918,6 +915,9 @@ OK       Sunderflock {7}{U}{U} — Creature — Elemental
       keyword
   ✓ When this creature enters, if you cast it, return all non-Elemental c…
       trigger (enters) → bounceAll, if cast
+OK       Superior Spider-Man {2}{U}{B} — Legendary Creature — Spider Human Hero
+  ✓ Mind Swap — You may have Superior Spider-Man enter as a copy of any c…
+      enters as a copy of a creature card in a graveyard (exiled), named Superior Spider-Man, 4/4, also Spider Human Hero
 OK       Terminal Criticism {1}{B} — Instant
   ✓ Destroy target creature or planeswalker that's blue or red. You gain …
       spell → destroy+gainLife (1 target)
@@ -961,5 +961,5 @@ OK       Zoraline, Cosmos Caller {1}{W}{B} — Legendary Creature — Bat Cleric
   ✓ Whenever Zoraline enters or attacks, you may pay {W}{B} and 2 life. W…
       trigger (enters/attacks) → reflexive | reflexive
 
-178 cards: 93 ok, 43 partial, 42 not simulated, 0 can't be cast
+178 cards: 94 ok, 43 partial, 41 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)
