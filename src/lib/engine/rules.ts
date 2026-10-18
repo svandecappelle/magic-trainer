@@ -33,6 +33,10 @@ export function hasKeyword(card: Card, kw: Keyword): boolean {
 export const gainsLifeFromDamage = (card: Card) =>
   selfWords(card.name).some((w) => new RegExp(`^Whenever ${escapeRe(w)} deals damage, you gain that much life\\.$`, 'mi').test(frontText(card)));
 
+/** Vedalken Shackles: "You may choose not to untap this artifact during your untap step." */
+export const mayStayTapped = (card: Card) =>
+  selfWords(card.name).some((w) => new RegExp(`^You may choose not to untap ${escapeRe(w)} during your untap step\\.$`, 'mi').test(frontText(card)));
+
 /**
  * Wall of Essence: "Whenever this creature is dealt combat damage, you gain that much life." Gained with the damage (no
  * trigger on the stack), like Exalted Angel.
@@ -453,6 +457,8 @@ export interface TargetFilter {
   orSubtypes?: string[];
   /** "creature token" (true), "nontoken creature" (false). */
   token?: boolean;
+  /** Vedalken Shackles: "with power less than or equal to the number of Islands you control". */
+  maxPowerIslands?: boolean;
 }
 
 /**
@@ -473,7 +479,7 @@ export interface TargetSpec {
 // ---------- Effects ----------
 
 /** Counter kinds placed on permanents. */
-export type CounterKind = '+1/+1' | '-1/-1' | '-0/-1' | 'loyalty' | 'lore' | 'rev' | 'luck' | 'mining' | 'age' | 'fade' | 'chorus'
+export type CounterKind = '+1/+1' | '-1/-1' | '-0/-1' | 'wish' | 'loyalty' | 'lore' | 'rev' | 'luck' | 'mining' | 'age' | 'fade' | 'chorus'
   // Stun (Snaremaster Sprite): it doesn't untap, a counter is removed instead. Finality (Zoraline): exiled if it would die.
   | 'stun' | 'finality' | 'time'
   // Keyword counters (Ghost Vacuum's flying, Leatherhead's hexproof): the permanent has that keyword.
@@ -488,7 +494,8 @@ export type Affected = { slot: number } | 'you' | 'each-opponent' | 'each-player
 
 /** A number in rules text; "X" is the value chosen when casting. */
 /** A number, X (paid when cast), or the life its controller gained this turn (Germinate Recruits). */
-export type Amount = number | 'X' | 'lifeGained';
+/** `sacrificed`: Obsessive Pursuit's "the number of permanents you've sacrificed this turn". */
+export type Amount = number | 'X' | 'lifeGained' | 'sacrificed';
 
 /** Which permanents an "all …" / "each …" effect touches, e.g. "creatures you don't control". */
 export interface Selector {
@@ -519,7 +526,8 @@ export type Effect =
   /** Subtlety: "Its owner puts it on their choice of the top or bottom of their library." */
   | { kind: 'tuckSpell'; to: Affected }
   /** "gets +N/+N (and gains …) until end of turn". Negative values shrink. */
-  | { kind: 'pump'; power: number; toughness: number; keywords: Keyword[]; to: Affected }
+  /** `ifSacrificed`: Obsessive Pursuit, "If X is three or more" (permanents sacrificed this turn). */
+  | { kind: 'pump'; power: number; toughness: number; keywords: Keyword[]; to: Affected; ifSacrificed?: number }
   /** `untilLeaves`: exiled until the ability's source leaves the battlefield (Seam Rip). */
   /** `ifArtifacts`: Dispatch's metalcraft, "If you control three or more artifacts, exile that creature." */
   | { kind: 'destroy'; exile: boolean; to: Affected; untilLeaves?: boolean; ifArtifacts?: number }
@@ -631,6 +639,10 @@ export type Effect =
     artifact?: boolean;
     /** Mutavault: "with all creature types". */
     allTypes?: boolean;
+    /** Tezzeret, Betrayer of Flesh's −2: for good, not until end of turn. */
+    permanent?: boolean;
+    /** Its power and toughness are base ones (layer 7b), a creature's too; not for a Vehicle ("If it isn't a Vehicle"). */
+    baseUnlessVehicle?: boolean;
   }
   /** Chandra's −7: "You get an emblem with \"…\"" (the emblem's ability). */
   | { kind: 'emblem'; text: string }
@@ -663,7 +675,14 @@ export type Effect =
   /** Rest in Peace: "exile all graveyards"; Soul-Guide Lantern: "exile each opponent's graveyard". */
   | { kind: 'exileGraveyards'; to: Affected }
   /** Threaten effects also untap the creature and give it haste. */
-  | { kind: 'gainControl'; to: Affected; untilEndOfTurn: boolean; untapHaste?: boolean }
+  /** `whileSourceTapped`: Vedalken Shackles, "for as long as this artifact remains tapped". */
+  | { kind: 'gainControl'; to: Affected; untilEndOfTurn: boolean; untapHaste?: boolean; whileSourceTapped?: boolean }
+  /** Wishclaw Talisman: "An opponent gains control of this artifact." */
+  | { kind: 'opponentGainsSource' }
+  /** Seasoned Hallowblade aside: Sewer-veillance Cam's "tap or untap target creature" (untapped: tapped; tapped: untapped). */
+  | { kind: 'toggleTap'; to: Affected }
+  /** Tezzeret the Seeker's −5: "Artifacts you control become artifact creatures with base power and toughness 5/5 until end of turn." */
+  | { kind: 'animateAll'; which: Selector; power: number; toughness: number }
   /** Copy a spell on the stack (same targets). */
   | { kind: 'copySpell'; to: Affected }
   /** "Create a token that's a copy of target creature". */
@@ -714,6 +733,7 @@ export const PREDEFINED_TOKENS: Record<string, TokenSpec> = {
   treasure: { name: 'Treasure', typeLine: 'Token Artifact — Treasure', colors: [], keywords: [], oracleText: '{T}, Sacrifice this artifact: Add one mana of any color.' },
   clue: { name: 'Clue', typeLine: 'Token Artifact — Clue', colors: [], keywords: [], oracleText: '{2}, Sacrifice this artifact: Draw a card.' },
   food: { name: 'Food', typeLine: 'Token Artifact — Food', colors: [], keywords: [], oracleText: '{2}, {T}, Sacrifice this artifact: You gain 3 life.' },
+  lander: { name: 'Lander', typeLine: 'Token Artifact — Lander', colors: [], keywords: [], oracleText: '{2}, {T}, Sacrifice this token: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.' },
   map: { name: 'Map', typeLine: 'Token Artifact — Map', colors: [], keywords: [], oracleText: '{1}, {T}, Sacrifice this artifact: Target creature you control explores. Activate only as a sorcery.' },
 };
 
@@ -754,7 +774,7 @@ export interface AbilitySpec {
    * A modal trigger: its modes, chosen as it goes on the stack. A mode with no effects isn't understood and can't be
    * chosen.
    */
-  modal?: { min: number; max: number; texts: string[]; specs: AbilitySpec[] };
+  modal?: { min: number; max: number; texts: string[]; specs: AbilitySpec[]; fresh?: boolean };
 }
 
 /** The ability a modal trigger becomes with these modes. */
@@ -821,6 +841,8 @@ export function parseTargetPhrase(phrase: string): TargetSpec | null {
   const suffixes: [RegExp, (m: RegExpMatchArray) => boolean][] = [
     // Turn Aside: "spell that targets a permanent you control" (before "you control": it's not the spell's controller).
     [/ that targets a permanent you control$/, () => !!(filter.targetsYourPermanent = true)],
+    // Vedalken Shackles: "with power less than or equal to the number of Islands you control".
+    [/ with power less than or equal to the number of islands you control$/, () => !!(filter.maxPowerIslands = true)],
     [/ you control$/, () => !!(filter.controller = 'you')],
     [/ (?:an opponent controls|you don't control|your opponents control)$/, () => !!(filter.controller = 'opponent')],
     [/ with mana value (\d+) or less$/, (m) => ((filter.maxManaValue = Number(m[1])), true)],
@@ -1013,6 +1035,34 @@ function selfWords(name: string): string[] {
  * "Goblin Guide gets +1/+1" or "put a +1/+1 counter on this creature" can refer to it.
  */
 export function parseAbilityText(text: string, self?: string): AbilitySpec {
+  // Tezzeret, Betrayer of Flesh's −2: "Target artifact becomes an artifact creature. If it isn't a Vehicle, it has base
+  // power and toughness 4/4." (for good)
+  const tezzeret = text.match(/^Target artifact becomes an artifact creature\. If it isn't a Vehicle, it has base power and toughness (\d+)\/(\d+)\.$/);
+  if (tezzeret) {
+    return {
+      targets: [{ kind: 'permanent', min: 1, max: 1, filter: { types: ['artifact'] } }],
+      effects: [{ kind: 'animate', to: { slot: 0 }, power: Number(tezzeret[1]), toughness: Number(tezzeret[2]), subtypes: [], keywords: [], artifact: true, permanent: true, baseUnlessVehicle: true }],
+    };
+  }
+  // Tezzeret the Seeker's −5: "Artifacts you control become artifact creatures with base power and toughness 5/5 until
+  // end of turn."
+  const seeker = text.match(/^Artifacts you control become artifact creatures with base power and toughness (\d+)\/(\d+) until end of turn\.$/);
+  if (seeker) {
+    return { targets: [], effects: [{ kind: 'animateAll', which: { kind: 'permanent', filter: { types: ['artifact'], controller: 'you' } }, power: Number(seeker[1]), toughness: Number(seeker[2]) }] };
+  }
+  // Obsessive Pursuit: "put X +1/+1 counters on target attacking creature, where X is the number of permanents you've
+  // sacrificed this turn. If X is three or more, that creature gains lifelink until end of turn."
+  const pursuit = text.match(/^put X \+1\/\+1 counters on (target [a-z ]+?), where X is the number of permanents you've sacrificed this turn\. If X is (\w+) or more, that creature gains lifelink until end of turn\.$/i);
+  const pursuitTarget = pursuit && parseTargetPhrase(pursuit[1]);
+  if (pursuit && pursuitTarget) {
+    return {
+      targets: [pursuitTarget],
+      effects: [
+        { kind: 'addCounters', counter: '+1/+1', n: 'sacrificed', to: { slot: 0 } },
+        { kind: 'pump', power: 0, toughness: 0, keywords: ['lifelink'], to: { slot: 0 }, ifSacrificed: toNumber(pursuit[2]) },
+      ],
+    };
+  }
   // Tezzeret, Betrayer of Flesh: "Draw two cards. Then discard two cards unless you discard an artifact card."
   const unlessArtifact = text.match(/^(.+?\.) Then discard two cards unless you discard an artifact card\.$/);
   if (unlessArtifact) {
@@ -1195,9 +1245,11 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     const to = slotFor(m[1]);
     return to && { kind: 'exileGraveyards', to };
   });
-  scan(new RegExp(`\\bgain control of (${TARGET})( until end of turn)?(?=\\.|,| and |$)`, 'gi'), (m) => {
+  // Vedalken Shackles: "… for as long as this artifact remains tapped".
+  scan(new RegExp(`\\bgain control of (${TARGET})( until end of turn| for as long as this artifact remains tapped)?(?=\\.|,| and |$)`, 'gi'), (m) => {
     const to = slotFor(m[1], (spec) => spec.kind === 'creature' || spec.kind === 'permanent');
-    return to && { kind: 'gainControl', to, untilEndOfTurn: !!m[2] };
+    const whileTapped = /remains tapped/.test(m[2] ?? '');
+    return to && { kind: 'gainControl', to, untilEndOfTurn: !!m[2] && !whileTapped, ...(whileTapped ? { whileSourceTapped: true } : {}) };
   });
   scan(new RegExp(`\\bcopy (${TARGET})(?=\\.|,| and |$)`, 'gi'), (m) => {
     const to = slotFor(m[1], (spec) => spec.kind === 'spell');
@@ -1259,9 +1311,10 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     return units && { kind: 'addMana', units };
   });
   // "Search your library for a basic land card, put it onto the battlefield tapped, then shuffle."
-  scan(new RegExp(`\\bsearch your library for (up to ${NUMBER} |an? |${NUMBER} )([a-z ,-]+?) cards?(?: with mana value (\\d+|X) or less| with mana cost ((?:\\{\\d+\\})(?: or \\{\\d+\\})*))?, (?:reveal (?:it|them|that card|those cards), )?(?:and )?put (?:it|them|that card|those cards) (into your hand|onto the battlefield( tapped)?)(?:,? (?:then|and) shuffle)?`, 'gi'), (m) => {
+  // Wishclaw Talisman, Demonic Tutor: "for a card" (any card).
+  scan(new RegExp(`\\bsearch your library for (up to ${NUMBER} |an? |${NUMBER} )(?:([a-z ,-]+?) )?cards?(?: with mana value (\\d+|X) or less| with mana cost ((?:\\{\\d+\\})(?: or \\{\\d+\\})*))?, (?:reveal (?:it|them|that card|those cards), )?(?:and )?put (?:it|them|that card|those cards) (into your hand|onto the battlefield( tapped)?)(?:,? (?:then|and) shuffle)?`, 'gi'), (m) => {
     const count = m[1].trim().replace(/^up to /i, '');
-    const filter = librarySearchFilter(m[2]);
+    const filter = m[2] ? librarySearchFilter(m[2]) : {};
     if (!filter) return null;
     // Tezzeret the Seeker: "with mana value X or less" (X as activated).
     if (m[3] === 'X') filter.maxManaValueX = true;
@@ -1413,6 +1466,13 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
   scan(new RegExp(`(?:^|[.,] *|then )mill (${AMOUNT}) cards?`, 'gi'), (m) => ({ kind: 'mill', n: toAmount(m[1]), to: 'you' }));
   scan(/\bscry (\d+|X)\b/gi, (m) => ({ kind: 'scry', n: toAmount(m[1]) }));
   // "Investigate" (Thraben Inspector): create a Clue token.
+  // Sewer-veillance Cam: "tap or untap target creature" (whichever changes it).
+  scan(new RegExp(`(?:^|[.,] *|then |and )(?:you )?tap or untap (${TARGET})${END}`, 'gi'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'creature' || spec.kind === 'permanent');
+    return to && { kind: 'toggleTap', to };
+  });
+  // Wishclaw Talisman: "An opponent gains control of this artifact."
+  scan(/\bAn opponent gains control of this artifact(?=\.)/g, () => ({ kind: 'opponentGainsSource' }));
   // Cori-Steel Cutter: "create a 1/1 white Monk creature token with prowess. You may attach this Equipment to it."
   scan(/(?<=token[^.]*\. )You may attach this Equipment to it(?=\.)/g, () => ({ kind: 'attachToToken' }));
   scan(/(?:^|[.,] *|then )investigate(?= *\.|$)/gi, () => ({ kind: 'token', n: 1, token: PREDEFINED_TOKENS.clue }));
@@ -1498,7 +1558,7 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     const to = slotFor(m[1]);
     return to && { kind: 'animate', to, subtypes: [], keywords: ['haste'] };
   });
-  scan(new RegExp(`\\bcreates? (${AMOUNT}) (Treasure|Clue|Food) tokens?`, 'gi'), (m) => ({
+  scan(new RegExp(`\\bcreates? (${AMOUNT}) (Treasure|Clue|Food|Lander) tokens?`, 'gi'), (m) => ({
     kind: 'token', n: toAmount(m[1]), token: PREDEFINED_TOKENS[m[2].toLowerCase()],
   }));
 
@@ -1980,7 +2040,8 @@ export const parseEffects = (card: Card): Effect[] => spellSpec(card).effects;
 // ---------- Triggered abilities ----------
 
 /** `combatDamageWalker`: combat damage to a planeswalker (Psychic Frog: "to a player or planeswalker"). */
-export type ObjectEvent = 'enters' | 'dies' | 'attacks' | 'combatDamage' | 'combatDamageWalker';
+/** `leaves`: Sewer-veillance Cam's "enters or leaves the battlefield". */
+export type ObjectEvent = 'enters' | 'dies' | 'attacks' | 'combatDamage' | 'combatDamageWalker' | 'leaves';
 export type StepEvent = 'upkeep' | 'draw' | 'endStep' | 'beginCombat';
 
 /** What makes a triggered ability trigger. */
@@ -2001,8 +2062,15 @@ export type TriggerEvent =
   | { on: 'youAttack' }
   /** Vexing Bauble: "Whenever a player casts a spell, if no mana was spent to cast it, …" (the ability's slot 0 is that spell). */
   | { on: 'castWithoutMana' }
-  /** City of Brass: "Whenever this land becomes tapped, …" (not when it enters tapped). */
-  | { on: 'becomesTapped' }
+  /**
+   * City of Brass: "Whenever this land becomes tapped, …" (not when it enters tapped); Tezzeret's emblem: "Whenever an
+   * artifact you control becomes tapped" (`which`).
+   */
+  | { on: 'becomesTapped'; which?: Selector }
+  /** Monument to Endurance: "Whenever you discard a card, …" (once per card). */
+  | { on: 'youDiscard' }
+  /** Biotech Specialist: "Whenever you sacrifice an artifact, …"; The Sackville-Bagginses: "a token" (`token`). */
+  | { on: 'youSacrifice'; filter: TargetFilter; token?: boolean }
   /** Hypnotic Specter: "Whenever this creature deals damage to an opponent, that player …" (slot 0 is that player). */
   | { on: 'damagesOpponent' }
   /**
@@ -2038,12 +2106,15 @@ export interface TriggerSpec {
 const EMPIRES = /\. [^.]+? instead if you control artifacts named [^.]+? and [^.]+?(?=\.$)/;
 /** Tezzeret, Betrayer of Flesh: "Then discard two cards unless you discard an artifact card." */
 const UNLESS_ARTIFACT = / Then discard two cards unless you discard an artifact card(?=\.$)/;
+/** Tezzeret, Betrayer of Flesh's −2 and Obsessive Pursuit's attack trigger (see parseAbilityText). */
+const TEZZERET_ANIMATE = /^Target artifact becomes an artifact creature\. If it isn't a Vehicle, it has base power and toughness \d+\/\d+\.$/;
+const PURSUIT = /, where X is the number of permanents you've sacrificed this turn\. If X is \w+ or more, that creature gains lifelink until end of turn/;
 const UNSUPPORTED_WORDS = /\b(?:if|unless|for each|where|instead|that (?:creature|card|player|land|spell|permanent)|those|otherwise|this way|exiled with)\b/i;
 /** Wordings the effect parser would misread. Quoted text is an ability given to something else (a token), read on its own. */
 const UNSUPPORTED = {
   test: (text: string) => {
     let rest = text;
-    for (const handled of [CONTROLLER_SEARCH, REVEAL_FOUND, SURVEIL_TO_HAND, THORIN_ATTACH, BECOMES_CREATURE, LAND_BECOMES, TRADE_FOR_CARD, COUNTER_DEST, TIDEBINDER, POWER_LIFE, PHELIA, CITY_COPIES, GHOST_VACUUM, MALCOLM, FLICKER, BLACK_SUN, EMPIRES, UNLESS_ARTIFACT]) rest = rest.replace(handled, '');
+    for (const handled of [CONTROLLER_SEARCH, REVEAL_FOUND, SURVEIL_TO_HAND, THORIN_ATTACH, BECOMES_CREATURE, LAND_BECOMES, TRADE_FOR_CARD, COUNTER_DEST, TIDEBINDER, POWER_LIFE, PHELIA, CITY_COPIES, GHOST_VACUUM, MALCOLM, FLICKER, BLACK_SUN, EMPIRES, UNLESS_ARTIFACT, TEZZERET_ANIMATE, PURSUIT]) rest = rest.replace(handled, '');
     return UNSUPPORTED_WORDS.test(rest.replace(/"[^"]*"/g, '""'));
   },
 };
@@ -2071,12 +2142,20 @@ function triggerSubject(subject: string, underYourControl: boolean): { which: Se
   return { which: { kind: spec.kind, filter: spec.filter }, another: m[1] === 'another' };
 }
 
+/** "you may sacrifice another creature or artifact. If you do, …" as the reflexive match (sacrifice in group 4). */
+function sacrificeIfYouDo(text: string): (string | undefined)[] | null {
+  const m = text.match(/^you may sacrifice ((?:a|an|another) [a-z ]+?)\. If you do, (.+)$/i);
+  return m && [m[0], undefined, undefined, undefined, m[1], undefined, m[2]];
+}
+
 /** The effect text of a trigger: "you may" makes it optional; unsupported wordings give no effects. */
 function triggerAbility(text: string, name: string, self: boolean): AbilitySpec {
   // "you may discard a card. When you do, …", "you may pay {W}{B} and 2 life. When you do, …"
-  const reflexive = text.match(/^you may (?:(discard a card)|pay ((?:\{(?:\d+|[WUBRGC])\})+)(?: and (\d+) life)?|sacrifice ((?:a|an|another) [a-z ]+?)|(remove a counter from (?:it|him|her|them|this creature)))\. When you do, (.+)$/i);
+  // The Sackville-Bagginses: "you may sacrifice another creature or artifact. If you do, …" (no target: the same).
+  const reflexive = text.match(/^you may (?:(discard a card)|pay ((?:\{(?:\d+|[WUBRGC])\})+)(?: and (\d+) life)?|sacrifice ((?:a|an|another) [a-z ]+?)|(remove a counter from (?:it|him|her|them|this creature)))\. When you do, (.+)$/i)
+    ?? sacrificeIfYouDo(text);
   if (reflexive) {
-    const inner = reflexive[6];
+    const inner = reflexive[6]!;
     // "It" in the reflexive part is its own target ("put a +1/+1 counter on target attacking creature. It gains trample").
     const then = UNSUPPORTED.test(inner) ? NO_EFFECT : parseAbilityText(inner, self ? name : undefined);
     if (!then.effects.length) return NO_EFFECT;
@@ -2110,13 +2189,15 @@ function triggerAbility(text: string, name: string, self: boolean): AbilitySpec 
     return then.effects.length ? { ...then, condition: { ...then.condition, tapped: true } } : NO_EFFECT;
   }
   // "choose one — • … • …", "choose up to one —", "choose one or both —".
-  const modal = text.match(/^choose (one|up to one|one or both|one or more|two) — (• .+)$/i);
+  // Monument to Endurance: "choose one that hasn't been chosen this turn —".
+  const modal = text.match(/^choose (one|up to one|one or both|one or more|two|one that hasn't been chosen this turn) — (• .+)$/i);
   if (modal) {
     const texts = modal[2].split(/ ?• /).filter(Boolean).map((m) => m.trim());
     const specs = texts.map((m) => triggerBody(m, name, self));
     if (!specs.some((sp) => sp.effects.length)) return NO_EFFECT;
-    const [min, max] = ({ one: [1, 1], 'up to one': [0, 1], 'one or both': [1, 2], 'one or more': [1, texts.length], two: [2, 2] } as Record<string, number[]>)[modal[1].toLowerCase()];
-    return { targets: [], effects: [{ kind: 'chooseModes' }], modal: { min, max, texts, specs } };
+    const fresh = /hasn't been chosen/i.test(modal[1]);
+    const [min, max] = fresh ? [1, 1] : ({ one: [1, 1], 'up to one': [0, 1], 'one or both': [1, 2], 'one or more': [1, texts.length], two: [2, 2] } as Record<string, number[]>)[modal[1].toLowerCase()];
+    return { targets: [], effects: [{ kind: 'chooseModes' }], modal: { min, max, texts, specs, ...(fresh ? { fresh } : {}) } };
   }
   // Life this turn: "if you gained life this turn, …", "… if you've gained 3 or more life this turn."
   let condition: AbilitySpec['condition'];
@@ -2330,14 +2411,37 @@ export function triggersOf(card: Card): TriggerSpec[] {
 
     // Kíli: "Whenever another Dwarf or Equipment you control enters, draw a card. This ability triggers only once each turn."
     const oncePerTurn = / This ability triggers only once each turn\.$/.test(line);
+    // Obsessive Pursuit: "When this enchantment enters and at the beginning of your upkeep, …"
+    const entersAndUpkeep = line.match(/^When (.+?) enters and at the beginning of your upkeep, (.+)$/i);
+    if (entersAndUpkeep && selves.includes(entersAndUpkeep[1].toLowerCase())) {
+      const ability = triggerAbility(entersAndUpkeep[2], name, true);
+      out.push({ event: { on: 'enters', self: true }, ability }, { event: { on: 'upkeep', whose: 'you' }, ability });
+      continue;
+    }
+    // Monument to Endurance: "Whenever you discard a card, …"
+    const discarded = line.match(/^Whenever you discard a card, (.+)$/i);
+    if (discarded) {
+      out.push({ event: { on: 'youDiscard' }, ability: triggerAbility(discarded[1], name, true) });
+      continue;
+    }
+    // Biotech Specialist: "Whenever you sacrifice an artifact, …"; The Sackville-Bagginses: "a token".
+    const sacrificed = line.match(/^Whenever you sacrifice (?:an? |another )?([a-z ]+?), (.+)$/i);
+    if (sacrificed) {
+      const token = sacrificed[1].toLowerCase() === 'token';
+      const filter = token ? {} : cardWordsFilter(sacrificed[1]);
+      if (filter) out.push({ event: { on: 'youSacrifice', filter, ...(token ? { token } : {}) }, ability: triggerAbility(sacrificed[2], name, true) });
+      continue;
+    }
     const matched = line.replace(/ This ability triggers only once each turn\.$/, '')
-      .match(/^(?:When|Whenever) (.+?) (enters(?: the battlefield)?( under your control)?|attacks?|dies|deals combat damage to a player(?: or (?:a )?planeswalker)?)(?: or (enters|attacks|dies)(?: the battlefield)?)?, (.+)$/i);
-    // "attack" only for a plural name ("Whenever Aang and La attack"), not "Whenever you attack".
-    const ev = matched && (matched[2].toLowerCase() !== 'attack' || selves.includes(matched[1].toLowerCase())) ? matched : null;
+      .match(/^(?:When|Whenever) (.+?) (enters?(?: the battlefield)?( under your control)?|attacks?|dies|leaves the battlefield|deals combat damage to a player(?: or (?:a )?planeswalker)?)(?: or (enters|attacks|dies|leaves)(?: the battlefield)?)?, (.+)$/i);
+    // "attack" / "enter" only for a plural name ("Whenever Aang and La attack", "When The Sackville-Bagginses enter"), not
+    // "Whenever you attack".
+    const plural = matched && /^(?:attack|enter)$/i.test(matched[2].split(' ')[0]);
+    const ev = matched && (!plural || selves.includes(matched[1].toLowerCase())) ? matched : null;
     if (ev) {
       const [, rawSubject, verb, under, alsoVerb, text] = ev;
       // "Whenever Aang and La attack": a plural name.
-      const ons = [verb, alsoVerb].filter(Boolean).map((v): ObjectEvent => (v.startsWith('deals') ? 'combatDamage' : (v.toLowerCase().split(' ')[0].replace(/^attack$/, 'attacks') as ObjectEvent)));
+      const ons = [verb, alsoVerb].filter(Boolean).map((v): ObjectEvent => (v.startsWith('deals') ? 'combatDamage' : (v.toLowerCase().split(' ')[0].replace(/^attack$/, 'attacks').replace(/^enter$/, 'enters') as ObjectEvent)));
       if (/planeswalker$/i.test(verb)) ons.push('combatDamageWalker');
       // "this creature or another creature you control" is any creature you control, itself included.
       const orAnother = rawSubject.match(/^(.+?) or another (.+)$/i);
@@ -2347,6 +2451,8 @@ export function triggersOf(card: Card): TriggerSpec[] {
       if (!self && !watched) continue;
       const ability = triggerAbility(text, name, self);
       for (const on of ons) {
+        // "leaves the battlefield" not understood: left unread (Parallax Wave and Skyclave Apparition have their own code).
+        if (on === 'leaves' && !ability.effects.length) continue;
         out.push({ event: self ? { on, self: true } : { on, self: false, ...watched! }, ability, ...(oncePerTurn ? { oncePerTurn } : {}) });
       }
       continue;
@@ -2389,6 +2495,12 @@ export function triggersOf(card: Card): TriggerSpec[] {
       out.push({ event: { on: 'becomesTapped' }, ability: triggerAbility(tapped[2], name, true) });
       continue;
     }
+    // Tezzeret's emblem: "Whenever an artifact you control becomes tapped, draw a card."
+    const watched = tapped && triggerSubject(tapped[1], false);
+    if (tapped && watched && !watched.another) {
+      out.push({ event: { on: 'becomesTapped', which: watched.which }, ability: triggerAbility(tapped[2], name, false) });
+      continue;
+    }
 
     const youAttack = line.match(/^Whenever you attack, (.+)$/i);
     if (youAttack) {
@@ -2417,6 +2529,10 @@ export function triggersOf(card: Card): TriggerSpec[] {
       if (filter) out.push({ event: { on: 'cast', filter }, ability: triggerAbility(cast[2], name, true) });
     }
   }
+  // Thought-Knot Seer: "When this creature leaves the battlefield, target opponent draws a card." pays back its enters
+  // trigger; with that one not simulated, neither is this one (no drawback without the upside).
+  const entersUnread = out.some((t) => t.event.on === 'enters' && t.event.self && !t.ability.effects.length);
+  for (const t of out) if (entersUnread && t.event.on === 'leaves' && t.event.self) t.ability = NO_EFFECT;
   triggerCache.set(key, out);
   return out;
 }
@@ -2471,6 +2587,8 @@ export interface ActivatedSpec {
   equip?: { perColor?: boolean };
   /** The Lonely Mountain: "This ability costs {1} less to activate for each Equipment you control." */
   discountPer?: Selector;
+  /** Wishclaw Talisman: "Activate only during your turn." */
+  yourTurn?: boolean;
 }
 
 const activatedCache = new Map<string, ActivatedSpec[]>();
@@ -2563,7 +2681,8 @@ export function activatedOf(card: Card): ActivatedSpec[] {
           cost.discardFilter = filter;
         } else ok = false;
       }
-      else if (/^remove an? (fade|age|lore) counter from /i.test(p) && selves.includes(p.replace(/^remove an? \w+ counter from /i, '').toLowerCase())) {
+      // Wishclaw Talisman: "Remove a wish counter from this artifact".
+      else if (/^remove an? (fade|age|lore|wish) counter from /i.test(p) && selves.includes(p.replace(/^remove an? \w+ counter from /i, '').toLowerCase())) {
         cost.removeCounter = p.match(/^remove an? (\w+)/i)![1].toLowerCase() as CounterKind;
       }
       else ok = false;
@@ -2581,7 +2700,8 @@ export function activatedOf(card: Card): ActivatedSpec[] {
     const sorcery = /Activate only as a sorcery/i.test(text);
     const once = /Activate only once each turn/i.test(text);
     // Other restrictions ("only during your turn", "only if …") aren't checked: leave the ability out.
-    if (/Activate (?:only|this ability only)/i.test(text.replace(/Activate only (?:as a sorcery|once each turn)\.?/gi, ''))) continue;
+    const yourTurn = /Activate only during your turn/i.test(text);
+    if (/Activate (?:only|this ability only)/i.test(text.replace(/Activate only (?:as a sorcery|once each turn|during your turn)\.?/gi, ''))) continue;
     text = text.replace(/\s*Activate (?:only|this ability only)[^.]*\./gi, '').trim();
     // Seasoned Hallowblade: "Tap this creature. It gains indestructible until end of turn." (read as Iron-Shield Elf's)
     text = text.replace(/^Tap this creature\. It gains ([a-z ,]+ until end of turn)\.$/i, 'This creature gains $1. Tap it.');
@@ -2594,7 +2714,7 @@ export function activatedOf(card: Card): ActivatedSpec[] {
     if (returnsExiledWhenLeaving(card)) ability = { ...ability, effects: ability.effects.map((x) => (x.kind === 'destroy' && x.exile ? { ...x, untilLeaves: true } : x)) };
     // Stoneforge Mystic: choosing no card is the "may".
     const choosesNone = ability.effects.length === 1 && ability.effects[0].kind === 'putFromHand';
-    out.push({ text: line, cost, ability: optional && ability.effects.length && !choosesNone ? { ...ability, optional } : ability, sorcery, once, ...(discountPer ? { discountPer } : {}) });
+    out.push({ text: line, cost, ability: optional && ability.effects.length && !choosesNone ? { ...ability, optional } : ability, sorcery, once, ...(discountPer ? { discountPer } : {}), ...(yourTurn ? { yourTurn } : {}) });
   }
   activatedCache.set(key, out);
   return out;
@@ -2681,8 +2801,9 @@ export function entersCounters(card: Card): { counter: CounterKind; n: Amount } 
   const keyword = frontText(card).match(new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)? with an? (flying|hexproof|indestructible|lifelink|trample|deathtouch|menace|reach|vigilance|first strike) counter on (?:it|him|her|them)\\.`, 'i'));
   if (keyword) return { counter: keyword[1].toLowerCase() as CounterKind, n: 1 };
   // Gemstone Mine: "This land enters with three mining counters on it."
-  const mining = frontText(card).match(new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)? with (${AMOUNT}) mining counters? on it\\.`, 'i'));
-  if (mining) return { counter: 'mining', n: toAmount(mining[1]) };
+  // Wishclaw Talisman: "This artifact enters with three wish counters on it."
+  const mining = frontText(card).match(new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)? with (${AMOUNT}) (mining|wish) counters? on it\\.`, 'i'));
+  if (mining) return { counter: mining[2].toLowerCase() as CounterKind, n: toAmount(mining[1]) };
   const m = frontText(card).match(new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)? with (${AMOUNT}) ([+-]1\\/[+-]1) counters? on (?:it|him|her|them)\\.`, 'i'));
   return m && (m[2] === '+1/+1' || m[2] === '-1/-1') ? { counter: m[2], n: toAmount(m[1]) } : null;
 }

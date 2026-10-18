@@ -3873,3 +3873,201 @@ describe('Tezzeret artifacts deck (deck-2)', () => {
     expect(s.battlefield.filter((x) => x.card.name === 'Soldier')).toHaveLength(5);
   });
 });
+
+describe('metagame audit 2026-10-18, small triggers', () => {
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 12 && (s.stack.length || s.triggered?.length) && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  const bear = creature('Bear', 2, 2);
+  const treasure = tokenCard(PREDEFINED_TOKENS.treasure);
+  const rock = card({ name: 'Rock', typeLine: 'Artifact', manaCost: '{1}', cmc: 1, oracleText: '{T}, Sacrifice this artifact: You gain 1 life.' });
+
+  it('Sewer-veillance Cam: taps or untaps a creature as it enters and as it leaves', () => {
+    const cam = card({
+      name: 'Sewer-veillance Cam', typeLine: 'Artifact', manaCost: '{U}', cmc: 1, keywords: ['Flash'],
+      oracleText: 'Flash\nWhen this artifact enters or leaves the battlefield, you may tap or untap target creature.\n{3}{U}, Sacrifice this artifact: Draw two cards.',
+    });
+    expect(triggersOf(cam).map((t) => t.event.on)).toEqual(['enters', 'leaves']);
+    let s = board({ mine: [island, ...[1, 2, 3].map(() => island)], hand: [cam], theirs: [bear] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    s = apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] } });
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'yesNo', yes: true } }));
+    expect(perm(s, 'Bear')!.tapped).toBe(true);
+    // Sacrificed: it leaves, and the Bear is untapped.
+    for (const x of s.battlefield) if (x.card.name === 'Island') x.tapped = false;
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Sewer-veillance Cam'), index: 0 }));
+    s = apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] } });
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'yesNo', yes: true } }));
+    expect(perm(s, 'Bear')!.tapped).toBe(false);
+  });
+
+  it('Monument to Endurance: each discard picks a mode not chosen this turn', () => {
+    const monument = card({
+      name: 'Monument to Endurance', typeLine: 'Artifact', manaCost: '{3}', cmc: 3,
+      oracleText: 'Whenever you discard a card, choose one that hasn\'t been chosen this turn —\n• Draw a card.\n• Create a Treasure token.\n• Each opponent loses 3 life.',
+    });
+    const loot = spell('Loot', '{0}', 'Draw a card, then discard a card.');
+    let s = board({ mine: [monument], hand: [loot, { ...loot, name: 'Loot Two' }, swamp, swamp] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    s = apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['h2'] } });
+    expect(s.pending?.choice).toMatchObject({ purpose: 'triggerMode', disabled: [] });
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'mode', modes: [2] } }));
+    expect(s.players[1].life).toBe(17);
+    s = resolve(apply(s, { type: 'cast', iid: 'h1' }));
+    s = apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['h3'] } });
+    // "Each opponent loses 3 life" was chosen this turn.
+    expect(s.pending?.choice).toMatchObject({ purpose: 'triggerMode', disabled: [2] });
+  });
+
+  it('Biotech Specialist and The Sackville-Bagginses: sacrifices of artifacts and tokens', () => {
+    const biotech = card({
+      name: 'Biotech Specialist', typeLine: 'Creature — Insect Scientist', manaCost: '{R}{G}', cmc: 2, power: '1', toughness: '3',
+      oracleText: 'When this creature enters, create a Lander token. (It\'s an artifact with "{2}, {T}, Sacrifice this token: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.")\nWhenever you sacrifice an artifact, this creature deals 2 damage to target opponent.',
+    });
+    const bagginses = card({
+      name: 'The Sackville-Bagginses', typeLine: 'Legendary Creature — Halfling Citizen', manaCost: '{1}{B}', cmc: 2, power: '2', toughness: '2',
+      oracleText: 'When The Sackville-Bagginses enter, you may sacrifice another creature or artifact. If you do, draw a card and create a Treasure token.\nWhenever you sacrifice a token, target opponent loses 1 life.',
+    });
+    expect(triggersOf(biotech).map((t) => t.event.on)).toEqual(['enters', 'youSacrifice']);
+    expect(triggersOf(bagginses).map((t) => t.event.on)).toEqual(['enters', 'youSacrifice']);
+    // A Treasure sacrificed for mana: both trigger.
+    // Their "target opponent": the only one.
+    const aim = (s: GameState) => {
+      for (let i = 0; i < 4 && s.pending?.choice.purpose === 'triggerTargets'; i++) s = apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'player', player: 1 }]] } });
+      return resolve(s);
+    };
+    let s = board({ mine: [biotech, bagginses, treasure], hand: [creature('Elf', 1, 1, { manaCost: '{G}', cmc: 1 })] });
+    s = aim(apply(s, { type: 'cast', iid: 'h0' }));
+    expect(s.players[1].life).toBe(17);
+    expect(s.players[0].sacrificedThisTurn).toBe(1);
+    // A nontoken artifact: only the Specialist.
+    s = board({ mine: [biotech, bagginses, rock] });
+    s = aim(apply(s, { type: 'activate', iid: iidOf(s, 'Rock'), index: 0 }));
+    expect(s.players[1].life).toBe(18);
+  });
+
+  it('The Sackville-Bagginses: may sacrifice another creature or artifact as they enter, to draw and get a Treasure', () => {
+    const bagginses = card({
+      name: 'The Sackville-Bagginses', typeLine: 'Legendary Creature — Halfling Citizen', manaCost: '{1}{B}', cmc: 2, power: '2', toughness: '2',
+      oracleText: 'When The Sackville-Bagginses enter, you may sacrifice another creature or artifact. If you do, draw a card and create a Treasure token.\nWhenever you sacrifice a token, target opponent loses 1 life.',
+    });
+    let s = board({ mana: 2, mine: [rock], hand: [{ ...bagginses, manaCost: '{2}' }] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    expect(s.pending?.choice).toMatchObject({ purpose: 'reflexiveSacrifice' });
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: [iidOf(s, 'Rock')] } }));
+    expect(s.players[0].hand).toHaveLength(1);
+    expect(s.battlefield.some((x) => x.card.name === 'Treasure')).toBe(true);
+  });
+
+  it('Obsessive Pursuit: a Clue as it enters and each upkeep; counters for each permanent sacrificed', () => {
+    const pursuit = card({
+      name: 'Obsessive Pursuit', typeLine: 'Enchantment', manaCost: '{1}{B}', cmc: 2,
+      oracleText: 'When this enchantment enters and at the beginning of your upkeep, you lose 1 life and create a Clue token. (It\'s an artifact with "{2}, Sacrifice this token: Draw a card.")\nWhenever you attack, put X +1/+1 counters on target attacking creature, where X is the number of permanents you\'ve sacrificed this turn. If X is three or more, that creature gains lifelink until end of turn.',
+    });
+    expect(triggersOf(pursuit).map((t) => t.event.on)).toEqual(['enters', 'upkeep', 'youAttack']);
+    let s = board({ mana: 2, hand: [{ ...pursuit, manaCost: '{2}' }], mine: [bear] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    expect(s.players[0].life).toBe(19);
+    expect(s.battlefield.some((x) => x.card.name === 'Clue')).toBe(true);
+    s.players[0].sacrificedThisTurn = 3;
+    s = apply(s, { type: 'pass' });
+    for (let i = 0; i < 5 && (s.priority || s.step !== 'attack'); i++) s = apply(s, { type: 'pass' });
+    s = apply(s, { type: 'declareAttackers', attackers: [iidOf(s, 'Bear')] });
+    if (s.pending) s = apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] } });
+    s = resolve(s);
+    expect(perm(s, 'Bear')!.counters['+1/+1']).toBe(3);
+    expect(hasKw(perm(s, 'Bear')!, 'lifelink')).toBe(true);
+  });
+
+  it('Wishclaw Talisman: three wish counters, a card for one, then the opponent gets it', () => {
+    const wishclaw = card({
+      name: 'Wishclaw Talisman', typeLine: 'Artifact', manaCost: '{1}{B}', cmc: 2,
+      oracleText: 'This artifact enters with three wish counters on it.\n{1}, {T}, Remove a wish counter from this artifact: Search your library for a card, put it into your hand, then shuffle. An opponent gains control of this artifact. Activate only during your turn.',
+    });
+    let s = board({ mana: 3, hand: [{ ...wishclaw, manaCost: '{2}' }] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    expect(perm(s, 'Wishclaw Talisman')!.counters.wish).toBe(3);
+    s.players[0].library = [{ iid: 'l0', card: bear }, ...s.players[0].library];
+    s = apply(s, { type: 'activate', iid: iidOf(s, 'Wishclaw Talisman'), index: 0 });
+    s = resolve(s);
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['l0'] } }));
+    expect(s.players[0].hand.map((c) => c.card.name)).toEqual(['Bear']);
+    expect(perm(s, 'Wishclaw Talisman')).toMatchObject({ controller: 1, counters: { wish: 2 } });
+    // Not during its new controller's opponent's turn.
+    expect(activationProblem(s, 1, perm(s, 'Wishclaw Talisman')!, 0)).toBe('activateTiming');
+  });
+});
+
+describe('Tezzeret artifacts deck (deck-2), second batch', () => {
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 12 && (s.stack.length || s.triggered?.length) && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  const rock = (name: string) => card({ name, typeLine: 'Artifact', manaCost: '{1}', cmc: 1, oracleText: '{T}: Add {C}.' });
+  const tezzeret = card({
+    name: 'Tezzeret, Betrayer of Flesh', typeLine: 'Legendary Planeswalker — Tezzeret', manaCost: '{2}{U}{U}', cmc: 4, loyalty: '4',
+    oracleText: 'The first activated ability of an artifact you activate each turn costs {2} less to activate.\n+1: Draw two cards. Then discard two cards unless you discard an artifact card.\n−2: Target artifact becomes an artifact creature. If it isn\'t a Vehicle, it has base power and toughness 4/4.\n−6: You get an emblem with "Whenever an artifact you control becomes tapped, draw a card."',
+  });
+
+  it('Tezzeret, Betrayer of Flesh −2: an artifact becomes a 4/4 artifact creature for good', () => {
+    let s = board({ mine: [tezzeret, rock('Sol Rock')] });
+    perm(s, 'Tezzeret, Betrayer of Flesh')!.counters = { loyalty: 4 };
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Tezzeret, Betrayer of Flesh'), index: 1, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Sol Rock') }]] }));
+    const rockPerm = perm(s, 'Sol Rock')!;
+    expect(rockPerm.card.typeLine).toBe('Artifact Creature');
+    expect([powerOf(rockPerm), toughnessOf(rockPerm)]).toEqual([4, 4]);
+    // Still a creature next turn.
+    for (let i = 0; i < 40 && !(s.active === 0 && s.turn > 1); i++) s = apply(s, { type: 'pass' });
+    expect(isCreature(perm(s, 'Sol Rock')!.card)).toBe(true);
+    expect(powerOf(perm(s, 'Sol Rock')!)).toBe(4);
+  });
+
+  it('Tezzeret, Betrayer of Flesh −6: the emblem draws when an artifact becomes tapped', () => {
+    let s = board({ mine: [tezzeret, rock('Sol Rock')] });
+    perm(s, 'Tezzeret, Betrayer of Flesh')!.counters = { loyalty: 6 };
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Tezzeret, Betrayer of Flesh'), index: 2 }));
+    expect(s.players[0].emblems).toHaveLength(1);
+    s = apply(s, { type: 'tapForMana', iid: iidOf(s, 'Sol Rock') });
+    s = resolve(s);
+    expect(s.players[0].hand).toHaveLength(1);
+  });
+
+  it('Tezzeret the Seeker −5: artifacts become 5/5 artifact creatures until end of turn', () => {
+    const seeker = card({
+      name: 'Tezzeret the Seeker', typeLine: 'Legendary Planeswalker — Tezzeret', manaCost: '{3}{U}{U}', cmc: 5, loyalty: '4',
+      oracleText: '+1: Untap up to two target artifacts.\n−X: Search your library for an artifact card with mana value X or less, put it onto the battlefield, then shuffle.\n−5: Artifacts you control become artifact creatures with base power and toughness 5/5 until end of turn.',
+    });
+    const thopter = card({ name: 'Ornithopter', typeLine: 'Artifact Creature — Thopter', manaCost: '{0}', power: '0', toughness: '2', keywords: ['Flying'], oracleText: 'Flying' });
+    let s = board({ mine: [seeker, rock('Sol Rock'), thopter] });
+    perm(s, 'Tezzeret the Seeker')!.counters = { loyalty: 5 };
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Tezzeret the Seeker'), index: 2 }));
+    for (const name of ['Sol Rock', 'Ornithopter']) expect([powerOf(perm(s, name)!), toughnessOf(perm(s, name)!)]).toEqual([5, 5]);
+    for (let i = 0; i < 40 && s.active === 0; i++) s = apply(s, { type: 'pass' });
+    expect(isCreature(perm(s, 'Sol Rock')!.card)).toBe(false);
+    expect(powerOf(perm(s, 'Ornithopter')!)).toBe(0);
+  });
+
+  it('Vedalken Shackles: control while it stays tapped, power up to the Islands', () => {
+    const shackles = card({
+      name: 'Vedalken Shackles', typeLine: 'Artifact', manaCost: '{3}', cmc: 3,
+      oracleText: 'You may choose not to untap this artifact during your untap step.\n{2}, {T}: Gain control of target creature with power less than or equal to the number of Islands you control for as long as this artifact remains tapped.',
+    });
+    const ogre = creature('Ogre', 3, 3);
+    let s = board({ mine: [shackles, island, island], theirs: [creature('Bear', 2, 2), ogre] });
+    const spec = activatedOf(shackles)[0];
+    expect(spec.ability.targets[0].filter).toMatchObject({ maxPowerIslands: true });
+    // Two Islands: the Ogre (power 3) can't be taken.
+    expect(errorOf(() => apply(s, { type: 'activate', iid: iidOf(s, 'Vedalken Shackles'), index: 0, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Ogre') }]] }))).not.toBeNull();
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Vedalken Shackles'), index: 0, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] }));
+    expect(perm(s, 'Bear')!.controller).toBe(0);
+    // Its untap step: the Shackles stay tapped, the Bear stays.
+    for (let i = 0; i < 60 && !(s.active === 0 && s.turn > 1 && s.step === 'main1'); i++) s = apply(s, { type: 'pass' });
+    expect(perm(s, 'Vedalken Shackles')!.tapped).toBe(true);
+    expect(perm(s, 'Bear')!.controller).toBe(0);
+    // Untapped (by an effect): the Bear goes back.
+    perm(s, 'Vedalken Shackles')!.tapped = false;
+    s = apply(s, { type: 'pass' });
+    expect(perm(s, 'Bear')!.controller).toBe(1);
+  });
+});

@@ -402,16 +402,23 @@ Temple {C}); what a payment leaves of it is lost (Mishra's Workshop paying for a
 unrestricted (Eldrazi Temple's second {C}). Shang-Chi's "two mana of any one color" may be two colors. The bot keeps
 Cori-Steel Cutter on the creature it equips.
 
+Small triggers: Sewer-veillance Cam ("enters or leaves the battlefield": a new trigger; "tap or untap target creature"),
+Monument to Endurance ("Whenever you discard a card", modes not chosen this turn), Biotech Specialist (a Lander token;
+"Whenever you sacrifice an artifact"), The Sackville-Bagginses ("you may sacrifice … If you do", "Whenever you sacrifice
+a token"), Obsessive Pursuit ("enters and at the beginning of your upkeep"; counters for each permanent sacrificed this
+turn), Wishclaw Talisman (wish counters, "Activate only during your turn", given to an opponent), "Search your library
+for a card" (Demonic Tutor, Diabolic Intent).
+
+Approximations: Sewer-veillance Cam taps an untapped creature and untaps a tapped one (no choice); Wishclaw Talisman goes
+to the first opponent, and the bot never activates it. Thought-Knot Seer's "leaves the battlefield" draw stays not
+simulated while its enters trigger is.
+
 Still open, playing wrongly, most played first (see `audit-reports/2026-10-18/report.md`):
-- [ ] Monument to Endurance (12): "Whenever you discard a card, choose one that hasn't been chosen this turn"
 - [ ] Superior Spider-Man (12), Phantasmal Image, Flesh Duplicate: clones with more than added types
-- [ ] Sewer-veillance Cam (11): "When this artifact enters or leaves the battlefield, you may tap or untap target creature"
 - [ ] Guardian of New Benalia (9): enlist
 - [ ] Eldrazi Spawn makers: Basking Broodscale, Glaring Fleshraker ("create a 0/1 Eldrazi Spawn" read as mana)
 - [ ] Hearth Elemental, Sunderflock: "costs {X} less, where X is …"
-- [ ] Obsessive Pursuit, Biotech Specialist, The Sackville-Bagginses: "when it enters and at the beginning of your
-  upkeep", "whenever you sacrifice an artifact / a token"
-- [ ] Phyrexian Devourer, Wishclaw Talisman ("enters with three wish counters"), Sneaky Snacker, Void Mirror
+- [ ] Phyrexian Devourer, Sneaky Snacker, Void Mirror
 - [ ] cEDH: Underworld Breach (escape for every card), Birgi, Lurrus, Samut (split second for your spells), Biomancer's
   Familiar
 
@@ -427,11 +434,12 @@ and Throne of Empires (more with the other two: the creature stolen, 3 damage, f
 Approximations: Tezzeret's discount isn't used up by a mana ability (tapping an artifact for mana first); the bot
 never activates Tezzeret the Seeker's −X.
 
-Still open:
-- [ ] Vedalken Shackles: control "for as long as this artifact remains tapped", power up to the number of Islands; "You
-  may choose not to untap this artifact"
-- [ ] Tezzeret, Betrayer of Flesh's −2 (an artifact becomes a 4/4 artifact creature) and −6 (an emblem: draw when an
-  artifact becomes tapped); Tezzeret the Seeker's −5 (artifacts become 5/5 creatures until end of turn)
+Second batch: the whole deck is simulated. Vedalken Shackles (control while it stays tapped, power up to the number of
+Islands; it stays tapped in the untap step while it holds a creature), Tezzeret, Betrayer of Flesh's −2 (a 4/4 artifact
+creature for good) and −6 (an emblem: draw when an artifact you control becomes tapped), Tezzeret the Seeker's −5
+(artifacts become 5/5 artifact creatures until end of turn).
+
+Approximations: Vedalken Shackles never untaps while it holds a creature (its controller isn't asked).
 
 ## Commander: Aang, Swift Savior (a user's deck, `deck.txt`)
 

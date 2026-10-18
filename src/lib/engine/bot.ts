@@ -518,7 +518,7 @@ type Intent = 'harm' | 'help' | 'neutral';
 
 /** The spell's rules with X replaced by a number, so amounts can be compared. */
 function withX(spec: AbilitySpec, x: number): AbilitySpec {
-  const n = (a: Amount) => (a === 'X' ? x : a === 'lifeGained' ? 0 : a);
+  const n = (a: Amount) => (a === 'X' ? x : a === 'lifeGained' || a === 'sacrificed' ? 0 : a);
   const effects = spec.effects.map((e): Effect => {
     if (e.kind === 'damage' || e.kind === 'damageAll') return { ...e, amount: n(e.amount) };
     if (e.kind === 'dig') return e;
@@ -797,6 +797,8 @@ function abilityPlays(s: GameState, me: PlayerId): (Play & { perm: Permanent; in
     .filter(({ spec }) => !spec.cost.life || (isLandSearch(spec.ability) && s.players[me].life > 6))
     // Discarding for an ability (Psychic Frog, Survival of the Fittest) isn't planned by the bot.
     .filter(({ spec }) => !spec.cost.discard)
+    // Wishclaw Talisman goes to the opponent: not planned by the bot.
+    .filter(({ spec }) => !spec.ability.effects.some((e) => e.kind === 'opponentGainsSource'))
     // Free abilities could repeat forever; loyalty abilities are once a turn and handled by usePlaneswalkers.
     .filter(({ spec }) => (spec.cost.tap || spec.cost.mana || spec.cost.sacrificeSelf) && spec.cost.loyalty === undefined)
     // Becoming a creature until end of turn (Iron Man Armor) isn't planned by the bot; Vehicles are crewed by crewVehicles.

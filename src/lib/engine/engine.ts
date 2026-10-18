@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, counterMana, choosesColor, diamondMana, gainsLifeFromCombatDamageTaken, restrictedMana, type RestrictedMana, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, counterMana, choosesColor, diamondMana, mayStayTapped, gainsLifeFromCombatDamageTaken, restrictedMana, type RestrictedMana, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type AltCost, type CastInfo, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -33,7 +33,8 @@ export interface Boost {
   power: number;
   toughness: number;
   keywords: Keyword[];
-  until: 'endOfTurn';
+  /** `permanent`: Tezzeret's −2 (an artifact creature for good). */
+  until: 'endOfTurn' | 'permanent';
   /** Mother of Runes: protection from these colors. */
   protection?: Color[];
   /** Multiply by Zero: base power and toughness set (layer 7b); the latest one wins, other changes apply on top. */
@@ -57,6 +58,10 @@ export interface Permanent extends CardInst {
   triggeredOnce?: number[];
   /** Utopia Sprawl: the color chosen as it entered. */
   chosenColor?: Color;
+  /** Monument to Endurance: the modes of its trigger chosen this turn. */
+  modesChosen?: number[];
+  /** Vedalken Shackles: controlled for as long as that permanent (its source) remains tapped. */
+  controlWhileTapped?: string;
   /** Wall of Roots: its once-each-turn mana ability was activated this turn. */
   counterManaUsed?: boolean;
   /** The full card when the permanent is one face of it (modal double-faced back face), or a clone's own card. */
@@ -198,6 +203,8 @@ export interface PlayerState {
   enduringStory?: boolean;
   /** Equip abilities activated this turn (Kíli: "the first equip ability you activate each turn"). */
   equipsThisTurn?: number;
+  /** Obsessive Pursuit: permanents this player sacrificed this turn. */
+  sacrificedThisTurn?: number;
   /** Tezzeret, Betrayer of Flesh: activated abilities of artifacts this player activated this turn. */
   artifactAbilitiesThisTurn?: number;
   /** Emblems (Chandra's −7): cards with the emblem's ability. */
@@ -1473,6 +1480,8 @@ export function activationProblem(s: GameState, p: PlayerId, perm: Permanent, in
   if (s.mulligan || s.pending || actor(s) !== p) return 'activateTiming';
   const sorcerySpeed = !s.priority && isMainStep(s) && isActivePlayer(s, p) && !s.stack.length;
   if (spec.sorcery ? !sorcerySpeed : !s.priority && !(isMainStep(s) && isActivePlayer(s, p))) return 'activateTiming';
+  // Wishclaw Talisman: "Activate only during your turn."
+  if (spec.yourTurn && !isActivePlayer(s, p)) return 'activateTiming';
   if (spec.cost.tap && perm.tapped) return 'alreadyTapped';
   if (spec.cost.tap && isCreature(perm.card) && perm.sick && !hasKw(perm, 'haste')) return 'summoningSick';
   if (spec.once && perm.used?.includes(index)) return 'onceEachTurn';
@@ -1614,6 +1623,8 @@ function matchesFilter(s: GameState, f: TargetFilter, caster: PlayerId, x: CardI
   if (f.maxPowerOrToughness !== undefined && pow > f.maxPowerOrToughness && (perm ? toughnessOf(perm) : toughness(x.card)) > f.maxPowerOrToughness) return false;
   // Wash Away: "that wasn't cast from its owner's hand" (a spell; `from` is set for other zones).
   if (f.notCastFromHand && !(x as StackItem).from) return false;
+  // Vedalken Shackles: "with power less than or equal to the number of Islands you control".
+  if (f.maxPowerIslands && (perm ? powerOf(perm) : power(x.card)) > s.battlefield.filter((y) => y.controller === caster && landHasType(s, y.card, 'island')).length) return false;
   // Turn Aside: a spell with a target that is a permanent `caster` controls.
   if (f.targetsYourPermanent && !((x as StackItem).targets ?? []).flat().some((t) => t.kind === 'permanent' && findPermanent(s, t.iid)?.controller === caster)) return false;
   // Battlefield-only conditions.
@@ -1901,6 +1912,7 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
     delete ps.gainedThisTurn;
     delete ps.lostThisTurn;
     delete ps.equipsThisTurn;
+    delete ps.sacrificedThisTurn;
     delete ps.artifactAbilitiesThisTurn;
   }
   emptyPools(d);
@@ -1908,12 +1920,14 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
     if (isActivePlayer(d, perm.controller)) {
       // Stun: "If a permanent with a stun counter would become untapped, remove one from it instead."
       if (perm.tapped && perm.counters.stun) perm.counters = { ...perm.counters, stun: perm.counters.stun - 1 };
-      else if (!doesntUntap(perm.card)) perm.tapped = false;
+      // Vedalken Shackles: "You may choose not to untap this artifact": kept tapped while it holds a creature.
+      else if (!doesntUntap(perm.card) && !(mayStayTapped(perm.card) && d.battlefield.some((x) => x.controlWhileTapped === perm.iid))) perm.tapped = false;
       perm.sick = false;
     }
     delete perm.used;
     delete perm.triggeredOnce;
     delete perm.counterManaUsed;
+    delete perm.modesChosen;
   }
   log(d, { k: 'turn', n: d.turn, p });
   fireStep(d, 'upkeep');
@@ -1964,7 +1978,7 @@ function finishCleanup(d: GameState, p: PlayerId, iids: string[]) {
     const inst = me.hand.find((c) => c.iid === iid)!;
     me.hand = me.hand.filter((c) => c !== inst);
     putInZone(d, p, inst, 'graveyard');
-    log(d, { k: 'discard', p, card: inst.card.name, cleanup: true });
+    noteDiscard(d, p, inst, true);
   }
   endTurn(d); // the next head, if any, then the next turn
 }
@@ -2049,6 +2063,7 @@ function removePermanent(d: GameState, perm: Permanent, zone: 'graveyard' | 'exi
   if (zone === 'graveyard' && (graveyardExiled(d, perm.owner ?? perm.controller) || perm.counters.finality)) zone = 'exile';
   d.battlefield = d.battlefield.filter((x) => x.iid !== perm.iid);
   returnExiledUntil(d, perm);
+  fireObject(d, 'leaves', perm);
   // Tishana's Tidebinder leaves: the permanents it took the abilities of get them back.
   for (const loss of (d.abilityLoss ?? []).filter((x) => x.by === perm.iid)) {
     const back = findPermanent(d, loss.iid);
@@ -2132,7 +2147,13 @@ function payMana(d: GameState, p: PlayerId, plan: ManaPick[]) {
 function tapPermanent(d: GameState, perm: Permanent) {
   if (perm.tapped) return;
   perm.tapped = true;
-  for (const t of triggersOf(perm.card)) if (t.event.on === 'becomesTapped') queueTrigger(d, perm, perm.controller, t.ability);
+  for (const t of triggersOf(perm.card)) if (t.event.on === 'becomesTapped' && !t.event.which) queueTrigger(d, perm, perm.controller, t.ability);
+  // Tezzeret's emblem: "Whenever an artifact you control becomes tapped, draw a card."
+  for (const x of [...d.battlefield, ...emblemSources(d)]) {
+    for (const t of triggersOf(x.card)) {
+      if (t.event.on === 'becomesTapped' && t.event.which && fits(d, x.controller, t.event.which, perm)) queueTrigger(d, x, x.controller, t.ability);
+    }
+  }
 }
 
 /** Taps a mana source (sacrificing a Treasure); the caller deals with its mana. */
@@ -2212,8 +2233,27 @@ function emptyPools(d: GameState) {
 
 /** Sacrifice a permanent (as a cost or an effect). */
 function sacrifice(d: GameState, perm: Permanent) {
+  const p = perm.controller;
+  const card = printedCard(perm);
   removePermanent(d, perm, 'graveyard');
   log(d, { k: 'sacrificed', card: perm.card.name });
+  d.players[p].sacrificedThisTurn = (d.players[p].sacrificedThisTurn ?? 0) + 1;
+  // Biotech Specialist: "Whenever you sacrifice an artifact, …"; The Sackville-Bagginses: "a token".
+  for (const x of d.battlefield) {
+    if (x.controller !== p) continue;
+    for (const t of triggersOf(x.card)) {
+      if (t.event.on === 'youSacrifice' && (t.event.token ? isToken(card) : cardMatches(perm.card, t.event.filter))) queueTrigger(d, x, p, t.ability);
+    }
+  }
+}
+
+/** `p` discarded `inst` (already moved): logged; Monument to Endurance's "Whenever you discard a card". */
+function noteDiscard(d: GameState, p: PlayerId, inst: CardInst, cleanup = false) {
+  log(d, { k: 'discard', p, card: inst.card.name, ...(cleanup ? { cleanup } : {}) });
+  for (const x of d.battlefield) {
+    if (x.controller !== p) continue;
+    for (const t of triggersOf(x.card)) if (t.event.on === 'youDiscard') queueTrigger(d, x, p, t.ability);
+  }
 }
 
 /** A permanent enters: put it on the battlefield and check "enters" triggers (its own, landfall…). */
@@ -2235,7 +2275,7 @@ function putOntoBattlefield(d: GameState, inst: CardInst, controller: PlayerId, 
       return;
     }
     moveToGraveyard(d, controller, land, 'hand');
-    log(d, { k: 'discard', p: controller, card: land.card.name });
+    noteDiscard(d, controller, land);
   }
   enterBattlefield(d, inst, controller, opts);
 }
@@ -2328,17 +2368,25 @@ function askGemstoneCaverns(d: GameState) {
  * card is kept to come back at the end of the turn. Already a creature, it only gains the keywords.
  */
 function animate(d: GameState, perm: Permanent, e: Extract<Effect, { kind: 'animate' }>) {
-  if (e.keywords.length) perm.boosts.push({ power: 0, toughness: 0, keywords: e.keywords, until: 'endOfTurn' });
+  const until = e.permanent ? 'permanent' : 'endOfTurn';
+  if (e.keywords.length) perm.boosts.push({ power: 0, toughness: 0, keywords: e.keywords, until });
+  // Tezzeret: base power and toughness (a creature's too), except for a Vehicle.
+  const vehicle = /\bVehicle\b/.test(perm.card.typeLine);
+  if (e.baseUnlessVehicle && !vehicle && e.power !== undefined) perm.boosts.push({ power: 0, toughness: 0, keywords: [], until, setBase: { power: e.power, toughness: e.toughness ?? e.power } });
   if (isCreature(perm.card)) return;
   const own = perm.card;
   const [printed, subtypes = ''] = own.typeLine.split(' // ')[0].split(' — ');
   // Mishra's Factory: "becomes a 2/2 Assembly-Worker artifact creature".
   const types = (e.artifact && !/\bArtifact\b/.test(printed) ? `Artifact ${printed}` : printed).replace(/\bArtifact\b/, 'Artifact Creature');
-  const typeLine = `${types}${/\bCreature\b/.test(types) ? '' : ' Creature'} — ${[subtypes, ...e.subtypes].filter(Boolean).join(' ')}`;
-  perm.unanimated ??= own;
+  const allSubtypes = [subtypes, ...e.subtypes].filter(Boolean).join(' ');
+  const typeLine = `${types}${/\bCreature\b/.test(types) ? '' : ' Creature'}${allSubtypes ? ` — ${allSubtypes}` : ''}`;
+  // For good (Tezzeret's −2): the printed card is what leaves the battlefield.
+  if (e.permanent) perm.printed ??= own;
+  else perm.unanimated ??= own;
+  const fixed = e.baseUnlessVehicle ? undefined : e;
   perm.card = {
     ...own, typeLine,
-    power: String(e.power ?? own.power ?? 0), toughness: String(e.toughness ?? own.toughness ?? 0),
+    power: String(fixed?.power ?? own.power ?? 0), toughness: String(fixed?.toughness ?? own.toughness ?? 0),
     ...(e.text ? { oracleText: `${own.oracleText}\n${e.text}` } : {}),
     // Manlands: "a 4/4 blue and black Shark creature".
     ...(e.colors ? { colors: e.colors } : {}),
@@ -2726,8 +2774,10 @@ function flushTrigger(d: GameState): boolean {
   const modal = t.ability.modal;
   if (modal) {
     // "choose one —": modes that aren't understood, or have no legal target, can't be chosen.
+    // Monument to Endurance: "choose one that hasn't been chosen this turn".
+    const chosenBefore = modal.fresh ? findPermanent(d, t.source.iid)?.modesChosen ?? [] : [];
     const disabled = modal.specs.flatMap((sp, k) =>
-      !sp.effects.length || sp.targets.some((slot) => legalTargets(d, t.controller, slot, t.source.iid, t.source.card).length < slot.min) ? [k] : []);
+      !sp.effects.length || chosenBefore.includes(k) || sp.targets.some((slot) => legalTargets(d, t.controller, slot, t.source.iid, t.source.card).length < slot.min) ? [k] : []);
     if (modal.min > modal.specs.length - disabled.length) {
       log(d, { k: 'noTarget', card: t.source.card.name });
       return true;
@@ -2855,6 +2905,15 @@ function refreshReconfigured(d: GameState) {
 
 function refreshStatics(d: GameState) {
   refreshReconfigured(d);
+  // Vedalken Shackles: control lasts "for as long as this artifact remains tapped" (gone or untapped: it ends).
+  for (const perm of d.battlefield) {
+    if (!perm.controlWhileTapped || findPermanent(d, perm.controlWhileTapped)?.tapped) continue;
+    delete perm.controlWhileTapped;
+    if (perm.owner === undefined) continue;
+    perm.controller = perm.owner;
+    delete perm.owner;
+    log(d, { k: 'control', p: perm.controller, card: perm.card.name });
+  }
   for (const perm of d.battlefield) delete perm.statics;
   for (const src of d.battlefield) {
     for (const st of staticsOf(src.card)) {
@@ -3099,7 +3158,8 @@ function affected(d: GameState, r: Resolving, to: Affected): Affectable[] {
 }
 
 const amount = (d: GameState, r: Resolving, a: Amount) =>
-  a === 'X' ? (r.item.x ?? 0) : a === 'lifeGained' ? (d.players[r.item.controller].gainedThisTurn ?? 0) : a;
+  a === 'X' ? (r.item.x ?? 0) : a === 'lifeGained' ? (d.players[r.item.controller].gainedThisTurn ?? 0)
+    : a === 'sacrificed' ? (d.players[r.item.controller].sacrificedThisTurn ?? 0) : a;
 
 function moveToGraveyard(d: GameState, p: PlayerId, inst: CardInst, from: 'hand' | 'library') {
   const ps = d.players[p];
@@ -3205,6 +3265,8 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       break;
     }
     case 'pump':
+      // Obsessive Pursuit: "If X is three or more, …"
+      if (e.ifSacrificed && (d.players[caster].sacrificedThisTurn ?? 0) < e.ifSacrificed) break;
       for (const perm of perms) {
         perm.boosts.push({ power: e.power, toughness: e.toughness, keywords: e.keywords, until: 'endOfTurn' });
         log(d, { k: 'pump', card: perm.card.name, power: e.power, toughness: e.toughness, keywords: e.keywords });
@@ -3381,7 +3443,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
           for (let k = 0; k < amount(d, r, e.n) && hand.length; k++) {
             const inst = d.players[p].hand[Math.floor(random(d) * d.players[p].hand.length)];
             moveToGraveyard(d, p, inst, 'hand');
-            log(d, { k: 'discard', p, card: inst.card.name });
+            noteDiscard(d, p, inst);
           }
           continue;
         }
@@ -3407,7 +3469,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         for (const iid of answer.iids) {
           const inst = hand.find((c) => c.iid === iid)!;
           moveToGraveyard(d, p, inst, 'hand');
-          log(d, { k: 'discard', p, card: inst.card.name });
+          noteDiscard(d, p, inst);
           (r.discarded ??= []).push(inst.iid);
         }
         answer = undefined;
@@ -3548,6 +3610,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       for (const perm of e.kind === 'bounceAll' ? matching(d, caster, e.which) : perms) {
         d.battlefield = d.battlefield.filter((x) => x.iid !== perm.iid);
         returnExiledUntil(d, perm);
+        fireObject(d, 'leaves', perm);
         if (!isToken(printedCard(perm))) putInZone(d, perm.owner ?? perm.controller, { iid: perm.iid, card: printedCard(perm), ...(perm.commander ? { commander: true } : {}) }, 'hand');
         log(d, { k: 'bounced', card: perm.card.name });
       }
@@ -3648,7 +3711,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       if (perm) sacrifice(d, perm);
       else if (inHand) {
         moveToGraveyard(d, caster, inHand, 'hand');
-        log(d, { k: 'discard', p: caster, card: inHand.card.name });
+        noteDiscard(d, caster, inHand);
       } else r.stopped = true;
       break;
     }
@@ -3682,7 +3745,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         const inst = ps.hand.find((c) => c.iid === picked);
         if (!inst) break;
         moveToGraveyard(d, caster, inst, 'hand');
-        log(d, { k: 'discard', p: caster, card: inst.card.name });
+        noteDiscard(d, caster, inst);
       } else {
         const cost = parseCost(e.cost.mana ?? '');
         const life = e.cost.life ?? 0;
@@ -3754,7 +3817,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       const inst = ps.hand.find((c) => c.iid === picked);
       if (!inst) break;
       moveToGraveyard(d, caster, inst, 'hand');
-      log(d, { k: 'discard', p: caster, card: inst.card.name });
+      noteDiscard(d, caster, inst);
       if (!isLandCard(inst.card)) {
         const soldier = { name: 'Human Soldier', typeLine: 'Token Creature — Human Soldier', colors: ['W'] as Color[], power: 1, toughness: 1, keywords: [], oracleText: '' };
         d.abilities = (d.abilities ?? 0) + 1;
@@ -3875,12 +3938,39 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         perm.controller = caster;
         perm.sick = true;
         if (e.untilEndOfTurn) perm.controlUntilEndOfTurn = true;
+        // Vedalken Shackles: for as long as it remains tapped (see releaseControl).
+        if (e.whileSourceTapped && item.source) perm.controlWhileTapped = item.source;
         if (e.untapHaste) {
           perm.tapped = false;
           perm.boosts.push({ power: 0, toughness: 0, keywords: ['haste'], until: 'endOfTurn' });
         }
         delete perm.attachedTo; // Equipment stays with its controller
         log(d, { k: 'control', p: caster, card: perm.card.name });
+      }
+      break;
+    case 'opponentGainsSource': {
+      // Wishclaw Talisman: "An opponent gains control of this artifact." (the first opponent)
+      const src = item.source ? findPermanent(d, item.source) : undefined;
+      if (!src) break;
+      src.owner ??= src.controller;
+      src.controller = firstOpponent(d, caster);
+      if (src.controller === src.owner) delete src.owner;
+      log(d, { k: 'control', p: src.controller, card: src.card.name });
+      break;
+    }
+    case 'toggleTap':
+      // Sewer-veillance Cam: "tap or untap target creature" (whichever changes it).
+      for (const perm of perms) {
+        if (perm.tapped && perm.counters.stun) perm.counters = { ...perm.counters, stun: perm.counters.stun - 1 };
+        else if (perm.tapped) perm.tapped = false;
+        else tapPermanent(d, perm);
+        log(d, { k: 'tapped', card: perm.card.name, untap: !perm.tapped });
+      }
+      break;
+    case 'animateAll':
+      // Tezzeret the Seeker's −5: base 5/5 artifact creatures until end of turn.
+      for (const perm of matching(d, caster, e.which)) {
+        animate(d, perm, { kind: 'animate', to: 'self', power: e.power, toughness: e.toughness, subtypes: [], keywords: [], artifact: true, baseUnlessVehicle: true });
       }
       break;
     case 'copySpell':
@@ -4539,6 +4629,8 @@ export function apply(state: GameState, action: Action): GameState {
       if (pending.resume === 'cleanup' && action.answer.kind === 'cards') finishCleanup(d, pending.choice.player, action.answer.iids);
       else if (pending.resume === 'triggerMode' && action.answer.kind === 'mode') {
         const t = pending.trigger!;
+        const source = t.ability.modal?.fresh ? findPermanent(d, t.source.iid) : undefined;
+        if (source) source.modesChosen = [...(source.modesChosen ?? []), ...action.answer.modes];
         stackTrigger(d, { ...t, ability: chosenModes(t.ability, action.answer.modes) });
       } else if (pending.resume === 'trigger' && action.answer.kind === 'targets') {
         const t = pending.trigger!;
@@ -4589,7 +4681,7 @@ export function apply(state: GameState, action: Action): GameState {
         if (perm && color) {
           for (const inst of [...me.hand]) {
             moveToGraveyard(d, p, inst, 'hand');
-            log(d, { k: 'discard', p, card: inst.card.name });
+            noteDiscard(d, p, inst);
           }
           sacrifice(d, perm);
           me.pool = [...(me.pool ?? []), ...[0, 1, 2].map(() => ({ colors: [color], source: perm.iid }))];
@@ -4639,7 +4731,7 @@ export function apply(state: GameState, action: Action): GameState {
         const land = d.players[p].hand.find((c) => c.iid === picked && isLand(c.card));
         if (land) {
           moveToGraveyard(d, p, land, 'hand');
-          log(d, { k: 'discard', p, card: land.card.name });
+          noteDiscard(d, p, land);
           resolvePermanentSpell(d, item, pending.reason ?? 'main', true);
         } else {
           putAwaySpell(d, item, false);
@@ -4698,6 +4790,7 @@ export function apply(state: GameState, action: Action): GameState {
           const perm = findPermanent(d, picked)!;
           d.battlefield = d.battlefield.filter((x) => x !== perm);
           returnExiledUntil(d, perm);
+          fireObject(d, 'leaves', perm);
           if (!isToken(printedCard(perm))) putInZone(d, perm.owner ?? perm.controller, { iid: perm.iid, card: printedCard(perm) }, 'hand');
           log(d, { k: 'bounced', card: perm.card.name });
         }
@@ -4716,7 +4809,7 @@ export function apply(state: GameState, action: Action): GameState {
           for (const iid of action.answer.iids) {
             const inst = d.players[p].hand.find((c) => c.iid === iid)!;
             moveToGraveyard(d, p, inst, 'hand');
-            log(d, { k: 'discard', p, card: inst.card.name });
+            noteDiscard(d, p, inst);
           }
         } else sacrifice(d, findPermanent(d, action.answer.iids[0])!);
         finishCast(d, pending.activation!.item, pending.activation!.named);
@@ -4733,7 +4826,7 @@ export function apply(state: GameState, action: Action): GameState {
         for (const picked of action.answer.iids) {
           const inst = me.hand.find((c) => c.iid === picked)!;
           moveToGraveyard(d, p, inst, 'hand');
-          log(d, { k: 'discard', p, card: inst.card.name });
+          noteDiscard(d, p, inst);
         }
         finishActivation(d, pending.activation!.item, pending.activation!.named);
       } else if (pending.resume === 'activation' && action.answer.kind === 'cards') {

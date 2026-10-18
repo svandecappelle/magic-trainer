@@ -67,7 +67,8 @@ describe('step 3 wordings', () => {
     });
     expect(activatedOf(creature('Mage', 1, 1, '{2}{U}: Draw a card. Activate only as a sorcery.'))[0]).toMatchObject({ sorcery: true });
     expect(activatedOf(creature('Mage', 1, 1, '{U}: Scry 1. Activate only once each turn.'))[0]).toMatchObject({ once: true });
-    expect(activatedOf(creature('Mage', 1, 1, '{U}: Scry 1. Activate only during your turn.'))).toEqual([]);
+    expect(activatedOf(creature('Mage', 1, 1, '{U}: Scry 1. Activate only during your turn.'))[0]).toMatchObject({ yourTurn: true });
+    expect(activatedOf(creature('Mage', 1, 1, '{U}: Scry 1. Activate only during combat.'))).toEqual([]);
   });
 
   it('reads edicts and tokens', () => {

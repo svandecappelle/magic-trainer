@@ -1,24 +1,3 @@
-NONE     Vedalken Shackles {3} — Artifact
-  ✗ You may choose not to untap this artifact during your untap step.
-      may stay tapped: not simulated
-  ✗ {2}, {T}: Gain control of target creature with power less than or equ…
-      activated ability, effect not simulated
-PARTIAL  Tezzeret the Seeker {3}{U}{U} — Legendary Planeswalker — Tezzeret
-  ✓ +1: Untap up to two target artifacts.
-      loyalty ability → untap (1 target)
-  ✓ −X: Search your library for an artifact card with mana value X or les…
-      loyalty ability → search
-  ✗ −5: Artifacts you control become artifact creatures with base power a…
-      activated ability, effect not simulated
-PARTIAL  Tezzeret, Betrayer of Flesh {2}{U}{U} — Legendary Planeswalker — Tezzeret
-  ✓ The first activated ability of an artifact you activate each turn cos…
-      rule for the game: firstArtifactAbilityCostsLess
-  ✓ +1: Draw two cards. Then discard two cards unless you discard an arti…
-      loyalty ability → draw+discard
-  ✗ −2: Target artifact becomes an artifact creature. If it isn't a Vehic…
-      activated ability, effect not simulated
-  ✗ −6: You get an emblem with "Whenever an artifact you control becomes …
-      activated ability, effect not simulated
 OK       Buried Ruin  — Land
   ✓ {T}: Add {C}.
       mana: C
@@ -46,12 +25,33 @@ OK       Scepter of Empires {3} — Artifact
       activated → damage (1 target)
 OK       Snow-Covered Island  — Basic Snow Land — Island
 OK       Snow-Covered Plains  — Basic Snow Land — Plains
+OK       Tezzeret the Seeker {3}{U}{U} — Legendary Planeswalker — Tezzeret
+  ✓ +1: Untap up to two target artifacts.
+      loyalty ability → untap (1 target)
+  ✓ −X: Search your library for an artifact card with mana value X or les…
+      loyalty ability → search
+  ✓ −5: Artifacts you control become artifact creatures with base power a…
+      loyalty ability → animateAll
+OK       Tezzeret, Betrayer of Flesh {2}{U}{U} — Legendary Planeswalker — Tezzeret
+  ✓ The first activated ability of an artifact you activate each turn cos…
+      rule for the game: firstArtifactAbilityCostsLess
+  ✓ +1: Draw two cards. Then discard two cards unless you discard an arti…
+      loyalty ability → draw+discard
+  ✓ −2: Target artifact becomes an artifact creature. If it isn't a Vehic…
+      loyalty ability → animate (1 target)
+  ✓ −6: You get an emblem with "Whenever an artifact you control becomes …
+      loyalty ability → emblem
 OK       Throne of Empires {4} — Artifact
   ✓ {1}, {T}: Create a 1/1 white Soldier creature token. Create five of t…
       activated → token
 OK       Turn Aside {U} — Instant
   ✓ Counter target spell that targets a permanent you control.
       spell → counter (1 target)
+OK       Vedalken Shackles {3} — Artifact
+  ✓ You may choose not to untap this artifact during your untap step.
+      stays tapped during the untap step while it holds a creature (chosen automatically)
+  ✓ {2}, {T}: Gain control of target creature with power less than or equ…
+      activated → gainControl (1 target)
 OK       Wall of Essence {1}{W} — Creature — Wall
   ✓ Defender
       keyword
@@ -63,5 +63,5 @@ OK       Wall of Omens {1}{W} — Creature — Wall
   ✓ When this creature enters, draw a card.
       trigger (enters) → draw
 
-16 cards: 13 ok, 2 partial, 1 not simulated, 0 can't be cast
+16 cards: 16 ok, 0 partial, 0 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)
