@@ -413,11 +413,20 @@ Approximations: Sewer-veillance Cam taps an untapped creature and untaps a tappe
 to the first opponent, and the bot never activates it. Thought-Knot Seer's "leaves the battlefield" draw stays not
 simulated while its enters trigger is.
 
+Cost reductions and Eldrazi: Hearth Elemental ({X} less for instants, sorceries and Adventure cards in the graveyard),
+Sunderflock ({X} less for the greatest Elemental; "if you cast it", a new trigger condition), Eldrazi Spawn tokens
+("Sacrifice this token: Add {C}.", a mana source usable the turn it's made, spent last), adapt, "Whenever one or more
++1/+1 counters are put on this creature" (Basking Broodscale), colorless spells and creatures (Glaring Fleshraker),
+Unfathomable Truths, Kozilek's Command's Spawn mode.
+
+Approximations: Eldrazi Spawn are sacrificed automatically when a payment needs them (after every other source); only
+counters put by an effect or adapt trigger Basking Broodscale (not ones it enters with).
+
 Still open, playing wrongly, most played first (see `audit-reports/2026-10-18/report.md`):
 - [ ] Superior Spider-Man (12), Phantasmal Image, Flesh Duplicate: clones with more than added types
 - [ ] Guardian of New Benalia (9): enlist
-- [ ] Eldrazi Spawn makers: Basking Broodscale, Glaring Fleshraker ("create a 0/1 Eldrazi Spawn" read as mana)
-- [ ] Hearth Elemental, Sunderflock: "costs {X} less, where X is …"
+- [ ] Eldrazi Scion (Warping Wail: "It has \"Sacrifice this token: Add {C}.\"" in its own sentence); Glimpse the
+  Impossible, Malevolent Rumble; Incubation Druid's mana with a +1/+1 counter
 - [ ] Phyrexian Devourer, Sneaky Snacker, Void Mirror
 - [ ] cEDH: Underworld Breach (escape for every card), Birgi, Lurrus, Samut (split second for your spells), Biomancer's
   Familiar

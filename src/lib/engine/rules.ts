@@ -459,6 +459,8 @@ export interface TargetFilter {
   token?: boolean;
   /** Vedalken Shackles: "with power less than or equal to the number of Islands you control". */
   maxPowerIslands?: boolean;
+  /** "colorless" (Glaring Fleshraker). */
+  colorless?: boolean;
 }
 
 /**
@@ -681,6 +683,8 @@ export type Effect =
   | { kind: 'opponentGainsSource' }
   /** Seasoned Hallowblade aside: Sewer-veillance Cam's "tap or untap target creature" (untapped: tapped; tapped: untapped). */
   | { kind: 'toggleTap'; to: Affected }
+  /** "Adapt 1": N +1/+1 counters on this creature if it has none. */
+  | { kind: 'adapt'; n: number }
   /** Tezzeret the Seeker's −5: "Artifacts you control become artifact creatures with base power and toughness 5/5 until end of turn." */
   | { kind: 'animateAll'; which: Selector; power: number; toughness: number }
   /** Copy a spell on the stack (same targets). */
@@ -762,7 +766,7 @@ export interface AbilitySpec {
    * "if you gained life this turn" (gained: 1), "if you've gained 3 or more life", "if you gained and lost life";
    * Mana Vault: "if this artifact is tapped" (tapped).
    */
-  condition?: { gained?: number; lost?: boolean; tapped?: boolean };
+  condition?: { gained?: number; lost?: boolean; tapped?: boolean; cast?: boolean };
   /** A Saga's chapter ability: its Saga isn't sacrificed while it waits or is on the stack. */
   chapter?: number;
   /**
@@ -905,6 +909,8 @@ export function parseTargetPhrase(phrase: string): TargetSpec | null {
     else if (w === 'token' || w === 'nontoken') filter.token = w === 'token';
     else if (w === 'nonbasic' && words[words.indexOf(w) + 1] === 'land') filter.nonbasicLands = true;
     else if (w === 'snow') filter.snow = true;
+    // Glaring Fleshraker: "another colorless creature you control".
+    else if (w === 'colorless') filter.colorless = true;
     // "target Equipment you control": a permanent with that subtype.
     else if (OTHER_SUBTYPES.includes(w)) {
       (filter.subtypes ??= []).push(w);
@@ -980,6 +986,11 @@ const KEYWORD_LIST = `((?:${KEYWORDS.join('|')})(?:(?:,? and |, )(?:${KEYWORDS.j
 function cardWordsFilter(words: string): TargetFilter | null {
   const filter: TargetFilter = {};
   for (const w of words.toLowerCase().replace(/,? or |, /g, ' ').split(' ').filter(Boolean)) {
+    // Glaring Fleshraker: "Whenever you cast a colorless spell".
+    if (w === 'colorless') {
+      filter.colorless = true;
+      continue;
+    }
     const type = w.replace(/^non-?/, '') as CardType;
     if (!CARD_TYPES.includes(type)) return null;
     if (w.startsWith('non')) (filter.nonTypes ??= []).push(type);
@@ -1471,6 +1482,8 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
     const to = slotFor(m[1], (spec) => spec.kind === 'creature' || spec.kind === 'permanent');
     return to && { kind: 'toggleTap', to };
   });
+  // Basking Broodscale: "Adapt 1." (If this creature has no +1/+1 counters on it, put that many on it.)
+  scan(/(?:^|[.,] *|then )adapt (\d+)(?=\.|$)/gi, (m) => ({ kind: 'adapt', n: Number(m[1]) }));
   // Wishclaw Talisman: "An opponent gains control of this artifact."
   scan(/\bAn opponent gains control of this artifact(?=\.)/g, () => ({ kind: 'opponentGainsSource' }));
   // Cori-Steel Cutter: "create a 1/1 white Monk creature token with prowess. You may attach this Equipment to it."
@@ -1545,7 +1558,8 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
       oracleText: m[9] ?? kws.map((k) => k.replace(/^./, (c) => c.toUpperCase())).join(', '),
     };
     // A token with its own ability ("with \"This token gets +1/+1 for each artifact you control.\""): only when understood.
-    if (m[9] && !staticsOf(tokenCard(token)).length) return null;
+    // Eldrazi Spawn: "with \"Sacrifice this token: Add {C}.\"" (a mana ability).
+    if (m[9] && !staticsOf(tokenCard(token)).length && !sacrificeMana(tokenCard(token))) return null;
     return { kind: 'token', n: toAmount(m[1]), token };
   });
   // Chandra's 0: "Create a 3/2 colorless Vehicle artifact token with crew 1."
@@ -1834,7 +1848,10 @@ export interface CastInfo {
    * "This spell costs {1} less to cast for each instant and sorcery card in your graveyard" (Eddymurk Crab: `filter`),
    * "… for each card type among cards in your graveyard" (Emrakul, the Promised End: `types`).
    */
-  graveDiscount?: { filter: TargetFilter } | { types: true };
+  /** `adventure`: Hearth Elemental's "instant cards, sorcery cards, and/or have an Adventure". */
+  graveDiscount?: { filter: TargetFilter } | { types: true } | { adventure: true };
+  /** Sunderflock: "{X} less, where X is the greatest mana value among Elementals you control". */
+  greatestMvDiscount?: TargetFilter;
 }
 
 const MODE_COUNTS: Record<string, [number, number]> = {
@@ -1874,6 +1891,10 @@ export function castInfo(card: Card, face = 0): CastInfo {
       info.channel = { cost: m[1], ability: UNSUPPORTED.test(body.replace(CONTROLLER_SEARCH, '')) ? NO_EFFECT : parseAbilityText(body, selfName(c)), legendaryDiscount: discount.test(m[2]), keyword: line.startsWith('Channel') };
     } else if (/^Affinity for artifacts$/i.test(line)) info.affinity = { types: ['artifact'] };
     else if (/^This spell costs \{1\} less to cast for each card type among cards in your graveyard\.$/i.test(line)) info.graveDiscount = { types: true };
+    else if (/^This spell costs \{X\} less to cast, where X is the number of cards in your graveyard that are instant cards, sorcery cards, and\/or have an Adventure\.$/i.test(line)) info.graveDiscount = { adventure: true };
+    else if ((m = line.match(/^This spell costs \{X\} less to cast, where X is the greatest mana value among ([A-Z][a-z]+)s you control\.$/))) {
+      info.greatestMvDiscount = { subtypes: [m[1].toLowerCase()] };
+    }
     else if ((m = line.match(/^This spell costs \{1\} less to cast for each ([a-z ]+?) card in your graveyard\.$/i))) {
       const filter = cardWordsFilter(m[1].replace(/ and /g, ' or '));
       if (filter) info.graveDiscount = { filter };
@@ -2067,6 +2088,8 @@ export type TriggerEvent =
    * artifact you control becomes tapped" (`which`).
    */
   | { on: 'becomesTapped'; which?: Selector }
+  /** Basking Broodscale: "Whenever one or more +1/+1 counters are put on this creature, …" */
+  | { on: 'countersPut' }
   /** Monument to Endurance: "Whenever you discard a card, …" (once per card). */
   | { on: 'youDiscard' }
   /** Biotech Specialist: "Whenever you sacrifice an artifact, …"; The Sackville-Bagginses: "a token" (`token`). */
@@ -2201,6 +2224,12 @@ function triggerAbility(text: string, name: string, self: boolean): AbilitySpec 
   }
   // Life this turn: "if you gained life this turn, …", "… if you've gained 3 or more life this turn."
   let condition: AbilitySpec['condition'];
+  // Sunderflock: "When this creature enters, if you cast it, …"
+  const castIt = self && text.match(/^if you cast it, (.+)$/i);
+  if (castIt) {
+    const then = triggerBody(castIt[1], name, self);
+    return then.effects.length ? { ...then, condition: { ...then.condition, cast: true } } : NO_EFFECT;
+  }
   const lead = text.match(/^if you gained (and lost )?life this turn, (.+)$/i);
   const tail = text.match(/^(.+?) if you've gained (\w+) or more life this turn\.$/i);
   if (lead) {
@@ -2402,6 +2431,12 @@ export function triggersOf(card: Card): TriggerSpec[] {
       continue;
     }
 
+    // Basking Broodscale: "Whenever one or more +1/+1 counters are put on this creature, …"
+    const countersPut = line.match(/^Whenever one or more \+1\/\+1 counters are put on (.+?), (.+)$/i);
+    if (countersPut && selves.includes(countersPut[1].toLowerCase())) {
+      out.push({ event: { on: 'countersPut' }, ability: triggerAbility(countersPut[2], name, true) });
+      continue;
+    }
     // Chainsaw: "Whenever one or more creatures die, put a rev counter on this Equipment."
     const died = line.match(/^Whenever one or more creatures die, (.+)$/i);
     if (died) {
@@ -3084,6 +3119,12 @@ export const paidAnyColor = (card: Card) => /^\{1\}, \{T\}: Add one mana of any 
  */
 export function counterMana(card: Card): Color | null {
   const m = frontText(card).match(new RegExp(`^Put a -0/-1 counter on (?:${selfWords(card.name).map(escapeRe).join('|')}): Add \\{([WUBRG])\\}\\. Activate only once each turn\\.$`, 'im'));
+  return m ? (m[1] as Color) : null;
+}
+
+/** Eldrazi Spawn: "Sacrifice this token: Add {C}." (no tap: usable summoning sick). The color, or null. */
+export function sacrificeMana(card: Card): Color | null {
+  const m = frontText(card).match(/^Sacrifice this (?:token|creature|artifact): Add \{([WUBRGC])\}\.$/m);
   return m ? (m[1] as Color) : null;
 }
 

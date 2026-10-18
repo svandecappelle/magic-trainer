@@ -4071,3 +4071,90 @@ describe('Tezzeret artifacts deck (deck-2), second batch', () => {
     expect(perm(s, 'Bear')!.controller).toBe(1);
   });
 });
+
+describe('metagame audit 2026-10-18, cost reductions and Eldrazi Spawn', () => {
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 12 && (s.stack.length || s.triggered?.length) && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  const spawn = (s: GameState) => s.battlefield.filter((x) => x.card.name === 'Eldrazi Spawn');
+
+  it('Hearth Elemental: {X} less for instants, sorceries and Adventure cards in the graveyard', () => {
+    const hearth = card({
+      name: 'Hearth Elemental // Stoke Genius', typeLine: 'Creature — Elemental // Sorcery — Adventure', manaCost: '{5}{R} // {1}{R}', cmc: 6, power: '4', toughness: '5',
+      oracleText: 'This spell costs {X} less to cast, where X is the number of cards in your graveyard that are instant cards, sorcery cards, and/or have an Adventure.\n//\nDiscard your hand, then draw two cards. (Then exile this card. You may cast the creature later from exile.)',
+    });
+    const adventurer = card({ name: 'Bonecrusher Giant // Stomp', typeLine: 'Creature — Giant // Instant — Adventure', manaCost: '{2}{R} // {1}{R}', cmc: 3, power: '4', toughness: '3', oracleText: 'x\n//\ny' });
+    const s = board({ hand: [hearth], grave: [spell('Bolt', '{R}', 'x'), spell('Think', '{U}', 'x', 'Sorcery'), adventurer, swamp, creature('Bear', 2, 2)] });
+    expect(castCost(s, 0, hearth, {})).toEqual({ generic: 2, colored: [['R']] });
+  });
+
+  const sunderflock = card({
+    name: 'Sunderflock', typeLine: 'Creature — Elemental', manaCost: '{7}{U}{U}', cmc: 9, power: '5', toughness: '5', keywords: ['Flying'],
+    oracleText: 'This spell costs {X} less to cast, where X is the greatest mana value among Elementals you control.\nFlying\nWhen this creature enters, if you cast it, return all non-Elemental creatures to their owners\' hands.',
+  });
+
+  it('Sunderflock: {X} less for the greatest Elemental; returns non-Elementals only if cast', () => {
+    const elemental = card({ name: 'Big Elemental', typeLine: 'Creature — Elemental', manaCost: '{4}{U}', cmc: 5, power: '4', toughness: '4' });
+    const bear = creature('Bear', 2, 2);
+    let s = board({ mine: [elemental, ...Array.from({ length: 4 }, () => island)], hand: [sunderflock], theirs: [bear] });
+    expect(castCost(s, 0, sunderflock, {})).toEqual({ generic: 2, colored: [['U'], ['U']] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    expect(perm(s, 'Bear')).toBeUndefined();
+    expect(s.players[1].hand.map((c) => c.card.name)).toEqual(['Bear']);
+    expect(perm(s, 'Big Elemental')).toBeDefined();
+    // Put onto the battlefield without being cast: nothing returns.
+    const reanimate = spell('Reanimate', '{0}', 'Return target creature card from your graveyard to the battlefield.', 'Sorcery');
+    s = board({ hand: [reanimate], grave: [sunderflock], theirs: [bear] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'card', iid: 'g0' }]] }));
+    expect(perm(s, 'Sunderflock')).toBeDefined();
+    expect(perm(s, 'Bear')).toBeDefined();
+  });
+
+  it('Eldrazi Spawn: a 0/1 sacrificed for {C}, even the turn it is made', () => {
+    const truths = spell('Unfathomable Truths', '{0}', 'Devoid (This card has no color.)\nDraw three cards and create a 0/1 colorless Eldrazi Spawn creature token with "Sacrifice this token: Add {C}."');
+    let s = board({ hand: [truths, creature('Golem', 1, 1, { manaCost: '{1}', cmc: 1 })] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    expect(spawn(s)).toHaveLength(1);
+    expect([powerOf(spawn(s)[0]), toughnessOf(spawn(s)[0])]).toEqual([0, 1]);
+    expect(canPay(s, 0, s.players[0].hand.find((c) => c.card.name === 'Golem')!.card)).toBe(true);
+    s = resolve(apply(s, { type: 'cast', iid: 'h1' }));
+    expect(spawn(s)).toHaveLength(0);
+    expect(perm(s, 'Golem')).toBeDefined();
+  });
+
+  it('Basking Broodscale: adapt puts a counter, and counters make a Spawn', () => {
+    const broodscale = card({
+      name: 'Basking Broodscale', typeLine: 'Creature — Eldrazi Lizard', manaCost: '{1}{G}', cmc: 2, power: '2', toughness: '2', keywords: ['Devoid'],
+      oracleText: 'Devoid (This card has no color.)\n{1}{G}: Adapt 1. (If this creature has no +1/+1 counters on it, put a +1/+1 counter on it.)\nWhenever one or more +1/+1 counters are put on this creature, you may create a 0/1 colorless Eldrazi Spawn creature token with "Sacrifice this token: Add {C}."',
+    });
+    const forest = card({ name: 'Forest', typeLine: 'Basic Land — Forest' });
+    let s = board({ mine: [broodscale, forest, forest, forest, forest] });
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Basking Broodscale'), index: 0 }));
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'yesNo', yes: true } }));
+    expect(perm(s, 'Basking Broodscale')!.counters['+1/+1']).toBe(1);
+    expect(spawn(s)).toHaveLength(1);
+    // Already adapted: no counter, no Spawn.
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Basking Broodscale'), index: 0 }));
+    expect(perm(s, 'Basking Broodscale')!.counters['+1/+1']).toBe(1);
+    expect(spawn(s)).toHaveLength(1);
+  });
+
+  it('Glaring Fleshraker: a Spawn for each colorless spell, 1 damage for each other colorless creature', () => {
+    const fleshraker = card({
+      name: 'Glaring Fleshraker', typeLine: 'Creature — Eldrazi Drone', manaCost: '{2}{C}', cmc: 3, power: '2', toughness: '2',
+      oracleText: 'Whenever you cast a colorless spell, create a 0/1 colorless Eldrazi Spawn creature token with "Sacrifice this token: Add {C}."\nWhenever another colorless creature you control enters, this creature deals 1 damage to each opponent.',
+    });
+    const golem = creature('Golem', 1, 1, { manaCost: '{0}', cmc: 0 });
+    const red = creature('Goblin', 1, 1, { manaCost: '{0}', cmc: 0, colors: ['R'] });
+    let s = board({ mine: [fleshraker], hand: [golem, red] });
+    // A colorless spell: a Spawn; the Golem and the Spawn enter: 2 damage.
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    expect(spawn(s)).toHaveLength(1);
+    expect(s.players[1].life).toBe(18);
+    // A red one: nothing.
+    s = resolve(apply(s, { type: 'cast', iid: 'h1' }));
+    expect(spawn(s)).toHaveLength(1);
+    expect(s.players[1].life).toBe(18);
+  });
+});

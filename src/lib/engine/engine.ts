@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, counterMana, choosesColor, diamondMana, mayStayTapped, gainsLifeFromCombatDamageTaken, restrictedMana, type RestrictedMana, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, counterMana, choosesColor, diamondMana, sacrificeMana, mayStayTapped, gainsLifeFromCombatDamageTaken, restrictedMana, type RestrictedMana, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type AltCost, type CastInfo, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -58,6 +58,8 @@ export interface Permanent extends CardInst {
   triggeredOnce?: number[];
   /** Utopia Sprawl: the color chosen as it entered. */
   chosenColor?: Color;
+  /** Sunderflock: it entered as a spell that was cast ("if you cast it"). */
+  cast?: boolean;
   /** Monument to Endurance: the modes of its trigger chosen this turn. */
   modesChosen?: number[];
   /** Vedalken Shackles: controlled for as long as that permanent (its source) remains tapped. */
@@ -889,7 +891,10 @@ function nameTax(s: GameState, p: PlayerId, name: string, what: 'spells' | 'abil
 function graveDiscount(s: GameState, p: PlayerId, d: CastInfo['graveDiscount']): number {
   if (!d) return 0;
   const grave = s.players[p].graveyard;
-  return 'types' in d ? new Set(grave.flatMap((c) => cardTypes(c.card))).size : grave.filter((c) => cardMatches(c.card, d.filter)).length;
+  if ('types' in d) return new Set(grave.flatMap((c) => cardTypes(c.card))).size;
+  // Hearth Elemental: "instant cards, sorcery cards, and/or have an Adventure".
+  if ('adventure' in d) return grave.filter((c) => isInstantOrSorcery(c.card) || isAdventure(c.card)).length;
+  return grave.filter((c) => cardMatches(c.card, d.filter)).length;
 }
 
 /** Delirium: four or more card types among the cards in `p`'s graveyard. */
@@ -1091,6 +1096,11 @@ export function manaSources(s: GameState, p: PlayerId, spell?: Card, ability?: C
     if (helper) helpersUsed.add(helper.iid);
     return !!helper;
   });
+  // Eldrazi Spawn: "Sacrifice this token: Add {C}." (spent last: it's a creature).
+  const sacs = s.battlefield.flatMap((x): ManaSource[] => {
+    const color = x.controller === p && !activationsForbidden(s, x) ? sacrificeMana(x.card) : null;
+    return color ? [{ iid: `sac:${x.iid}`, colors: [color], last: true }] : [];
+  });
   // Wall of Roots: a -0/-1 counter for one mana, once each turn (spent last: it shrinks the wall).
   const counters = s.battlefield.flatMap((x): ManaSource[] => {
     const color = x.controller === p && !x.counterManaUsed && !activationsForbidden(s, x) ? counterMana(x.card) : null;
@@ -1101,7 +1111,7 @@ export function manaSources(s: GameState, p: PlayerId, spell?: Card, ability?: C
     const color = handMana(c.card);
     return color ? [{ iid: `hand:${c.iid}`, colors: [color], last: true }] : [];
   });
-  return [...pool, ...usable, ...counters, ...fromHand];
+  return [...pool, ...usable, ...counters, ...sacs, ...fromHand];
 }
 
 /** Can the permanent's mana be taken back (all of it still unspent in the pool)? */
@@ -1268,6 +1278,8 @@ export function castCost(s: GameState, p: PlayerId, card: Card, opt: { face?: nu
     + (info.exileDiscount && opt.exiled ? info.exileDiscount.per * opt.exiled : 0)
     // Eddymurk Crab: per instant and sorcery card in the graveyard; Emrakul: per card type among them.
     + graveDiscount(s, p, info.graveDiscount)
+    // Sunderflock: "the greatest mana value among Elementals you control".
+    + (info.greatestMvDiscount ? Math.max(0, ...s.battlefield.filter((x) => x.controller === p && cardMatches(x.card, info.greatestMvDiscount!)).map((x) => printedCard(x).cmc)) : 0)
     // Bilbo: {1} less for a spell cast from anywhere but the hand.
     + (opt.from && opt.from !== 'hand' ? withRule(s, 'notFromHandCostsLess').filter((x) => x.controller === p).length : 0);
   // Commander tax: {2} more for each previous cast from the command zone; Defense Grid: {3} more off its caster's turn;
@@ -1585,6 +1597,7 @@ function fitsTypeLine(card: Card, f: TargetFilter): boolean {
   if (f.nonbasicLands && types.includes('land') && types.includes('basic')) return false;
   if (f.legendary && !types.includes('legendary')) return false;
   if (f.snow && !types.includes('snow')) return false;
+  if (f.colorless && cardColors(card).length) return false;
   if (f.nonSubtypes?.some((t) => hasSubtype(card, t))) return false;
   if (f.subtypes && !f.subtypes.some((t) => hasSubtype(card, t))) return false;
   return true;
@@ -2108,6 +2121,10 @@ function payMana(d: GameState, p: PlayerId, plan: ManaPick[]) {
       tapPermanent(d, findPermanent(d, iid.slice(8))!);
       continue;
     }
+    if (iid.startsWith('sac:')) {
+      sacrifice(d, findPermanent(d, iid.slice(4))!);
+      continue;
+    }
     if (iid.startsWith('counter:')) {
       const wall = findPermanent(d, iid.slice(8))!;
       wall.counters = { ...wall.counters, '-0/-1': (wall.counters['-0/-1'] ?? 0) + 1 };
@@ -2247,6 +2264,11 @@ function sacrifice(d: GameState, perm: Permanent) {
   }
 }
 
+/** Basking Broodscale: "Whenever one or more +1/+1 counters are put on this creature, …" */
+function countersPut(d: GameState, perm: Permanent) {
+  for (const t of triggersOf(perm.card)) if (t.event.on === 'countersPut') queueTrigger(d, perm, perm.controller, t.ability);
+}
+
 /** `p` discarded `inst` (already moved): logged; Monument to Endurance's "Whenever you discard a card". */
 function noteDiscard(d: GameState, p: PlayerId, inst: CardInst, cleanup = false) {
   log(d, { k: 'discard', p, card: inst.card.name, ...(cleanup ? { cleanup } : {}) });
@@ -2280,8 +2302,10 @@ function putOntoBattlefield(d: GameState, inst: CardInst, controller: PlayerId, 
   enterBattlefield(d, inst, controller, opts);
 }
 
-function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, opts: { x?: number; tapped?: boolean } = {}): Permanent {
+function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, opts: { x?: number; tapped?: boolean; cast?: boolean } = {}): Permanent {
   const perm = newPermanent(inst, controller, d.turn);
+  // Sunderflock: "if you cast it".
+  if (opts.cast) perm.cast = true;
   if (entersPrepared(inst.card)) perm.prepared = true;
   // Magus of the Moon: a nonbasic land enters without its abilities ("enters tapped" ones included).
   const rule = mooned(d, inst.card) ? null : entersTappedRule(inst.card);
@@ -2557,6 +2581,7 @@ function conditionMet(d: GameState, p: PlayerId, cond: AbilitySpec['condition'],
   if (!cond) return true;
   const ps = d.players[p];
   if (cond.tapped && !(source && findPermanent(d, source)?.tapped)) return false;
+  if (cond.cast && !(source && findPermanent(d, source)?.cast)) return false;
   return (ps.gainedThisTurn ?? 0) >= (cond.gained ?? 0) && (!cond.lost || (ps.lostThisTurn ?? 0) > 0);
 }
 
@@ -3410,8 +3435,18 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         const n = amount(d, r, e.n);
         perm.counters = { ...perm.counters, [e.counter]: (perm.counters[e.counter] ?? 0) + n };
         log(d, { k: 'counters', card: perm.card.name, counter: e.counter, n });
+        if (e.counter === '+1/+1' && n > 0) countersPut(d, perm);
       }
       break;
+    case 'adapt': {
+      // "Adapt 1": if it has no +1/+1 counters, put that many on it.
+      const src = item.source ? findPermanent(d, item.source) : undefined;
+      if (!src || src.counters['+1/+1']) break;
+      src.counters = { ...src.counters, '+1/+1': e.n };
+      log(d, { k: 'counters', card: src.card.name, counter: '+1/+1', n: e.n });
+      countersPut(d, src);
+      break;
+    }
     case 'draw':
       for (const p of players) draw(d, p, amount(d, r, e.n));
       break;
@@ -4233,7 +4268,7 @@ function resolvePermanentSpell(d: GameState, item: StackItem, reason: WindowReas
     return;
   }
   log(d, { k: 'enters', card: faceName(item.card, item.face ?? 0) });
-  const perm = enterBattlefield(d, { iid: item.iid, card, ...(item.commander ? { commander: true } : {}) }, item.controller, { x: item.x });
+  const perm = enterBattlefield(d, { iid: item.iid, card, ...(item.commander ? { commander: true } : {}) }, item.controller, { x: item.x, cast: !item.copy });
   if (card !== item.card) perm.printed = item.card;
   // Evoke: "When it enters, if its evoke cost was paid, its controller sacrifices it." Warp: exiled at the next end step.
   const paid = item.alt === undefined ? undefined : castInfo(item.card, item.face ?? 0).alts[item.alt];
@@ -4767,7 +4802,7 @@ export function apply(state: GameState, action: Action): GameState {
         }
         log(d, { k: 'enters', card: own.name });
         if (model) log(d, { k: 'copied', card: own.name, as: model.card.name });
-        const perm = enterBattlefield(d, { iid: item.iid, card: copy, ...(item.commander ? { commander: true } : {}) }, item.controller, { x: item.x });
+        const perm = enterBattlefield(d, { iid: item.iid, card: copy, ...(item.commander ? { commander: true } : {}) }, item.controller, { x: item.x, cast: !item.copy });
         if (model) perm.printed = item.card;
         afterResolving(d, pending.reason ?? 'main');
       } else if (pending.resume === 'castCost' && action.answer.kind === 'yesNo') {

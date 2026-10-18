@@ -70,9 +70,6 @@ NONE     Fiery Annihilation {2}{R} — Instant
 NONE     Ghitu Lavarunner {R} — Creature — Human Wizard
   ? As long as there are two or more instant and/or sorcery cards in your…
       not read by the engine
-NONE     Hearth Elemental // Stoke Genius {5}{R} // {1}{R} — Creature — Elemental // Sorcery — Adventure (other faces not audited)
-  ? This spell costs {X} less to cast, where X is the number of cards in …
-      not read by the engine
 NONE     Hired Claw {R} — Creature — Lizard Mercenary
   ? Whenever you attack with one or more Lizards, this creature deals 1 d…
       not read by the engine
@@ -182,13 +179,6 @@ NONE     Steamcore Scholar {2}{U} — Creature — Weird Detective
 NONE     Strategic Betrayal {1}{B} — Sorcery
   ✗ Target opponent exiles a creature they control and their graveyard.
       spell not simulated
-NONE     Sunderflock {7}{U}{U} — Creature — Elemental
-  ? This spell costs {X} less to cast, where X is the greatest mana value…
-      not read by the engine
-  ✓ Flying
-      keyword
-  ✗ When this creature enters, if you cast it, return all non-Elemental c…
-      trigger (enters), effect not simulated
 NONE     Superior Spider-Man {2}{U}{B} — Legendary Creature — Spider Human Hero
   ? Mind Swap — You may have Superior Spider-Man enter as a copy of any c…
       not read by the engine
@@ -738,6 +728,9 @@ OK       Haliya, Guided by Light {2}{W} — Legendary Creature — Human Soldier
 OK       Hallowed Fountain  — Land — Plains Island
   ✓ As this land enters, you may pay 2 life. If you don't, it enters tapp…
       enters tapped (payLife)
+OK       Hearth Elemental // Stoke Genius {5}{R} // {1}{R} — Creature — Elemental // Sorcery — Adventure (other faces not audited)
+  ✓ This spell costs {X} less to cast, where X is the number of cards in …
+      costs {1} less for each matching card in your graveyard
 OK       Hinterland Sanctifier {W} — Creature — Rabbit Cleric
   ✓ Whenever another creature you control enters, you gain 1 life.
       trigger (enters) → gainLife
@@ -918,6 +911,13 @@ OK       Stormcarved Coast  — Land
       enters tapped (unlessOtherLands)
   ✓ {T}: Add {U} or {R}.
       mana: U/R
+OK       Sunderflock {7}{U}{U} — Creature — Elemental
+  ✓ This spell costs {X} less to cast, where X is the greatest mana value…
+      costs {X} less: the greatest mana value among matching permanents you control
+  ✓ Flying
+      keyword
+  ✓ When this creature enters, if you cast it, return all non-Elemental c…
+      trigger (enters) → bounceAll, if cast
 OK       Terminal Criticism {1}{B} — Instant
   ✓ Destroy target creature or planeswalker that's blue or red. You gain …
       spell → destroy+gainLife (1 target)
@@ -961,5 +961,5 @@ OK       Zoraline, Cosmos Caller {1}{W}{B} — Legendary Creature — Bat Cleric
   ✓ Whenever Zoraline enters or attacks, you may pay {W}{B} and 2 life. W…
       trigger (enters/attacks) → reflexive | reflexive
 
-178 cards: 91 ok, 43 partial, 44 not simulated, 0 can't be cast
+178 cards: 93 ok, 43 partial, 42 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)
