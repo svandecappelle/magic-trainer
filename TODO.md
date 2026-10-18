@@ -453,6 +453,23 @@ Still open, playing wrongly, most played first (see `audit-reports/2026-10-18/re
 - [ ] cEDH: Underworld Breach (escape for every card), Lurrus (a permanent with mana value 2 or less from the graveyard
   each turn; companion)
 
+## Metagame audit 2026-10-18, evening
+
+`npm run audit-meta` again after the day's batches (the top 8s changed meanwhile): 732 cards to fix (743 in the
+morning), 255 playing wrongly (263). Fully simulated main deck copies: Standard 72%, Pioneer 56%, Modern 60%, Legacy 67%,
+Vintage 68%, Pauper 61%, Premodern 68%, Duel Commander 69%, cEDH 60%.
+
+Still open, playing wrongly, most played first (see `audit-reports/2026-10-18/report.md`):
+- [ ] Shifting Woodland (7 decks: delirium, becomes a copy of a permanent card in your graveyard), Chalice of the Void
+  (5: X charge counters, counters spells with that mana value), Nethergoyf (escape with four card types exiled),
+  Moonshadow (12 copies: its -1/-1 counters never go), Detective's Phoenix (bestow, collect evidence, from the
+  graveyard)
+- [ ] Dark Matter Manipulator (+2/+0 for every seven cards in your graveyard), Fear of Missing Out (delirium: first
+  attack each turn, an additional combat), Devoted Druid ("Put a -1/-1 counter on this creature" as a cost), Obsidian
+  Charmaw (cost reduction per opponent's land making {C}), Screaming Nemesis, Tamiyo (third card drawn: transforms)
+- [ ] cEDH: Lurrus and Underworld Breach (casting from the graveyard), Tinder Wall ("Sacrifice this creature: Add
+  {R}{R}"), Grand Abolisher, Necropotence (skip your draw step), The Cabbage Merchant, Shang-Chi (haste for abilities)
+
 ## Tezzeret artifacts (a user's deck, `deck-2.txt`)
 
 Audited (fixture `tezzeret-artifacts-2026-10`): 6 of 16 cards fully simulated before, 13 after. Fixed: Phyrexian
