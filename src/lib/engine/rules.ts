@@ -445,6 +445,8 @@ export interface TargetFilter {
   basic?: boolean;
   /** Lands must be nonbasic: "artifact, enchantment, or nonbasic land" (Boseiju). */
   nonbasicLands?: boolean;
+  /** Hope of Ghirapur: "player who was dealt combat damage by <its source> this turn". */
+  dealtCombatDamageBySource?: boolean;
   /** Legendary only (Mjölnir's "worthy": a legendary non-Villain that's red and/or white). */
   legendary?: boolean;
   /** Snow only (On Thin Ice: "Enchant snow land you control"). */
@@ -481,7 +483,7 @@ export interface TargetSpec {
 // ---------- Effects ----------
 
 /** Counter kinds placed on permanents. */
-export type CounterKind = '+1/+1' | '-1/-1' | '-0/-1' | 'wish' | 'loyalty' | 'lore' | 'rev' | 'luck' | 'mining' | 'depletion' | 'age' | 'fade' | 'chorus'
+export type CounterKind = '+1/+1' | '-1/-1' | '-0/-1' | 'wish' | 'loyalty' | 'lore' | 'rev' | 'luck' | 'mining' | 'depletion' | 'charge' | 'age' | 'fade' | 'chorus'
   // Stun (Snaremaster Sprite): it doesn't untap, a counter is removed instead. Finality (Zoraline): exiled if it would die.
   | 'stun' | 'finality' | 'time'
   // Keyword counters (Ghost Vacuum's flying, Leatherhead's hexproof): the permanent has that keyword.
@@ -544,7 +546,41 @@ export type Effect =
   /** Bristly Bill: "Double the number of +1/+1 counters on each creature you control." */
   | { kind: 'doubleCountersAll'; which: Selector }
   /** Tifa Lockhart: "double Tifa Lockhart's power until end of turn". */
-  | { kind: 'doublePower'; to: Affected }
+  /** Tifa Lockhart: "double Tifa Lockhart's power until end of turn"; Berserk: "gains trample and gets +X/+0 …, where X is its power". */
+  | { kind: 'doublePower'; to: Affected; keywords?: Keyword[] }
+  /** Berserk: "At the beginning of the next end step, destroy that creature if it attacked this turn." */
+  | { kind: 'destroyAtEnd'; to: Affected; ifAttacked: boolean }
+  /** Embiggen: "+1/+1 for each supertype, card type, and subtype it has" until end of turn. */
+  | { kind: 'embiggen'; to: Affected }
+  /**
+   * Bounty of the Hunt: "Distribute three +1/+1 counters among one, two, or three target creatures. For each +1/+1
+   * counter you put on a creature this way, remove a +1/+1 counter from that creature at the beginning of the next
+   * cleanup step." (the targets are slot 0)
+   */
+  | { kind: 'distributeCounters'; n: number; untilCleanup: boolean }
+  /**
+   * Until end of turn, a creature "becomes a green Wurm with base power and toughness 6/4" (Scale Up), "has that base
+   * power and toughness, becomes that creature type, and gains that ability" (Wild Shape), gains keywords and an
+   * ability (Legolas's Quick Reflexes: `text`). `subtypes` replace its creature types; `colors` its colors.
+   */
+  | { kind: 'reshape'; to: Affected; power?: number; toughness?: number; subtypes?: string[]; colors?: Color[]; keywords: Keyword[]; text?: string }
+  /** Scale Up's overload: "each creature you control" instead of the target. */
+  | { kind: 'reshapeAll'; which: Selector; power?: number; toughness?: number; subtypes?: string[]; colors?: Color[]; keywords: Keyword[] }
+  /** Legolas's granted trigger: "it deals damage equal to its power to up to one target creature" (it: the source). */
+  | { kind: 'selfBite'; to: Affected }
+  /** Royal Treatment: "Create a Royal Role token attached to that creature." */
+  | { kind: 'role'; role: string; to: Affected }
+  /**
+   * Hope of Ghirapur: "Until your next turn, target player who was dealt combat damage by Hope of Ghirapur this turn
+   * can't cast noncreature spells."
+   */
+  | { kind: 'noNoncreatureSpells'; to: Affected }
+  /** Talon Gates of Madara: "up to one target creature phases out" (until its controller's next untap step). */
+  | { kind: 'phaseOut'; to: Affected }
+  /** Talon Gates of Madara: "{4}: Put this card from your hand onto the battlefield." */
+  | { kind: 'putSelfFromHand' }
+  /** Jeweled Amulet: "Put a charge counter on this artifact. Note the type of mana spent to pay this activation cost." */
+  | { kind: 'chargeAmulet' }
   /**
    * Scythecat Cub: "put a +1/+1 counter on target creature you control. If this is the second time this ability has
    * resolved this turn, double the number of +1/+1 counters on that creature instead."
@@ -776,6 +812,12 @@ export interface TokenSpec {
 }
 
 /** Predefined tokens ("create a Treasure token"). */
+/** Role tokens (Auras): what each one gives the creature it enchants. */
+export const ROLES: Record<string, string> = {
+  royal: 'Enchanted creature gets +1/+1 and has ward {1}.',
+  monster: 'Enchanted creature gets +1/+1 and has trample.',
+};
+
 export const PREDEFINED_TOKENS: Record<string, TokenSpec> = {
   treasure: { name: 'Treasure', typeLine: 'Token Artifact — Treasure', colors: [], keywords: [], oracleText: '{T}, Sacrifice this artifact: Add one mana of any color.' },
   clue: { name: 'Clue', typeLine: 'Token Artifact — Clue', colors: [], keywords: [], oracleText: '{2}, Sacrifice this artifact: Draw a card.' },
@@ -1274,6 +1316,53 @@ export function parseAbilityText(text: string, self?: string, selfIt = true): Ab
     const to = slotFor(m[1], (spec) => spec.kind === 'creature');
     return to && { kind: 'counterOrDouble', to };
   });
+  // Berserk: "Target creature gains trample and gets +X/+0 until end of turn, where X is its power. At the beginning of the
+  // next end step, destroy that creature if it attacked this turn."
+  scan(new RegExp(BERSERK.source, 'g'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'creature');
+    return to && [{ kind: 'doublePower', to, keywords: ['trample'] }, { kind: 'destroyAtEnd', to, ifAttacked: true }];
+  });
+  // Embiggen: "Until end of turn, target non-Brushwagg creature gets +1/+1 for each supertype, card type, and subtype it has."
+  scan(/\bUntil end of turn, (target (?:non-[A-Z][a-z]+ )?creature) gets \+1\/\+1 for each supertype, card type, and subtype it has(?=\.)/g, (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'creature');
+    return to && { kind: 'embiggen', to };
+  });
+  // Bounty of the Hunt (see the distributeCounters effect).
+  scan(new RegExp(BOUNTY.source, 'g'), () => {
+    targets.push({ kind: 'creature', min: 1, max: 3, filter: {} });
+    return { kind: 'distributeCounters', n: 3, untilCleanup: true };
+  });
+  // Scale Up: "Until end of turn, target creature you control becomes a green Wurm with base power and toughness 6/4."
+  // (overloaded: "each creature you control")
+  scan(/\bUntil end of turn, (target creature you control|each creature you control) becomes an? (white|blue|black|red|green) ([A-Z][a-z]+) with base power and toughness (\d+)\/(\d+)(?=\.)/g, (m) => {
+    const shape = { power: Number(m[4]), toughness: Number(m[5]), subtypes: [m[3]], colors: [COLOR_WORDS[m[2]]], keywords: [] as Keyword[] };
+    if (m[1].startsWith('each')) return { kind: 'reshapeAll', which: { kind: 'creature', filter: { controller: 'you' } }, ...shape };
+    const to = slotFor(m[1], (spec) => spec.kind === 'creature');
+    return to && { kind: 'reshape', to, ...shape };
+  });
+  // Legolas's Quick Reflexes: "Until end of turn, it gains reach, hexproof, and \"Whenever this creature becomes tapped, …\""
+  scan(/(?:^|[.] *)Until end of turn, (?:it|that creature) gains ((?:[a-z ]+, )*[a-z ]+), and "([^"]+)"(?=\.|$)/g, (m) => {
+    const keywords = keywordList(m[1]);
+    if (!keywords.every((k) => (KEYWORDS as readonly string[]).includes(k)) || !understoodAbilities(m[2])) return null;
+    return targets.length ? { kind: 'reshape', to: { slot: targets.length - 1 }, keywords, text: m[2] } : null;
+  });
+  // Royal Treatment: "Create a Royal Role token attached to that creature."
+  scan(/(?:^|[.] *)Create an? ([A-Z][a-z]+(?: [A-Z][a-z]+)?) Role token attached to (?:it|that creature)(?=\.)/g, (m) => {
+    const role = m[1].toLowerCase();
+    return ROLES[role] && targets.length ? { kind: 'role', role, to: { slot: targets.length - 1 } } : null;
+  });
+  // Hope of Ghirapur (see the noNoncreatureSpells effect).
+  scan(/\bUntil your next turn, target player who was dealt combat damage by [^.]+? this turn can't cast noncreature spells(?=\.)/g, () => {
+    targets.push({ kind: 'player', min: 1, max: 1, filter: { dealtCombatDamageBySource: true } });
+    return { kind: 'noNoncreatureSpells', to: { slot: targets.length - 1 } };
+  });
+  // Talon Gates of Madara: "up to one target creature phases out."
+  scan(new RegExp(`(${TARGET}) phases out(?=\\.)`, 'g'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'creature');
+    return to && { kind: 'phaseOut', to };
+  });
+  scan(/(?:^|[.] *)Put this card from your hand onto the battlefield\./g, () => ({ kind: 'putSelfFromHand' }));
+  scan(new RegExp(AMULET.source, 'g'), () => ({ kind: 'chargeAmulet' }));
   // Tyvar's Stand: "Target creature you control gets +X/+X and gains hexproof and indestructible until end of turn."
   scan(new RegExp(`(${TARGET}) gets \\+X\\/\\+X(?: and gains? ${KEYWORD_LIST})? until end of turn`, 'gi'), (m) => {
     const to = slotFor(m[1], (spec) => spec.kind === 'creature');
@@ -1675,7 +1764,8 @@ export function parseAbilityText(text: string, self?: string, selfIt = true): Ab
     };
     // A token with its own ability ("with \"This token gets +1/+1 for each artifact you control.\""): only when understood.
     // Eldrazi Spawn: "with \"Sacrifice this token: Add {C}.\"" (a mana ability).
-    if (m[9] && !staticsOf(tokenCard(token)).length && !sacrificeMana(tokenCard(token))) return null;
+    // Defend the Rider's Pilot: "This token saddles Mounts and crews Vehicles as though its power were 2 greater."
+    if (m[9] && !staticsOf(tokenCard(token)).length && !sacrificeMana(tokenCard(token)) && !crewBonus(tokenCard(token))) return null;
     return { kind: 'token', n: toAmount(m[1]), token };
   });
   // Chandra's 0: "Create a 3/2 colorless Vehicle artifact token with crew 1."
@@ -1712,6 +1802,11 @@ export function parseAbilityText(text: string, self?: string, selfIt = true): Ab
     const words = [...selfWords(self), ...(!selfIt || /\btargets?\b/i.test(text) ? [] : ['it'])].map(escapeRe).join('|');
     const SELF = `(?:${words})`;
     scan(new RegExp(`(?:^|\\. )Transform ${SELF}(?=\\.)`, 'g'), () => ({ kind: 'transform' }));
+    // Legolas's Quick Reflexes' granted trigger: "it deals damage equal to its power to up to one target creature."
+    scan(new RegExp(`(?:^|[.] *)(?:it|${selfWords(self).map(escapeRe).join('|')}) deals damage equal to its power to (${TARGET})(?=\\.)`, 'gi'), (m) => {
+      const to = slotFor(m[1], (spec) => spec.kind === 'creature');
+      return to && { kind: 'selfBite', to };
+    });
     // Mossborn Hydra: "double the number of +1/+1 counters on this creature."
     scan(new RegExp(`(?:^|[.,] *)double the number of \\+1\\/\\+1 counters on ${SELF}(?=\\.)`, 'gi'), () => ({ kind: 'doubleCounters', to: 'self' }));
     // Tifa Lockhart: "double Tifa Lockhart's power until end of turn."
@@ -1932,7 +2027,7 @@ export type AltCost =
   | { kind: 'exileCard'; color: Color; notYourTurn?: boolean; evoke?: boolean }
   /** Cleave (the words in brackets removed), warp (exiled at the next end step), web-slinging (and a tapped creature you control returned). */
   /** Impending N: enters with N time counters, not a creature until the last is removed (one each end step). */
-  | { kind: 'mana'; cost: string; name: 'cleave' | 'warp' | 'webSlinging' | 'impending'; counters?: number }
+  | { kind: 'mana'; cost: string; name: 'cleave' | 'warp' | 'webSlinging' | 'impending' | 'overload'; counters?: number }
   /** Phyrexian mana ({U/P}): 2 life for each one instead of its mana. */
   | { kind: 'phyrexian'; n: number }
   /** Invigorate: "If you control a Forest, rather than pay this spell's mana cost, you may have an opponent gain 3 life." */
@@ -1961,7 +2056,10 @@ export interface CastInfo {
    * `keyword` is false for the same ability without the word (Mjölnir's "{2}{R}, Discard this card: …").
    * `legendaryDiscount`: "This ability costs {1} less to activate for each legendary creature you control."
    */
-  channel?: { cost: string; ability: AbilitySpec; legendaryDiscount: boolean; keyword: boolean };
+  /** `keepsCard`: Talon Gates of Madara's "{4}: Put this card from your hand onto the battlefield." (not discarded). */
+  channel?: { cost: string; ability: AbilitySpec; legendaryDiscount: boolean; keyword: boolean; keepsCard?: boolean };
+  /** Berserk: "Cast this spell only before the combat damage step." */
+  beforeCombatDamage?: boolean;
   convoke: boolean;
   delve: boolean;
   /** "Affinity for artifacts": costs {1} less for each matching permanent you control. */
@@ -1979,6 +2077,9 @@ export interface CastInfo {
 const MODE_COUNTS: Record<string, [number, number]> = {
   one: [1, 1], two: [2, 2], three: [3, 3], 'one or both': [1, 2], 'one or more': [1, 9], 'up to one': [0, 1], 'up to two': [0, 2],
 };
+
+/** Wild Shape: the sentence before its modes ("1/3 Turtle with hexproof."). */
+const WILD_SHAPE = /Until end of turn, target creature you control has that base power and toughness, becomes that creature type, and gains that ability\./;
 
 /** Removes reminder text: it never carries rules, and may say "Draw a card." (cycling). */
 const stripReminder = (text: string) => text.replace(/\s*\([^)]*\)/g, '');
@@ -1998,8 +2099,8 @@ export function castInfo(card: Card, face = 0): CastInfo {
       info.alts.push({ kind: 'opponentGainsLife', n: Number(m[2]), subtype: m[1].toLowerCase() });
     } else if ((m = line.match(/^Evoke—Exile an? (white|blue|black|red|green) card from your hand\.$/i))) {
       info.alts.push({ kind: 'exileCard', color: COLOR_WORDS[m[1].toLowerCase()], evoke: true });
-    } else if ((m = line.match(/^(Cleave|Warp|Web-slinging) ((?:\{[^}]+\})+)$/))) {
-      info.alts.push({ kind: 'mana', cost: m[2], name: m[1] === 'Cleave' ? 'cleave' : m[1] === 'Warp' ? 'warp' : 'webSlinging' });
+    } else if ((m = line.match(/^(Cleave|Warp|Web-slinging|Overload) ((?:\{[^}]+\})+)$/))) {
+      info.alts.push({ kind: 'mana', cost: m[2], name: m[1] === 'Cleave' ? 'cleave' : m[1] === 'Warp' ? 'warp' : m[1] === 'Overload' ? 'overload' : 'webSlinging' });
     } else if ((m = line.match(/^Impending (\d+)—((?:\{[^}]+\})+)$/))) {
       info.alts.push({ kind: 'mana', cost: m[2], name: 'impending', counters: Number(m[1]) });
     } else if ((m = line.match(/^Kicker ((?:\{[^}]+\})+)$/))) info.kicker = m[1];
@@ -2008,6 +2109,10 @@ export function castInfo(card: Card, face = 0): CastInfo {
     else if ((m = line.match(/^(Basic land|[A-Z][a-z]+)cycling ((?:\{[^}]+\})+)$/))) {
       // Landcycling and other typecycling (Step Through's "Wizardcycling {2}": search for a Wizard card).
       info.cycling = { cost: m[2], search: m[1] === 'Basic land' ? { basic: true, types: ['land'] } : { subtypes: [m[1].toLowerCase()] } };
+    } else if (/^Cast this spell only before the combat damage step\.$/.test(line)) {
+      info.beforeCombatDamage = true;
+    } else if ((m = line.match(/^((?:\{[^}]+\})+): Put this card from your hand onto the battlefield\.$/))) {
+      info.channel = { cost: m[1], ability: { targets: [], effects: [{ kind: 'putSelfFromHand' }] }, legendaryDiscount: false, keyword: false, keepsCard: true };
     } else if ((m = line.match(/^(?:Channel — )?((?:\{[^}]+\})+), Discard this card: (.+)$/))) {
       // Also Mjölnir's "{2}{R}, Discard this card: It deals 2 damage to each creature." (from the hand, like channel).
       const discount = / This ability costs \{1\} less to activate for each legendary creature you control\.$/;
@@ -2038,7 +2143,9 @@ export function castInfo(card: Card, face = 0): CastInfo {
   // Spree: "+ {1}{U} — Counter target spell." (one or more); Tiered: "• Fira — {2} — …" (exactly one).
   const spree = /^Spree\b/m.test(text) ? [...text.matchAll(/^\+ ((?:\{[^}]+\})+) — (.+)$/gm)] : [];
   const tiered = /^Tiered\b/m.test(text) ? [...text.matchAll(/^• [^—\n]+ — ((?:\{[^}]+\})+) — (.+)$/gm)] : [];
-  const modal = text.match(/Choose (one or both|one or more|up to one|up to two|one|two|three) —\n((?:• [^\n]+\n?)+)/);
+  const modal = text.match(/Choose (one or both|one or more|up to one|up to two|one|two|three) —\n((?:• [^\n]+\n?)+)/)
+    // Wild Shape: "Choose one. Until end of turn, target creature you control has that base power and toughness, …"
+    ?? text.match(new RegExp(`^Choose (one)\\. ${WILD_SHAPE.source}\\n((?:• [^\\n]+\\n?)+)`, 'm'));
   if (spree.length || tiered.length) {
     const lines = spree.length ? spree : tiered;
     info.modal = { min: 1, max: spree.length ? lines.length : 1, modes: lines.map((m) => m[2].trim()), costs: lines.map((m) => m[1]) };
@@ -2068,7 +2175,8 @@ export function castInfo(card: Card, face = 0): CastInfo {
 /** Is mode `i` of a modal spell simulated (understood on its own)? */
 export function modeSimulated(card: Card, face: number, i: number): boolean {
   const modal = castInfo(card, face).modal;
-  return !!modal && parseAbilityText(modal.modes[i] ?? '').effects.length > 0;
+  // Wild Shape: a mode read with the spell's other text ("1/3 Turtle with hexproof.").
+  return !!modal && (parseAbilityText(modal.modes[i] ?? '').effects.length > 0 || castSpec(card, { face, modes: [i] }).effects.length > 0);
 }
 
 /** The allowed mode combinations of a modal spell, the most modes first ("one or both": both, then each). */
@@ -2133,7 +2241,9 @@ function castSpecRaw(card: Card, choice: CastChoice): AbilitySpec {
     .split('\n')
     // Other ways to cast it that are never used here (Harmonize, Web-slinging, Paradigm), and options never taken
     // (a gift never promised, a spell never bargained).
-    .filter((l) => !/^(Kicker|Flashback|Cycling|Convoke|Delve|Affinity for|(Basic land|[A-Z][a-z]+)cycling|Harmonize|Web-slinging|Cleave|Warp|Evoke|Paradigm|Bargain$|Gift an? )\b/.test(l.trim()))
+    .filter((l) => !/^(Kicker|Flashback|Cycling|Convoke|Delve|Affinity for|(Basic land|[A-Z][a-z]+)cycling|Harmonize|Web-slinging|Cleave|Warp|Overload|Evoke|Paradigm|Bargain$|Gift an? |Split second$)\b/.test(l.trim()))
+    // Berserk: "Cast this spell only before the combat damage step." (checked when casting)
+    .filter((l) => !/^Cast this spell only before the combat damage step\.$/.test(l.trim()))
     // Alternative costs ("You may return an Island you control … rather than pay this spell's mana cost.").
     .filter((l) => !/rather than pay this spell's mana cost\.$|rather than pay this spell's mana cost, you may have an opponent gain \d+ life\.$/.test(l.trim()))
     .join('\n')
@@ -2148,6 +2258,19 @@ function castSpecRaw(card: Card, choice: CastChoice): AbilitySpec {
     instead = { power: Number(pw), toughness: Number(tg), if: cond.startsWith('you had') ? 'landfall' : 'castInMain' };
     return '';
   });
+  // Overload: "change \"target\" in its text to \"each\"".
+  if (choice.alt !== undefined && info.alts[choice.alt]?.kind === 'mana' && (info.alts[choice.alt] as { name: string }).name === 'overload') {
+    text = text.replace(/\btarget\b/g, 'each');
+  }
+  // Wild Shape: each mode is "1/3 Turtle with hexproof.": its base power and toughness, creature type and ability.
+  if (info.modal && new RegExp(`^Choose one\\. ${WILD_SHAPE.source}`, 'm').test(text)) {
+    const mode = info.modal.modes[choice.modes?.[0] ?? -1]?.match(/^(\d+)\/(\d+) ([A-Z][a-z]+) with ([a-z ]+)\.$/);
+    if (!mode || choice.modes?.length !== 1 || !(KEYWORDS as readonly string[]).includes(mode[4])) return { targets: [], effects: [] };
+    return {
+      targets: [{ kind: 'creature', min: 1, max: 1, filter: { controller: 'you' } }],
+      effects: [{ kind: 'reshape', to: { slot: 0 }, power: Number(mode[1]), toughness: Number(mode[2]), subtypes: [mode[3]], keywords: [mode[4] as Keyword] }],
+    };
+  }
   // Green Sun's Zenith: "Shuffle Green Sun's Zenith into its owner's library."
   text = text.split(`Shuffle ${c.name} into its owner's library.`).join('Shuffle this spell into its owner\'s library.');
   // Grow Extra Arms: "This spell costs {1} less to cast if it targets a Spider." (never taken: listed in TODO.md)
@@ -2307,12 +2430,18 @@ const BEHOLD = /(?:^|[.] *)You may behold an? ([A-Z][a-z]+)\. If you do, untap t
  * resolved this turn, double the number of +1/+1 counters on that creature instead."
  */
 const SCYTHECAT = /\bput a \+1\/\+1 counter on (target creature you control)\. If this is the second time this ability has resolved this turn, double the number of \+1\/\+1 counters on that creature instead\./;
+/** Berserk (see parseAbilityText). */
+const BERSERK = /\b(Target creature) gains trample and gets \+X\/\+0 until end of turn, where X is its power\. At the beginning of the next end step, destroy that creature if it attacked this turn\./;
+/** Bounty of the Hunt (see parseAbilityText). */
+const BOUNTY = /\bDistribute three \+1\/\+1 counters among one, two, or three target creatures\. For each \+1\/\+1 counter you put on a creature this way, remove a \+1\/\+1 counter from that creature at the beginning of the next cleanup step\./;
+/** Jeweled Amulet (see activatedOf). */
+const AMULET = /\bPut a charge counter on this artifact\. Note the type of mana spent to pay this activation cost\./;
 const UNSUPPORTED_WORDS = /\b(?:if|unless|for each|where|instead|that (?:creature|card|player|land|spell|permanent)|those|otherwise|this way|exiled with)\b/i;
 /** Wordings the effect parser would misread. Quoted text is an ability given to something else (a token), read on its own. */
 const UNSUPPORTED = {
   test: (text: string) => {
     let rest = text;
-    for (const handled of [CONTROLLER_SEARCH, REVEAL_FOUND, SURVEIL_TO_HAND, THORIN_ATTACH, BECOMES_CREATURE, LAND_BECOMES, TRADE_FOR_CARD, COUNTER_DEST, TIDEBINDER, POWER_LIFE, PHELIA, CITY_COPIES, GHOST_VACUUM, MALCOLM, FLICKER, BLACK_SUN, EMPIRES, UNLESS_ARTIFACT, TEZZERET_ANIMATE, PURSUIT, IMPULSE, FABLED, BEHOLD, SCYTHECAT]) rest = rest.replace(handled, '');
+    for (const handled of [CONTROLLER_SEARCH, REVEAL_FOUND, SURVEIL_TO_HAND, THORIN_ATTACH, BECOMES_CREATURE, LAND_BECOMES, TRADE_FOR_CARD, COUNTER_DEST, TIDEBINDER, POWER_LIFE, PHELIA, CITY_COPIES, GHOST_VACUUM, MALCOLM, FLICKER, BLACK_SUN, EMPIRES, UNLESS_ARTIFACT, TEZZERET_ANIMATE, PURSUIT, IMPULSE, FABLED, BEHOLD, SCYTHECAT, BERSERK, BOUNTY, AMULET]) rest = rest.replace(handled, '');
     return UNSUPPORTED_WORDS.test(rest.replace(/"[^"]*"/g, '""'));
   },
 };
@@ -2844,6 +2973,8 @@ export interface ActivatedSpec {
   yourTurn?: boolean;
   /** Centaur Garden (threshold): "Activate only if there are seven or more cards in your graveyard." */
   minGraveyard?: number;
+  /** Jeweled Amulet: "Activate only if there are no charge counters on this artifact." */
+  noCounter?: CounterKind;
 }
 
 const activatedCache = new Map<string, ActivatedSpec[]>();
@@ -2959,7 +3090,8 @@ export function activatedOf(card: Card): ActivatedSpec[] {
     const yourTurn = /Activate only during your turn/i.test(text);
     const threshold = text.match(/Activate only if there are (\w+) or more cards in your graveyard\./i);
     const minGraveyard = threshold ? toNumber(threshold[1]) : undefined;
-    if (/Activate (?:only|this ability only)/i.test(text.replace(/Activate only (?:as a sorcery|once each turn|during your turn|if there are \w+ or more cards in your graveyard)\.?/gi, ''))) continue;
+    const noCounter = text.match(/Activate only if there are no (charge) counters on this artifact\./i)?.[1] as CounterKind | undefined;
+    if (/Activate (?:only|this ability only)/i.test(text.replace(/Activate only (?:as a sorcery|once each turn|during your turn|if there are \w+ or more cards in your graveyard|if there are no charge counters on this artifact)\.?/gi, ''))) continue;
     text = text.replace(/\s*Activate (?:only|this ability only)[^.]*\./gi, '').trim();
     // Phyrexian Devourer: "Put X +1/+1 counters on this creature, where X is the exiled card's mana value."
     if (cost.exileTop) {
@@ -2980,7 +3112,7 @@ export function activatedOf(card: Card): ActivatedSpec[] {
     if (returnsExiledWhenLeaving(card)) ability = { ...ability, effects: ability.effects.map((x) => (x.kind === 'destroy' && x.exile ? { ...x, untilLeaves: true } : x)) };
     // Stoneforge Mystic: choosing no card is the "may".
     const choosesNone = ability.effects.length === 1 && ability.effects[0].kind === 'putFromHand';
-    out.push({ text: line, cost, ability: optional && ability.effects.length && !choosesNone ? { ...ability, optional } : ability, sorcery, once, ...(discountPer ? { discountPer } : {}), ...(yourTurn ? { yourTurn } : {}), ...(minGraveyard ? { minGraveyard } : {}) });
+    out.push({ text: line, cost, ability: optional && ability.effects.length && !choosesNone ? { ...ability, optional } : ability, sorcery, once, ...(discountPer ? { discountPer } : {}), ...(yourTurn ? { yourTurn } : {}), ...(minGraveyard ? { minGraveyard } : {}), ...(noCounter ? { noCounter } : {}) });
   }
   activatedCache.set(key, out);
   return out;
@@ -3018,7 +3150,7 @@ export function doublesEquippedTriggers(card: Card): boolean {
  * Amber "{T}: Add one mana of any color among legendary creatures and planeswalkers you control." (legends),
  * Gemstone Caverns (luck: any color with a luck counter, otherwise {C}).
  */
-export function stateMana(card: Card): 'imprinted' | 'legends' | 'luck' | 'perArtifact' | 'mining' | 'depletion' | 'reflect' | 'reflectThree' | 'perCreature' | 'perElf' | 'opponentLands' | null {
+export function stateMana(card: Card): 'imprinted' | 'legends' | 'luck' | 'perArtifact' | 'mining' | 'depletion' | 'noted' | 'reflect' | 'reflectThree' | 'perCreature' | 'perElf' | 'opponentLands' | null {
   const text = frontText(card);
   // Priest of Titania: "{T}: Add {G} for each Elf on the battlefield."
   if (/^\{T\}: Add \{G\} for each Elf on the battlefield\.$/m.test(text)) return 'perElf';
@@ -3033,6 +3165,8 @@ export function stateMana(card: Card): 'imprinted' | 'legends' | 'luck' | 'perAr
   // Gemstone Mine: "{T}, Remove a mining counter from this land: Add one mana of any color. If there are no mining
   // counters on this land, sacrifice it."
   if (/^\{T\}, Remove a mining counter from this land: Add one mana of any color\. If there are no mining counters on this land, sacrifice it\.$/m.test(text)) return 'mining';
+  // Jeweled Amulet: "{T}, Remove a charge counter from this artifact: Add one mana of this artifact's last noted type."
+  if (/^\{T\}, Remove a charge counter from this artifact: Add one mana of this artifact's last noted type\.$/m.test(text)) return 'noted';
   // Hickory Woodlot: "{T}, Remove a depletion counter from this land: Add {G}{G}. If there are no depletion counters on
   // this land, sacrifice it."
   if (/^\{T\}, Remove a depletion counter from this land: Add \{G\}\{G\}\. If there are no depletion counters on this land, sacrifice it\.$/m.test(text)) return 'depletion';
@@ -3490,6 +3624,15 @@ function powerLimitLine(line: string, selves: string[]): number | null {
 
 /** Split second: "As long as this spell is on the stack, players can't cast spells or activate abilities that aren't mana abilities." */
 export const hasSplitSecond = (card: Card) => /^Split second(?: \(|$)/m.test(frontText(card));
+
+/**
+ * Defend the Rider's Pilot: "This token saddles Mounts and crews Vehicles as though its power were 2 greater." → 2 (saddle
+ * isn't simulated: crewing only).
+ */
+export function crewBonus(card: Card): number {
+  const m = frontText(card).match(/^This (?:token|creature) saddles Mounts and crews Vehicles as though its power were (\d+) greater\.$/m);
+  return m ? Number(m[1]) : 0;
+}
 
 /** Vanishing N: "This permanent enters with N time counters on it." */
 export function vanishingOf(card: Card): number {

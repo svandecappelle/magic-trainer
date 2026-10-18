@@ -4720,3 +4720,174 @@ describe('Duel Commander: mono-green landfall (mtgtop8 deck 901562)', () => {
     expect([perm(s, 'Brokers Hideout'), perm(s, 'Forest')!.tapped, s.players[0].life]).toEqual([undefined, true, 21]);
   });
 });
+
+describe('Duel Commander landfall deck, second pass', () => {
+  const deck = JSON.parse(readFileSync(new URL('./fixtures/duel-commander-landfall-2026-10.json', import.meta.url), 'utf8')) as Card[];
+  const real = (name: string, manaCost?: string) => {
+    const c = deck.find((x) => x.name.startsWith(name))!;
+    return manaCost === undefined ? c : { ...c, manaCost };
+  };
+  const forest = card({ name: 'Forest', typeLine: 'Basic Land — Forest' });
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 10 && (s.stack.length || s.triggered?.length) && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  const target = (s: GameState, name: string) => [[{ kind: 'permanent' as const, iid: iidOf(s, name) }]];
+  const bear = creature('Bear', 2, 2, { typeLine: 'Creature — Bear' });
+  /** Passes (both players) until the turn ends. */
+  const endTurn = (s: GameState) => {
+    const turn = s.turn;
+    for (let i = 0; i < 40 && s.turn === turn && s.winner === null; i++) {
+      s = s.pending ? apply(s, { type: 'choose', answer: s.pending.choice.kind === 'yesNo' ? { kind: 'yesNo', yes: true } : { kind: 'cards', iids: [] } })
+        : !s.priority && s.step === 'attack' ? apply(s, { type: 'declareAttackers', attackers: [] })
+        : apply(s, { type: 'pass' });
+    }
+    return s;
+  };
+
+  it('Berserk: double power and trample, before combat damage only; destroyed at the end step if it attacked', () => {
+    let s = board({ mine: [bear], hand: [real('Berserk', '{0}')] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', targets: target(s, 'Bear') }));
+    expect([powerOf(perm(s, 'Bear')!), hasKw(perm(s, 'Bear')!, 'trample')]).toEqual([4, true]);
+    // It didn't attack: it survives the end step.
+    s = endTurn(s);
+    expect(perm(s, 'Bear')).toBeDefined();
+
+    s = board({ mine: [bear], hand: [real('Berserk', '{0}')] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', targets: target(s, 'Bear') }));
+    s = apply(s, { type: 'pass' });
+    for (let i = 0; i < 5 && (s.priority || s.step !== 'attack'); i++) s = apply(s, { type: 'pass' });
+    s = apply(s, { type: 'declareAttackers', attackers: [iidOf(s, 'Bear')] });
+    for (let i = 0; i < 20 && s.step !== 'main2'; i++) s = !s.priority && s.step === 'block' ? apply(s, { type: 'declareBlockers', blocks: {} }) : apply(s, { type: 'pass' });
+    expect(s.players[1].life).toBe(16);
+    s = endTurn(s);
+    expect(perm(s, 'Bear')).toBeUndefined();
+
+    // After combat damage (the second main phase): can't be cast.
+    s = board({ mine: [bear], hand: [real('Berserk', '{0}')] });
+    s.step = 'main2';
+    expect(castOptions(s, 0, 'h0')).toEqual([]);
+  });
+
+  it('Embiggen: +1/+1 for each supertype, card type and subtype', () => {
+    const legend = creature('Legend', 1, 1, { typeLine: 'Legendary Creature — Elf Druid' });
+    let s = board({ mine: [legend], hand: [real('Embiggen', '{0}')] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', targets: target(s, 'Legend') }));
+    expect(powerOf(perm(s, 'Legend')!)).toBe(5);
+  });
+
+  it('Bounty of the Hunt: three counters among one to three creatures, removed at cleanup; free by exiling a green card', () => {
+    const bounty = real('Bounty of the Hunt');
+    const ogre = creature('Ogre', 3, 3);
+    let s = board({ mine: [bear, ogre], hand: [bounty, creature('Elf', 1, 1, { colors: ['G'] })] });
+    const alt = castOptions(s, 0, 'h0').find((o) => o.alt !== undefined)!;
+    expect(alt).toBeDefined();
+    s = apply(s, { type: 'cast', iid: 'h0', alt: alt.alt, targets: [[...target(s, 'Bear')[0], ...target(s, 'Ogre')[0]]] });
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['h1'] } }));
+    expect(s.pending?.choice).toMatchObject({ purpose: 'distributeTwo' });
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: [iidOf(s, 'Ogre')] } }));
+    expect([perm(s, 'Bear')!.counters['+1/+1'], perm(s, 'Ogre')!.counters['+1/+1']]).toEqual([1, 2]);
+    s = endTurn(s);
+    expect([perm(s, 'Bear')!.counters['+1/+1'], perm(s, 'Ogre')!.counters['+1/+1']]).toEqual([0, 0]);
+  });
+
+  it('Scale Up (and overloaded), Wild Shape: base power and toughness, creature type, until end of turn', () => {
+    let s = board({ mine: [bear, creature('Elf', 1, 1)], hand: [real('Scale Up', '{0}')] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', targets: target(s, 'Bear') }));
+    expect([powerOf(perm(s, 'Bear')!), toughnessOf(perm(s, 'Bear')!), perm(s, 'Bear')!.card.typeLine, perm(s, 'Bear')!.card.colors]).toEqual([6, 4, 'Creature — Wurm', ['G']]);
+    expect(powerOf(perm(s, 'Elf')!)).toBe(1);
+    s = endTurn(s);
+    expect([powerOf(perm(s, 'Bear')!), perm(s, 'Bear')!.card.typeLine]).toEqual([2, 'Creature — Bear']);
+
+    s = board({ mine: [bear, creature('Elf', 1, 1), forest, forest, forest, forest, forest, forest] });
+    s.players[0].hand = [{ iid: 'h0', card: real('Scale Up') }];
+    const overload = castOptions(s, 0, 'h0').find((o) => o.alt !== undefined)!;
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', alt: overload.alt }));
+    expect([powerOf(perm(s, 'Bear')!), powerOf(perm(s, 'Elf')!)]).toEqual([6, 6]);
+
+    s = board({ mine: [bear], hand: [real('Wild Shape', '{0}')] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', modes: [1], targets: target(s, 'Bear') }));
+    expect([powerOf(perm(s, 'Bear')!), toughnessOf(perm(s, 'Bear')!), hasKw(perm(s, 'Bear')!, 'reach'), perm(s, 'Bear')!.card.typeLine]).toEqual([1, 5, true, 'Creature — Spider']);
+  });
+
+  it('Royal Treatment: hexproof and a Royal Role (+1/+1, ward {1}); a new Role replaces the old one', () => {
+    let s = board({ mine: [bear], hand: [real('Royal Treatment', '{0}'), real('Royal Treatment', '{0}')] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', targets: target(s, 'Bear') }));
+    expect([powerOf(perm(s, 'Bear')!), hasKw(perm(s, 'Bear')!, 'hexproof'), perm(s, 'Bear')!.statics?.ward]).toEqual([3, true, [1]]);
+    s = resolve(apply(s, { type: 'cast', iid: 'h1', targets: target(s, 'Bear') }));
+    expect(s.battlefield.filter((x) => x.card.name === 'Royal Role')).toHaveLength(1);
+    expect(powerOf(perm(s, 'Bear')!)).toBe(3);
+  });
+
+  it('Legolas\'s Quick Reflexes: untapped, reach and hexproof, and damage equal to its power when it becomes tapped', () => {
+    let s = board({ mine: [creature('Archer', 3, 3)], theirs: [bear], hand: [real('Legolas\'s Quick Reflexes', '{0}')] });
+    perm(s, 'Archer')!.tapped = true;
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', targets: target(s, 'Archer') }));
+    expect([perm(s, 'Archer')!.tapped, hasKw(perm(s, 'Archer')!, 'reach')]).toEqual([false, true]);
+    // Attacking taps it: 3 damage to the Bear.
+    s = apply(s, { type: 'pass' });
+    for (let i = 0; i < 5 && (s.priority || s.step !== 'attack'); i++) s = apply(s, { type: 'pass' });
+    s = apply(s, { type: 'declareAttackers', attackers: [iidOf(s, 'Archer')] });
+    if (s.pending?.choice.kind === 'targets') s = apply(s, { type: 'choose', answer: { kind: 'targets', targets: target(s, 'Bear') } });
+    s = resolve(s);
+    expect(perm(s, 'Bear')).toBeUndefined();
+    // The ability goes at end of turn.
+    s = endTurn(s);
+    expect(perm(s, 'Archer')!.card.oracleText).toBe('');
+  });
+
+  it('Hope of Ghirapur: the player it dealt combat damage can\'t cast noncreature spells until your next turn', () => {
+    let s = board({ mine: [real('Hope of Ghirapur')], oppHand: [spell('Shock', '{0}', 'Shock deals 2 damage to any target.'), creature('Elf', 1, 1, { manaCost: '{0}' })] });
+    const hope = iidOf(s, 'Hope of Ghirapur');
+    expect(errorOf(() => apply(s, { type: 'activate', iid: hope, index: 0, targets: [[{ kind: 'player', player: 1 }]] }))).not.toBeNull();
+    s = apply(s, { type: 'pass' });
+    for (let i = 0; i < 5 && (s.priority || s.step !== 'attack'); i++) s = apply(s, { type: 'pass' });
+    s = apply(s, { type: 'declareAttackers', attackers: [hope] });
+    for (let i = 0; i < 20 && s.step !== 'main2'; i++) s = !s.priority && s.step === 'block' ? apply(s, { type: 'declareBlockers', blocks: {} }) : apply(s, { type: 'pass' });
+    s = resolve(apply(s, { type: 'activate', iid: hope, index: 0, targets: [[{ kind: 'player', player: 1 }]] }));
+    expect(perm(s, 'Hope of Ghirapur')).toBeUndefined();
+    expect(s.players[1].noNoncreatureUntil).toBe(0);
+    s = endTurn(s);
+    // The opponent's turn: the Shock can't be cast, the Elf can.
+    expect(canCastNow(s, 1, s.players[1].hand.find((c) => c.card.name === 'Shock')!.card)).toBe(false);
+    expect(canCastNow(s, 1, s.players[1].hand.find((c) => c.card.name === 'Elf')!.card)).toBe(true);
+    s = endTurn(s);
+    expect(s.players[1].noNoncreatureUntil).toBeUndefined();
+  });
+
+  it('Talon Gates of Madara: {4} from the hand onto the battlefield; a creature phases out until its controller\'s untap step', () => {
+    let s = board({ mana: 4, theirs: [bear], hand: [real('Talon Gates of Madara')] });
+    s = apply(s, { type: 'channel', iid: 'h0' });
+    s = resolve(s);
+    if (s.pending?.choice.kind === 'targets') s = resolve(apply(s, { type: 'choose', answer: { kind: 'targets', targets: target(s, 'Bear') } }));
+    expect(perm(s, 'Talon Gates of Madara')).toBeDefined();
+    expect(s.players[0].landPlayed).toBe(false);
+    expect(perm(s, 'Bear')).toBeUndefined();
+    expect(s.phasedOut?.map((x) => x.card.name)).toEqual(['Bear']);
+    // Back at the start of its controller's turn.
+    s = endTurn(s);
+    expect(perm(s, 'Bear')).toBeDefined();
+  });
+
+  it('Defend the Rider\'s Pilot crews as though its power were 2 greater; Jeweled Amulet keeps a mana of the type spent', () => {
+    let s = board({ hand: [real('Defend the Rider', '{0}')], mine: [card({ name: 'Car', typeLine: 'Artifact — Vehicle', power: '4', toughness: '4', oracleText: 'Crew 3' })] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', modes: [1] }));
+    expect(perm(s, 'Pilot')).toBeDefined();
+    perm(s, 'Pilot')!.sick = false;
+    s = apply(s, { type: 'activate', iid: iidOf(s, 'Car'), index: 0 });
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: [iidOf(s, 'Pilot')] } }));
+    expect(isCreature(perm(s, 'Car')!.card)).toBe(true);
+
+    s = board({ mine: [real('Jeweled Amulet'), forest] });
+    const amulet = iidOf(s, 'Jeweled Amulet');
+    expect(unitsOf(s, perm(s, 'Jeweled Amulet')!)).toEqual([]);
+    s = resolve(apply(s, { type: 'activate', iid: amulet, index: 0 }));
+    expect(perm(s, 'Jeweled Amulet')).toMatchObject({ counters: { charge: 1 }, noted: 'G' });
+    // Only once while it has a charge counter.
+    perm(s, 'Jeweled Amulet')!.tapped = false;
+    expect(errorOf(() => apply(s, { type: 'activate', iid: amulet, index: 0 }))).toBe('activationForbidden');
+    expect(unitsOf(s, perm(s, 'Jeweled Amulet')!)).toEqual([['G']]);
+    s = apply(s, { type: 'tapForMana', iid: amulet });
+    expect([s.players[0].pool?.[0].colors, perm(s, 'Jeweled Amulet')!.counters.charge]).toEqual([['G'], 0]);
+  });
+});

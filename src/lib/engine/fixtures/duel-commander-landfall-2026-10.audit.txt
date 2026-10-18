@@ -1,64 +1,3 @@
-NONE     Berserk {G} — Instant
-  ✗ Cast this spell only before the combat damage step.
-      spell not simulated
-  ✗ Target creature gains trample and gets +X/+0 until end of turn, where…
-      spell not simulated
-NONE     Bounty of the Hunt {3}{G}{G} — Instant
-  ✗ You may exile a green card from your hand rather than pay this spell'…
-      spell not simulated
-  ✗ Distribute three +1/+1 counters among one, two, or three target creat…
-      spell not simulated
-NONE     Embiggen {G} — Instant
-  ✗ Until end of turn, target non-Brushwagg creature gets +1/+1 for each …
-      spell not simulated
-NONE     Hope of Ghirapur {1} — Legendary Artifact Creature — Thopter
-  ✓ Flying
-      keyword
-  ✗ Sacrifice Hope of Ghirapur: Until your next turn, target player who w…
-      activated ability, effect not simulated
-NONE     Jeweled Amulet {0} — Artifact
-  ? {1}, {T}: Put a charge counter on this artifact. Note the type of man…
-      activated ability with a cost or restriction not understood
-  ? {T}, Remove a charge counter from this artifact: Add one mana of this…
-      mana ability not understood
-NONE     Legolas's Quick Reflexes {G} — Instant
-  ✓ Split second
-      keyword
-  ✗ Untap target creature. Until end of turn, it gains reach, hexproof, a…
-      spell not simulated
-NONE     Royal Treatment {G} — Instant
-  ✗ Target creature you control gains hexproof until end of turn. Create …
-      spell not simulated
-NONE     Scale Up {G} — Sorcery
-  ✗ Overload {4}{G}{G}
-      keyword not simulated: overload
-  ✗ Until end of turn, target creature you control becomes a green Wurm w…
-      spell not simulated
-NONE     Wild Shape {G} — Instant
-  ✗ Choose one. Until end of turn, target creature you control has that b…
-      spell not simulated
-  ✗ • 1/3 Turtle with hexproof.
-      spell not simulated
-  ✗ • 1/5 Spider with reach.
-      spell not simulated
-  ✗ • 3/3 Elephant with trample.
-      spell not simulated
-PARTIAL  Defend the Rider {G} — Instant
-  ✓ Choose one —
-      modal: choose 1–1
-  ✓ • Target permanent you control gains hexproof and indestructible unti…
-      mode
-  ✗ • Create a 1/1 colorless Pilot creature token with "This token saddle…
-      mode not simulated (can't be chosen)
-PARTIAL  Talon Gates of Madara  — Land — Gate
-  ✗ When this land enters, up to one target creature phases out.
-      trigger (enters), effect not simulated
-  ✓ {T}: Add {C}.
-      mana: C
-  ✓ {1}, {T}: Add one mana of any color.
-      mana: any color, paying {1} with other mana (chosen automatically when paying)
-  ✗ {4}: Put this card from your hand onto the battlefield.
-      activated ability, effect not simulated
 OK       Adventuring Gear {1} — Artifact — Equipment
   ✓ Landfall — Whenever a land you control enters, equipped creature gets…
       trigger (enters) → pump
@@ -77,6 +16,11 @@ OK       Become Immense {5}{G} — Instant
       keyword
   ✓ Target creature gets +6/+6 until end of turn.
       spell → pump (1 target)
+OK       Berserk {G} — Instant
+  ✓ Cast this spell only before the combat damage step.
+      spell → doublePower+destroyAtEnd (1 target)
+  ✓ Target creature gains trample and gets +X/+0 until end of turn, where…
+      spell → doublePower+destroyAtEnd (1 target)
 OK       Birds of Paradise {G} — Creature — Bird
   ✓ Flying
       keyword
@@ -93,6 +37,11 @@ OK       Boseiju, Who Endures  — Legendary Land
       mana: G
   ✓ Channel — {1}{G}, Discard this card: Destroy target artifact, enchant…
       channel (from hand) → destroy+search (1 target), {1} less per legendary creature
+OK       Bounty of the Hunt {3}{G}{G} — Instant
+  ✓ You may exile a green card from your hand rather than pay this spell'…
+      spell → distributeCounters (1 target)
+  ✓ Distribute three +1/+1 counters among one, two, or three target creat…
+      spell → distributeCounters (1 target)
 OK       Bridgeworks Battle // Tanglespan Bridgeworks {2}{G} — Sorcery // Land (other faces not audited)
   ✓ Target creature you control gets +2/+2 until end of turn. It fights u…
       spell → pump+fight (2 targets)
@@ -122,6 +71,13 @@ OK       Crop Rotation {G} — Instant
       additional cost: sacrifice
   ✓ Search your library for a land card, put that card onto the battlefie…
       spell → search
+OK       Defend the Rider {G} — Instant
+  ✓ Choose one —
+      modal: choose 1–1
+  ✓ • Target permanent you control gains hexproof and indestructible unti…
+      mode
+  ✓ • Create a 1/1 colorless Pilot creature token with "This token saddle…
+      mode
 OK       Delighted Halfling {G} — Creature — Halfling Citizen
   ✓ {T}: Add {C}.
       mana: C
@@ -147,6 +103,9 @@ OK       Elvish Reclaimer {G} — Creature — Elf Warrior
 OK       Elvish Spirit Guide {2}{G} — Creature — Elf Spirit
   ✓ Exile this card from your hand: Add {G}.
       mana: G, exiling it from the hand (spent last)
+OK       Embiggen {G} — Instant
+  ✓ Until end of turn, target non-Brushwagg creature gets +1/+1 for each …
+      spell → embiggen (1 target)
 OK       Escape Tunnel  — Land
   ✓ {T}, Sacrifice this land: Search your library for a basic land card, …
       activated → search
@@ -231,16 +190,31 @@ OK       Hobbit Hole  — Land
       activated → search
   ✓ Halflingcycling {4}
       keyword
+OK       Hope of Ghirapur {1} — Legendary Artifact Creature — Thopter
+  ✓ Flying
+      keyword
+  ✓ Sacrifice Hope of Ghirapur: Until your next turn, target player who w…
+      activated → noNoncreatureSpells (1 target)
 OK       Invigorate {2}{G} — Instant
   ✓ If you control a Forest, rather than pay this spell's mana cost, you …
       spell → pump (1 target)
   ✓ Target creature gets +4/+4 until end of turn.
       spell → pump (1 target)
+OK       Jeweled Amulet {0} — Artifact
+  ✓ {1}, {T}: Put a charge counter on this artifact. Note the type of man…
+      activated → chargeAmulet
+  ✓ {T}, Remove a charge counter from this artifact: Add one mana of this…
+      mana: one mana of the type noted, removing a charge counter
 OK       Jund Panorama  — Land
   ✓ {T}: Add {C}.
       mana: C
   ✓ {1}, {T}, Sacrifice this land: Search your library for a basic Swamp,…
       activated → search
+OK       Legolas's Quick Reflexes {G} — Instant
+  ✓ Split second
+      keyword
+  ✓ Untap target creature. Until end of turn, it gains reach, hexproof, a…
+      spell → untap+reshape (1 target)
 OK       Llanowar Elves {G} — Creature — Elf Druid
   ✓ {T}: Add {G}.
       mana: G
@@ -284,6 +258,14 @@ OK       Promising Vein  — Land — Cave
 OK       Ranger's Guile {G} — Instant
   ✓ Target creature you control gets +1/+1 and gains hexproof until end o…
       spell → pump (1 target)
+OK       Royal Treatment {G} — Instant
+  ✓ Target creature you control gains hexproof until end of turn. Create …
+      spell → pump+role (1 target)
+OK       Scale Up {G} — Sorcery
+  ✓ Overload {4}{G}{G}
+      keyword
+  ✓ Until end of turn, target creature you control becomes a green Wurm w…
+      spell → reshape (1 target)
 OK       Scythecat Cub {1}{G} — Creature — Cat
   ✓ Trample
       keyword
@@ -327,6 +309,15 @@ OK       Sylvan Safekeeper {G} — Creature — Human Wizard
 OK       Sylvan Scrying {1}{G} — Sorcery
   ✓ Search your library for a land card, reveal it, put it into your hand…
       spell → search
+OK       Talon Gates of Madara  — Land — Gate
+  ✓ When this land enters, up to one target creature phases out.
+      trigger (enters) → phaseOut (1 target)
+  ✓ {T}: Add {C}.
+      mana: C
+  ✓ {1}, {T}: Add one mana of any color.
+      mana: any color, paying {1} with other mana (chosen automatically when paying)
+  ✓ {4}: Put this card from your hand onto the battlefield.
+      channel (from hand) → putSelfFromHand
 OK       Tamiyo's Safekeeping {G} — Instant
   ✓ Target permanent you control gains hexproof and indestructible until …
       spell → pump+gainLife (1 target)
@@ -377,6 +368,15 @@ OK       Wild Growth {G} — Enchantment — Aura
       keyword
   ✓ Whenever enchanted land is tapped for mana, its controller adds an ad…
       mana: G more when the enchanted permanent is tapped for mana
+OK       Wild Shape {G} — Instant
+  ✓ Choose one. Until end of turn, target creature you control has that b…
+      modal: choose 1–1
+  ✓ • 1/3 Turtle with hexproof.
+      mode
+  ✓ • 1/5 Spider with reach.
+      mode
+  ✓ • 3/3 Elephant with trample.
+      mode
 OK       Windswept Heath  — Land
   ✓ {T}, Pay 1 life, Sacrifice this land: Search your library for a Fores…
       activated → search
@@ -387,5 +387,5 @@ OK       Yavimaya, Cradle of Growth  — Legendary Land
   ✓ Each land is a Forest in addition to its other land types.
       rule for the game: landsAreForests
 
-88 cards: 77 ok, 2 partial, 9 not simulated, 0 can't be cast
+88 cards: 88 ok, 0 partial, 0 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

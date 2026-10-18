@@ -52,6 +52,7 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
     case 'spellName': return t.game.choice.spellName({ card: card(String(p.card)) });
     case 'cardName': return t.game.choice.cardName({ card: card(String(p.card)) });
     case 'taxName': return t.game.choice.taxName({ card: card(String(p.card)) });
+    case 'distributeTwo': return t.game.choice.distributeTwo({ card: card(String(p.card)) });
     case 'enlist': return t.game.choice.enlist({ card: card(String(p.card)) });
     case 'crewCost': return t.game.choice.crewCost({ card: card(String(p.card)), n });
     case 'dig': return t.game.choice.dig({ n });

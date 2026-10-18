@@ -548,12 +548,22 @@ colors ("a green creature card").
 Approximations: Grow Extra Arms never costs {1} less (a Spider target); Invigorate's life goes to the first opponent;
 Elven Passage always beholds an Elf when it can; Brokers Hideout's search happens even if it couldn't be sacrificed.
 
-Still not simulated, most played first:
-- [ ] Berserk (+X/+0 where X is its power, destroyed at the end step if it attacked), Embiggen, Bounty of the Hunt
-  (distributed counters removed at cleanup), Scale Up (overload), Wild Shape (modes setting base P/T and a type)
-- [ ] Royal Treatment (Role tokens), Legolas's Quick Reflexes (a granted trigger), Defend the Rider's Pilot token
-  (saddle), Hope of Ghirapur, Talon Gates of Madara (phasing; put onto the battlefield from the hand), Jeweled Amulet
-  (noting the type of mana spent)
+Second pass: the whole deck is simulated. Berserk (cast only before combat damage; double power and trample; destroyed
+at the next end step if it attacked), Embiggen (+1/+1 per supertype, card type and subtype), Bounty of the Hunt
+(counters distributed among one to three creatures, the caster choosing which of two gets two; removed at the next
+cleanup), Scale Up (a green Wurm with base 6/4; overload: each creature you control), Wild Shape (base power and
+toughness, creature type and keyword until end of turn), Royal Treatment (Role tokens: Royal and Monster; a new Role of
+the same player replaces the old one), Legolas's Quick Reflexes (a granted "becomes tapped" trigger), Hope of Ghirapur
+(players it dealt combat damage this turn; no noncreature spells until your next turn), Talon Gates of Madara (phasing:
+the permanent and what's attached to it leave until their controller's next untap step; "{4}: Put this card from your
+hand onto the battlefield", like channel, not a land play), Defend the Rider's Pilot (crews as though its power were 2
+greater), Jeweled Amulet (the type of mana spent noted, one mana of it later). 24 bot-vs-bot games with the deck run to
+the end without errors.
+
+Approximations: Berserk can't be cast in any second main phase (combat damage is then over); Jeweled Amulet notes the
+first mana spent (a mana that could be several colors: its first one); phased-out permanents are simply set aside
+(effects that count "until your next turn" from them aren't adjusted); saddle isn't simulated (the Pilot only crews).
+The bot never activates Hope of Ghirapur or Talon Gates' {4} ability.
 
 ## Comprehensive Rules audit (CR 2026-09-25)
 

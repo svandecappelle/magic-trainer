@@ -1,5 +1,5 @@
 import {
-  abilityMaxX, activatable, activationProblem, canPayAbility, actor, castSource, channelCost, crewOptions, firstOpponent, mulliganBottom, isActivePlayer, opponentsOf, teamOf, canAttack, castCost, castOptions, castSources, findInGraveyard, landFaces, manaSources, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
+  abilityMaxX, activatable, activationProblem, canPayAbility, actor, castSource, channelCost, crewOptions, crewPower, firstOpponent, mulliganBottom, isActivePlayer, opponentsOf, teamOf, canAttack, castCost, castOptions, castSources, findInGraveyard, landFaces, manaSources, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
   legalTargets, matching, maxX, powerOf, toughnessOf, xCount,
   type Action, type Answer, type CastOption, type CardInst, type Choice, type GameState, type Permanent, type PlayerId, type StackItem, type Target, type Triggered,
 } from './engine';
@@ -431,9 +431,9 @@ function crewVehicles(s: GameState, me: PlayerId): Action | null {
     const n = activatedOf(v.card)[index].cost.crew!;
     let power = 0;
     let lost = 0;
-    for (const c of crewOptions(s, v).sort((a, b) => powerOf(a) - powerOf(b))) {
+    for (const c of crewOptions(s, v).sort((a, b) => crewPower(a) - crewPower(b))) {
       if (power >= n) break;
-      power += powerOf(c);
+      power += crewPower(c);
       if (canAttack(c)) lost += powerOf(c);
     }
     if (power >= n && powerOf(v) > lost) return { type: 'activate', iid: v.iid, index };
@@ -1032,6 +1032,11 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
         // Copy the best creature on the battlefield (Clever Impersonator: the best permanent).
         const worth = (c: Card) => (isCreature(c) ? creatureValue(c) : cardWorth(c));
         const best = [...options].sort((a, b) => worth(b.card) - worth(a.card))[0];
+        return { kind: 'cards', iids: best ? [best.iid] : [] };
+      }
+      if (choice.purpose === 'distributeTwo') {
+        // Bounty of the Hunt: two counters on the best creature.
+        const best = [...options].sort((a, b) => creatureValue(b.card) - creatureValue(a.card))[0];
         return { kind: 'cards', iids: best ? [best.iid] : [] };
       }
       if (choice.purpose === 'enlist') {

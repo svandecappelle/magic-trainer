@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, counterMana, choosesColor, diamondMana, sacrificeMana, mayStayTapped, gainsLifeFromCombatDamageTaken, restrictedMana, type RestrictedMana, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, hasSplitSecond, type TokenSpec, vanishingOf, hasEnlist, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, counterMana, choosesColor, diamondMana, sacrificeMana, mayStayTapped, gainsLifeFromCombatDamageTaken, restrictedMana, type RestrictedMana, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, hasSplitSecond, crewBonus, ROLES, type TokenSpec, vanishingOf, hasEnlist, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type AltCost, type CastInfo, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -49,6 +49,10 @@ export interface Permanent extends CardInst {
   controller: PlayerId;
   /** Phyrexian Devourer: its "power is 7 or greater" state trigger is waiting (it triggers again once it drops below). */
   stateTriggered?: boolean;
+  /** Berserk: the last turn it attacked. */
+  attackedOnTurn?: number;
+  /** Jeweled Amulet: the type of mana last spent on its charge ability. */
+  noted?: Color;
   /** Scythecat Cub: how many times its ability resolved on turn `turn`. */
   resolved?: { turn: number; n: number };
   /** Biomancer's Familiar: its next adapt this turn (that turn number) ignores its +1/+1 counters. */
@@ -116,6 +120,10 @@ export interface StackItem extends CardInst {
   noColoredMana?: boolean;
   /** Split second (Samut gives it to its controller's instants and sorceries): nothing but mana abilities meanwhile. */
   splitSecond?: boolean;
+  /** Talon Gates of Madara: the card in its controller's hand this ability puts onto the battlefield. */
+  fromHand?: string;
+  /** Jeweled Amulet: the type of mana spent on the ability. */
+  notedMana?: Color;
   /** Might of Old Krosa: cast during its controller's main phase. */
   castInMain?: boolean;
   /** Green Sun's Zenith: shuffled into its owner's library as it resolves. */
@@ -206,6 +214,8 @@ export interface PlayerState {
   landPlayed: boolean;
   /** Lands played this turn (Exploration allows a second one). */
   landsThisTurn?: number;
+  /** Hope of Ghirapur: this player can't cast noncreature spells until the turn of this player begins. */
+  noNoncreatureUntil?: PlayerId;
   /** Groundswell's landfall: the last turn a land entered the battlefield under their control. */
   landEnteredOnTurn?: number;
   /** Life gained and lost this turn ("if you gained life this turn"). */
@@ -327,6 +337,7 @@ export type ChoicePurpose =
   | 'discardLandInstead' // Mox Diamond: which land card to discard, or none (it goes to the graveyard)
   | 'mayPay' // Mana Vault: "you may pay {4}. If you do, …"
   | 'enlist' // enlist: which creature to tap as this one attacks, or none
+  | 'distributeTwo' // Bounty of the Hunt with two targets: which one gets two counters
   | 'triggerMode'; // a modal trigger ("When … enters, choose one —"): which mode
 
 /** Where "arrange" choices may put cards (scry: top/bottom, surveil: top/graveyard). */
@@ -475,6 +486,9 @@ export type LogEntry =
   | { k: 'becomesCreature'; card: string }
   | { k: 'crewed'; card: string }
   | { k: 'shuffledIn'; card: string }
+  | { k: 'reshaped'; card: string }
+  | { k: 'phasedOut'; card: string }
+  | { k: 'phasedIn'; card: string }
   | { k: 'unblockable'; card: string }
   | { k: 'untapped'; card: string }
   | { k: 'toHand'; card: string }
@@ -600,6 +614,14 @@ export interface GameState {
   returnAtEnd?: { iid: string; owner: PlayerId; source?: string; controller: PlayerId; counterIfYours: boolean }[];
   /** Counter for ability ids on the stack. */
   abilities?: number;
+  /** Berserk: creatures destroyed at the next end step (if they attacked this turn). */
+  destroyAtEnd?: { iid: string; ifAttacked: boolean }[];
+  /** Bounty of the Hunt: +1/+1 counters removed at the next cleanup step. */
+  countersAtCleanup?: { iid: string; n: number }[];
+  /** Hope of Ghirapur: the players each permanent dealt combat damage to this turn. */
+  combatDamagedBy?: Record<string, PlayerId[]>;
+  /** Talon Gates of Madara: phased-out permanents, back at their controller's next untap step. */
+  phasedOut?: Permanent[];
   /** Random generator state, so shuffles during the game are reproducible. Secret: redacted for clients. */
   seed: number;
 }
@@ -848,6 +870,9 @@ function ownUnits(s: GameState, perm: Permanent, spell?: Card, ability?: Card): 
     units = Array.from({ length: n }, () => ['U'] as Color[]);
   } else if (state === 'luck') {
     if (perm.counters.luck) units = [['W', 'U', 'B', 'R', 'G']];
+  } else if (state === 'noted') {
+    // Jeweled Amulet: one mana of the noted type, with a charge counter to remove.
+    units = perm.counters.charge && perm.noted ? [[perm.noted]] : [];
   } else if (state === 'depletion') {
     // Hickory Woodlot: {G}{G} while it has a depletion counter to remove.
     units = perm.counters.depletion ? [['G'], ['G']] : [];
@@ -1056,6 +1081,15 @@ function castTimingFor(s: GameState, p: PlayerId, inst: CardInst, card: Card): b
   if (s.castNow?.player === p && s.castNow.iid === inst.iid) return true;
   if (inst.castFor?.sorcery) return !s.priority && isMainStep(s) && isActivePlayer(s, p);
   return castTimingOk(s, p, card);
+}
+
+/**
+ * Restrictions on one spell: Berserk's "Cast this spell only before the combat damage step"; Hope of Ghirapur's "can't
+ * cast noncreature spells".
+ */
+function spellForbidden(s: GameState, p: PlayerId, card: Card): boolean {
+  if (castInfo(card).beforeCombatDamage && s.step === 'main2') return true;
+  return s.players[p].noNoncreatureUntil !== undefined && !isCreature(card);
 }
 
 function castTimingOk(s: GameState, p: PlayerId, card: Card): boolean {
@@ -1400,7 +1434,7 @@ export const isMainStep = (s: GameState) => s.step === 'main1' || s.step === 'ma
 
 /** Can `p` legally cast `card` right now (timing and mana; targets aside)? */
 export function canCastNow(s: GameState, p: PlayerId, card: Card): boolean {
-  if (isLandCard(card) || s.mulligan || s.pending || actor(s) !== p || castingForbidden(s, p) || spellNameStopped(s, card.name)) return false;
+  if (isLandCard(card) || s.mulligan || s.pending || actor(s) !== p || castingForbidden(s, p) || spellNameStopped(s, card.name) || spellForbidden(s, p, card)) return false;
   return castTimingOk(s, p, card) && canPay(s, p, card);
 }
 
@@ -1446,7 +1480,7 @@ export function castOptions(s: GameState, p: PlayerId, iid: string): CastOption[
   for (const face of faces) {
     const c = faceCard(inst.card, face);
     if (isLand(c)) continue;
-    if (!castTimingFor(s, p, inst, c)) continue;
+    if (!castTimingFor(s, p, inst, c) || spellForbidden(s, p, c)) continue;
     const info = castInfo(inst.card, face);
     // Additional costs: understood (for a permanent) and payable.
     if (info.unknownCost && !isInstantOrSorcery(c)) continue;
@@ -1566,10 +1600,12 @@ export function activationProblem(s: GameState, p: PlayerId, perm: Permanent, in
   if (spec.cost.exileTop && !s.players[p].library.length) return 'nothingToExile';
   // Threshold (Centaur Garden): "Activate only if there are seven or more cards in your graveyard."
   if (spec.minGraveyard && s.players[p].graveyard.length < spec.minGraveyard) return 'threshold';
+  // Jeweled Amulet: "Activate only if there are no charge counters on this artifact."
+  if (spec.noCounter && perm.counters[spec.noCounter]) return 'activationForbidden';
   if (spec.cost.exileFromGraveyard && s.players[p].graveyard.filter((c) => cardMatches(c.card, spec.cost.exileFromGraveyard!)).length < (spec.cost.exileCount ?? 1)) return 'nothingToExile';
   if (spec.cost.discard && discardOptions(s, p, spec).length < spec.cost.discard) return 'nothingToDiscard';
   if (spec.cost.sacrifice && !sacrificeOptions(s, perm, spec).length) return 'nothingToSacrifice';
-  if (spec.cost.crew !== undefined && crewOptions(s, perm).reduce((n, x) => n + powerOf(x), 0) < spec.cost.crew) return 'notEnoughCrew';
+  if (spec.cost.crew !== undefined && crewOptions(s, perm).reduce((n, x) => n + crewPower(x), 0) < spec.cost.crew) return 'notEnoughCrew';
   if (!findPayment(sourcesFor(s, perm, spec), abilityCost(s, perm, spec, x))) return 'notEnoughMana';
   return null;
 }
@@ -1736,6 +1772,12 @@ function fitsSpec(s: GameState, caster: PlayerId, spec: TargetSpec, t: Target, s
   if (spec.filter.other && selfIid && t.kind === 'permanent' && (t.iid === selfIid || s.stack.find((i) => i.iid === selfIid)?.source === t.iid)) return false;
   if (t.kind === 'player') {
     if (spec.kind !== 'player' && spec.kind !== 'any') return false;
+    // Hope of Ghirapur: "target player who was dealt combat damage by Hope of Ghirapur this turn" (`selfIid`: the
+    // source, or its ability on the stack).
+    if (spec.filter.dealtCombatDamageBySource) {
+      const source = s.stack.find((i) => i.iid === selfIid)?.source ?? selfIid;
+      if (!source || !s.combatDamagedBy?.[source]?.includes(t.player)) return false;
+    }
     if (spec.filter.controller === 'you') return t.player === caster;
     if (spec.filter.controller === 'opponent') return teamOf(s, t.player) !== teamOf(s, caster);
     return t.player >= 0 && t.player < s.players.length;
@@ -1984,8 +2026,17 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
     delete d.players[q].landsThisTurn;
     // "Until your next turn" ends.
     delete d.players[q].sorceryFlash;
+    for (const ps of d.players) if (ps.noNoncreatureUntil === q) delete ps.noNoncreatureUntil;
+    // Phasing: its controller's permanents phase in (untap step), as they were.
+    const back = (d.phasedOut ?? []).filter((x) => x.controller === q);
+    if (back.length) {
+      d.phasedOut = d.phasedOut!.filter((x) => !back.includes(x));
+      d.battlefield.push(...back);
+      for (const x of back) log(d, { k: 'phasedIn', card: x.card.name });
+    }
     d.players[q].turns = (d.players[q].turns ?? 0) + 1;
   }
+  delete d.combatDamagedBy;
   for (const ps of d.players) {
     delete ps.drawnThisTurn;
     delete ps.spellsThisTurn;
@@ -2065,6 +2116,14 @@ function finishCleanup(d: GameState, p: PlayerId, iids: string[]) {
 }
 
 function finishTurn(d: GameState) {
+  // Bounty of the Hunt: the +1/+1 counters put "this way" are removed.
+  for (const { iid, n } of d.countersAtCleanup ?? []) {
+    const perm = findPermanent(d, iid);
+    if (!perm?.counters['+1/+1']) continue;
+    perm.counters = { ...perm.counters, '+1/+1': Math.max(0, perm.counters['+1/+1'] - n) };
+    log(d, { k: 'counterRemoved', card: perm.card.name, counter: '+1/+1' });
+  }
+  delete d.countersAtCleanup;
   // Day of Black Sun: "loses all abilities until end of turn".
   for (const loss of (d.abilityLoss ?? []).filter((x) => x.by === 'endOfTurn')) {
     const back = findPermanent(d, loss.iid);
@@ -2253,6 +2312,7 @@ function tapForManaOnly(d: GameState, perm: Permanent) {
   // Gemstone Mine: a mining counter removed; sacrificed when none is left.
   // Hickory Woodlot: the same with depletion counters.
   const depleted = stateMana(perm.card);
+  if (depleted === 'noted') perm.counters = { ...perm.counters, charge: Math.max(0, (perm.counters.charge ?? 0) - 1) };
   if (depleted === 'mining' || depleted === 'depletion') {
     perm.counters = { ...perm.counters, [depleted]: Math.max(0, (perm.counters[depleted] ?? 0) - 1) };
     if (!perm.counters[depleted]) sacrifice(d, perm);
@@ -2499,6 +2559,37 @@ function animate(d: GameState, perm: Permanent, e: Extract<Effect, { kind: 'anim
   log(d, { k: 'becomesCreature', card: own.name });
 }
 
+/**
+ * Until end of turn (Scale Up, Wild Shape, Legolas's Quick Reflexes): base power and toughness, creature types replaced,
+ * colors, keywords and an ability gained. Its card goes back at end of turn (like an animation).
+ */
+function reshape(d: GameState, perm: Permanent, e: { power?: number; toughness?: number; subtypes?: string[]; colors?: Color[]; keywords: Keyword[]; text?: string }) {
+  if (e.power !== undefined) perm.boosts.push({ power: 0, toughness: 0, keywords: [], until: 'endOfTurn', setBase: { power: e.power, toughness: e.toughness ?? e.power } });
+  if (e.keywords.length) perm.boosts.push({ power: 0, toughness: 0, keywords: e.keywords, until: 'endOfTurn' });
+  if (e.subtypes || e.colors || e.text) {
+    const own = perm.card;
+    perm.unanimated ??= own;
+    const types = own.typeLine.split(' // ')[0].split(' — ')[0];
+    perm.card = {
+      ...own,
+      ...(e.subtypes ? { typeLine: `${types} — ${e.subtypes.join(' ')}` } : {}),
+      ...(e.colors ? { colors: e.colors } : {}),
+      ...(e.text ? { oracleText: `${own.oracleText}\n${e.text}` } : {}),
+    };
+  }
+  log(d, { k: 'reshaped', card: perm.card.name });
+}
+
+/** Phasing out: the permanent and what's attached to it are treated as though they don't exist (no "leaves" trigger). */
+function phaseOut(d: GameState, perm: Permanent) {
+  const all = [perm, ...d.battlefield.filter((x) => x.attachedTo === perm.iid)];
+  d.battlefield = d.battlefield.filter((x) => !all.includes(x));
+  d.attackers = d.attackers.filter((iid) => iid !== perm.iid);
+  for (const [a, bs] of Object.entries(d.blocks)) d.blocks[a] = bs.filter((b) => b !== perm.iid);
+  (d.phasedOut ??= []).push(...all);
+  log(d, { k: 'phasedOut', card: perm.card.name });
+}
+
 /** The card a permanent leaves the battlefield as: its printed card, not a face, an animation or gained abilities. */
 const printedCard = (perm: Permanent) => perm.printed ?? perm.reconfigured ?? perm.unanimated ?? perm.card;
 
@@ -2627,6 +2718,9 @@ function askManaColor(d: GameState): boolean {
 }
 
 /** Untapped creatures that can crew `perm` (not itself). */
+/** Power for crewing: Defend the Rider's Pilot crews "as though its power were 2 greater". */
+export const crewPower = (x: Permanent) => powerOf(x) + crewBonus(x.card);
+
 export const crewOptions = (s: GameState, perm: Permanent) =>
   s.battlefield.filter((x) => x.controller === perm.controller && x.iid !== perm.iid && !x.tapped && isCreature(x.card));
 
@@ -2747,6 +2841,16 @@ function fireStep(d: GameState, on: StepEvent) {
       log(d, { k: 'exiled', card: perm.card.name });
     }
     delete d.warpAtEnd;
+  }
+  // Berserk: "destroy that creature if it attacked this turn".
+  if (on === 'endStep' && d.destroyAtEnd?.length) {
+    for (const { iid, ifAttacked } of d.destroyAtEnd) {
+      const perm = findPermanent(d, iid);
+      if (!perm || (ifAttacked && perm.attackedOnTurn !== d.turn) || hasKw(perm, 'indestructible')) continue;
+      removePermanent(d, perm, 'graveyard');
+      log(d, { k: 'destroyed', card: perm.card.name });
+    }
+    delete d.destroyAtEnd;
   }
   // Glimpse the Impossible: the cards still exiled go to the graveyard, then an Eldrazi Spawn for each.
   if (on === 'endStep' && d.impulseAtEnd?.length) {
@@ -3132,6 +3236,7 @@ function dealDamage(d: GameState, source: CardInst, controller: PlayerId, target
     addPoison(d, target, amount);
     log(d, { k: 'damagePlayer', card: source.card.name, n: amount, p: target });
   } else if (typeof target === 'number') {
+    if (combat) ((d.combatDamagedBy ??= {})[source.iid] ??= []).push(target);
     changeLife(d, target, -amount);
     log(d, { k: 'damagePlayer', card: source.card.name, n: amount, p: target });
     // Commander damage: combat damage from a commander, counted per commander and per player.
@@ -3445,13 +3550,95 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       }
       break;
     case 'doublePower':
-      // Tifa Lockhart: "double her power": +X/+0, X her power.
+      // Tifa Lockhart: "double her power": +X/+0, X her power; Berserk: and trample.
       for (const perm of perms) {
         const n = Math.max(0, powerOf(perm));
-        perm.boosts.push({ power: n, toughness: 0, keywords: [], until: 'endOfTurn' });
-        log(d, { k: 'pump', card: perm.card.name, power: n, toughness: 0, keywords: [] });
+        perm.boosts.push({ power: n, toughness: 0, keywords: e.keywords ?? [], until: 'endOfTurn' });
+        log(d, { k: 'pump', card: perm.card.name, power: n, toughness: 0, keywords: e.keywords ?? [] });
       }
       break;
+    case 'destroyAtEnd':
+      for (const perm of perms) (d.destroyAtEnd ??= []).push({ iid: perm.iid, ifAttacked: e.ifAttacked });
+      break;
+    case 'embiggen':
+      // Embiggen: each supertype, card type and subtype ("Legendary Creature — Elf Druid": 4).
+      for (const perm of perms) {
+        const n = perm.card.typeLine.split(' // ')[0].replace(' — ', ' ').split(' ').filter((w) => w && w !== 'Token').length;
+        perm.boosts.push({ power: n, toughness: n, keywords: [], until: 'endOfTurn' });
+        log(d, { k: 'pump', card: perm.card.name, power: n, toughness: n, keywords: [] });
+      }
+      break;
+    case 'distributeCounters': {
+      // Bounty of the Hunt: three targets get one each, one gets all three; with two, the caster says which gets two.
+      const chosen = affected(d, r, { slot: 0 }).filter((x): x is Permanent => typeof x !== 'number' && isPermanent(x));
+      if (!chosen.length) break;
+      let split = chosen.map(() => Math.floor(e.n / chosen.length));
+      if (chosen.length === 2) {
+        if (answer?.kind !== 'cards') return { kind: 'cards', player: caster, purpose: 'distributeTwo', min: 1, max: 1, options: chosen, params: { card: item.card.name, n: e.n - 1 } };
+        const two = answer.iids;
+        split = chosen.map((x) => (two.includes(x.iid) ? e.n - 1 : 1));
+      }
+      chosen.forEach((perm, i) => {
+        const n = split[i];
+        if (!n) return;
+        perm.counters = { ...perm.counters, '+1/+1': (perm.counters['+1/+1'] ?? 0) + n };
+        log(d, { k: 'counters', card: perm.card.name, counter: '+1/+1', n });
+        countersPut(d, perm);
+        if (e.untilCleanup) (d.countersAtCleanup ??= []).push({ iid: perm.iid, n });
+      });
+      break;
+    }
+    case 'reshape':
+    case 'reshapeAll':
+      // Scale Up, Wild Shape, Legolas's Quick Reflexes: until end of turn.
+      for (const perm of e.kind === 'reshape' ? perms : matching(d, caster, e.which).filter((x) => x.controller === caster)) reshape(d, perm, e);
+      break;
+    case 'selfBite': {
+      // Legolas's granted trigger: the creature deals damage equal to its power.
+      const src = item.source ? findPermanent(d, item.source) : undefined;
+      if (src) for (const perm of perms) dealDamage(d, src, src.controller, perm, powerOf(src));
+      break;
+    }
+    case 'role':
+      // Royal Treatment: a Role Aura token attached to it; another Role of the same player on it goes to the graveyard.
+      for (const perm of perms) {
+        for (const old of d.battlefield.filter((x) => x.attachedTo === perm.iid && x.controller === caster && /\bRole\b/.test(x.card.typeLine))) {
+          removePermanent(d, old, 'graveyard');
+        }
+        d.abilities = (d.abilities ?? 0) + 1;
+        const name = `${e.role[0].toUpperCase()}${e.role.slice(1)} Role`;
+        const role = enterBattlefield(d, { iid: `token-${d.abilities}`, card: tokenCard({ name, typeLine: 'Token Enchantment — Aura Role', colors: [], keywords: [], oracleText: `Enchant creature\n${ROLES[e.role]}` }) }, caster);
+        role.attachedTo = perm.iid;
+        log(d, { k: 'token', p: caster, card: name, n: 1 });
+      }
+      break;
+    case 'noNoncreatureSpells':
+      // Hope of Ghirapur: until the caster's next turn.
+      for (const q of players) d.players[q].noNoncreatureUntil = caster;
+      break;
+    case 'phaseOut':
+      // Talon Gates of Madara: it (and what's attached to it) leaves the game's view until its controller's untap step.
+      for (const perm of perms) phaseOut(d, perm);
+      break;
+    case 'putSelfFromHand': {
+      // Talon Gates of Madara: "Put this card from your hand onto the battlefield." (if it's still there)
+      const ps = d.players[caster];
+      const inst = ps.hand.find((c) => c.iid === item.fromHand);
+      if (!inst) break;
+      ps.hand = ps.hand.filter((c) => c !== inst);
+      log(d, { k: 'enters', card: inst.card.name });
+      enterBattlefield(d, inst, caster);
+      break;
+    }
+    case 'chargeAmulet': {
+      // Jeweled Amulet: a charge counter, and the type of mana spent noted.
+      const src = item.source ? findPermanent(d, item.source) : undefined;
+      if (!src) break;
+      src.counters = { ...src.counters, charge: (src.counters.charge ?? 0) + 1 };
+      if (item.notedMana) src.noted = item.notedMana;
+      log(d, { k: 'counters', card: src.card.name, counter: 'charge', n: 1 });
+      break;
+    }
     case 'counterOrDouble': {
       // Scythecat Cub: a +1/+1 counter, or the counters doubled the second time it resolves this turn.
       const src = item.source ? findPermanent(d, item.source) : undefined;
@@ -4458,7 +4645,7 @@ function startResolving(d: GameState, reason: WindowReason) {
 
   // Targets are checked again on resolution. If none is still legal, the spell does nothing.
   const spec = specOf(item);
-  const legal = item.targets.map((ts, slot) => ts.filter((t) => spec.targets[slot] && isLegalTarget(d, item.controller, spec.targets[slot], t, item.iid, castCard(item))));
+  const legal = item.targets.map((ts, slot) => ts.filter((t) => spec.targets[slot] && isLegalTarget(d, item.controller, spec.targets[slot], t, item.source ?? item.iid, castCard(item))));
   if (item.targets.some((ts) => ts.length) && legal.every((ts) => !ts.length)) {
     log(d, { k: 'fizzles', card: castCard(item).name });
     if (!item.ability) putAwaySpell(d, item, false);
@@ -4759,6 +4946,7 @@ function declareAttacks(d: GameState, p: PlayerId, ids: string[], pw: Record<str
   // Everything declared becomes attacking at once.
   for (const head of plan) {
     const mine = head.ids.map((iid) => findPermanent(d, iid)).filter((a): a is Permanent => !!a && a.controller === head.p && canAttack(a));
+    for (const a of mine) a.attackedOnTurn = d.turn;
     for (const a of mine) if (!hasKw(a, 'vigilance')) tapPermanent(d, a);
     d.attackers = [...d.attackers, ...mine.map((a) => a.iid)];
     const targets = { ...(d.attackTargets ?? {}) };
@@ -5031,7 +5219,7 @@ export function apply(state: GameState, action: Action): GameState {
         const crew = action.answer.iids.map((iid) => findPermanent(d, iid)!);
         const n = Number(pending.choice.params?.n ?? 0);
         const item = pending.activation!.item;
-        if (crew.reduce((sum, x) => sum + powerOf(x), 0) < n) throw new IllegalAction('notEnoughCrew', { card: item.card.name, n });
+        if (crew.reduce((sum, x) => sum + crewPower(x), 0) < n) throw new IllegalAction('notEnoughCrew', { card: item.card.name, n });
         for (const x of crew) tapPermanent(d, x);
         log(d, { k: 'crewed', card: item.card.name });
         finishActivation(d, item, pending.activation!.named);
@@ -5228,7 +5416,7 @@ export function apply(state: GameState, action: Action): GameState {
       const { inst, from } = src;
       const card = faceCard(inst.card, face);
       if (isLandCard(card)) throw new IllegalAction('notASpell');
-      if (castingForbidden(d, p)) throw new IllegalAction('castingForbidden');
+      if (castingForbidden(d, p) || spellForbidden(d, p, card)) throw new IllegalAction('castingForbidden');
       if (spellNameStopped(d, inst.card.name)) throw new IllegalAction('nameStopped');
       // Malcolm: cast right away, whatever the timing.
       const castNow = d.castNow?.player === p && d.castNow.iid === inst.iid;
@@ -5364,11 +5552,14 @@ export function apply(state: GameState, action: Action): GameState {
       if (!d.priority && !(isMainStep(d) && isActivePlayer(d, p))) throw new IllegalAction('activateTiming');
       const targets = checkTargets(d, p, inst.card, channel.ability, action.targets ?? []);
       if (!pay(d, p, chosenSources(manaSources(d, p), action.pay), channelCost(d, p, inst.card)!)) throw unpaid(action.pay, inst.card.name);
-      me.hand = me.hand.filter((c) => c !== inst);
-      putInZone(d, p, inst, 'graveyard');
+      // Talon Gates of Madara: the card stays in the hand until its ability resolves.
+      if (!channel.keepsCard) {
+        me.hand = me.hand.filter((c) => c !== inst);
+        putInZone(d, p, inst, 'graveyard');
+      }
       d.abilities = (d.abilities ?? 0) + 1;
       // An ability with no effects (Boseiju) still goes on the stack, and resolves "not simulated".
-      finishActivation(d, { iid: `${inst.iid}-channel-${d.abilities}`, card: inst.card, controller: p, targets, ability: channel.ability }, targets.flat().map((t) => targetName(d, t)));
+      finishActivation(d, { iid: `${inst.iid}-channel-${d.abilities}`, card: inst.card, controller: p, targets, ability: channel.ability, ...(channel.keepsCard ? { fromHand: inst.iid } : {}) }, targets.flat().map((t) => targetName(d, t)));
       break;
     }
 
@@ -5380,11 +5571,17 @@ export function apply(state: GameState, action: Action): GameState {
       if (!Number.isInteger(x) || x < 0) throw new IllegalAction('badX');
       const problem = activationProblem(d, p, perm, action.index, x);
       if (problem) throw new IllegalAction(problem, { card: perm.card.name, ...(spec?.minGraveyard ? { n: spec.minGraveyard } : {}) });
-      const targets = checkTargets(d, p, perm.card, spec.ability, action.targets ?? []);
+      const targets = checkTargets(d, p, perm.card, spec.ability, action.targets ?? [], perm.iid);
 
       const first = targets[0]?.[0];
       const equipped = spec.equip && first?.kind === 'permanent' ? findPermanent(d, first.iid) : undefined;
-      if (!pay(d, p, chosenSources(sourcesFor(d, perm, spec), action.pay), abilityCost(d, perm, spec, x, equipped))) throw unpaid(action.pay, perm.card.name);
+      const sources = chosenSources(sourcesFor(d, perm, spec), action.pay);
+      // Jeweled Amulet: "Note the type of mana spent" (the first one; a mana of several possible colors: the first).
+      const amulet = spec.ability.effects.some((e) => e.kind === 'chargeAmulet');
+      const pick = amulet ? planPayment(sources, abilityCost(d, perm, spec, x, equipped))?.[0] : undefined;
+      const pickSource = pick && sources.find((m) => m.iid === pick.iid);
+      const notedMana = pickSource ? (pickSource.units ?? [pickSource.colors])[pick.index]?.[0] : undefined;
+      if (!pay(d, p, sources, abilityCost(d, perm, spec, x, equipped))) throw unpaid(action.pay, perm.card.name);
       if (spec.equip) me.equipsThisTurn = (me.equipsThisTurn ?? 0) + 1;
       if (cardTypes(perm.card).includes('artifact')) me.artifactAbilitiesThisTurn = (me.artifactAbilitiesThisTurn ?? 0) + 1;
       if (spec.cost.tap) tapPermanent(d, perm);
@@ -5405,7 +5602,7 @@ export function apply(state: GameState, action: Action): GameState {
       d.abilities = (d.abilities ?? 0) + 1;
       const item: StackItem = {
         iid: `${perm.iid}-ability-${d.abilities}`, card: perm.card, controller: p, targets, ability: spec.ability, source: perm.iid,
-        ...(spec.cost.mana.includes('{X}') || spec.cost.loyaltyX ? { x } : {}), ...(exiledTop ? { exiledMv: exiledTop.card.cmc } : {}),
+        ...(spec.cost.mana.includes('{X}') || spec.cost.loyaltyX ? { x } : {}), ...(exiledTop ? { exiledMv: exiledTop.card.cmc } : {}), ...(notedMana ? { notedMana } : {}),
       };
       if (spec.cost.crew !== undefined) {
         // Crew N: the player picks the creatures to tap.
