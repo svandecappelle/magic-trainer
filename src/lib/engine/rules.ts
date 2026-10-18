@@ -581,6 +581,11 @@ export type Effect =
   | { kind: 'putSelfFromHand' }
   /** Jeweled Amulet: "Put a charge counter on this artifact. Note the type of mana spent to pay this activation cost." */
   | { kind: 'chargeAmulet' }
+  /**
+   * Necropotence: "Exile the top card of your library face down. Put that card into your hand at the beginning of your
+   * next end step."
+   */
+  | { kind: 'exileTopUntilEndStep' }
   /** Moonshadow: "remove a -1/-1 counter from this creature". */
   | { kind: 'removeCounterSelf'; counter: CounterKind }
   /** Screaming Nemesis: "they can't gain life for the rest of the game" (a player hit). */
@@ -1380,6 +1385,7 @@ export function parseAbilityText(text: string, self?: string, selfIt = true): Ab
     return to && { kind: 'becomeCopy', to };
   });
   scan(new RegExp(AMULET.source, 'g'), () => ({ kind: 'chargeAmulet' }));
+  scan(new RegExp(NECRO.source, 'g'), () => ({ kind: 'exileTopUntilEndStep' }));
   // Tyvar's Stand: "Target creature you control gets +X/+X and gains hexproof and indestructible until end of turn."
   scan(new RegExp(`(${TARGET}) gets \\+X\\/\\+X(?: and gains? ${KEYWORD_LIST})? until end of turn`, 'gi'), (m) => {
     const to = slotFor(m[1], (spec) => spec.kind === 'creature');
@@ -2407,6 +2413,8 @@ export type TriggerEvent =
   | { on: 'castMvCounters'; counter: CounterKind }
   /** Screaming Nemesis: "Whenever this creature is dealt damage, …" (the ability's X is that much damage). */
   | { on: 'dealtDamage' }
+  /** The Cabbage Merchant: "Whenever a creature deals combat damage to you, …" */
+  | { on: 'combatDamageToYou' }
   /** Fear of Missing Out: "Whenever this creature attacks for the first time each turn, …" */
   | { on: 'attacksFirstTime' }
   /**
@@ -2478,6 +2486,8 @@ const SCYTHECAT = /\bput a \+1\/\+1 counter on (target creature you control)\. I
 const BERSERK = /\b(Target creature) gains trample and gets \+X\/\+0 until end of turn, where X is its power\. At the beginning of the next end step, destroy that creature if it attacked this turn\./;
 /** Bounty of the Hunt (see parseAbilityText). */
 const BOUNTY = /\bDistribute three \+1\/\+1 counters among one, two, or three target creatures\. For each \+1\/\+1 counter you put on a creature this way, remove a \+1\/\+1 counter from that creature at the beginning of the next cleanup step\./;
+/** Necropotence (see the exileTopUntilEndStep effect). */
+const NECRO = /\bExile the top card of your library face down\. Put that card into your hand at the beginning of your next end step\./;
 /** Jeweled Amulet (see activatedOf). */
 const AMULET = /\bPut a charge counter on this artifact\. Note the type of mana spent to pay this activation cost\./;
 const UNSUPPORTED_WORDS = /\b(?:if|unless|for each|where|instead|that (?:creature|card|player|land|spell|permanent)|those|otherwise|this way|exiled with)\b/i;
@@ -2485,7 +2495,7 @@ const UNSUPPORTED_WORDS = /\b(?:if|unless|for each|where|instead|that (?:creatur
 const UNSUPPORTED = {
   test: (text: string) => {
     let rest = text;
-    for (const handled of [CONTROLLER_SEARCH, REVEAL_FOUND, SURVEIL_TO_HAND, THORIN_ATTACH, BECOMES_CREATURE, LAND_BECOMES, TRADE_FOR_CARD, COUNTER_DEST, TIDEBINDER, POWER_LIFE, PHELIA, CITY_COPIES, GHOST_VACUUM, MALCOLM, FLICKER, BLACK_SUN, EMPIRES, UNLESS_ARTIFACT, TEZZERET_ANIMATE, PURSUIT, IMPULSE, FABLED, BEHOLD, SCYTHECAT, BERSERK, BOUNTY, AMULET]) rest = rest.replace(handled, '');
+    for (const handled of [CONTROLLER_SEARCH, REVEAL_FOUND, SURVEIL_TO_HAND, THORIN_ATTACH, BECOMES_CREATURE, LAND_BECOMES, TRADE_FOR_CARD, COUNTER_DEST, TIDEBINDER, POWER_LIFE, PHELIA, CITY_COPIES, GHOST_VACUUM, MALCOLM, FLICKER, BLACK_SUN, EMPIRES, UNLESS_ARTIFACT, TEZZERET_ANIMATE, PURSUIT, IMPULSE, FABLED, BEHOLD, SCYTHECAT, BERSERK, BOUNTY, AMULET, NECRO]) rest = rest.replace(handled, '');
     return UNSUPPORTED_WORDS.test(rest.replace(/"[^"]*"/g, '""'));
   },
 };
@@ -2843,6 +2853,28 @@ export function triggersOf(card: Card): TriggerSpec[] {
         event: { on: 'youDrawNth', nth: { second: 2, third: 3, fourth: 4 }[flips[1].toLowerCase() as 'second' | 'third' | 'fourth'], fromGraveyard: false },
         ability: { targets: [], effects: [{ kind: 'flickerTransformed' }] },
       });
+      continue;
+    }
+    // Necropotence: "Whenever you discard a card, exile that card from your graveyard." (slot 0: that card)
+    if (/^Whenever you discard a card, exile that card from your graveyard\.$/i.test(line)) {
+      out.push({ event: { on: 'youDiscard' }, ability: { targets: [{ kind: 'card', min: 1, max: 1, filter: { controller: 'you' } }], effects: [{ kind: 'destroy', exile: true, to: { slot: 0 } }] } });
+      continue;
+    }
+    // The Cabbage Merchant: "Whenever a creature deals combat damage to you, sacrifice a Food token."
+    const hitMe = line.match(/^Whenever a creature deals combat damage to you, (.+)$/i);
+    if (hitMe) {
+      const food = /^sacrifice an? ([A-Z][a-z]+) token\.$/.exec(hitMe[1]);
+      out.push({
+        event: { on: 'combatDamageToYou' },
+        ability: food ? { targets: [], effects: [{ kind: 'sacrifice', n: 1, to: 'you', which: { kind: 'permanent', filter: { subtypes: [food[1].toLowerCase()], token: true } } }] } : triggerAbility(hitMe[1], name, false),
+      });
+      continue;
+    }
+    // "Whenever an opponent casts a noncreature spell, create a Food token." (The Cabbage Merchant)
+    const oppCasts = line.match(/^Whenever an opponent casts an? ([a-z ]*?)spell, (.+)$/i);
+    const oppFilter = oppCasts && (oppCasts[1].trim() ? cardWordsFilter(oppCasts[1].trim()) : {});
+    if (oppCasts && oppFilter && !/\bthat (?:player|spell)\b/i.test(oppCasts[2])) {
+      out.push({ event: { on: 'opponentCasts', filter: oppFilter }, ability: triggerAbility(oppCasts[2], name, false) });
       continue;
     }
     // Chalice of the Void: "Whenever a player casts a spell with mana value equal to the number of charge counters on this
@@ -3615,10 +3647,14 @@ export function counterMana(card: Card): Color | null {
 }
 
 /** Eldrazi Spawn: "Sacrifice this token: Add {C}." (no tap: usable summoning sick). The color, or null. */
-export function sacrificeMana(card: Card): Color | null {
-  const m = frontText(card).match(/^Sacrifice this (?:token|creature|artifact): Add \{([WUBRGC])\}\.$/m);
-  return m ? (m[1] as Color) : null;
+export function sacrificeMana(card: Card): Color[][] | null {
+  // Tinder Wall: "Sacrifice this creature: Add {R}{R}."
+  const m = frontText(card).match(/^Sacrifice this (?:token|creature|artifact): Add ((?:\{[WUBRGC]\})+)\.$/m);
+  return m ? [...m[1].matchAll(/\{([WUBRGC])\}/g)].map((x) => [x[1] as Color]) : null;
 }
+
+/** The Cabbage Merchant: "Tap two untapped Foods you control: Add one mana of any color." */
+export const foodMana = (card: Card) => /^Tap two untapped Foods you control: Add one mana of any color\.$/m.test(frontText(card));
 
 /** Lion's Eye Diamond: "Discard your hand, Sacrifice this artifact: Add three mana of any one color. Activate only as an instant." */
 export const diamondMana = (card: Card) =>
@@ -3866,6 +3902,15 @@ export type GameRule =
   | 'graveyardEscape'
   /** Lurrus: "Once during each of your turns, you may cast a permanent spell with mana value 2 or less from your graveyard." */
   | 'lurrus'
+  /**
+   * Grand Abolisher: "During your turn, your opponents can't cast spells or activate abilities of artifacts, creatures,
+   * or enchantments." (mana abilities included)
+   */
+  | 'abolisher'
+  /** Necropotence: "Skip your draw step." */
+  | 'skipDraw'
+  /** Shang-Chi: "You may activate abilities of creatures you control as though those creatures had haste." */
+  | 'abilitiesHaste'
   /** Karn, the Great Creator: "Activated abilities of artifacts your opponents control can't be activated." */
   | 'opponentsArtifactAbilitiesForbidden'
   /** Cursed Totem: "Activated abilities of creatures can't be activated." (mana abilities included) */
@@ -3952,6 +3997,9 @@ const GAME_RULES: [RegExp, GameRule][] = [
   [/^Instant and sorcery spells you control have split second\.(?: \([^)]*\))?$/m, 'yourSpellsSplitSecond'],
   [/^Each nonland card in your graveyard has escape\. The escape cost is equal to the card's mana cost plus exile three other cards from your graveyard\.(?: \([^)]*\))?$/m, 'graveyardEscape'],
   [/^Once during each of your turns, you may cast a permanent spell with mana value 2 or less from your graveyard\.$/m, 'lurrus'],
+  [/^During your turn, your opponents can't cast spells or activate abilities of artifacts, creatures, or enchantments\.$/m, 'abolisher'],
+  [/^Skip your draw step\.$/m, 'skipDraw'],
+  [/^You may activate abilities of creatures you control as though those creatures had haste\.$/m, 'abilitiesHaste'],
   [/^Damage can't be prevented\.$/m, 'damageCantBePrevented'],
 ];
 

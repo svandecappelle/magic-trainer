@@ -327,5 +327,108 @@
   "keywords": [
    "Escape"
   ]
+ },
+ {
+  "id": "1e62598f-0a91-4cfd-9a28-c3bda61c9ead",
+  "name": "Tinder Wall",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Creature — Plant Wall",
+  "oracleText": "Defender (This creature can't attack.)\nSacrifice this creature: Add {R}{R}.\n{R}, Sacrifice this creature: It deals 2 damage to target creature it's blocking.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G",
+   "R"
+  ],
+  "setCode": "me2",
+  "setName": "Masters Edition II",
+  "rarity": "common",
+  "power": "0",
+  "toughness": "3",
+  "keywords": [
+   "Defender"
+  ]
+ },
+ {
+  "id": "ee793ed2-7d59-4640-8868-ad486600df2c",
+  "name": "Grand Abolisher",
+  "manaCost": "{W}{W}",
+  "cmc": 2,
+  "typeLine": "Creature — Human Cleric",
+  "oracleText": "During your turn, your opponents can't cast spells or activate abilities of artifacts, creatures, or enchantments.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "big",
+  "setName": "The Big Score",
+  "rarity": "mythic",
+  "power": "2",
+  "toughness": "2",
+  "keywords": []
+ },
+ {
+  "id": "c89c6895-b0f8-444a-9c89-c6b4fd027b3e",
+  "name": "Necropotence",
+  "manaCost": "{B}{B}{B}",
+  "cmc": 3,
+  "typeLine": "Enchantment",
+  "oracleText": "Skip your draw step.\nWhenever you discard a card, exile that card from your graveyard.\nPay 1 life: Exile the top card of your library face down. Put that card into your hand at the beginning of your next end step.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "ima",
+  "setName": "Iconic Masters",
+  "rarity": "mythic",
+  "keywords": []
+ },
+ {
+  "id": "2fea0356-6684-4730-9eb4-0262856bc1f9",
+  "name": "The Cabbage Merchant",
+  "manaCost": "{2}{G}",
+  "cmc": 3,
+  "typeLine": "Legendary Creature — Human Citizen",
+  "oracleText": "Whenever an opponent casts a noncreature spell, create a Food token. (It's an artifact with \"{2}, {T}, Sacrifice this token: You gain 3 life.\")\nWhenever a creature deals combat damage to you, sacrifice a Food token.\nTap two untapped Foods you control: Add one mana of any color.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "tle",
+  "setName": "Avatar: The Last Airbender Eternal",
+  "rarity": "rare",
+  "power": "2",
+  "toughness": "2",
+  "keywords": [
+   "Food"
+  ]
+ },
+ {
+  "id": "2edbb62f-ad45-4422-850b-68dcc18b4c73",
+  "name": "Shang-Chi, Master of Kung Fu",
+  "manaCost": "{1}{G}",
+  "cmc": 2,
+  "typeLine": "Legendary Creature — Human Warrior Hero",
+  "oracleText": "You may activate abilities of creatures you control as though those creatures had haste.\n{T}: Add two mana of any one color. Spend this mana only to activate abilities of creature sources.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "msh",
+  "setName": "Marvel Super Heroes",
+  "rarity": "mythic",
+  "power": "2",
+  "toughness": "2",
+  "keywords": []
  }
 ]

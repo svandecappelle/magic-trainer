@@ -1,7 +1,7 @@
 import type { Card } from '../../types';
 import {
   activatedOf, auraTarget, castInfo, gainsLifeFromDamage, gainsLifeFromCombatDamageTaken, castSpec, cloneOf, entersCounters, entersTappedRule, beginsWithLuck, discardsLandInstead, manaConditions, stateMana, doesntUntap, frontText, gameRulesOf, isInstantOrSorcery,
-  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, chosenNameTax, namesAnyCard, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, extraManaOf, manaMultiplier, choosesColor, counterMana, diamondMana, restrictedMana, mayStayTapped, reconfiguresEnchanted, entersPrepared, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, returnsExiledWhenLeaving, fadingOf, vanishingOf, hasEnlist, hasSplitSecond, type AbilitySpec,
+  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, chosenNameTax, namesAnyCard, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, extraManaOf, manaMultiplier, choosesColor, counterMana, diamondMana, restrictedMana, mayStayTapped, reconfiguresEnchanted, entersPrepared, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, returnsExiledWhenLeaving, fadingOf, vanishingOf, hasEnlist, hasSplitSecond, sacrificeMana, foodMana, type AbilitySpec,
 } from './rules';
 
 /**
@@ -180,6 +180,10 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   if (times > 1) return { text: line, status: 'ok', how: `mana: your permanents tapped for mana make ${times} times as much` };
   const tapsOther = tapsAnotherForMana(one);
   if (tapsOther) return { text: line, status: 'ok', how: `mana: any color, tapping another untapped ${tapsOther} that makes no mana (chosen automatically)` };
+  // Eldrazi Spawn, Tinder Wall: "Sacrifice this creature: Add {R}{R}."
+  const sacked = sacrificeMana(one);
+  if (sacked) return { text: line, status: 'ok', how: `mana: ${sacked.map((u) => u.join('/')).join(' ')}, sacrificing it (spent last)` };
+  if (foodMana(one)) return { text: line, status: 'ok', how: 'mana: any color for each two untapped Foods tapped (spent last)' };
   const fromHand = handMana(one);
   if (fromHand) return { text: line, status: 'ok', how: `mana: ${fromHand}, exiling it from the hand (spent last)` };
   const state = stateMana(one);

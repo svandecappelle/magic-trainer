@@ -5,6 +5,13 @@ PARTIAL  Lurrus of the Dream-Den {1}{W/B}{W/B} — Legendary Creature — Cat Ni
       keyword
   ✓ Once during each of your turns, you may cast a permanent spell with m…
       rule for the game: lurrus
+PARTIAL  Tinder Wall {G} — Creature — Plant Wall
+  ✓ Defender
+      keyword
+  ✓ Sacrifice this creature: Add {R}{R}.
+      mana: R R, sacrificing it (spent last)
+  ✗ {R}, Sacrifice this creature: It deals 2 damage to target creature it…
+      activated ability, effect not simulated
 OK       Chalice of the Void {X}{X} — Artifact
   ✓ This artifact enters with X charge counters on it.
       enters with X charge counters
@@ -25,6 +32,9 @@ OK       Fear of Missing Out {1}{R} — Enchantment Creature — Nightmare
       trigger (enters) → discard+draw
   ✓ Delirium — Whenever this creature attacks for the first time each tur…
       trigger (attacksFirstTime) → untap+extraCombat (1 target), with delirium
+OK       Grand Abolisher {W}{W} — Creature — Human Cleric
+  ✓ During your turn, your opponents can't cast spells or activate abilit…
+      rule for the game: abolisher
 OK       Moonshadow {B} — Creature — Elemental
   ✓ Menace
       keyword
@@ -32,6 +42,13 @@ OK       Moonshadow {B} — Creature — Elemental
       enters with 6 -1/-1 counters
   ✓ Whenever one or more permanent cards are put into your graveyard from…
       trigger (permanentCardsToGraveyard) → removeCounterSelf
+OK       Necropotence {B}{B}{B} — Enchantment
+  ✓ Skip your draw step.
+      rule for the game: skipDraw
+  ✓ Whenever you discard a card, exile that card from your graveyard.
+      trigger (youDiscard) → destroy (1 target)
+  ✓ Pay 1 life: Exile the top card of your library face down. Put that ca…
+      activated → exileTopUntilEndStep
 OK       Nethergoyf {B} — Creature — Lhurgoyf
   ✓ Nethergoyf's power is equal to the number of card types among cards i…
       static ability
@@ -56,6 +73,11 @@ OK       Screaming Nemesis {2}{R} — Creature — Spirit
       keyword
   ✓ Whenever this creature is dealt damage, it deals that much damage to …
       trigger (dealtDamage) → damage+noLifeGain (1 target)
+OK       Shang-Chi, Master of Kung Fu {1}{G} — Legendary Creature — Human Warrior Hero
+  ✓ You may activate abilities of creatures you control as though those c…
+      rule for the game: abilitiesHaste
+  ✓ {T}: Add two mana of any one color. Spend this mana only to activate …
+      mana: W/U/B/R/G W/U/B/R/G, only for some abilities (chosen automatically when paying)
 OK       Shifting Woodland  — Land
   ✓ This land enters tapped unless you control a Forest.
       enters tapped (unlessSubtypes)
@@ -70,6 +92,13 @@ OK       Tamiyo, Inquisitive Student // Tamiyo, Seasoned Scholar {U} — Legenda
       trigger (attacks) → token
   ✓ When you draw your third card in a turn, exile Tamiyo, then return he…
       trigger (youDrawNth) → flickerTransformed
+OK       The Cabbage Merchant {2}{G} — Legendary Creature — Human Citizen
+  ✓ Whenever an opponent casts a noncreature spell, create a Food token.
+      trigger (opponentCasts) → token
+  ✓ Whenever a creature deals combat damage to you, sacrifice a Food toke…
+      trigger (combatDamageToYou) → sacrifice
+  ✓ Tap two untapped Foods you control: Add one mana of any color.
+      mana: any color for each two untapped Foods tapped (spent last)
 OK       Underworld Breach {1}{R} — Enchantment
   ✓ Each nonland card in your graveyard has escape. The escape cost is eq…
       rule for the game: graveyardEscape
@@ -83,5 +112,5 @@ OK       Uro, Titan of Nature's Wrath {1}{G}{U} — Legendary Creature — Elder
   ✓ Escape—{G}{G}{U}{U}, Exile five other cards from your graveyard.
       escape {G}{G}{U}{U}: cast from the graveyard, exiling 5
 
-14 cards: 13 ok, 1 partial, 0 not simulated, 0 can't be cast
+19 cards: 17 ok, 2 partial, 0 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

@@ -101,6 +101,7 @@ const log: LogMessages = {
   phasedIn: (e, c) => `${c.card(e.card)} phases in`,
   cantGainLife: (e, c) => `${c.isMe(e.p) ? 'You' : c.name(e.p)} can't gain life for the rest of the game`,
   extraCombat: () => 'An additional combat phase',
+  exiledFaceDown: (e, c) => `${c.isMe(e.p) ? 'You exile' : `${c.name(e.p)} exiles`} the top card of ${c.isMe(e.p) ? 'your' : 'their'} library face down`,
   crewed: (e, c) => `${c.card(e.card)} is crewed`,
   dig: (e, c) => `${c.isMe(e.p) ? 'You look' : `${c.name(e.p)} looks`} at the top ${e.n} cards and ${e.took ? `put${c.isMe(e.p) ? '' : 's'} ${plural(e.took, 'card', 'cards')} into ${c.isMe(e.p) ? 'your' : 'their'} hand` : 'take nothing'}; the rest go on the bottom`,
   beginsOnBattlefield: (e, c) => `${c.isMe(e.p) ? 'You begin' : `${c.name(e.p)} begins`} the game with ${c.card(e.card)} on the battlefield`,

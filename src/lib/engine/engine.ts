@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, counterMana, choosesColor, diamondMana, sacrificeMana, mayStayTapped, gainsLifeFromCombatDamageTaken, restrictedMana, type RestrictedMana, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, hasSplitSecond, crewBonus, ROLES, type TokenSpec, vanishingOf, hasEnlist, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, counterMana, choosesColor, diamondMana, sacrificeMana, mayStayTapped, gainsLifeFromCombatDamageTaken, restrictedMana, type RestrictedMana, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, hasSplitSecond, crewBonus, ROLES, foodMana, type TokenSpec, vanishingOf, hasEnlist, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type AltCost, type CastInfo, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -502,6 +502,7 @@ export type LogEntry =
   | { k: 'crewed'; card: string }
   | { k: 'shuffledIn'; card: string }
   | { k: 'cantGainLife'; p: PlayerId }
+  | { k: 'exiledFaceDown'; p: PlayerId }
   | { k: 'extraCombat' }
   | { k: 'reshaped'; card: string }
   | { k: 'phasedOut'; card: string }
@@ -631,6 +632,8 @@ export interface GameState {
   returnAtEnd?: { iid: string; owner: PlayerId; source?: string; controller: PlayerId; counterIfYours: boolean }[];
   /** Counter for ability ids on the stack. */
   abilities?: number;
+  /** Necropotence: cards set aside face down, put into their owner's hand at their next end step. */
+  handAtEndStep?: { p: PlayerId; iid: string }[];
   /** Fear of Missing Out: additional combat phases still to come this turn. */
   extraCombats?: number;
   /** Berserk: creatures destroyed at the next end step (if they attacked this turn). */
@@ -1034,8 +1037,11 @@ function filterHelpers(s: GameState, perm: Permanent): Permanent[] {
 }
 
 /** Can this permanent be tapped for mana now? */
+/** Shang-Chi: "You may activate abilities of creatures you control as though those creatures had haste." */
+const abilityHaste = (s: GameState, perm: Permanent) => hasKw(perm, 'haste') || withRule(s, 'abilitiesHaste').some((x) => x.controller === perm.controller);
+
 export const canTapForMana = (s: GameState, perm: Permanent, spell?: Card, ability?: Card) =>
-  !perm.tapped && !(isCreature(perm.card) && perm.sick && !hasKw(perm, 'haste')) && unitsOf(s, perm, spell, ability).length > 0 && !activationsForbidden(s, perm) &&
+  !perm.tapped && !(isCreature(perm.card) && perm.sick && !abilityHaste(s, perm)) && unitsOf(s, perm, spell, ability).length > 0 && !activationsForbidden(s, perm) &&
   s.players[perm.controller].life >= manaLifeCost(perm.card);
 
 /**
@@ -1081,6 +1087,8 @@ export const nameStopped = (s: GameState, name: string) =>
 /** Clarion Conqueror: no activated abilities (mana abilities included) for artifacts, creatures and planeswalkers. */
 function activationsForbidden(s: GameState, perm: Permanent): boolean {
   const types = cardTypes(perm.card);
+  // Grand Abolisher: "activate abilities of artifacts, creatures, or enchantments" (mana abilities too).
+  if ((types.includes('artifact') || types.includes('creature') || types.includes('enchantment')) && abolished(s, perm.controller)) return true;
   // Null Rod: artifacts' activated abilities, mana abilities included; Karn, the Great Creator: the opponents' artifacts.
   if (types.includes('artifact') && withRule(s, 'noArtifactAbilities').length) return true;
   if (types.includes('artifact') && withRule(s, 'opponentsArtifactAbilitiesForbidden').some((x) => teamOf(s, x.controller) !== teamOf(s, perm.controller))) return true;
@@ -1136,8 +1144,12 @@ const sorceryOnly = (s: GameState, p: PlayerId) =>
  */
 const splitSecondOnStack = (s: GameState) => s.stack.some((x) => !x.ability && x.splitSecond);
 
+/** Grand Abolisher: an opponent's, during its controller's turn. */
+const abolished = (s: GameState, p: PlayerId) =>
+  withRule(s, 'abolisher').some((x) => teamOf(s, x.controller) !== teamOf(s, p) && isActivePlayer(s, x.controller));
+
 const castingForbidden = (s: GameState, p: PlayerId) =>
-  splitSecondOnStack(s) ||
+  splitSecondOnStack(s) || abolished(s, p) ||
   withRule(s, 'opponentsCantCastOnYourTurn').some((x) => teamOf(s, x.controller) !== teamOf(s, p) && isActivePlayer(s, x.controller))
   // High Noon: one spell each turn.
   || ((s.players[p].spellsThisTurn ?? 0) >= 1 && withRule(s, 'oneSpellEachTurn').length > 0);
@@ -1199,9 +1211,13 @@ export function manaSources(s: GameState, p: PlayerId, spell?: Card, ability?: C
   });
   // Eldrazi Spawn: "Sacrifice this token: Add {C}." (spent last: it's a creature).
   const sacs = s.battlefield.flatMap((x): ManaSource[] => {
-    const color = x.controller === p && !activationsForbidden(s, x) ? sacrificeMana(x.card) : null;
-    return color ? [{ iid: `sac:${x.iid}`, colors: [color], last: true }] : [];
+    const units = x.controller === p && !activationsForbidden(s, x) ? sacrificeMana(x.card) : null;
+    return units ? [{ iid: `sac:${x.iid}`, colors: units[0], units, last: true }] : [];
   });
+  // The Cabbage Merchant: one mana of any color for each two untapped Foods.
+  const foods = s.battlefield.filter((x) => x.controller === p && !x.tapped && hasSubtype(x.card, 'food'));
+  const merchants = s.battlefield.filter((x) => x.controller === p && foodMana(x.card) && !activationsForbidden(s, x));
+  const fromFoods = merchants.length ? Array.from({ length: Math.floor(foods.length / 2) }, (_, k): ManaSource => ({ iid: `foods:${k}`, colors: ['W', 'U', 'B', 'R', 'G'], last: true })) : [];
   // Wall of Roots: a -0/-1 counter for one mana, once each turn (spent last: it shrinks the wall).
   const counters = s.battlefield.flatMap((x): ManaSource[] => {
     const color = x.controller === p && !x.counterManaUsed && !activationsForbidden(s, x) ? counterMana(x.card) : null;
@@ -1212,7 +1228,7 @@ export function manaSources(s: GameState, p: PlayerId, spell?: Card, ability?: C
     const color = handMana(c.card);
     return color ? [{ iid: `hand:${c.iid}`, colors: [color], last: true }] : [];
   });
-  return [...pool, ...usable, ...counters, ...sacs, ...fromHand];
+  return [...pool, ...usable, ...counters, ...sacs, ...fromFoods, ...fromHand];
 }
 
 /** Can the permanent's mana be taken back (all of it still unspent in the pool)? */
@@ -1646,7 +1662,7 @@ export function activationProblem(s: GameState, p: PlayerId, perm: Permanent, in
   if (spec.yourTurn && !isActivePlayer(s, p)) return 'activateTiming';
   if (splitSecondOnStack(s)) return 'activationForbidden';
   if (spec.cost.tap && perm.tapped) return 'alreadyTapped';
-  if (spec.cost.tap && isCreature(perm.card) && perm.sick && !hasKw(perm, 'haste')) return 'summoningSick';
+  if (spec.cost.tap && isCreature(perm.card) && perm.sick && !abilityHaste(s, perm)) return 'summoningSick';
   if (spec.once && perm.used?.includes(index)) return 'onceEachTurn';
   if (spec.cost.loyalty !== undefined) {
     // One loyalty ability per planeswalker each turn.
@@ -2148,7 +2164,8 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
 /** Draw for the turn (each head of the team), then the opponents may act before the first main phase. */
 function drawStep(d: GameState, skipDraw: boolean) {
   d.step = 'main1';
-  if (!skipDraw) for (const q of teamPlayers(d, d.active)) draw(d, q, 1, true);
+  // Necropotence: "Skip your draw step."
+  if (!skipDraw) for (const q of teamPlayers(d, d.active)) if (!withRule(d, 'skipDraw').some((x) => x.controller === q)) draw(d, q, 1, true);
   // Mana Vault: "At the beginning of your draw step, …" (put on the stack with the opponents' priority below).
   fireStep(d, 'draw');
   // After the draw step, each Saga of the active player gets a lore counter (CR 714.3b).
@@ -2336,7 +2353,18 @@ function payMana(d: GameState, p: PlayerId, plan: ManaPick[]) {
       continue;
     }
     if (iid.startsWith('sac:')) {
-      sacrifice(d, findPermanent(d, iid.slice(4))!);
+      // Tinder Wall: its other {R} goes to the pool if this payment doesn't need it.
+      const sacked = findPermanent(d, iid.slice(4))!;
+      const spentHere = new Set(plan.filter((m) => m.iid === iid).map((m) => m.index));
+      (sacrificeMana(sacked.card) ?? []).forEach((colors, i) => {
+        if (!spentHere.has(i)) next.push({ colors });
+      });
+      sacrifice(d, sacked);
+      continue;
+    }
+    if (iid.startsWith('foods:')) {
+      // The Cabbage Merchant: two untapped Foods tapped.
+      for (const food of d.battlefield.filter((x) => x.controller === p && !x.tapped && hasSubtype(x.card, 'food')).slice(0, 2)) tapPermanent(d, food);
       continue;
     }
     if (iid.startsWith('counter:')) {
@@ -2496,7 +2524,12 @@ function noteDiscard(d: GameState, p: PlayerId, inst: CardInst, cleanup = false)
   log(d, { k: 'discard', p, card: inst.card.name, ...(cleanup ? { cleanup } : {}) });
   for (const x of d.battlefield) {
     if (x.controller !== p) continue;
-    for (const t of triggersOf(x.card)) if (t.event.on === 'youDiscard') queueTrigger(d, x, p, t.ability);
+    for (const t of triggersOf(x.card)) {
+      if (t.event.on !== 'youDiscard') continue;
+      // Necropotence: "exile that card from your graveyard" (the discarded card is its target).
+      if (t.ability.targets[0]?.kind === 'card') (d.triggered ??= []).push({ source: { iid: x.iid, card: x.card }, controller: p, ability: t.ability, targets: [[{ kind: 'card', iid: inst.iid }]] });
+      else queueTrigger(d, x, p, t.ability);
+    }
   }
 }
 
@@ -2933,6 +2966,19 @@ function fireStep(d: GameState, on: StepEvent) {
     }
     delete d.warpAtEnd;
   }
+  // Necropotence: "Put that card into your hand at the beginning of your next end step."
+  if (on === 'endStep' && d.handAtEndStep?.length) {
+    const now = d.handAtEndStep.filter((x) => isActivePlayer(d, x.p));
+    for (const { p, iid } of now) {
+      const ps = d.players[p];
+      const inst = ps.exile.find((c) => c.iid === iid);
+      if (!inst) continue;
+      ps.exile = ps.exile.filter((c) => c !== inst);
+      ps.hand.push(inst);
+      log(d, { k: 'toHand', card: inst.card.name });
+    }
+    d.handAtEndStep = d.handAtEndStep.filter((x) => !now.includes(x));
+  }
   // Berserk: "destroy that creature if it attacked this turn".
   if (on === 'endStep' && d.destroyAtEnd?.length) {
     for (const { iid, ifAttacked } of d.destroyAtEnd) {
@@ -3342,6 +3388,12 @@ function applyDamage(d: GameState, source: CardInst, controller: PlayerId, targe
     log(d, { k: 'damagePlayer', card: source.card.name, n: amount, p: target });
   } else if (typeof target === 'number') {
     if (combat) ((d.combatDamagedBy ??= {})[source.iid] ??= []).push(target);
+    // The Cabbage Merchant: "Whenever a creature deals combat damage to you, …"
+    if (combat && isCreature(source.card)) {
+      for (const x of d.battlefield.filter((y) => y.controller === target)) {
+        for (const t of triggersOf(x.card)) if (t.event.on === 'combatDamageToYou') queueTrigger(d, x, target, t.ability);
+      }
+    }
     changeLife(d, target, -amount);
     log(d, { k: 'damagePlayer', card: source.card.name, n: amount, p: target });
     // Commander damage: combat damage from a commander, counted per commander and per player.
@@ -3780,6 +3832,16 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       src.unanimated ??= src.card;
       src.card = { ...faceCard(g.grave.card, 0), id: g.grave.card.id };
       log(d, { k: 'copied', card: src.unanimated.name, as: g.grave.card.name });
+      break;
+    }
+    case 'exileTopUntilEndStep': {
+      // Necropotence: set aside face down, into the hand at its controller's next end step.
+      const ps = d.players[caster];
+      const top = ps.library.shift();
+      if (!top) break;
+      ps.exile.push(top);
+      (d.handAtEndStep ??= []).push({ p: caster, iid: top.iid });
+      log(d, { k: 'exiledFaceDown', p: caster });
       break;
     }
     case 'chargeAmulet': {

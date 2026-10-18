@@ -115,6 +115,7 @@ const log: LogMessages = {
   phasedIn: (e, c) => `${c.card(e.card)} revient en phase`,
   cantGainLife: (e, c) => `${c.isMe(e.p) ? 'Vous ne pouvez' : `${c.name(e.p)} ne peut`} plus gagner de points de vie de la partie`,
   extraCombat: () => 'Une phase de combat supplémentaire',
+  exiledFaceDown: (e, c) => `${c.isMe(e.p) ? 'Vous exilez' : `${c.name(e.p)} exile`} face cachée la carte du dessus de sa bibliothèque`,
   crewed: (e, c) => `${c.card(e.card)} est piloté`,
   dig: (e, c) => `${c.isMe(e.p) ? 'Vous regardez' : `${c.name(e.p)} regarde`} les ${e.n} cartes du dessus et ${e.took ? `en met ${e.took} en main` : "n'en prend aucune"} ; les autres vont au-dessous`,
   beginsOnBattlefield: (e, c) => `${c.isMe(e.p) ? 'Vous commencez' : `${c.name(e.p)} commence`} la partie avec ${c.card(e.card)} sur le champ de bataille`,

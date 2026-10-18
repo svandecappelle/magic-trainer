@@ -5122,3 +5122,91 @@ describe('Casting from the graveyard: escape, Underworld Breach, Lurrus', () => 
     expect(perm(s, 'Phlage, Titan of Fire\'s Fury')).toBeDefined();
   });
 });
+
+describe('cEDH: Tinder Wall, Grand Abolisher, Necropotence, The Cabbage Merchant, Shang-Chi', () => {
+  const cards = JSON.parse(readFileSync(new URL('./fixtures/metagame-2026-10-18.json', import.meta.url), 'utf8')) as Card[];
+  const real = (name: string) => cards.find((x) => x.name.startsWith(name))!;
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 10 && (s.stack.length || s.triggered?.length) && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  const passTurn = (s: GameState) => {
+    const turn = s.turn;
+    for (let i = 0; i < 40 && s.turn === turn && s.winner === null; i++) {
+      s = s.pending ? apply(s, { type: 'choose', answer: s.pending.choice.kind === 'yesNo' ? { kind: 'yesNo', yes: true } : { kind: 'cards', iids: [] } })
+        : !s.priority && s.step === 'attack' ? apply(s, { type: 'declareAttackers', attackers: [] })
+        : apply(s, { type: 'pass' });
+    }
+    return s;
+  };
+
+  it('Tinder Wall: sacrificed for {R}{R}; what a payment doesn\'t use stays in the pool', () => {
+    let s = board({ mine: [real('Tinder Wall')], hand: [creature('Goblin', 1, 1, { manaCost: '{R}', cmc: 1 })] });
+    perm(s, 'Tinder Wall')!.sick = true;
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    expect([perm(s, 'Tinder Wall'), perm(s, 'Goblin') !== undefined, s.players[0].pool?.map((m) => m.colors)]).toEqual([undefined, true, [['R']]]);
+  });
+
+  it('Grand Abolisher: during its controller\'s turn, opponents cast nothing and use no artifact, creature or enchantment ability', () => {
+    const elf = creature('Elf', 1, 1, { oracleText: '{T}: Add {G}.' });
+    const s = board({ mine: [real('Grand Abolisher')], theirs: [elf], oppMana: 1, oppHand: [spell('Shock', '{0}', 'Shock deals 2 damage to any target.')] });
+    s.priority = { player: 1, passes: 0, reason: 'main' };
+    expect(canCastNow(s, 1, s.players[1].hand[0].card)).toBe(false);
+    expect(canTapForMana(s, perm(s, 'Elf')!)).toBe(false);
+    expect(canTapForMana(s, perm(s, 'Island')!)).toBe(true);
+    // On the opponent's turn: no effect.
+    s.active = 1;
+    expect(canCastNow(s, 1, s.players[1].hand[0].card)).toBe(true);
+  });
+
+  it('Necropotence: no draw step; 1 life sets the top card aside until your end step; discarded cards are exiled', () => {
+    let s = board({ mine: [real('Necropotence')], hand: [spell('Rummage', '{0}', 'Discard a card, then draw a card.', 'Sorcery'), creature('Bear', 2, 2)] });
+    const top = s.players[0].library[0].iid;
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Necropotence'), index: 0 }));
+    expect([s.players[0].life, s.players[0].exile.map((c) => c.iid)]).toEqual([19, [top]]);
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    if (s.pending) s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['h1'] } }));
+    expect(s.players[0].exile.map((c) => c.card.name)).toContain('Bear');
+    const hand = s.players[0].hand.length;
+    s = passTurn(s);
+    // Its end step: the card set aside comes to the hand.
+    expect(s.players[0].hand.some((c) => c.iid === top)).toBe(true);
+    expect(s.players[0].hand.length).toBe(hand + 1);
+    // The next turn: no card drawn.
+    s = passTurn(s);
+    expect(s.players[0].hand.length).toBe(hand + 1);
+  });
+
+  it('The Cabbage Merchant: Food for opponents\' noncreature spells, one sacrificed when a creature hits you; two Foods tap for a mana', () => {
+    let s = board({ mine: [real('The Cabbage Merchant')], oppHand: [spell('Shock', '{0}', 'Shock deals 2 damage to any target.')], hand: [creature('Goblin', 1, 1, { manaCost: '{R}', cmc: 1 })] });
+    s.priority = { player: 1, passes: 0, reason: 'main' };
+    s = resolve(apply(s, { type: 'cast', iid: 'o0', targets: [[{ kind: 'player', player: 0 }]] }));
+    expect(s.battlefield.filter((x) => x.card.name === 'Food')).toHaveLength(1);
+    // Two Foods: one mana of any color (both tapped).
+    s.battlefield.push({ ...s.battlefield.find((x) => x.card.name === 'Food')!, iid: 'food2' });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    expect(perm(s, 'Goblin')).toBeDefined();
+    expect(s.battlefield.filter((x) => x.card.name === 'Food').every((x) => x.tapped)).toBe(true);
+    // The opponent's creature deals combat damage to me: a Food is sacrificed.
+    s.battlefield.push({ iid: 'ogre', card: creature('Ogre', 3, 3), controller: 1, tapped: false, sick: false, damage: 0, deathtouched: false, counters: {}, boosts: [] });
+    s = passTurn(s);
+    s = apply(s, { type: 'pass' });
+    for (let i = 0; i < 6 && (s.priority || s.step !== 'attack'); i++) s = apply(s, { type: 'pass' });
+    s = apply(s, { type: 'declareAttackers', attackers: ['ogre'] });
+    for (let i = 0; i < 20 && s.step !== 'main2'; i++) s = !s.priority && s.step === 'block' ? apply(s, { type: 'declareBlockers', blocks: {} }) : apply(s, { type: 'pass' });
+    s = resolve(s);
+    expect([s.players[0].life, s.pending?.choice]).toMatchObject([15, { kind: 'cards' }]);
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: [(s.pending!.choice as { options: { iid: string }[] }).options[0].iid] } }));
+    expect(s.battlefield.filter((x) => x.card.name === 'Food')).toHaveLength(1);
+  });
+
+  it('Shang-Chi: creatures\' abilities as though they had haste', () => {
+    const elf = creature('Elf', 1, 1, { oracleText: '{T}: Add {G}.' });
+    const s = board({ mine: [elf] });
+    perm(s, 'Elf')!.sick = true;
+    expect(canTapForMana(s, perm(s, 'Elf')!)).toBe(false);
+    const t = board({ mine: [elf, real('Shang-Chi, Master of Kung Fu')] });
+    perm(t, 'Elf')!.sick = true;
+    expect(canTapForMana(t, perm(t, 'Elf')!)).toBe(true);
+  });
+});

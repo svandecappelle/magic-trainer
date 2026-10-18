@@ -475,13 +475,21 @@ escaped" (Phlage, Uro), Underworld Breach (every nonland card in your graveyard 
 cards), Lurrus (once during each of your turns, a permanent spell with mana value 2 or less; its companion line isn't
 simulated: it is played from the deck). Uro's "then you may put a land card from your hand onto the battlefield".
 
+cEDH: Tinder Wall ("Sacrifice this creature: Add {R}{R}"; mana a payment doesn't use stays in the pool), Grand
+Abolisher (during its controller's turn, opponents can't cast spells or use abilities of artifacts, creatures and
+enchantments, mana abilities included), Necropotence (no draw step; discarded cards exiled; 1 life: the top card set
+aside face down until your next end step), The Cabbage Merchant (Food when an opponent casts a noncreature spell, one
+sacrificed when a creature deals you combat damage; two untapped Foods tapped for one mana of any color), Shang-Chi
+(your creatures' abilities as though they had haste). Tinder Wall's "damage to target creature it's blocking" stays
+not simulated.
+
+Approximations: The Cabbage Merchant's Food mana is only used when paying (Foods tapped automatically).
+
 Approximations: Moonshadow's trigger counts as "together" every card put into the graveyard before it goes on the
 stack (an effect that mills, then discards, triggers it once).
 
 Still open, playing wrongly, most played first (see `audit-reports/2026-10-18/report.md`):
 - [ ] Detective's Phoenix (bestow, collect evidence, from the graveyard)
-- [ ] cEDH: Tinder Wall ("Sacrifice this creature: Add
-  {R}{R}"), Grand Abolisher, Necropotence (skip your draw step), The Cabbage Merchant, Shang-Chi (haste for abilities)
 
 ## Tezzeret artifacts (a user's deck, `deck-2.txt`)
 
