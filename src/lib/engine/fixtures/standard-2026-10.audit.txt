@@ -172,11 +172,6 @@ NONE     Steamcore Scholar {2}{U} — Creature — Weird Detective
 NONE     Strategic Betrayal {1}{B} — Sorcery
   ✗ Target opponent exiles a creature they control and their graveyard.
       spell not simulated
-NONE     Theorist's Sanctum  — Land — Island
-  ? As this land enters, you may behold a Jace. If you don't, this land e…
-      not read by the engine
-  ✗ {2}{U}, {T}: Empower Jace 2.
-      activated ability, effect not simulated
 NONE     Together as One {6} — Sorcery
   ✗ Converge — Target player draws X cards, Together as One deals X damag…
       spell not simulated
@@ -195,8 +190,8 @@ NONE     Wan Shi Tong, Librarian {X}{U}{U} — Legendary Creature — Bird Spiri
       keyword
   ✗ When Wan Shi Tong enters, put X +1/+1 counters on him. Then draw half…
       trigger (enters), effect not simulated
-  ? Whenever an opponent searches their library, put a +1/+1 counter on W…
-      not read by the engine
+  ✗ Whenever an opponent searches their library, put a +1/+1 counter on W…
+      trigger (opponentSearches), effect not simulated
 NONE     Winternight Stories {2}{U} — Sorcery
   ✗ Harmonize {4}{U}
       keyword not simulated: harmonize
@@ -474,6 +469,11 @@ PARTIAL  The Theorist, Jace Beleren {2}{U}{U} — Legendary Planeswalker — Jac
   ✗ −2: For each opponent, return up to one target artifact or creature t…
       activated ability, effect not simulated
   ✗ −6: Draw three cards. Then put X +1/+1 counters on each creature you …
+      activated ability, effect not simulated
+PARTIAL  Theorist's Sanctum  — Land — Island
+  ✓ As this land enters, you may behold a Jace. If you don't, this land e…
+      enters tapped (unlessBehold)
+  ✗ {2}{U}, {T}: Empower Jace 2.
       activated ability, effect not simulated
 PARTIAL  Torch the Tower {R} — Instant
   ✗ Bargain
@@ -961,5 +961,5 @@ OK       Zoraline, Cosmos Caller {1}{W}{B} — Legendary Creature — Bat Cleric
   ✓ Whenever Zoraline enters or attacks, you may pay {W}{B} and 2 life. W…
       trigger (enters/attacks) → reflexive | reflexive
 
-178 cards: 97 ok, 41 partial, 40 not simulated, 0 can't be cast
+178 cards: 97 ok, 42 partial, 39 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

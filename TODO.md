@@ -485,6 +485,15 @@ not simulated.
 
 Approximations: The Cabbage Merchant's Food mana is only used when paying (Foods tapped automatically).
 
+Third batch: Solitary Cell ("Discard a legendary card" as a cost), Leyline Binding (domain cost reduction), Tectonic
+Edge ("Activate only if an opponent controls four or more lands"), Boromir (counters an opponent's spell cast without
+mana), Jace, Wielder of Mysteries (drawing from an empty library wins), Karn, Argent Defender (the Doorkeeper Thrull rule),
+Archivist of Oghma ("Whenever an opponent searches their library"), Theorist's Sanctum (enters untapped when you can
+behold a Jace), Relic of Progenitus ("Exile this artifact" as a cost; a player exiles a card of their choice), Faerie
+Macabre ("Discard this card:" without mana; "cards from graveyards").
+
+Approximations: Theorist's Sanctum always beholds a Jace when it can.
+
 Approximations: Moonshadow's trigger counts as "together" every card put into the graveyard before it goes on the
 stack (an effect that mills, then discards, triggers it once).
 

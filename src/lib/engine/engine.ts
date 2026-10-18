@@ -353,6 +353,7 @@ export type ChoicePurpose =
   | 'enlist' // enlist: which creature to tap as this one attacks, or none
   | 'distributeTwo' // Bounty of the Hunt with two targets: which one gets two counters
   | 'escapeExile' // escape: the other cards to exile from the graveyard
+  | 'exileOwnGraveCard' // Relic of Progenitus: which card of your graveyard to exile
   | 'triggerMode'; // a modal trigger ("When … enters, choose one —"): which mode
 
 /** Where "arrange" choices may put cards (scry: top/bottom, surveil: top/graveyard). */
@@ -503,6 +504,7 @@ export type LogEntry =
   | { k: 'shuffledIn'; card: string }
   | { k: 'cantGainLife'; p: PlayerId }
   | { k: 'exiledFaceDown'; p: PlayerId }
+  | { k: 'emptyLibraryWin'; p: PlayerId }
   | { k: 'extraCombat' }
   | { k: 'reshaped'; card: string }
   | { k: 'phasedOut'; card: string }
@@ -1435,6 +1437,8 @@ export function castCost(s: GameState, p: PlayerId, card: Card, opt: { face?: nu
     + graveDiscount(s, p, info.graveDiscount)
     // Sunderflock: "the greatest mana value among Elementals you control".
     + (info.greatestMvDiscount ? Math.max(0, ...s.battlefield.filter((x) => x.controller === p && cardMatches(x.card, info.greatestMvDiscount!)).map((x) => printedCard(x).cmc)) : 0)
+    // Leyline Binding: domain, each basic land type among lands you control.
+    + (info.domainDiscount ? ['plains', 'island', 'swamp', 'mountain', 'forest'].filter((t) => s.battlefield.some((x) => x.controller === p && isLand(x.card) && landHasType(s, x.card, t))).length : 0)
     // Obsidian Charmaw: {1} less for each land an opponent controls that could produce {C}.
     + (info.opponentLandsDiscount ? s.battlefield.filter((x) => teamOf(s, x.controller) !== teamOf(s, p) && isLand(x.card) && ownUnits(s, x).flat().includes(info.opponentLandsDiscount!)).length : 0)
     // Bilbo: {1} less for a spell cast from anywhere but the hand.
@@ -1677,6 +1681,7 @@ export function activationProblem(s: GameState, p: PlayerId, perm: Permanent, in
   // Jeweled Amulet: "Activate only if there are no charge counters on this artifact."
   if (spec.noCounter && perm.counters[spec.noCounter]) return 'activationForbidden';
   if (spec.delirium && !delirium(s, p)) return 'delirium';
+  if (spec.opponentLands && !opponentsOf(s, p).some((q) => s.battlefield.filter((x) => x.controller === q && isLand(x.card)).length >= spec.opponentLands!)) return 'activationForbidden';
   if (spec.cost.exileFromGraveyard && s.players[p].graveyard.filter((c) => cardMatches(c.card, spec.cost.exileFromGraveyard!)).length < (spec.cost.exileCount ?? 1)) return 'nothingToExile';
   if (spec.cost.discard && discardOptions(s, p, spec).length < spec.cost.discard) return 'nothingToDiscard';
   if (spec.cost.sacrifice && !sacrificeOptions(s, perm, spec).length) return 'nothingToSacrifice';
@@ -2068,6 +2073,12 @@ function draw(d: GameState, p: PlayerId, n: number, drawStep = false) {
   // Quantum Riddler: with one or fewer cards in hand, one more (each one applies).
   if (n > 0 && ps.hand.length <= 1) n += d.battlefield.filter((x) => x.controller === p && drawsOneMore(x.card)).length;
   for (let i = 0; i < n; i++) {
+    // Jace, Wielder of Mysteries: drawing from an empty library wins instead.
+    if (!ps.library.length && withRule(d, 'emptyLibraryWins').some((x) => x.controller === p)) {
+      log(d, { k: 'emptyLibraryWin', p });
+      d.winner = p;
+      return;
+    }
     const card = ps.library.shift();
     if (!card) {
       log(d, { k: 'emptyLibrary', p });
@@ -2578,6 +2589,10 @@ function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, op
   } else if (rule?.kind === 'notYourTurn') perm.tapped = !isActivePlayer(d, controller);
   else if (rule?.kind === 'unlessOpponents') perm.tapped = opponentsOf(d, controller).length < rule.n;
   else if (rule?.kind === 'unlessBasic') perm.tapped = !otherLands.some((x) => /\bBasic\b/.test(x.card.typeLine));
+  // Theorist's Sanctum: beholding a Jace (one controlled or in the hand; always done when possible).
+  else if (rule?.kind === 'unlessBehold') {
+    perm.tapped = !d.battlefield.some((x) => x.controller === controller && hasSubtype(x.card, rule.subtype)) && !d.players[controller].hand.some((c) => hasSubtype(c.card, rule.subtype));
+  }
   else if (rule?.kind === 'unlessOtherLands') {
     perm.tapped = (rule.max !== undefined && otherLands.length > rule.max) || (rule.min !== undefined && otherLands.length < rule.min);
   } else if (rule?.kind === 'payLife') {
@@ -3076,7 +3091,7 @@ function fireCast(d: GameState, p: PlayerId, card: Card) {
 function fireCastWithoutMana(d: GameState, item: StackItem) {
   for (const x of d.battlefield) {
     for (const t of triggersOf(x.card)) {
-      if (t.event.on === 'castWithoutMana' && (item.noMana || t.event.colored)) {
+      if (t.event.on === 'castWithoutMana' && (item.noMana || t.event.colored) && !(t.event.opponents && teamOf(d, x.controller) === teamOf(d, item.controller))) {
         (d.triggered ??= []).push({ source: { iid: x.iid, card: x.card }, controller: x.controller, ability: t.ability, targets: [[{ kind: 'spell', iid: item.iid }]] });
       }
     }
@@ -3834,6 +3849,21 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       log(d, { k: 'copied', card: src.unanimated.name, as: g.grave.card.name });
       break;
     }
+    case 'exileOwnGraveCard': {
+      // Relic of Progenitus: the targeted player chooses a card from their graveyard.
+      const [q] = players;
+      const grave = q === undefined ? [] : d.players[q].graveyard;
+      if (!grave.length) break;
+      if (answer?.kind !== 'cards') return { kind: 'cards', player: q, purpose: 'exileOwnGraveCard', min: 1, max: 1, options: [...grave], params: { card: item.card.name } };
+      const picked = answer.iids[0];
+      const inst = grave.find((c) => c.iid === picked);
+      if (inst) {
+        d.players[q].graveyard = grave.filter((c) => c !== inst);
+        d.players[q].exile.push(inst);
+        log(d, { k: 'exiledCard', card: inst.card.name });
+      }
+      break;
+    }
     case 'exileTopUntilEndStep': {
       // Necropotence: set aside face down, into the hand at its controller's next end step.
       const ps = d.players[caster];
@@ -4003,6 +4033,12 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         searcher = who;
       }
       const ps = d.players[searcher];
+      // Archivist of Oghma: "Whenever an opponent searches their library, …" (once, as the search starts).
+      if (!answer) {
+        for (const x of d.battlefield.filter((y) => teamOf(d, y.controller) !== teamOf(d, searcher))) {
+          for (const t of triggersOf(x.card)) if (t.event.on === 'opponentSearches') queueTrigger(d, x, x.controller, t.ability);
+        }
+      }
       // Ashiok, Dream Render: an opponent's own spells and abilities can't make them search.
       if (searcher === caster && withRule(d, 'opponentsCantSearch').some((x) => teamOf(d, x.controller) !== teamOf(d, searcher))) break;
       // Tezzeret the Seeker: "with mana value X or less".
@@ -5876,6 +5912,11 @@ export function apply(state: GameState, action: Action): GameState {
           activation: { item, named },
         };
         break;
+      }
+      // Relic of Progenitus: "Exile this artifact".
+      if (spec.cost.exileSelf) {
+        removePermanent(d, perm, 'exile');
+        log(d, { k: 'exiled', card: perm.card.name });
       }
       // Devoted Druid: "Put a -1/-1 counter on this creature" (it may die of it: after the ability is put on the stack).
       if (spec.cost.putCounter) {

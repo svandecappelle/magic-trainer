@@ -1,3 +1,17 @@
+PARTIAL  Boromir, Warden of the Tower {2}{W} — Legendary Creature — Human Soldier
+  ✓ Vigilance
+      keyword
+  ✓ Whenever an opponent casts a spell, if no mana was spent to cast it, …
+      trigger (castWithoutMana) → counter (1 target)
+  ✗ Sacrifice Boromir: Creatures you control gain indestructible until en…
+      activated ability, effect not simulated
+PARTIAL  Jace, Wielder of Mysteries {1}{U}{U}{U} — Legendary Planeswalker — Jace
+  ✓ If you would draw a card while your library has no cards in it, you w…
+      rule for the game: emptyLibraryWins
+  ✓ +1: Target player mills two cards. Draw a card.
+      loyalty ability → mill+draw (1 target)
+  ✗ −8: Draw seven cards. Then if your library has no cards in it, you wi…
+      activated ability, effect not simulated
 PARTIAL  Lurrus of the Dream-Den {1}{W/B}{W/B} — Legendary Creature — Cat Nightmare
   ✗ Companion — Each permanent card in your starting deck has mana value …
       companion not simulated (played from the deck)
@@ -5,6 +19,11 @@ PARTIAL  Lurrus of the Dream-Den {1}{W/B}{W/B} — Legendary Creature — Cat Ni
       keyword
   ✓ Once during each of your turns, you may cast a permanent spell with m…
       rule for the game: lurrus
+PARTIAL  Theorist's Sanctum  — Land — Island
+  ✓ As this land enters, you may behold a Jace. If you don't, this land e…
+      enters tapped (unlessBehold)
+  ✗ {2}{U}, {T}: Empower Jace 2.
+      activated ability, effect not simulated
 PARTIAL  Tinder Wall {G} — Creature — Plant Wall
   ✓ Defender
       keyword
@@ -12,6 +31,11 @@ PARTIAL  Tinder Wall {G} — Creature — Plant Wall
       mana: R R, sacrificing it (spent last)
   ✗ {R}, Sacrifice this creature: It deals 2 damage to target creature it…
       activated ability, effect not simulated
+OK       Archivist of Oghma {1}{W} — Creature — Halfling Cleric
+  ✓ Flash
+      keyword
+  ✓ Whenever an opponent searches their library, you gain 1 life and draw…
+      trigger (opponentSearches) → gainLife+draw
 OK       Chalice of the Void {X}{X} — Artifact
   ✓ This artifact enters with X charge counters on it.
       enters with X charge counters
@@ -27,6 +51,11 @@ OK       Devoted Druid {1}{G} — Creature — Elf Druid
       mana: G
   ✓ Put a -1/-1 counter on this creature: Untap this creature.
       activated → untap
+OK       Faerie Macabre {1}{B}{B} — Creature — Faerie Rogue
+  ✓ Flying
+      keyword
+  ✓ Discard this card: Exile up to two target cards from graveyards.
+      channel (from hand) → destroy (1 target)
 OK       Fear of Missing Out {1}{R} — Enchantment Creature — Nightmare
   ✓ When this creature enters, discard a card, then draw a card.
       trigger (enters) → discard+draw
@@ -35,6 +64,16 @@ OK       Fear of Missing Out {1}{R} — Enchantment Creature — Nightmare
 OK       Grand Abolisher {W}{W} — Creature — Human Cleric
   ✓ During your turn, your opponents can't cast spells or activate abilit…
       rule for the game: abolisher
+OK       Karn, Argent Defender {2} — Legendary Artifact Creature — Golem
+  ✓ Artifacts and creatures entering the battlefield don't cause abilitie…
+      rule for the game: noEntersTriggers
+OK       Leyline Binding {5}{W} — Enchantment
+  ✓ Flash
+      keyword
+  ✓ Domain — This spell costs {1} less to cast for each basic land type a…
+      costs {1} less for each basic land type among lands you control (domain)
+  ✓ When this enchantment enters, exile target nonland permanent an oppon…
+      trigger (enters) → destroy (1 target)
 OK       Moonshadow {B} — Creature — Elemental
   ✓ Menace
       keyword
@@ -68,6 +107,11 @@ OK       Phlage, Titan of Fire's Fury {1}{R}{W} — Legendary Creature — Elder
       trigger (enters/attacks) → damage+gainLife (1 target) | damage+gainLife (1 target)
   ✓ Escape—{R}{R}{W}{W}, Exile five other cards from your graveyard.
       escape {R}{R}{W}{W}: cast from the graveyard, exiling 5
+OK       Relic of Progenitus {1} — Artifact
+  ✓ {T}: Target player exiles a card from their graveyard.
+      activated → exileOwnGraveCard (1 target)
+  ✓ {1}, Exile this artifact: Exile all graveyards. Draw a card.
+      activated → exileGraveyards+draw
 OK       Screaming Nemesis {2}{R} — Creature — Spirit
   ✓ Haste
       keyword
@@ -85,6 +129,11 @@ OK       Shifting Woodland  — Land
       mana: G
   ✓ Delirium — {2}{G}{G}: This land becomes a copy of target permanent ca…
       activated → becomeCopy (1 target)
+OK       Solitary Cell {R}{W} — Artifact
+  ✓ When this artifact enters, exile target nonland permanent an opponent…
+      trigger (enters) → destroy (1 target)
+  ✓ {1}, {T}, Discard a legendary card: Draw a card.
+      activated → draw
 OK       Tamiyo, Inquisitive Student // Tamiyo, Seasoned Scholar {U} — Legendary Creature — Moonfolk Wizard // Legendary Planeswalker — Tamiyo (other faces not audited)
   ✓ Flying
       keyword
@@ -92,6 +141,11 @@ OK       Tamiyo, Inquisitive Student // Tamiyo, Seasoned Scholar {U} — Legenda
       trigger (attacks) → token
   ✓ When you draw your third card in a turn, exile Tamiyo, then return he…
       trigger (youDrawNth) → flickerTransformed
+OK       Tectonic Edge  — Land
+  ✓ {T}: Add {C}.
+      mana: C
+  ✓ {1}, {T}, Sacrifice this land: Destroy target nonbasic land. Activate…
+      activated → destroy (1 target)
 OK       The Cabbage Merchant {2}{G} — Legendary Creature — Human Citizen
   ✓ Whenever an opponent casts a noncreature spell, create a Food token.
       trigger (opponentCasts) → token
@@ -112,5 +166,5 @@ OK       Uro, Titan of Nature's Wrath {1}{G}{U} — Legendary Creature — Elder
   ✓ Escape—{G}{G}{U}{U}, Exile five other cards from your graveyard.
       escape {G}{G}{U}{U}: cast from the graveyard, exiling 5
 
-19 cards: 17 ok, 2 partial, 0 not simulated, 0 can't be cast
+29 cards: 24 ok, 5 partial, 0 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

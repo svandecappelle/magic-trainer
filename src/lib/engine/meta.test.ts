@@ -5210,3 +5210,95 @@ describe('cEDH: Tinder Wall, Grand Abolisher, Necropotence, The Cabbage Merchant
     expect(canTapForMana(t, perm(t, 'Elf')!)).toBe(true);
   });
 });
+
+describe('Metagame audit 2026-10-18 evening, third batch', () => {
+  const cards = JSON.parse(readFileSync(new URL('./fixtures/metagame-2026-10-18.json', import.meta.url), 'utf8')) as Card[];
+  const real = (name: string, manaCost?: string) => {
+    const c = cards.find((x) => x.name.startsWith(name))!;
+    return manaCost === undefined ? c : { ...c, manaCost };
+  };
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 10 && (s.stack.length || s.triggered?.length) && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  const land = (name: string, type: string) => card({ name, typeLine: `Basic Land — ${type}` });
+  const forest = land('Forest', 'Forest');
+  const legend = creature('Legend', 1, 1, { typeLine: 'Legendary Creature — Elf' });
+
+  it('Solitary Cell: discarding a legendary card draws one', () => {
+    let s = board({ mana: 1, mine: [real('Solitary Cell')], hand: [creature('Bear', 2, 2), legend] });
+    s = apply(s, { type: 'activate', iid: iidOf(s, 'Solitary Cell'), index: 0 });
+    expect((s.pending!.choice as { options: { iid: string }[] }).options.map((o) => o.iid)).toEqual(['h1']);
+  });
+
+  it('Leyline Binding: {1} less for each basic land type among your lands', () => {
+    const s = board({ mine: [land('Plains', 'Plains'), land('Island', 'Island'), land('Swamp', 'Swamp'), land('Mountain', 'Mountain'), forest], hand: [real('Leyline Binding')] });
+    expect(castCost(s, 0, real('Leyline Binding'), {}).generic).toBe(0);
+  });
+
+  it('Tectonic Edge: only if an opponent controls four or more lands', () => {
+    const s = board({ mana: 1, mine: [real('Tectonic Edge')], oppMana: 3, theirs: [card({ name: 'Ruins', typeLine: 'Land' })] });
+    expect(errorOf(() => apply(s, { type: 'activate', iid: iidOf(s, 'Tectonic Edge'), index: 0, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Ruins') }]] }))).toBeNull();
+    const t = board({ mana: 1, mine: [real('Tectonic Edge')], oppMana: 2, theirs: [card({ name: 'Ruins', typeLine: 'Land' })] });
+    expect(errorOf(() => apply(t, { type: 'activate', iid: iidOf(t, 'Tectonic Edge'), index: 0, targets: [[{ kind: 'permanent', iid: iidOf(t, 'Ruins') }]] }))).toBe('activationForbidden');
+  });
+
+  it('Boromir: counters an opponent\'s spell cast without mana, not yours', () => {
+    const free = creature('Ornithopter', 0, 2, { manaCost: '{0}', cmc: 0 });
+    let s = board({ mine: [real('Boromir, Warden of the Tower')], hand: [free] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    expect(perm(s, 'Ornithopter')).toBeDefined();
+    s = board({ theirs: [real('Boromir, Warden of the Tower')], hand: [free] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    expect(perm(s, 'Ornithopter')).toBeUndefined();
+  });
+
+  it('Jace, Wielder of Mysteries: drawing from an empty library wins', () => {
+    let s = board({ mine: [real('Jace, Wielder of Mysteries')], hand: [spell('Opt', '{0}', 'Draw a card.')] });
+    perm(s, 'Jace, Wielder of Mysteries')!.counters = { loyalty: 4 };
+    s.players[0].library = [];
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    expect(s.winner).toBe(0);
+  });
+
+  it('Karn, Argent Defender: creatures entering trigger nothing', () => {
+    const elf = creature('Elf', 1, 1, { manaCost: '{0}', oracleText: 'When this creature enters, draw a card.' });
+    let s = board({ mine: [real('Karn, Argent Defender')], hand: [elf] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    expect(s.players[0].hand).toHaveLength(0);
+  });
+
+  it('Archivist of Oghma: 1 life and a card when an opponent searches their library', () => {
+    const tutor = spell('Tutor', '{0}', 'Search your library for a card, put it into your hand, then shuffle.', 'Sorcery');
+    let s = board({ theirs: [real('Archivist of Oghma')], hand: [tutor] });
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    for (let i = 0; i < 10 && (s.stack.length || s.triggered?.length); i++) s = s.pending ? apply(s, { type: 'choose', answer: { kind: 'cards', iids: [] } }) : settle(apply(s, { type: 'pass' }));
+    expect([s.players[1].life, s.players[1].hand.length]).toEqual([21, 1]);
+  });
+
+  it('Theorist\'s Sanctum: untapped when you can behold a Jace', () => {
+    let s = board({ hand: [real('Theorist\'s Sanctum')] });
+    s = apply(s, { type: 'playLand', iid: 'h0' });
+    expect(perm(s, 'Theorist\'s Sanctum')!.tapped).toBe(true);
+    s = board({ hand: [real('Theorist\'s Sanctum'), real('Jace, Wielder of Mysteries')] });
+    s = apply(s, { type: 'playLand', iid: 'h0' });
+    expect(perm(s, 'Theorist\'s Sanctum')!.tapped).toBe(false);
+  });
+
+  it('Relic of Progenitus: a player exiles a card of their choice; exiled itself: all graveyards, and a card', () => {
+    let s = board({ mana: 1, mine: [real('Relic of Progenitus')], grave: [forest, legend] });
+    s.players[1].graveyard = [{ iid: 'og0', card: forest }];
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Relic of Progenitus'), index: 0, targets: [[{ kind: 'player', player: 0 }]] }));
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['g1'] } }));
+    expect(s.players[0].graveyard.map((c) => c.iid)).toEqual(['g0']);
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Relic of Progenitus'), index: 1 }));
+    expect([s.players[0].graveyard.length, s.players[1].graveyard.length, perm(s, 'Relic of Progenitus'), s.players[0].hand.length]).toEqual([0, 0, undefined, 1]);
+  });
+
+  it('Faerie Macabre: discarded from the hand for free, exiles up to two cards from graveyards', () => {
+    let s = board({ hand: [real('Faerie Macabre')], grave: [forest] });
+    s.players[1].graveyard = [{ iid: 'og0', card: legend }];
+    s = resolve(apply(s, { type: 'channel', iid: 'h0', targets: [[{ kind: 'card', iid: 'g0' }, { kind: 'card', iid: 'og0' }]] }));
+    expect([s.players[0].graveyard.map((c) => c.card.name), s.players[1].graveyard.length]).toEqual([['Faerie Macabre'], 0]);
+  });
+});

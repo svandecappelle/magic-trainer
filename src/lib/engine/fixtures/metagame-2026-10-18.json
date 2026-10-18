@@ -430,5 +430,196 @@
   "power": "2",
   "toughness": "2",
   "keywords": []
+ },
+ {
+  "id": "5142bbb6-194c-4b12-b11a-1a21c9fe81a6",
+  "name": "Solitary Cell",
+  "manaCost": "{R}{W}",
+  "cmc": 2,
+  "typeLine": "Artifact",
+  "oracleText": "When this artifact enters, exile target nonland permanent an opponent controls with mana value 3 or less until this artifact leaves the battlefield.\n{1}, {T}, Discard a legendary card: Draw a card.",
+  "colors": [
+   "R",
+   "W"
+  ],
+  "colorIdentity": [
+   "R",
+   "W"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "3c3ac3dd-35db-447f-8674-37b4680a1ef7",
+  "name": "Leyline Binding",
+  "manaCost": "{5}{W}",
+  "cmc": 6,
+  "typeLine": "Enchantment",
+  "oracleText": "Flash\nDomain — This spell costs {1} less to cast for each basic land type among lands you control.\nWhen this enchantment enters, exile target nonland permanent an opponent controls until this enchantment leaves the battlefield.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "dmu",
+  "setName": "Dominaria United",
+  "rarity": "rare",
+  "keywords": [
+   "Domain",
+   "Flash"
+  ]
+ },
+ {
+  "id": "94b9d7af-3e6f-4227-bb7d-a17d6f250535",
+  "name": "Tectonic Edge",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}: Add {C}.\n{1}, {T}, Sacrifice this land: Destroy target nonbasic land. Activate only if an opponent controls four or more lands.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "c14",
+  "setName": "Commander 2014",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "f6bc3720-2892-4dda-8f30-079a1ac8e1e2",
+  "name": "Boromir, Warden of the Tower",
+  "manaCost": "{2}{W}",
+  "cmc": 3,
+  "typeLine": "Legendary Creature — Human Soldier",
+  "oracleText": "Vigilance\nWhenever an opponent casts a spell, if no mana was spent to cast it, counter that spell.\nSacrifice Boromir: Creatures you control gain indestructible until end of turn. The Ring tempts you.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "ltr",
+  "setName": "The Lord of the Rings: Tales of Middle-earth",
+  "rarity": "rare",
+  "power": "3",
+  "toughness": "3",
+  "keywords": [
+   "Vigilance"
+  ]
+ },
+ {
+  "id": "6adb7d73-4482-4930-8497-cffd169b57e2",
+  "name": "Jace, Wielder of Mysteries",
+  "manaCost": "{1}{U}{U}{U}",
+  "cmc": 4,
+  "typeLine": "Legendary Planeswalker — Jace",
+  "oracleText": "If you would draw a card while your library has no cards in it, you win the game instead.\n+1: Target player mills two cards. Draw a card.\n−8: Draw seven cards. Then if your library has no cards in it, you win the game.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "war",
+  "setName": "War of the Spark",
+  "rarity": "rare",
+  "loyalty": "4",
+  "keywords": [
+   "Mill"
+  ]
+ },
+ {
+  "id": "1ebbbddb-2dc3-4194-b72b-13bcebe2ab89",
+  "name": "Karn, Argent Defender",
+  "manaCost": "{2}",
+  "cmc": 2,
+  "typeLine": "Legendary Artifact Creature — Golem",
+  "oracleText": "Artifacts and creatures entering the battlefield don't cause abilities to trigger.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "rare",
+  "power": "1",
+  "toughness": "3",
+  "keywords": []
+ },
+ {
+  "id": "f6589e02-8c84-4069-88d1-ebcc8520cae1",
+  "name": "Archivist of Oghma",
+  "manaCost": "{1}{W}",
+  "cmc": 2,
+  "typeLine": "Creature — Halfling Cleric",
+  "oracleText": "Flash\nWhenever an opponent searches their library, you gain 1 life and draw a card.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "clb",
+  "setName": "Commander Legends: Battle for Baldur's Gate",
+  "rarity": "rare",
+  "power": "2",
+  "toughness": "2",
+  "keywords": [
+   "Flash"
+  ]
+ },
+ {
+  "id": "22db5bba-46c9-4a26-821d-303ddb386ea4",
+  "name": "Theorist's Sanctum",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land — Island",
+  "oracleText": "({T}: Add {U}.)\nAs this land enters, you may behold a Jace. If you don't, this land enters tapped. (To behold a Jace, choose a Jace you control or reveal a Jace card from your hand.)\n{2}{U}, {T}: Empower Jace 2.",
+  "colors": [],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "fra",
+  "setName": "Reality Fracture",
+  "rarity": "rare",
+  "keywords": [
+   "Empower Jace",
+   "Behold"
+  ]
+ },
+ {
+  "id": "436cd66c-0622-43cd-8748-af4d21a2db3f",
+  "name": "Relic of Progenitus",
+  "manaCost": "{1}",
+  "cmc": 1,
+  "typeLine": "Artifact",
+  "oracleText": "{T}: Target player exiles a card from their graveyard.\n{1}, Exile this artifact: Exile all graveyards. Draw a card.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "ema",
+  "setName": "Eternal Masters",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "62103ceb-b16d-48ea-af42-d3df88d1ee4c",
+  "name": "Faerie Macabre",
+  "manaCost": "{1}{B}{B}",
+  "cmc": 3,
+  "typeLine": "Creature — Faerie Rogue",
+  "oracleText": "Flying\nDiscard this card: Exile up to two target cards from graveyards.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "gvl",
+  "setName": "Duel Decks Anthology: Garruk vs. Liliana",
+  "rarity": "common",
+  "power": "2",
+  "toughness": "2",
+  "keywords": [
+   "Flying"
+  ]
  }
 ]

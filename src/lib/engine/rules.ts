@@ -586,6 +586,9 @@ export type Effect =
    * next end step."
    */
   | { kind: 'exileTopUntilEndStep' }
+  /** Relic of Progenitus: "Target player exiles a card from their graveyard." (their choice) */
+  | { kind: 'exileOwnGraveCard'; to: Affected }
+
   /** Moonshadow: "remove a -1/-1 counter from this creature". */
   | { kind: 'removeCounterSelf'; counter: CounterKind }
   /** Screaming Nemesis: "they can't gain life for the rest of the game" (a player hit). */
@@ -921,9 +924,11 @@ export function parseTargetPhrase(phrase: string): TargetSpec | null {
   const filter: TargetFilter = head[4] ? { other: true } : {};
 
   // "target creature card from your graveyard", "target card from a graveyard"
-  const grave = text.match(/^(.*?)\bcards? (with [a-z0-9 ]+ )?(?:from|in) (your|a|an opponent's) graveyard$/);
+  // Faerie Macabre: "up to two target cards from graveyards".
+  const grave = text.match(/^(.*?)\bcards? (with [a-z0-9 ]+ )?(?:from|in) (your|a|an opponent's) graveyard$/)
+    ?? text.match(/^(.*?)\bcards? (with [a-z0-9 ]+ )?(?:from|in) (graveyards)$/);
   if (grave) {
-    if (grave[3] !== 'a') filter.controller = grave[3] === 'your' ? 'you' : 'opponent';
+    if (grave[3] !== 'a' && grave[3] !== 'graveyards') filter.controller = grave[3] === 'your' ? 'you' : 'opponent';
     const words = grave[1].trim();
     // "permanent card": not an instant or sorcery ("nonland permanent card": not a land either).
     const permanent = /(?:^|\s)permanent$/.test(words);
@@ -1095,6 +1100,11 @@ const KEYWORD_LIST = `((?:${KEYWORDS.join('|')})(?:(?:,? and |, )(?:${KEYWORDS.j
 function cardWordsFilter(words: string): TargetFilter | null {
   const filter: TargetFilter = {};
   for (const w of words.toLowerCase().replace(/,? or |, /g, ' ').split(' ').filter(Boolean)) {
+    // Solitary Cell: "Discard a legendary card".
+    if (w === 'legendary') {
+      filter.legendary = true;
+      continue;
+    }
     // Glaring Fleshraker: "Whenever you cast a colorless spell".
     if (w === 'colorless') {
       filter.colorless = true;
@@ -1386,6 +1396,10 @@ export function parseAbilityText(text: string, self?: string, selfIt = true): Ab
   });
   scan(new RegExp(AMULET.source, 'g'), () => ({ kind: 'chargeAmulet' }));
   scan(new RegExp(NECRO.source, 'g'), () => ({ kind: 'exileTopUntilEndStep' }));
+  scan(new RegExp(`(${TARGET}) exiles a card from their graveyard(?=\\.)`, 'gi'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'player');
+    return to && { kind: 'exileOwnGraveCard', to };
+  });
   // Tyvar's Stand: "Target creature you control gets +X/+X and gains hexproof and indestructible until end of turn."
   scan(new RegExp(`(${TARGET}) gets \\+X\\/\\+X(?: and gains? ${KEYWORD_LIST})? until end of turn`, 'gi'), (m) => {
     const to = slotFor(m[1], (spec) => spec.kind === 'creature');
@@ -2101,6 +2115,8 @@ export interface CastInfo {
   graveDiscount?: { filter: TargetFilter } | { types: true } | { adventure: true };
   /** Sunderflock: "{X} less, where X is the greatest mana value among Elementals you control". */
   greatestMvDiscount?: TargetFilter;
+  /** Leyline Binding: "Domain — This spell costs {1} less to cast for each basic land type among lands you control." */
+  domainDiscount?: boolean;
   /** Obsidian Charmaw: "{1} less to cast for each land your opponents control that could produce {C}". */
   opponentLandsDiscount?: Color;
 }
@@ -2148,7 +2164,8 @@ export function castInfo(card: Card, face = 0): CastInfo {
       info.beforeCombatDamage = true;
     } else if ((m = line.match(/^((?:\{[^}]+\})+): Put this card from your hand onto the battlefield\.$/))) {
       info.channel = { cost: m[1], ability: { targets: [], effects: [{ kind: 'putSelfFromHand' }] }, legendaryDiscount: false, keyword: false, keepsCard: true };
-    } else if ((m = line.match(/^(?:Channel — )?((?:\{[^}]+\})+), Discard this card: (.+)$/))) {
+    } else if ((m = line.match(/^(?:Channel — )?((?:\{[^}]+\})+), Discard this card: (.+)$/) ?? line.match(/^()Discard this card: (.+)$/))) {
+      // Faerie Macabre: "Discard this card: Exile up to two target cards from graveyards." (no mana)
       // Also Mjölnir's "{2}{R}, Discard this card: It deals 2 damage to each creature." (from the hand, like channel).
       const discount = / This ability costs \{1\} less to activate for each legendary creature you control\.$/;
       const body = m[2].replace(discount, '');
@@ -2156,6 +2173,7 @@ export function castInfo(card: Card, face = 0): CastInfo {
     } else if (/^Affinity for artifacts$/i.test(line)) info.affinity = { types: ['artifact'] };
     else if (/^This spell costs \{1\} less to cast for each card type among cards in your graveyard\.$/i.test(line)) info.graveDiscount = { types: true };
     else if ((m = line.match(/^This spell costs \{1\} less to cast for each land your opponents control that could produce \{([WUBRGC])\}\.$/))) info.opponentLandsDiscount = m[1] as Color;
+    else if (/^(?:Domain — )?This spell costs \{1\} less to cast for each basic land type among lands you control\.$/.test(line)) info.domainDiscount = true;
     else if (/^This spell costs \{X\} less to cast, where X is the number of cards in your graveyard that are instant cards, sorcery cards, and\/or have an Adventure\.$/i.test(line)) info.graveDiscount = { adventure: true };
     else if ((m = line.match(/^This spell costs \{X\} less to cast, where X is the greatest mana value among ([A-Z][a-z]+)s you control\.$/))) {
       info.greatestMvDiscount = { subtypes: [m[1].toLowerCase()] };
@@ -2387,7 +2405,9 @@ export type TriggerEvent =
   /** "Whenever you attack": once when its controller declares one or more attackers. */
   | { on: 'youAttack' }
   /** Vexing Bauble: "Whenever a player casts a spell, if no mana was spent to cast it, …" (the ability's slot 0 is that spell). */
-  | { on: 'castWithoutMana'; colored?: boolean }
+  | { on: 'castWithoutMana'; colored?: boolean; opponents?: boolean }
+  /** Archivist of Oghma: "Whenever an opponent searches their library, …" */
+  | { on: 'opponentSearches' }
   /** Sneaky Snacker: "When you draw your third card in a turn, return this card from your graveyard …" (from the graveyard). */
   | { on: 'youDrawNth'; nth: number; fromGraveyard: boolean }
   /**
@@ -2855,6 +2875,12 @@ export function triggersOf(card: Card): TriggerSpec[] {
       });
       continue;
     }
+    // Archivist of Oghma: "Whenever an opponent searches their library, you gain 1 life and draw a card."
+    const searches = line.match(/^Whenever an opponent searches their library, (.+)$/i);
+    if (searches) {
+      out.push({ event: { on: 'opponentSearches' }, ability: triggerAbility(searches[1], name, false) });
+      continue;
+    }
     // Necropotence: "Whenever you discard a card, exile that card from your graveyard." (slot 0: that card)
     if (/^Whenever you discard a card, exile that card from your graveyard\.$/i.test(line)) {
       out.push({ event: { on: 'youDiscard' }, ability: { targets: [{ kind: 'card', min: 1, max: 1, filter: { controller: 'you' } }], effects: [{ kind: 'destroy', exile: true, to: { slot: 0 } }] } });
@@ -2983,10 +3009,11 @@ export function triggersOf(card: Card): TriggerSpec[] {
 
     // Vexing Bauble: "Whenever a player casts a spell, if no mana was spent to cast it, counter that spell."; Void Mirror:
     // "if no colored mana was spent to cast it".
-    const noMana = line.match(/^Whenever a player casts a spell, if no (colored )?mana was spent to cast it, counter that spell\.$/i);
+    // Boromir: "Whenever an opponent casts a spell, if no mana was spent to cast it, counter that spell."
+    const noMana = line.match(/^Whenever (a player|an opponent) casts a spell, if no (colored )?mana was spent to cast it, counter that spell\.$/i);
     if (noMana) {
       out.push({
-        event: { on: 'castWithoutMana', ...(noMana[1] ? { colored: true } : {}) },
+        event: { on: 'castWithoutMana', ...(noMana[2] ? { colored: true } : {}), ...(noMana[1] === 'an opponent' ? { opponents: true } : {}) },
         ability: { targets: [{ kind: 'spell', min: 1, max: 1, filter: {} }], effects: [{ kind: 'counter', to: { slot: 0 } }] },
       });
       continue;
@@ -3081,6 +3108,8 @@ export interface ActivationCost {
   waterbend?: boolean;
   /** Devoted Druid: "Put a -1/-1 counter on this creature". */
   putCounter?: CounterKind;
+  /** Relic of Progenitus: "Exile this artifact" (it leaves as a cost). */
+  exileSelf?: boolean;
   /** Phyrexian Devourer: "Exile the top card of your library". */
   exileTop?: boolean;
 }
@@ -3109,6 +3138,8 @@ export interface ActivatedSpec {
   noCounter?: CounterKind;
   /** Shifting Woodland (delirium): "Activate only if there are four or more card types among cards in your graveyard." */
   delirium?: boolean;
+  /** Tectonic Edge: "Activate only if an opponent controls four or more lands." */
+  opponentLands?: number;
 }
 
 const activatedCache = new Map<string, ActivatedSpec[]>();
@@ -3202,6 +3233,7 @@ export function activatedOf(card: Card): ActivatedSpec[] {
         } else ok = false;
       }
       else if (/^exile the top card of your library$/i.test(p)) cost.exileTop = true;
+      else if (/^exile /i.test(p) && selves.includes(p.slice('exile '.length).toLowerCase())) cost.exileSelf = true;
       else if (/^put a -1\/-1 counter on /i.test(p) && selves.includes(p.replace(/^put a -1\/-1 counter on /i, '').toLowerCase())) cost.putCounter = '-1/-1';
       // Wishclaw Talisman: "Remove a wish counter from this artifact".
       else if (/^remove an? (fade|age|lore|wish) counter from /i.test(p) && selves.includes(p.replace(/^remove an? \w+ counter from /i, '').toLowerCase())) {
@@ -3226,8 +3258,9 @@ export function activatedOf(card: Card): ActivatedSpec[] {
     const threshold = text.match(/Activate only if there are (\w+) or more cards in your graveyard\./i);
     const minGraveyard = threshold ? toNumber(threshold[1]) : undefined;
     const needsDelirium = /Activate only if there are four or more card types among cards in your graveyard\./i.test(text);
+    const oppLands = text.match(/Activate only if an opponent controls (\w+) or more lands\./i);
     const noCounter = text.match(/Activate only if there are no (charge) counters on this artifact\./i)?.[1] as CounterKind | undefined;
-    if (/Activate (?:only|this ability only)/i.test(text.replace(/Activate only (?:as a sorcery|once each turn|during your turn|if there are \w+ or more cards in your graveyard|if there are no charge counters on this artifact|if there are four or more card types among cards in your graveyard)\.?/gi, ''))) continue;
+    if (/Activate (?:only|this ability only)/i.test(text.replace(/Activate only (?:as a sorcery|once each turn|during your turn|if there are \w+ or more cards in your graveyard|if there are no charge counters on this artifact|if there are four or more card types among cards in your graveyard|if an opponent controls \w+ or more lands)\.?/gi, ''))) continue;
     text = text.replace(/\s*Activate (?:only|this ability only)[^.]*\./gi, '').trim();
     // Phyrexian Devourer: "Put X +1/+1 counters on this creature, where X is the exiled card's mana value."
     if (cost.exileTop) {
@@ -3248,7 +3281,7 @@ export function activatedOf(card: Card): ActivatedSpec[] {
     if (returnsExiledWhenLeaving(card)) ability = { ...ability, effects: ability.effects.map((x) => (x.kind === 'destroy' && x.exile ? { ...x, untilLeaves: true } : x)) };
     // Stoneforge Mystic: choosing no card is the "may".
     const choosesNone = ability.effects.length === 1 && ability.effects[0].kind === 'putFromHand';
-    out.push({ text: line, cost, ability: optional && ability.effects.length && !choosesNone ? { ...ability, optional } : ability, sorcery, once, ...(discountPer ? { discountPer } : {}), ...(yourTurn ? { yourTurn } : {}), ...(minGraveyard ? { minGraveyard } : {}), ...(noCounter ? { noCounter } : {}), ...(needsDelirium ? { delirium: true } : {}) });
+    out.push({ text: line, cost, ability: optional && ability.effects.length && !choosesNone ? { ...ability, optional } : ability, sorcery, once, ...(discountPer ? { discountPer } : {}), ...(yourTurn ? { yourTurn } : {}), ...(minGraveyard ? { minGraveyard } : {}), ...(noCounter ? { noCounter } : {}), ...(needsDelirium ? { delirium: true } : {}), ...(oppLands ? { opponentLands: toNumber(oppLands[1]) } : {}) });
   }
   activatedCache.set(key, out);
   return out;
@@ -3825,11 +3858,15 @@ export type EntersTappedRule =
   /** Eddymurk Crab: "This creature enters tapped if it's not your turn." */
   | { kind: 'notYourTurn' }
   /** Rejuvenating Springs: "This land enters tapped unless you have two or more opponents." */
-  | { kind: 'unlessOpponents'; n: number };
+  | { kind: 'unlessOpponents'; n: number }
+  /** Theorist's Sanctum: "As this land enters, you may behold a Jace. If you don't, this land enters tapped." */
+  | { kind: 'unlessBehold'; subtype: string };
 
 /** When a permanent enters tapped. */
 export function entersTappedRule(card: Card): EntersTappedRule | null {
   const text = frontText(card);
+  const behold = text.match(/^As this land enters, you may behold an? ([A-Z][a-z]+)\. If you don't, this land enters tapped\.(?: \([^)]*\))?$/m);
+  if (behold) return { kind: 'unlessBehold', subtype: behold[1].toLowerCase() };
   const selves = selfWords(card.name).map(escapeRe).join('|');
   if (entersTapped(card)) return { kind: 'always' };
   const early = text.match(new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)? tapped unless it's your (first|first or second|first, second, or third) turn of the game\\.`, 'i'));
@@ -3878,6 +3915,8 @@ export type GameRule =
   | 'offTurnSpellsCost3'
   /** Doorkeeper Thrull: "Artifacts and creatures entering don't cause abilities to trigger." */
   | 'noEntersTriggers'
+  /** Jace, Wielder of Mysteries: "If you would draw a card while your library has no cards in it, you win the game instead." */
+  | 'emptyLibraryWins'
   /** High Noon: "Each player can't cast more than one spell each turn." */
   | 'oneSpellEachTurn'
   /** Yavimaya, Cradle of Growth: "Each land is a Forest in addition to its other land types." */
@@ -3966,7 +4005,8 @@ const GAME_RULES: [RegExp, GameRule][] = [
   [/^Creature cards in graveyards and libraries can't enter the battlefield\.$/m, 'noCreaturesFromGraveyardsLibraries'],
   [/^Players can't cast spells from graveyards or libraries\.$/m, 'noCastingFromGraveyardsLibraries'],
   [/^Each spell costs \{3\} more to cast except during its controller's turn\.$/m, 'offTurnSpellsCost3'],
-  [/^Artifacts and creatures entering don't cause abilities to trigger\.$/m, 'noEntersTriggers'],
+  [/^Artifacts and creatures entering(?: the battlefield)? don't cause abilities to trigger\.$/m, 'noEntersTriggers'],
+  [/^If you would draw a card while your library has no cards in it, you win the game instead\.$/m, 'emptyLibraryWins'],
   [/^Each player can't cast more than one spell each turn\.$/m, 'oneSpellEachTurn'],
   [/^Each land is a Forest in addition to its other land types\.$/m, 'landsAreForests'],
   [/^Each land is a Swamp in addition to its other land types\.$/m, 'landsAreSwamps'],

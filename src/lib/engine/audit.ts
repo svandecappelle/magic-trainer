@@ -125,6 +125,7 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   const discount = castInfo(one).graveDiscount;
   if (discount) return { text: line, status: 'ok', how: `costs {1} less for each ${'types' in discount ? 'card type' : 'matching card'} in your graveyard` };
   if (castInfo(one).greatestMvDiscount) return { text: line, status: 'ok', how: 'costs {X} less: the greatest mana value among matching permanents you control' };
+  if (castInfo(one).domainDiscount) return { text: line, status: 'ok', how: 'costs {1} less for each basic land type among lands you control (domain)' };
   if (castInfo(one).opponentLandsDiscount) return { text: line, status: 'ok', how: `costs {1} less for each opponent's land that could make {${castInfo(one).opponentLandsDiscount}}` };
   const channel = castInfo(one).channel;
   if (channel) {
