@@ -50,8 +50,10 @@ describe('target phrases (0.3)', () => {
     expect(parseTargetPhrase('target creature with flying')).toMatchObject({ filter: { keyword: 'flying' } });
     expect(parseTargetPhrase('target creature with power 4 or greater')).toMatchObject({ filter: { minPower: 4 } });
     // Unknown restrictions make the whole spell "not simulated" instead of silently ignored.
-    expect(parseTargetPhrase('target legendary creature')).toBeNull();
-    expect(parseAbilityText('Destroy target legendary creature.')).toEqual({ targets: [], effects: [] });
+    expect(parseTargetPhrase('target modified creature')).toBeNull();
+    expect(parseAbilityText('Destroy target modified creature.')).toEqual({ targets: [], effects: [] });
+    // Okina: "target legendary creature".
+    expect(parseTargetPhrase('target legendary creature')).toMatchObject({ kind: 'creature', filter: { legendary: true } });
   });
 });
 

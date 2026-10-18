@@ -1,0 +1,1598 @@
+[
+ {
+  "id": "361f9b99-5b5d-40da-b4b9-5ad90f6280ee",
+  "name": "Adventuring Gear",
+  "manaCost": "{1}",
+  "cmc": 1,
+  "typeLine": "Artifact — Equipment",
+  "oracleText": "Landfall — Whenever a land you control enters, equipped creature gets +2/+2 until end of turn.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "fdn",
+  "setName": "Foundations",
+  "rarity": "uncommon",
+  "keywords": [
+   "Equip",
+   "Landfall"
+  ]
+ },
+ {
+  "id": "4b81165e-f091-4211-8b47-5ea6868b0d4c",
+  "name": "Arbor Elf",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Creature — Elf Druid",
+  "oracleText": "{T}: Untap target Forest.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "a25",
+  "setName": "Masters 25",
+  "rarity": "common",
+  "power": "1",
+  "toughness": "1",
+  "keywords": []
+ },
+ {
+  "id": "dc506497-4ecd-41d3-9042-f92f498251b0",
+  "name": "Bant Panorama",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}: Add {C}.\n{1}, {T}, Sacrifice this land: Search your library for a basic Forest, Plains, or Island card, put it onto the battlefield tapped, then shuffle.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "ncc",
+  "setName": "New Capenna Commander",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "573e1673-3ab5-4b28-9cf1-b0d43cad5ef3",
+  "name": "Become Immense",
+  "manaCost": "{5}{G}",
+  "cmc": 6,
+  "typeLine": "Instant",
+  "oracleText": "Delve (Each card you exile from your graveyard while casting this spell pays for {1}.)\nTarget creature gets +6/+6 until end of turn.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "uma",
+  "setName": "Ultimate Masters",
+  "rarity": "uncommon",
+  "keywords": [
+   "Delve"
+  ]
+ },
+ {
+  "id": "62bc9bff-89bd-4454-a876-53822cf48546",
+  "name": "Berserk",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Cast this spell only before the combat damage step.\nTarget creature gains trample and gets +X/+0 until end of turn, where X is its power. At the beginning of the next end step, destroy that creature if it attacked this turn.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "cn2",
+  "setName": "Conspiracy: Take the Crown",
+  "rarity": "mythic",
+  "keywords": []
+ },
+ {
+  "id": "492c2f9a-51e7-4e0f-9899-23bf43ea988b",
+  "name": "Birds of Paradise",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Creature — Bird",
+  "oracleText": "Flying\n{T}: Add one mana of any color.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "msc",
+  "setName": "Marvel Super Heroes Commander",
+  "rarity": "rare",
+  "power": "0",
+  "toughness": "1",
+  "keywords": [
+   "Flying"
+  ]
+ },
+ {
+  "id": "3cce80d0-b937-4325-a603-1278c110f244",
+  "name": "Blossoming Defense",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Target creature you control gets +2/+2 and gains hexproof until end of turn. (It can't be the target of spells or abilities your opponents control.)",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "ecl",
+  "setName": "Lorwyn Eclipsed",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "473d3633-6dc7-4026-a50e-3ea76b9e8c20",
+  "name": "Boreal Druid",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Snow Creature — Elf Druid",
+  "oracleText": "{T}: Add {C}.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "csp",
+  "setName": "Coldsnap",
+  "rarity": "common",
+  "power": "1",
+  "toughness": "1",
+  "keywords": []
+ },
+ {
+  "id": "2135ac5a-187b-4dc9-8f82-34e8d1603416",
+  "name": "Boseiju, Who Endures",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Legendary Land",
+  "oracleText": "{T}: Add {G}.\nChannel — {1}{G}, Discard this card: Destroy target artifact, enchantment, or nonbasic land an opponent controls. That player may search their library for a land card with a basic land type, put it onto the battlefield, then shuffle. This ability costs {1} less to activate for each legendary creature you control.",
+  "colors": [],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "neo",
+  "setName": "Kamigawa: Neon Dynasty",
+  "rarity": "rare",
+  "keywords": [
+   "Channel"
+  ]
+ },
+ {
+  "id": "412161bf-52b9-4e43-8866-aafd28dc2189",
+  "name": "Bounty of the Hunt",
+  "manaCost": "{3}{G}{G}",
+  "cmc": 5,
+  "typeLine": "Instant",
+  "oracleText": "You may exile a green card from your hand rather than pay this spell's mana cost.\nDistribute three +1/+1 counters among one, two, or three target creatures. For each +1/+1 counter you put on a creature this way, remove a +1/+1 counter from that creature at the beginning of the next cleanup step.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "me2",
+  "setName": "Masters Edition II",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "ebef3db0-2b58-4581-a79c-fbca9a059e63",
+  "name": "Bridgeworks Battle // Tanglespan Bridgeworks",
+  "manaCost": "{2}{G}",
+  "cmc": 3,
+  "typeLine": "Sorcery // Land",
+  "oracleText": "Target creature you control gets +2/+2 until end of turn. It fights up to one target creature you don't control. (Each deals damage equal to its power to the other.)\n//\nAs this land enters, you may pay 3 life. If you don't, it enters tapped.\n{T}: Add {G}.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "mh3",
+  "setName": "Modern Horizons 3",
+  "rarity": "uncommon",
+  "layout": "modal_dfc",
+  "faces": [
+   {
+    "name": "Bridgeworks Battle",
+    "manaCost": "{2}{G}",
+    "typeLine": "Sorcery",
+    "oracleText": "Target creature you control gets +2/+2 until end of turn. It fights up to one target creature you don't control. (Each deals damage equal to its power to the other.)",
+    "colors": [
+     "G"
+    ],
+    "imageSmall": "https://cards.scryfall.io/small/front/e/b/ebef3db0-2b58-4581-a79c-fbca9a059e63.jpg?1783911228",
+    "imageNormal": "https://cards.scryfall.io/normal/front/e/b/ebef3db0-2b58-4581-a79c-fbca9a059e63.jpg?1783911228"
+   },
+   {
+    "name": "Tanglespan Bridgeworks",
+    "manaCost": "",
+    "typeLine": "Land",
+    "oracleText": "As this land enters, you may pay 3 life. If you don't, it enters tapped.\n{T}: Add {G}.",
+    "colors": [],
+    "imageSmall": "https://cards.scryfall.io/small/back/e/b/ebef3db0-2b58-4581-a79c-fbca9a059e63.jpg?1783911228",
+    "imageNormal": "https://cards.scryfall.io/normal/back/e/b/ebef3db0-2b58-4581-a79c-fbca9a059e63.jpg?1783911228"
+   }
+  ],
+  "keywords": [
+   "Fight"
+  ]
+ },
+ {
+  "id": "52eef0d6-24b7-40b7-8403-e8e863d0cd55",
+  "name": "Bristly Bill, Spine Sower",
+  "manaCost": "{1}{G}",
+  "cmc": 2,
+  "typeLine": "Legendary Creature — Plant Druid",
+  "oracleText": "Landfall — Whenever a land you control enters, put a +1/+1 counter on target creature.\n{3}{G}{G}: Double the number of +1/+1 counters on each creature you control.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "otj",
+  "setName": "Outlaws of Thunder Junction",
+  "rarity": "mythic",
+  "power": "2",
+  "toughness": "2",
+  "keywords": [
+   "Double",
+   "Landfall"
+  ]
+ },
+ {
+  "id": "989b299b-daa9-4bda-94e2-9a2f0e8f2bce",
+  "name": "Brokers Hideout",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "When this land enters, sacrifice it. When you do, search your library for a basic Forest, Plains, or Island card, put it onto the battlefield tapped, then shuffle and you gain 1 life.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "snc",
+  "setName": "Streets of New Capenna",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "c54ddd4e-f668-4ec8-b123-59afa977eba4",
+  "name": "Cabaretti Courtyard",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "When this land enters, sacrifice it. When you do, search your library for a basic Mountain, Forest, or Plains card, put it onto the battlefield tapped, then shuffle and you gain 1 life.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "eoc",
+  "setName": "Edge of Eternities Commander",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "ca041d5e-c65f-4e7e-ae4f-9c748a069aa3",
+  "name": "Centaur Garden",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}: Add {G}. This land deals 1 damage to you.\nThreshold — {G}, {T}, Sacrifice this land: Target creature gets +3/+3 until end of turn. Activate only if there are seven or more cards in your graveyard.",
+  "colors": [],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "ody",
+  "setName": "Odyssey",
+  "rarity": "uncommon",
+  "keywords": [
+   "Threshold"
+  ]
+ },
+ {
+  "id": "435e9678-9ff3-4e5d-8061-3f806e1c2ed2",
+  "name": "Command Beacon",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}: Add {C}.\n{T}, Sacrifice this land: Put your commander into your hand from the command zone.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "tdc",
+  "setName": "Tarkir: Dragonstorm Commander",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "523414cb-f8db-407a-808a-01454e03d8b9",
+  "name": "Crop Rotation",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "As an additional cost to cast this spell, sacrifice a land.\nSearch your library for a land card, put that card onto the battlefield, then shuffle.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "dmr",
+  "setName": "Dominaria Remastered",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "59ed23a2-6153-47b2-ab73-062195cafb74",
+  "name": "Defend the Rider",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Choose one —\n• Target permanent you control gains hexproof and indestructible until end of turn.\n• Create a 1/1 colorless Pilot creature token with \"This token saddles Mounts and crews Vehicles as though its power were 2 greater.\"",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "dft",
+  "setName": "Aetherdrift",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "71384418-173a-4f77-adab-56e52fa23692",
+  "name": "Delighted Halfling",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Creature — Halfling Citizen",
+  "oracleText": "{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a legendary spell, and that spell can't be countered.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "ltr",
+  "setName": "The Lord of the Rings: Tales of Middle-earth",
+  "rarity": "rare",
+  "power": "1",
+  "toughness": "2",
+  "keywords": []
+ },
+ {
+  "id": "e3ddbebf-72cd-4d1b-ba0d-d94934654ab7",
+  "name": "Dryad Arbor",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land Creature — Forest Dryad",
+  "oracleText": "(This land isn't a spell, it's affected by summoning sickness, and it has \"{T}: Add {G}.\")",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "dsc",
+  "setName": "Duskmourn: House of Horror Commander",
+  "rarity": "rare",
+  "power": "1",
+  "toughness": "1",
+  "keywords": []
+ },
+ {
+  "id": "75b03c30-c2b8-4207-b675-26c59c40a7e5",
+  "name": "Dust Bowl",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}: Add {C}.\n{3}, {T}, Sacrifice a land: Destroy target nonbasic land.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "mmq",
+  "setName": "Mercadian Masques",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "dd1fd2ab-2565-4798-a832-fc849df82f74",
+  "name": "Elven Passage",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}, Pay 1 life, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle. You may behold an Elf. If you do, untap that land. (To behold an Elf, choose an Elf you control or reveal an Elf card from your hand.)",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "hob",
+  "setName": "The Hobbit",
+  "rarity": "rare",
+  "keywords": [
+   "Behold"
+  ]
+ },
+ {
+  "id": "08b9a296-3b76-4f8f-9d71-7c9af92bb3b4",
+  "name": "Elvish Mystic",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Creature — Elf Druid",
+  "oracleText": "{T}: Add {G}.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "hoc",
+  "setName": "The Hobbit Eternal",
+  "rarity": "common",
+  "power": "1",
+  "toughness": "1",
+  "keywords": []
+ },
+ {
+  "id": "39c431d7-d94b-46c4-bb89-f3db56214ab4",
+  "name": "Elvish Reclaimer",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Creature — Elf Warrior",
+  "oracleText": "This creature gets +2/+2 as long as there are three or more land cards in your graveyard.\n{2}, {T}, Sacrifice a land: Search your library for a land card, put it onto the battlefield tapped, then shuffle.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "m20",
+  "setName": "Core Set 2020",
+  "rarity": "rare",
+  "power": "1",
+  "toughness": "2",
+  "keywords": []
+ },
+ {
+  "id": "50aded92-f934-441f-8e48-d68d471e70d8",
+  "name": "Elvish Spirit Guide",
+  "manaCost": "{2}{G}",
+  "cmc": 3,
+  "typeLine": "Creature — Elf Spirit",
+  "oracleText": "Exile this card from your hand: Add {G}.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "dmr",
+  "setName": "Dominaria Remastered",
+  "rarity": "uncommon",
+  "power": "2",
+  "toughness": "2",
+  "keywords": []
+ },
+ {
+  "id": "1b759c27-9fb6-4c23-adc1-f6d3f3a0eb52",
+  "name": "Embiggen",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Until end of turn, target non-Brushwagg creature gets +1/+1 for each supertype, card type, and subtype it has.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "unf",
+  "setName": "Unfinity",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "5df90940-15ea-418c-8547-6c75d69ec6d3",
+  "name": "Escape Tunnel",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.\n{T}, Sacrifice this land: Target creature with power 2 or less can't be blocked this turn.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "tmt",
+  "setName": "Teenage Mutant Ninja Turtles",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "c0318a48-30e4-4ef7-be3d-5e561c5ce428",
+  "name": "Evolving Wilds",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "msc",
+  "setName": "Marvel Super Heroes Commander",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "08e66835-c228-48fa-bcaa-eb96edbd4f5a",
+  "name": "Expedition Map",
+  "manaCost": "{1}",
+  "cmc": 1,
+  "typeLine": "Artifact",
+  "oracleText": "{2}, {T}, Sacrifice this artifact: Search your library for a land card, reveal it, put it into your hand, then shuffle.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "fdn",
+  "setName": "Foundations",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "76edd22f-808e-4a7c-b941-13c0f5e30418",
+  "name": "Fabled Passage",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle. Then if you control four or more lands, untap that land.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "frc",
+  "setName": "Reality Fracture Commander",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "c957bbb7-0322-46d1-89e1-1a59515b3b1b",
+  "name": "Feral Ferocity",
+  "manaCost": "{1}{G}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Target creature gets +4/+4 until end of turn.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "msc",
+  "setName": "Marvel Super Heroes Commander",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "2e781bfd-f8cb-4d20-b977-4359f3a21311",
+  "name": "Forest",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Basic Land — Forest",
+  "oracleText": "({T}: Add {G}.)",
+  "colors": [],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "mdd",
+  "setName": "Marvel: Darkhold Destiny",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "c72d85e9-a0bc-4f73-8d73-c58843577f4e",
+  "name": "Frenzied Baloth",
+  "manaCost": "{G}{G}",
+  "cmc": 2,
+  "typeLine": "Creature — Beast",
+  "oracleText": "This spell can't be countered.\nTrample, haste\nCreature spells you control can't be countered.\nCombat damage can't be prevented.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "eoe",
+  "setName": "Edge of Eternities",
+  "rarity": "rare",
+  "power": "3",
+  "toughness": "2",
+  "keywords": [
+   "Haste",
+   "Trample"
+  ]
+ },
+ {
+  "id": "450744cf-7eba-491b-97b0-ca80c6368bbb",
+  "name": "Fyndhorn Elves",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Creature — Elf Druid",
+  "oracleText": "{T}: Add {G}.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "cmr",
+  "setName": "Commander Legends",
+  "rarity": "common",
+  "power": "1",
+  "toughness": "1",
+  "keywords": []
+ },
+ {
+  "id": "bf059c8d-6e61-41ca-ac79-3bf82fa2d4b3",
+  "name": "Gather Courage",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Convoke (Your creatures can help cast this spell. Each creature you tap while casting this spell pays for {1} or one mana of that creature's color.)\nTarget creature gets +2/+2 until end of turn.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "rvr",
+  "setName": "Ravnica Remastered",
+  "rarity": "common",
+  "keywords": [
+   "Convoke"
+  ]
+ },
+ {
+  "id": "12f8071c-8955-4aa2-889c-6043df047223",
+  "name": "Ghost Quarter",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}: Add {C}.\n{T}, Sacrifice this land: Destroy target land. Its controller may search their library for a basic land card, put it onto the battlefield, then shuffle.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "cm2",
+  "setName": "Commander Anthology Volume II",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "fd1f95bf-48ea-455a-8a6c-0249b11c8900",
+  "name": "Giant Growth",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Target creature gets +3/+3 until end of turn.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "msh",
+  "setName": "Marvel Super Heroes",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "5ea59511-24b1-4925-9948-9d4c0d27d1c5",
+  "name": "Gilded Goose",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Creature — Bird",
+  "oracleText": "Flying\nWhen this creature enters, create a Food token. (It's an artifact with \"{2}, {T}, Sacrifice this token: You gain 3 life.\")\n{1}{G}, {T}: Create a Food token.\n{T}, Sacrifice a Food: Add one mana of any color.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "soc",
+  "setName": "Secrets of Strixhaven Commander",
+  "rarity": "rare",
+  "power": "0",
+  "toughness": "2",
+  "keywords": [
+   "Flying",
+   "Food"
+  ]
+ },
+ {
+  "id": "70291c7b-a86f-4466-8502-c28765a89b2a",
+  "name": "Green Sun's Zenith",
+  "manaCost": "{X}{G}",
+  "cmc": 1,
+  "typeLine": "Sorcery",
+  "oracleText": "Search your library for a green creature card with mana value X or less, put it onto the battlefield, then shuffle. Shuffle Green Sun's Zenith into its owner's library.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "2x2",
+  "setName": "Double Masters 2022",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "821e9cb9-f78e-4d11-9c36-42e8b84b49cd",
+  "name": "Groundswell",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Target creature gets +2/+2 until end of turn.\nLandfall — If you had a land enter the battlefield under your control this turn, that creature gets +4/+4 until end of turn instead.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "ddp",
+  "setName": "Duel Decks: Zendikar vs. Eldrazi",
+  "rarity": "common",
+  "keywords": [
+   "Landfall"
+  ]
+ },
+ {
+  "id": "63fab399-00db-4398-922e-c3ca3356731a",
+  "name": "Grow Extra Arms",
+  "manaCost": "{1}{G}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "This spell costs {1} less to cast if it targets a Spider.\nTarget creature gets +4/+4 until end of turn.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "spm",
+  "setName": "Marvel's Spider-Man",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "199d6a8d-008d-4495-9cbc-b8d680fab13c",
+  "name": "Hapatra's Mark",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Target creature you control gains hexproof until end of turn. Remove all -1/-1 counters from it. (A creature with hexproof can't be the target of spells or abilities your opponents control.)",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "akh",
+  "setName": "Amonkhet",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "d18d5af2-ca2c-4a3a-9b67-e953b24b0718",
+  "name": "Hashep Oasis",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land — Desert",
+  "oracleText": "{T}: Add {C}.\n{T}, Pay 1 life: Add {G}.\n{1}{G}{G}, {T}, Sacrifice a Desert: Target creature gets +3/+3 until end of turn. Activate only as a sorcery.",
+  "colors": [],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "otc",
+  "setName": "Outlaws of Thunder Junction Commander",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "af7aafb7-6870-4d09-a191-70786766c459",
+  "name": "Hickory Woodlot",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "This land enters tapped with two depletion counters on it.\n{T}, Remove a depletion counter from this land: Add {G}{G}. If there are no depletion counters on this land, sacrifice it.",
+  "colors": [],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "mmq",
+  "setName": "Mercadian Masques",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "0365c439-30bf-4d32-a791-166751bdb996",
+  "name": "Hobbit Hole",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.\nHalflingcycling {4} ({4}, Discard this card: Search your library for a Halfling card, reveal it, put it into your hand, then shuffle.)",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "hob",
+  "setName": "The Hobbit",
+  "rarity": "common",
+  "keywords": [
+   "Cycling",
+   "Halflingcycling"
+  ]
+ },
+ {
+  "id": "6f4bcadd-7eff-4294-94d5-52482a734d5b",
+  "name": "Hope of Ghirapur",
+  "manaCost": "{1}",
+  "cmc": 1,
+  "typeLine": "Legendary Artifact Creature — Thopter",
+  "oracleText": "Flying\nSacrifice Hope of Ghirapur: Until your next turn, target player who was dealt combat damage by Hope of Ghirapur this turn can't cast noncreature spells.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "aer",
+  "setName": "Aether Revolt",
+  "rarity": "rare",
+  "power": "1",
+  "toughness": "1",
+  "keywords": [
+   "Flying"
+  ]
+ },
+ {
+  "id": "e0899da3-7beb-4161-81a3-e2d694e5b8a5",
+  "name": "Invigorate",
+  "manaCost": "{2}{G}",
+  "cmc": 3,
+  "typeLine": "Instant",
+  "oracleText": "If you control a Forest, rather than pay this spell's mana cost, you may have an opponent gain 3 life.\nTarget creature gets +4/+4 until end of turn.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "2xm",
+  "setName": "Double Masters",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "d3656079-0b27-4169-a792-2629eff8ea56",
+  "name": "Jeweled Amulet",
+  "manaCost": "{0}",
+  "cmc": 0,
+  "typeLine": "Artifact",
+  "oracleText": "{1}, {T}: Put a charge counter on this artifact. Note the type of mana spent to pay this activation cost. Activate only if there are no charge counters on this artifact.\n{T}, Remove a charge counter from this artifact: Add one mana of this artifact's last noted type.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "mbc",
+  "setName": "Mystery Booster Commander Edition",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "50d8346a-e0b5-41eb-be89-7d1eb0e84f28",
+  "name": "Jund Panorama",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}: Add {C}.\n{1}, {T}, Sacrifice this land: Search your library for a basic Swamp, Mountain, or Forest card, put it onto the battlefield tapped, then shuffle.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "ncc",
+  "setName": "New Capenna Commander",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "851c0167-04ba-4d15-b0fa-c211bd8826f1",
+  "name": "Legolas's Quick Reflexes",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Split second (As long as this spell is on the stack, players can't cast spells or activate abilities that aren't mana abilities.)\nUntap target creature. Until end of turn, it gains reach, hexproof, and \"Whenever this creature becomes tapped, it deals damage equal to its power to up to one target creature.\"",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "ltc",
+  "setName": "Tales of Middle-earth Commander",
+  "rarity": "rare",
+  "keywords": [
+   "Split second"
+  ]
+ },
+ {
+  "id": "6a0b230b-d391-4998-a3f7-7b158a0ec2cd",
+  "name": "Llanowar Elves",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Creature — Elf Druid",
+  "oracleText": "{T}: Add {G}.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "fdn",
+  "setName": "Foundations",
+  "rarity": "common",
+  "power": "1",
+  "toughness": "1",
+  "keywords": []
+ },
+ {
+  "id": "ed0c7c36-2b15-463b-a023-683972303a0a",
+  "name": "Might of Old Krosa",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Target creature gets +2/+2 until end of turn. If you cast this spell during your main phase, that creature gets +4/+4 until end of turn instead.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "2x2",
+  "setName": "Double Masters 2022",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "88231c0d-0cc8-44ec-bf95-81d1710ac141",
+  "name": "Misty Rainforest",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}, Pay 1 life, Sacrifice this land: Search your library for a Forest or Island card, put it onto the battlefield, then shuffle.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "mh2",
+  "setName": "Modern Horizons 2",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "7054a0d7-396f-40b4-ab24-db591c3b08f0",
+  "name": "Mossborn Hydra",
+  "manaCost": "{2}{G}",
+  "cmc": 3,
+  "typeLine": "Creature — Elemental Hydra",
+  "oracleText": "Trample (This creature can deal excess combat damage to the player or planeswalker it's attacking.)\nThis creature enters with a +1/+1 counter on it.\nLandfall — Whenever a land you control enters, double the number of +1/+1 counters on this creature.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "fdn",
+  "setName": "Foundations",
+  "rarity": "rare",
+  "power": "0",
+  "toughness": "0",
+  "keywords": [
+   "Trample",
+   "Double",
+   "Landfall"
+  ]
+ },
+ {
+  "id": "2e0861a2-1858-47af-8154-20a977c2b298",
+  "name": "Mutagenic Growth",
+  "manaCost": "{G/P}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "({G/P} can be paid with either {G} or 2 life.)\nTarget creature gets +2/+2 until end of turn.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "mm2",
+  "setName": "Modern Masters 2015",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "7afc4a15-5ff8-457a-aa62-803b2d78d912",
+  "name": "Nature's Lore",
+  "manaCost": "{1}{G}",
+  "cmc": 2,
+  "typeLine": "Sorcery",
+  "oracleText": "Search your library for a Forest card, put that card onto the battlefield, then shuffle.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "msc",
+  "setName": "Marvel Super Heroes Commander",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "6a546a28-8df5-4080-9f50-af86d84a066f",
+  "name": "Naya Panorama",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}: Add {C}.\n{1}, {T}, Sacrifice this land: Search your library for a basic Mountain, Forest, or Plains card, put it onto the battlefield tapped, then shuffle.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "ncc",
+  "setName": "New Capenna Commander",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "ee8cf7aa-388c-47ec-be59-6ba98f3853cb",
+  "name": "Okina, Temple to the Grandfathers",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Legendary Land",
+  "oracleText": "{T}: Add {G}.\n{G}, {T}: Target legendary creature gets +1/+1 until end of turn.",
+  "colors": [],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "chk",
+  "setName": "Champions of Kamigawa",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "e37da81e-be12-45a2-9128-376f1ad7b3e8",
+  "name": "Prismatic Vista",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}, Pay 1 life, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield, then shuffle.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "mh1",
+  "setName": "Modern Horizons",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "e9681a54-6413-4ff4-b6b1-ee4decb25bfa",
+  "name": "Promising Vein",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land — Cave",
+  "oracleText": "{T}: Add {C}.\n{1}, {T}, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "lci",
+  "setName": "The Lost Caverns of Ixalan",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "02392840-f0c4-462e-84ce-9a7cdd9f5efb",
+  "name": "Ranger's Guile",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Target creature you control gets +1/+1 and gains hexproof until end of turn. (It can't be the target of spells or abilities your opponents control.)",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "m21",
+  "setName": "Core Set 2021",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "b6516b8f-ecfb-401e-ba8e-bf561aa2be64",
+  "name": "Royal Treatment",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Target creature you control gains hexproof until end of turn. Create a Royal Role token attached to that creature. (If you control another Role on it, put that one into the graveyard. Enchanted creature gets +1/+1 and has ward {1}.)",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "woe",
+  "setName": "Wilds of Eldraine",
+  "rarity": "uncommon",
+  "keywords": [
+   "Role token"
+  ]
+ },
+ {
+  "id": "3f2d9bae-2753-486c-be79-2438208ac353",
+  "name": "Scale Up",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Sorcery",
+  "oracleText": "Until end of turn, target creature you control becomes a green Wurm with base power and toughness 6/4.\nOverload {4}{G}{G} (You may cast this spell for its overload cost. If you do, change \"target\" in its text to \"each.\")",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "mh1",
+  "setName": "Modern Horizons",
+  "rarity": "uncommon",
+  "keywords": [
+   "Overload"
+  ]
+ },
+ {
+  "id": "5719035b-930e-4f00-9c33-1c4cd6ba645c",
+  "name": "Scythecat Cub",
+  "manaCost": "{1}{G}",
+  "cmc": 2,
+  "typeLine": "Creature — Cat",
+  "oracleText": "Trample\nLandfall — Whenever a land you control enters, put a +1/+1 counter on target creature you control. If this is the second time this ability has resolved this turn, double the number of +1/+1 counters on that creature instead.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "slz",
+  "setName": "The Zeta Set",
+  "rarity": "mythic",
+  "power": "2",
+  "toughness": "2",
+  "keywords": [
+   "Trample",
+   "Double",
+   "Landfall"
+  ]
+ },
+ {
+  "id": "559c3909-51e3-4a3e-8570-107ffe69e30d",
+  "name": "Seal of Strength",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Enchantment",
+  "oracleText": "Sacrifice this enchantment: Target creature gets +3/+3 until end of turn.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "ema",
+  "setName": "Eternal Masters",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "25932483-58cd-4ae5-82bf-ab455177d117",
+  "name": "Shire Terrace",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}: Add {C}.\n{1}, {T}, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "ltr",
+  "setName": "The Lord of the Rings: Tales of Middle-earth",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "deadb6d8-3eea-4261-a07c-8536df89e85c",
+  "name": "Skateboard",
+  "manaCost": "{1}",
+  "cmc": 1,
+  "typeLine": "Artifact — Equipment",
+  "oracleText": "When this Equipment enters, tap target permanent.\nEquipped creature gets +1/+0 and has haste.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "tmt",
+  "setName": "Teenage Mutant Ninja Turtles",
+  "rarity": "uncommon",
+  "keywords": [
+   "Equip"
+  ]
+ },
+ {
+  "id": "9965a54b-8b22-418c-9a0d-bf154932f2e2",
+  "name": "Skyclave Pick-Axe",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Artifact — Equipment",
+  "oracleText": "When this Equipment enters, attach it to target creature you control.\nLandfall — Whenever a land you control enters, equipped creature gets +2/+2 until end of turn.\nEquip {2}{G} ({2}{G}: Attach to target creature you control. Equip only as a sorcery.)",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "znr",
+  "setName": "Zendikar Rising",
+  "rarity": "uncommon",
+  "keywords": [
+   "Equip",
+   "Landfall"
+  ]
+ },
+ {
+  "id": "a3d2c692-7566-468e-9c86-47a9f768fde2",
+  "name": "Snakeskin Veil",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Put a +1/+1 counter on target creature you control. It gains hexproof until end of turn. (It can't be the target of spells or abilities your opponents control.)",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "tdm",
+  "setName": "Tarkir: Dragonstorm",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "e4775a26-0b66-40e9-8f64-41d9308ca032",
+  "name": "Surrak, Elusive Hunter",
+  "manaCost": "{2}{G}",
+  "cmc": 3,
+  "typeLine": "Legendary Creature — Human Warrior",
+  "oracleText": "This spell can't be countered.\nTrample\nWhenever a creature you control or a creature spell you control becomes the target of a spell or ability an opponent controls, draw a card.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "tdm",
+  "setName": "Tarkir: Dragonstorm",
+  "rarity": "rare",
+  "power": "4",
+  "toughness": "3",
+  "keywords": [
+   "Trample"
+  ]
+ },
+ {
+  "id": "83036e21-21ea-4324-aa07-11757f80c417",
+  "name": "Sylvan Safekeeper",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Creature — Human Wizard",
+  "oracleText": "Sacrifice a land: Target creature you control gains shroud until end of turn. (It can't be the target of spells or abilities.)",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "mh3",
+  "setName": "Modern Horizons 3",
+  "rarity": "rare",
+  "power": "1",
+  "toughness": "1",
+  "keywords": []
+ },
+ {
+  "id": "d1b93087-e6a0-4ba9-83ba-a0ed2e396dc7",
+  "name": "Sylvan Scrying",
+  "manaCost": "{1}{G}",
+  "cmc": 2,
+  "typeLine": "Sorcery",
+  "oracleText": "Search your library for a land card, reveal it, put it into your hand, then shuffle.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "bfz",
+  "setName": "Battle for Zendikar",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "de92facf-762b-4a23-8d5e-bb673b0500c0",
+  "name": "Talon Gates of Madara",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land — Gate",
+  "oracleText": "When this land enters, up to one target creature phases out.\n{T}: Add {C}.\n{1}, {T}: Add one mana of any color.\n{4}: Put this card from your hand onto the battlefield.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "m3c",
+  "setName": "Modern Horizons 3 Commander",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "fd4b7ee2-de65-4288-872d-486065a4f226",
+  "name": "Tamiyo's Safekeeping",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Target permanent you control gains hexproof and indestructible until end of turn. You gain 2 life. (A permanent with hexproof and indestructible can't be the target of spells or abilities your opponents control. Damage and effects that say \"destroy\" don't destroy it.)",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "neo",
+  "setName": "Kamigawa: Neon Dynasty",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "a81f924b-0527-4311-8120-9bfff71524f6",
+  "name": "Terramorphic Expanse",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "msc",
+  "setName": "Marvel Super Heroes Commander",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "99bf792f-963e-4509-8d3c-7db129c6a77f",
+  "name": "Three Visits",
+  "manaCost": "{1}{G}",
+  "cmc": 2,
+  "typeLine": "Sorcery",
+  "oracleText": "Search your library for a Forest card, put it onto the battlefield, then shuffle.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "msc",
+  "setName": "Marvel Super Heroes Commander",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "fb781323-2746-405d-a9b2-e778c037a6e9",
+  "name": "Tifa Lockhart",
+  "manaCost": "{1}{G}",
+  "cmc": 2,
+  "typeLine": "Legendary Creature — Human Monk",
+  "oracleText": "Trample\nLandfall — Whenever a land you control enters, double Tifa Lockhart's power until end of turn.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "fin",
+  "setName": "Final Fantasy",
+  "rarity": "rare",
+  "power": "1",
+  "toughness": "2",
+  "keywords": [
+   "Trample",
+   "Double",
+   "Landfall"
+  ]
+ },
+ {
+  "id": "46917de3-5e98-4dd6-8950-fc10338515df",
+  "name": "Titanic Growth",
+  "manaCost": "{1}{G}",
+  "cmc": 2,
+  "typeLine": "Instant",
+  "oracleText": "Target creature gets +4/+4 until end of turn.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "woe",
+  "setName": "Wilds of Eldraine",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "b6ab0855-782a-498c-a885-b3ab3d1bb362",
+  "name": "Tyvar's Stand",
+  "manaCost": "{X}{G}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Target creature you control gets +X/+X and gains hexproof and indestructible until end of turn. (It can't be the target of spells or abilities your opponents control. Damage and effects that say \"destroy\" don't destroy it.)",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "soc",
+  "setName": "Secrets of Strixhaven Commander",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "c1e0f201-42cb-46a1-901a-65bb4fc18f6c",
+  "name": "Urza's Saga",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Enchantment Land — Urza's Saga",
+  "oracleText": "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.)\nI — This Saga gains \"{T}: Add {C}.\"\nII — This Saga gains \"{2}, {T}: Create a 0/0 colorless Construct artifact creature token with 'This token gets +1/+1 for each artifact you control.'\"\nIII — Search your library for an artifact card with mana cost {0} or {1}, put it onto the battlefield, then shuffle.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "mh2",
+  "setName": "Modern Horizons 2",
+  "rarity": "rare",
+  "layout": "saga",
+  "keywords": []
+ },
+ {
+  "id": "5ea568df-04a1-4012-98ec-ba75e189e0ca",
+  "name": "Utopia Sprawl",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Enchantment — Aura",
+  "oracleText": "Enchant Forest\nAs this Aura enters, choose a color.\nWhenever enchanted Forest is tapped for mana, its controller adds an additional one mana of the chosen color.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "rvr",
+  "setName": "Ravnica Remastered",
+  "rarity": "uncommon",
+  "keywords": [
+   "Enchant"
+  ]
+ },
+ {
+  "id": "94c229ea-90da-4aa0-bfda-b162fb3b5b8b",
+  "name": "Verdant Catacombs",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}, Pay 1 life, Sacrifice this land: Search your library for a Swamp or Forest card, put it onto the battlefield, then shuffle.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "mh2",
+  "setName": "Modern Horizons 2",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "b5e7cdb4-7b4d-4c6c-b016-d6cd3f9a04f2",
+  "name": "Vibrant Cityscape",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "tmc",
+  "setName": "Teenage Mutant Ninja Turtles Eternal",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "6203e3d4-8998-41d6-9f7e-b68af0f1f8b5",
+  "name": "Vines of Vastwood",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Kicker {G} (You may pay an additional {G} as you cast this spell.)\nTarget creature can't be the target of spells or abilities your opponents control this turn. If this spell was kicked, that creature gets +4/+4 until end of turn.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "mm2",
+  "setName": "Modern Masters 2015",
+  "rarity": "common",
+  "keywords": [
+   "Kicker"
+  ]
+ },
+ {
+  "id": "47260e7c-29bf-46f1-a029-9da7bbb418b5",
+  "name": "Wild Growth",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Enchantment — Aura",
+  "oracleText": "Enchant land\nWhenever enchanted land is tapped for mana, its controller adds an additional {G}.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "mkc",
+  "setName": "Murders at Karlov Manor Commander",
+  "rarity": "common",
+  "keywords": [
+   "Enchant"
+  ]
+ },
+ {
+  "id": "ec9738f1-b2e7-45a5-b235-290256aabed0",
+  "name": "Wild Shape",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Instant",
+  "oracleText": "Choose one. Until end of turn, target creature you control has that base power and toughness, becomes that creature type, and gains that ability.\n• 1/3 Turtle with hexproof.\n• 1/5 Spider with reach.\n• 3/3 Elephant with trample.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "afr",
+  "setName": "Adventures in the Forgotten Realms",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "bd1d13f7-fd38-4f0b-a8e0-1eac78668117",
+  "name": "Windswept Heath",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}, Pay 1 life, Sacrifice this land: Search your library for a Forest or Plains card, put it onto the battlefield, then shuffle.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "mh3",
+  "setName": "Modern Horizons 3",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "4e11ea8a-f895-438d-a3b7-f070238e4161",
+  "name": "Wooded Foothills",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}, Pay 1 life, Sacrifice this land: Search your library for a Mountain or Forest card, put it onto the battlefield, then shuffle.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "mh3",
+  "setName": "Modern Horizons 3",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "4e4b6e22-93b2-4896-bba5-0ceaa5d8ea3c",
+  "name": "Yavimaya, Cradle of Growth",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Legendary Land",
+  "oracleText": "Each land is a Forest in addition to its other land types.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "mh2",
+  "setName": "Modern Horizons 2",
+  "rarity": "rare",
+  "keywords": []
+ }
+]

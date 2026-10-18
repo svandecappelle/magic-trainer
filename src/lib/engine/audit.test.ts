@@ -8,7 +8,7 @@ import { auditCard, formatAudit } from './audit';
  * read shows up as a diff of the .audit.txt file: check it, then accept it with `npx vitest run -u`.
  * Add decks with `npm run audit-cards -- <deck or mtgtop8 URL> --save src/lib/engine/fixtures/<name>.json`.
  */
-const FIXTURES = ['standard-2026-10', 'standard-wlifegain-2026-10', 'standard-dwarves-2026-10', 'commander-aang-2026-10', 'tezzeret-artifacts-2026-10'];
+const FIXTURES = ['standard-2026-10', 'standard-wlifegain-2026-10', 'standard-dwarves-2026-10', 'commander-aang-2026-10', 'tezzeret-artifacts-2026-10', 'duel-commander-landfall-2026-10'];
 
 describe('card audit', () => {
   for (const name of FIXTURES) {

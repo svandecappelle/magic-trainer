@@ -382,6 +382,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice, readOnly
         alt.kind === 'returnLand' ? t.game.altCosts.returnLand(alt.subtype[0].toUpperCase() + alt.subtype.slice(1))
         : alt.kind === 'exileCard' ? (alt.evoke ? t.game.altCosts.evoke(colorName(alt.color).toLowerCase()) : t.game.altCosts.exileCard(colorName(alt.color).toLowerCase()))
         : alt.kind === 'phyrexian' ? t.game.altCosts.phyrexian(2 * alt.n)
+        : alt.kind === 'opponentGainsLife' ? t.game.altCosts.opponentGainsLife(alt.n)
         : t.game.altCosts[alt.name](alt.cost))
         : opt.from === 'prepared' ? t.game.castCopy(name)
         : g.castNow?.iid === iid ? t.game.castFree(name)

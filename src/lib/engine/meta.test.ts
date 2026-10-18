@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'fs';
 import type { Card } from '../../types';
 import { activationProblem, actor, canPayAbility, apply, findPermanent, hasKw, paymentFor, canBlock, canCastNow, castCost, castSource, canTapForMana, type Answer, castOptions, canPay, canActivateDiamond, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
 import { botAction } from './bot';
@@ -4517,5 +4518,205 @@ describe('Metagame audit 2026-10-18: Birgi, Samut, Biomancer\'s Familiar', () =>
     s.battlefield.push({ iid: 'x9', card: swamp, controller: 0, tapped: false, sick: false, damage: 0, deathtouched: false, counters: {}, boosts: [] });
     s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Adapter'), index: 0 }));
     expect(perm(s, 'Adapter')!.counters['+1/+1']).toBe(4);
+  });
+});
+
+describe('Duel Commander: mono-green landfall (mtgtop8 deck 901562)', () => {
+  const deck = JSON.parse(readFileSync(new URL('./fixtures/duel-commander-landfall-2026-10.json', import.meta.url), 'utf8')) as Card[];
+  /** A card of the deck, with its real Oracle text; its mana cost may be replaced (free to cast in a test). */
+  const real = (name: string, manaCost?: string) => {
+    const c = deck.find((x) => x.name.startsWith(name))!;
+    return manaCost === undefined ? c : { ...c, manaCost };
+  };
+  const forest = card({ name: 'Forest', typeLine: 'Basic Land — Forest' });
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 10 && (s.stack.length || s.triggered?.length) && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  const target = (s: GameState, name: string) => [[{ kind: 'permanent' as const, iid: iidOf(s, name) }]];
+  const bear = creature('Bear', 2, 2);
+  const playForest = (s: GameState) => resolve(apply(s, { type: 'playLand', iid: s.players[0].hand.find((c) => c.card.name === 'Forest')!.iid }));
+
+  it('Hickory Woodlot: enters tapped with two depletion counters; {G}{G} for each, then sacrificed', () => {
+    let s = board({ hand: [real('Hickory Woodlot')] });
+    s = apply(s, { type: 'playLand', iid: 'h0' });
+    const woodlot = perm(s, 'Hickory Woodlot')!;
+    expect(woodlot).toMatchObject({ tapped: true, counters: { depletion: 2 } });
+    woodlot.tapped = false;
+    expect(unitsOf(s, woodlot)).toEqual([['G'], ['G']]);
+    s = apply(s, { type: 'tapForMana', iid: woodlot.iid });
+    expect(s.players[0].pool).toHaveLength(2);
+    perm(s, 'Hickory Woodlot')!.tapped = false;
+    s = apply(s, { type: 'tapForMana', iid: woodlot.iid });
+    expect(perm(s, 'Hickory Woodlot')).toBeUndefined();
+    expect(s.players[0].pool).toHaveLength(4);
+  });
+
+  it('Elvish Reclaimer: +2/+2 with three or more land cards in the graveyard', () => {
+    let s = board({ mana: 1, mine: [real('Elvish Reclaimer')], grave: [forest, forest, bear] });
+    s = apply(s, { type: 'tapForMana', iid: iidOf(s, 'Swamp') });
+    expect(powerOf(perm(s, 'Elvish Reclaimer')!)).toBe(1);
+    s.players[0].graveyard.push({ iid: 'g9', card: forest });
+    s = apply(s, { type: 'pass' });
+    expect([powerOf(perm(s, 'Elvish Reclaimer')!), toughnessOf(perm(s, 'Elvish Reclaimer')!)]).toEqual([3, 4]);
+  });
+
+  it('Surrak: a card when an opponent targets a creature you control', () => {
+    const shock = spell('Shock', '{0}', 'Shock deals 2 damage to any target.');
+    let s = board({ mine: [real('Surrak, Elusive Hunter')], oppHand: [shock], hand: [{ ...shock, manaCost: '{0}' }] });
+    // My own Shock on Surrak: nothing.
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', targets: target(s, 'Surrak, Elusive Hunter') }));
+    expect(s.players[0].hand).toHaveLength(0);
+    // The opponent's: a card.
+    s.priority = { player: 1, passes: 0, reason: 'main' };
+    s = resolve(apply(s, { type: 'cast', iid: 'o0', targets: target(s, 'Surrak, Elusive Hunter') }));
+    expect(s.players[0].hand).toHaveLength(1);
+  });
+
+  it('Centaur Garden: threshold, +3/+3 only with seven or more cards in the graveyard', () => {
+    const garden = real('Centaur Garden');
+    expect(activatedOf(garden)[0]).toMatchObject({ minGraveyard: 7 });
+    let s = board({ mine: [garden, bear, card({ name: 'Forest', typeLine: 'Basic Land — Forest' })], grave: Array(6).fill(bear) });
+    expect(errorOf(() => apply(s, { type: 'activate', iid: iidOf(s, 'Centaur Garden'), index: 0, targets: target(s, 'Bear') }))).toBe('threshold');
+    s.players[0].graveyard.push({ iid: 'g9', card: bear });
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Centaur Garden'), index: 0, targets: target(s, 'Bear') }));
+    expect(powerOf(perm(s, 'Bear')!)).toBe(5);
+  });
+
+  it('pump spells: Groundswell (landfall), Might of Old Krosa (main phase), Tyvar\'s Stand (X), Vines of Vastwood (kicked)', () => {
+    let s = board({ mine: [bear], hand: [real('Groundswell', '{0}'), real('Groundswell', '{0}'), forest] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', targets: target(s, 'Bear') }));
+    expect(powerOf(perm(s, 'Bear')!)).toBe(4);
+    s = playForest(s);
+    s = resolve(apply(s, { type: 'cast', iid: 'h1', targets: target(s, 'Bear') }));
+    expect(powerOf(perm(s, 'Bear')!)).toBe(8);
+
+    s = board({ mine: [bear], hand: [real('Might of Old Krosa', '{0}')] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', targets: target(s, 'Bear') }));
+    expect(powerOf(perm(s, 'Bear')!)).toBe(6);
+
+    s = board({ mana: 3, mine: [bear], hand: [real('Tyvar\'s Stand', '{X}')] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', x: 3, targets: target(s, 'Bear') }));
+    expect([powerOf(perm(s, 'Bear')!), hasKw(perm(s, 'Bear')!, 'hexproof'), hasKw(perm(s, 'Bear')!, 'indestructible')]).toEqual([5, true, true]);
+
+    s = board({ mine: [bear, forest, forest], hand: [real('Vines of Vastwood', '{1}')] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', kicked: true, targets: target(s, 'Bear') }));
+    expect([powerOf(perm(s, 'Bear')!), hasKw(perm(s, 'Bear')!, 'hexproof')]).toEqual([6, true]);
+  });
+
+  it('Invigorate: free with a Forest, an opponent gains 3 life', () => {
+    const invigorate = real('Invigorate');
+    let s = board({ mine: [bear, forest], hand: [invigorate] });
+    const alt = castOptions(s, 0, 'h0').find((o) => o.alt !== undefined);
+    expect(alt).toBeDefined();
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', alt: alt!.alt, targets: target(s, 'Bear') }));
+    expect([powerOf(perm(s, 'Bear')!), s.players[1].life, perm(s, 'Forest')!.tapped]).toEqual([6, 23, false]);
+    // Without a Forest: not offered.
+    s = board({ mine: [bear], hand: [invigorate] });
+    expect(castOptions(s, 0, 'h0').some((o) => o.alt !== undefined)).toBe(false);
+  });
+
+  it('Hapatra\'s Mark, Tamiyo\'s Safekeeping, Bridgeworks Battle', () => {
+    let s = board({ mine: [bear], hand: [real('Hapatra\'s Mark', '{0}')] });
+    perm(s, 'Bear')!.counters = { '-1/-1': 1 };
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', targets: target(s, 'Bear') }));
+    expect([powerOf(perm(s, 'Bear')!), hasKw(perm(s, 'Bear')!, 'hexproof')]).toEqual([2, true]);
+
+    const rock = card({ name: 'Rock', typeLine: 'Artifact' });
+    s = board({ mine: [rock], hand: [real('Tamiyo\'s Safekeeping', '{0}')] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', targets: target(s, 'Rock') }));
+    expect([hasKw(perm(s, 'Rock')!, 'indestructible'), s.players[0].life]).toEqual([true, 22]);
+
+    s = board({ mine: [bear], theirs: [creature('Ogre', 3, 3)], hand: [real('Bridgeworks Battle', '{0}')] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', targets: [...target(s, 'Bear'), ...target(s, 'Ogre')] }));
+    expect(perm(s, 'Ogre')).toBeUndefined();
+    expect(perm(s, 'Bear')!.damage).toBe(3);
+  });
+
+  it('Green Sun\'s Zenith: a green creature with mana value X or less onto the battlefield; it goes back into the library', () => {
+    let s = board({ mana: 2, hand: [real('Green Sun\'s Zenith', '{X}')] });
+    const elf = creature('Elf', 1, 1, { colors: ['G'], cmc: 2 });
+    const big = creature('Big', 5, 5, { colors: ['G'], cmc: 5 });
+    s.players[0].library = [{ iid: 'l0', card: big }, { iid: 'l1', card: elf }, { iid: 'l2', card: bear }];
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', x: 2 }));
+    expect((s.pending!.choice as { options: { iid: string }[] }).options.map((o) => o.iid)).toEqual(['l1']);
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['l1'] } }));
+    expect(perm(s, 'Elf')).toBeDefined();
+    expect(s.players[0].graveyard).toEqual([]);
+    expect(s.players[0].library.map((c) => c.card.name).sort()).toEqual(['Bear', 'Big', 'Green Sun\'s Zenith']);
+  });
+
+  it('landfall: Adventuring Gear, Tifa Lockhart, Mossborn Hydra, Scythecat Cub', () => {
+    let s = board({ mine: [real('Adventuring Gear'), real('Tifa Lockhart'), real('Mossborn Hydra'), real('Scythecat Cub')], hand: [forest, forest] });
+    perm(s, 'Adventuring Gear')!.attachedTo = iidOf(s, 'Tifa Lockhart');
+    perm(s, 'Mossborn Hydra')!.counters = { '+1/+1': 1 };
+    s = playForest(s);
+    if (s.pending?.choice.kind === 'targets') s = resolve(apply(s, { type: 'choose', answer: { kind: 'targets', targets: target(s, 'Scythecat Cub') } }));
+    for (let i = 0; i < 6 && s.pending; i++) {
+      s = resolve(apply(s, { type: 'choose', answer: s.pending!.choice.kind === 'targets' ? { kind: 'targets', targets: target(s, 'Scythecat Cub') } : { kind: 'cards', iids: [] } }));
+    }
+    // Tifa: 1 doubled and +2 from the Gear (in some order): 4 or 5.
+    expect(powerOf(perm(s, 'Tifa Lockhart')!)).toBeGreaterThanOrEqual(4);
+    expect(perm(s, 'Mossborn Hydra')!.counters['+1/+1']).toBe(2);
+    expect(perm(s, 'Scythecat Cub')!.counters['+1/+1']).toBe(1);
+    // The second time this turn: the Cub's counters doubled.
+    s.players[0].landPlayed = false;
+    s = playForest(s);
+    for (let i = 0; i < 6 && s.pending; i++) {
+      s = resolve(apply(s, { type: 'choose', answer: s.pending!.choice.kind === 'targets' ? { kind: 'targets', targets: target(s, 'Scythecat Cub') } : { kind: 'cards', iids: [] } }));
+    }
+    expect(perm(s, 'Scythecat Cub')!.counters['+1/+1']).toBe(2);
+    expect(perm(s, 'Mossborn Hydra')!.counters['+1/+1']).toBe(4);
+  });
+
+  it('Bristly Bill doubles the counters on each creature you control', () => {
+    const bill = real('Bristly Bill, Spine Sower');
+    let s = board({ mine: [bill, bear, forest, forest, forest, forest, forest], theirs: [creature('Ogre', 3, 3)] });
+    perm(s, 'Bear')!.counters = { '+1/+1': 2 };
+    perm(s, 'Ogre')!.counters = { '+1/+1': 1 };
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Bristly Bill, Spine Sower'), index: 0 }));
+    expect([perm(s, 'Bear')!.counters['+1/+1'], perm(s, 'Ogre')!.counters['+1/+1']]).toEqual([4, 1]);
+  });
+
+  it('lands: Arbor Elf, Escape Tunnel, Okina, Command Beacon, Fabled Passage, Brokers Hideout', () => {
+    let s = board({ mine: [real('Arbor Elf'), forest] });
+    perm(s, 'Forest')!.tapped = true;
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Arbor Elf'), index: 0, targets: target(s, 'Forest') }));
+    expect(perm(s, 'Forest')!.tapped).toBe(false);
+
+    s = board({ mine: [real('Escape Tunnel'), bear], theirs: [creature('Wall', 0, 4)] });
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Escape Tunnel'), index: 1, targets: target(s, 'Bear') }));
+    expect(canBlock(perm(s, 'Wall')!, perm(s, 'Bear')!)).toBe(false);
+
+    const legend = creature('Legend', 2, 2, { typeLine: 'Legendary Creature — Elf' });
+    s = board({ mine: [real('Okina, Temple to the Grandfathers'), forest, legend, bear] });
+    expect(errorOf(() => apply(s, { type: 'activate', iid: iidOf(s, 'Okina, Temple to the Grandfathers'), index: 0, targets: target(s, 'Bear') }))).not.toBeNull();
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Okina, Temple to the Grandfathers'), index: 0, targets: target(s, 'Legend') }));
+    expect(powerOf(perm(s, 'Legend')!)).toBe(3);
+
+    s = board({ mine: [real('Command Beacon')] });
+    s.players[0].command = [{ iid: 'c0', card: legend, commander: true }];
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Command Beacon'), index: 0 }));
+    expect([s.players[0].command, s.players[0].hand.map((c) => c.iid)]).toEqual([[], ['c0']]);
+
+    // Fabled Passage: the land found is untapped with four or more lands.
+    s = board({ mana: 3, mine: [real('Fabled Passage')] });
+    s.players[0].library = [{ iid: 'l0', card: forest }, ...s.players[0].library];
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Fabled Passage'), index: 0 }));
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['l0'] } }));
+    expect(perm(s, 'Forest')!.tapped).toBe(false);
+    s = board({ mana: 2, mine: [real('Fabled Passage')] });
+    s.players[0].library = [{ iid: 'l0', card: forest }, ...s.players[0].library];
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Fabled Passage'), index: 0 }));
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['l0'] } }));
+    expect(perm(s, 'Forest')!.tapped).toBe(true);
+
+    // Brokers Hideout: sacrificed as it enters, a basic Forest, Plains or Island found, 1 life.
+    s = board({ hand: [real('Brokers Hideout')] });
+    s.players[0].library = [{ iid: 'l0', card: forest }, ...s.players[0].library];
+    s = resolve(apply(s, { type: 'playLand', iid: 'h0' }));
+    expect((s.pending!.choice as { options: { iid: string }[] }).options.map((o) => o.iid)).toEqual(['l0']);
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['l0'] } }));
+    expect([perm(s, 'Brokers Hideout'), perm(s, 'Forest')!.tapped, s.players[0].life]).toEqual([undefined, true, 21]);
   });
 });

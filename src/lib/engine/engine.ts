@@ -41,12 +41,16 @@ export interface Boost {
   protection?: Color[];
   /** Multiply by Zero: base power and toughness set (layer 7b); the latest one wins, other changes apply on top. */
   setBase?: { power: number; toughness: number };
+  /** Escape Tunnel: "can't be blocked this turn". */
+  unblockable?: boolean;
 }
 
 export interface Permanent extends CardInst {
   controller: PlayerId;
   /** Phyrexian Devourer: its "power is 7 or greater" state trigger is waiting (it triggers again once it drops below). */
   stateTriggered?: boolean;
+  /** Scythecat Cub: how many times its ability resolved on turn `turn`. */
+  resolved?: { turn: number; n: number };
   /** Biomancer's Familiar: its next adapt this turn (that turn number) ignores its +1/+1 counters. */
   adaptFresh?: number;
   tapped: boolean;
@@ -112,6 +116,10 @@ export interface StackItem extends CardInst {
   noColoredMana?: boolean;
   /** Split second (Samut gives it to its controller's instants and sorceries): nothing but mana abilities meanwhile. */
   splitSecond?: boolean;
+  /** Might of Old Krosa: cast during its controller's main phase. */
+  castInMain?: boolean;
+  /** Green Sun's Zenith: shuffled into its owner's library as it resolves. */
+  toLibrary?: boolean;
   /** Chosen targets, one list per target slot of the spell or ability. */
   targets: Target[][];
   /** Set for an ability: the rules to resolve. `card` is its source, which stays where it is. */
@@ -198,6 +206,8 @@ export interface PlayerState {
   landPlayed: boolean;
   /** Lands played this turn (Exploration allows a second one). */
   landsThisTurn?: number;
+  /** Groundswell's landfall: the last turn a land entered the battlefield under their control. */
+  landEnteredOnTurn?: number;
   /** Life gained and lost this turn ("if you gained life this turn"). */
   gainedThisTurn?: number;
   lostThisTurn?: number;
@@ -381,6 +391,8 @@ export interface Resolving {
   discarded?: string[];
   /** The last token it created (Cori-Steel Cutter: "You may attach this Equipment to it"). */
   lastToken?: string;
+  /** Fabled Passage: the last land its search put onto the battlefield ("untap that land"). */
+  lastFound?: string;
   /** Crown of Empires: its "instead" effects apply (decided as it starts resolving). */
   instead?: boolean;
   reason: WindowReason;
@@ -462,6 +474,10 @@ export type LogEntry =
   | { k: 'emblem'; p: PlayerId; card: string }
   | { k: 'becomesCreature'; card: string }
   | { k: 'crewed'; card: string }
+  | { k: 'shuffledIn'; card: string }
+  | { k: 'unblockable'; card: string }
+  | { k: 'untapped'; card: string }
+  | { k: 'toHand'; card: string }
   | { k: 'enlisted'; card: string; other: string }
   | { k: 'dig'; p: PlayerId; n: number; took: number }
   /** Urza's Saga's chapters: the permanent gains an ability (its text). */
@@ -635,7 +651,7 @@ export type Action =
 /** Why an action was refused. Rendered in the player's language (src/i18n). */
 export type GameErrorCode =
   | 'gameOver' | 'keepFirst' | 'notMulliganTime' | 'noMoreMulligans' | 'chooseBottom' | 'notInHand'
-  | 'landTiming' | 'landAlreadyPlayed' | 'notALand' | 'notASpell' | 'sorcerySpeed' | 'castTiming' | 'sorceryOnly' | 'nameStopped' | 'mustAttack' | 'noCounterToRemove' | 'nothingToExile'
+  | 'landTiming' | 'landAlreadyPlayed' | 'notALand' | 'notASpell' | 'sorcerySpeed' | 'castTiming' | 'sorceryOnly' | 'nameStopped' | 'mustAttack' | 'noCounterToRemove' | 'nothingToExile' | 'threshold'
   | 'noLandToReturn' | 'onlyNotYourTurn' | 'noCardToExile' | 'noTappedCreature'
   | 'needsTarget' | 'tooManyTargets' | 'targetMustBe' | 'illegalTarget' | 'notEnoughMana' | 'chosenManaShort' | 'declareBlockersFirst'
   | 'notAttackStep' | 'cannotAttack' | 'notBlockStep' | 'notAttacking' | 'menace' | 'cannotBlock'
@@ -832,6 +848,9 @@ function ownUnits(s: GameState, perm: Permanent, spell?: Card, ability?: Card): 
     units = Array.from({ length: n }, () => ['U'] as Color[]);
   } else if (state === 'luck') {
     if (perm.counters.luck) units = [['W', 'U', 'B', 'R', 'G']];
+  } else if (state === 'depletion') {
+    // Hickory Woodlot: {G}{G} while it has a depletion counter to remove.
+    units = perm.counters.depletion ? [['G'], ['G']] : [];
   } else if (state) {
     const from = state === 'imprinted' ? (perm.imprinted ? [perm.imprinted] : [])
       : s.battlefield.filter((x) => x.controller === perm.controller && /\bLegendary\b/.test(x.card.typeLine.split('//')[0]) && (isCreature(x.card) || isPlaneswalker(x.card))).map((x) => x.card);
@@ -1201,6 +1220,7 @@ function altCostProblem(s: GameState, p: PlayerId, alt: AltCost, iid: string, fr
     return me.hand.some((c) => c.iid !== iid && cardColors(c.card).includes(alt.color)) ? null : 'noCardToExile';
   }
   if (alt.kind === 'phyrexian') return me.life >= 2 * alt.n ? null : 'notEnoughLife';
+  if (alt.kind === 'opponentGainsLife') return s.battlefield.some((x) => x.controller === p && hasSubtype(x.card, alt.subtype)) ? null : 'noLandToReturn';
   if (alt.name === 'warp' && from !== 'hand') return 'castTiming';
   if (alt.name === 'webSlinging' && !s.battlefield.some((x) => x.controller === p && x.tapped && isCreature(x.card))) return 'noTappedCreature';
   return null;
@@ -1219,6 +1239,11 @@ function payAltCost(d: GameState, p: PlayerId, alt: AltCost, item: StackItem, na
   };
   if (alt.kind === 'phyrexian') {
     changeLife(d, p, -2 * alt.n);
+    return false;
+  }
+  // Invigorate: "you may have an opponent gain 3 life" (the first opponent).
+  if (alt.kind === 'opponentGainsLife') {
+    changeLife(d, firstOpponent(d, p), alt.n);
     return false;
   }
   if (alt.kind === 'returnLand') {
@@ -1363,6 +1388,7 @@ export function canAttack(perm: Permanent): boolean {
 
 export function canBlock(blocker: Permanent, attacker: Permanent): boolean {
   if (!isCreature(blocker.card) || blocker.tapped || blocker.statics?.cantBlock) return false;
+  if (attacker.boosts.some((b) => b.unblockable)) return false;
   if (protectedFrom(attacker, blocker.card) || protectedFromPlayer(attacker, blocker.controller)) return false;
   // Brazen Borrower: "can block only creatures with flying".
   if (blocksOnlyFlyers(blocker.card) && !hasKw(attacker, 'flying')) return false;
@@ -1538,6 +1564,8 @@ export function activationProblem(s: GameState, p: PlayerId, perm: Permanent, in
   if (spec.cost.life && s.players[p].life < spec.cost.life) return 'notEnoughLife';
   if (spec.cost.removeCounter && !perm.counters[spec.cost.removeCounter]) return 'noCounterToRemove';
   if (spec.cost.exileTop && !s.players[p].library.length) return 'nothingToExile';
+  // Threshold (Centaur Garden): "Activate only if there are seven or more cards in your graveyard."
+  if (spec.minGraveyard && s.players[p].graveyard.length < spec.minGraveyard) return 'threshold';
   if (spec.cost.exileFromGraveyard && s.players[p].graveyard.filter((c) => cardMatches(c.card, spec.cost.exileFromGraveyard!)).length < (spec.cost.exileCount ?? 1)) return 'nothingToExile';
   if (spec.cost.discard && discardOptions(s, p, spec).length < spec.cost.discard) return 'nothingToDiscard';
   if (spec.cost.sacrifice && !sacrificeOptions(s, perm, spec).length) return 'nothingToSacrifice';
@@ -1747,7 +1775,9 @@ export const cardMatches = (card: Card, f: TargetFilter) => {
   const types = cardTypes(card);
   return (!f.types || f.types.some((t) => types.includes(t)) || !!f.orSubtypes?.some((t) => hasSubtype(card, t))) && !f.nonTypes?.some((t) => types.includes(t)) &&
     (f.maxManaValue === undefined || card.cmc <= f.maxManaValue) && fitsTypeLine(card, f) &&
-    (!f.manaCosts || f.manaCosts.includes(card.manaCost.split(' // ')[0]));
+    (!f.manaCosts || f.manaCosts.includes(card.manaCost.split(' // ')[0])) &&
+    // Green Sun's Zenith: "a green creature card".
+    (!f.colors || f.colors.some((c) => cardColors(card).includes(c)));
 };
 
 /** Every legal choice for a target slot right now. */
@@ -2221,9 +2251,11 @@ function tapForManaOnly(d: GameState, perm: Permanent) {
   if (filtered) tapPermanent(d, filtered);
   tapPermanent(d, perm);
   // Gemstone Mine: a mining counter removed; sacrificed when none is left.
-  if (stateMana(perm.card) === 'mining') {
-    perm.counters = { ...perm.counters, mining: Math.max(0, (perm.counters.mining ?? 0) - 1) };
-    if (!perm.counters.mining) sacrifice(d, perm);
+  // Hickory Woodlot: the same with depletion counters.
+  const depleted = stateMana(perm.card);
+  if (depleted === 'mining' || depleted === 'depletion') {
+    perm.counters = { ...perm.counters, [depleted]: Math.max(0, (perm.counters[depleted] ?? 0) - 1) };
+    if (!perm.counters[depleted]) sacrifice(d, perm);
   }
   const life = manaLifeCost(perm.card);
   if (life) changeLife(d, perm.controller, -life);
@@ -2347,6 +2379,7 @@ function putOntoBattlefield(d: GameState, inst: CardInst, controller: PlayerId, 
 
 function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, opts: { x?: number; tapped?: boolean; cast?: boolean } = {}): Permanent {
   const perm = newPermanent(inst, controller, d.turn);
+  if (isLand(inst.card)) d.players[controller].landEnteredOnTurn = d.turn;
   // Sunderflock: "if you cast it".
   if (opts.cast) perm.cast = true;
   if (entersPrepared(inst.card)) perm.prepared = true;
@@ -2815,6 +2848,16 @@ function fireCastWithoutMana(d: GameState, item: StackItem) {
  */
 function fireWard(d: GameState, item: StackItem) {
   const seen = new Set<string>();
+  // Surrak: "Whenever a creature you control or a creature spell you control becomes the target of a spell or ability
+  // an opponent controls" (once for each such target).
+  for (const t of new Map(item.targets.flat().map((x) => [JSON.stringify(x), x])).values()) {
+    const obj = t.kind === 'permanent' ? findPermanent(d, t.iid) : t.kind === 'spell' ? d.stack.find((x) => x.iid === t.iid && !x.ability) : undefined;
+    if (!obj || !isCreature(obj.card) || teamOf(d, obj.controller) === teamOf(d, item.controller)) continue;
+    for (const x of d.battlefield) {
+      if (x.controller !== obj.controller) continue;
+      for (const tr of triggersOf(x.card)) if (tr.event.on === 'yourCreatureTargeted') queueTrigger(d, x, x.controller, tr.ability);
+    }
+  }
   for (const t of item.targets.flat()) {
     if (t.kind !== 'permanent' || seen.has(t.iid)) continue;
     seen.add(t.iid);
@@ -3027,6 +3070,8 @@ function refreshStatics(d: GameState) {
       // Dáin's Company: "as long as you control another Dwarf".
       // Delirium: four or more card types among cards in its controller's graveyard.
       if (st.delirium && !delirium(d, src.controller)) continue;
+      // Elvish Reclaimer: "as long as there are three or more land cards in your graveyard".
+      if (st.graveCards && d.players[src.controller].graveyard.filter((c) => !st.graveCards!.types || st.graveCards!.types.some((t) => cardTypes(c.card).includes(t))).length < st.graveCards.n) continue;
       if (st.ifAnother && !d.battlefield.some((x) => x.iid !== src.iid && x.controller === src.controller && isCreature(x.card) && hasSubtype(x.card, st.ifAnother!))) continue;
       // "for each artifact you control", Kellan's "for each Aura and Equipment attached to Kellan", Chainsaw's rev counters.
       const times = st.perEach ? matching(d, src.controller, st.perEach).filter((x) => x.controller === src.controller).length
@@ -3225,7 +3270,10 @@ function putAwaySpell(d: GameState, item: StackItem, resolved: boolean) {
   if (item.copy) return; // a copy ceases to exist
   const ps = d.players[item.controller];
   const inst: CardInst = { iid: item.iid, card: item.card, ...(item.commander ? { commander: true } : {}) };
-  if (item.from === 'graveyard' && !item.castNow) putInZone(d, item.controller, inst, 'exile');
+  if (resolved && item.toLibrary) {
+    ps.library = shuffle([...ps.library, inst], () => random(d));
+    log(d, { k: 'shuffledIn', card: item.card.name });
+  } else if (item.from === 'graveyard' && !item.castNow) putInZone(d, item.controller, inst, 'exile');
   else if (resolved && item.face && isAdventure(item.card)) ps.exile.push({ ...inst, adventure: true });
   else putInZone(d, item.controller, inst, 'graveyard');
 }
@@ -3249,6 +3297,12 @@ function affected(d: GameState, r: Resolving, to: Affected): Affectable[] {
   if (to === 'defending') return [firstOpponent(d, r.item.controller)];
   // Each player, starting with the active player.
   if (to === 'each-player') return turnOrder(d);
+  // Adventuring Gear: the creature its source is attached to.
+  if (to === 'equipped') {
+    const src = r.item.source ? findPermanent(d, r.item.source) : undefined;
+    const host = src?.attachedTo ? findPermanent(d, src.attachedTo) : undefined;
+    return host ? [host] : [];
+  }
   return (r.legal[to.slot] ?? []).flatMap((t): Affectable[] => {
     if (t.kind === 'player') return [t.player];
     if (t.kind === 'card') {
@@ -3371,9 +3425,86 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       // Obsessive Pursuit: "If X is three or more, …"
       if (e.ifSacrificed && (d.players[caster].sacrificedThisTurn ?? 0) < e.ifSacrificed) break;
       for (const perm of perms) {
-        perm.boosts.push({ power: e.power, toughness: e.toughness, keywords: e.keywords, until: 'endOfTurn' });
-        log(d, { k: 'pump', card: perm.card.name, power: e.power, toughness: e.toughness, keywords: e.keywords });
+        // Tyvar's Stand: "+X/+X"; Groundswell, Might of Old Krosa: more "instead" (landfall, or cast in a main phase).
+        const bigger = e.instead && (e.instead.if === 'landfall' ? d.players[caster].landEnteredOnTurn === d.turn : !!item.castInMain);
+        const power = e.plusX ? (item.x ?? 0) : bigger ? e.instead!.power : e.power;
+        const toughness = e.plusX ? (item.x ?? 0) : bigger ? e.instead!.toughness : e.toughness;
+        perm.boosts.push({ power, toughness, keywords: e.keywords, until: 'endOfTurn' });
+        log(d, { k: 'pump', card: perm.card.name, power, toughness, keywords: e.keywords });
       }
+      break;
+    case 'doubleCounters':
+    case 'doubleCountersAll':
+      // Mossborn Hydra, Bristly Bill: as many +1/+1 counters again.
+      for (const perm of e.kind === 'doubleCounters' ? perms : matching(d, caster, e.which).filter((x) => x.controller === caster)) {
+        const n = perm.counters['+1/+1'] ?? 0;
+        if (!n) continue;
+        perm.counters = { ...perm.counters, '+1/+1': 2 * n };
+        log(d, { k: 'counters', card: perm.card.name, counter: '+1/+1', n });
+        countersPut(d, perm);
+      }
+      break;
+    case 'doublePower':
+      // Tifa Lockhart: "double her power": +X/+0, X her power.
+      for (const perm of perms) {
+        const n = Math.max(0, powerOf(perm));
+        perm.boosts.push({ power: n, toughness: 0, keywords: [], until: 'endOfTurn' });
+        log(d, { k: 'pump', card: perm.card.name, power: n, toughness: 0, keywords: [] });
+      }
+      break;
+    case 'counterOrDouble': {
+      // Scythecat Cub: a +1/+1 counter, or the counters doubled the second time it resolves this turn.
+      const src = item.source ? findPermanent(d, item.source) : undefined;
+      const n = src ? (src.resolved?.turn === d.turn ? src.resolved.n : 0) + 1 : 1;
+      if (src) src.resolved = { turn: d.turn, n };
+      for (const perm of perms) {
+        const add = n === 2 ? (perm.counters['+1/+1'] ?? 0) : 1;
+        if (!add) continue;
+        perm.counters = { ...perm.counters, '+1/+1': (perm.counters['+1/+1'] ?? 0) + add };
+        log(d, { k: 'counters', card: perm.card.name, counter: '+1/+1', n: add });
+        countersPut(d, perm);
+      }
+      break;
+    }
+    case 'unblockable':
+      for (const perm of perms) {
+        perm.boosts.push({ power: 0, toughness: 0, keywords: [], until: 'endOfTurn', unblockable: true });
+        log(d, { k: 'unblockable', card: perm.card.name });
+      }
+      break;
+    case 'commanderToHand': {
+      // Command Beacon: the commander from the command zone into the hand.
+      const ps = d.players[caster];
+      const commander = ps.command?.[0];
+      if (!commander) break;
+      ps.command = ps.command!.filter((c) => c !== commander);
+      ps.hand.push(commander);
+      log(d, { k: 'toHand', card: commander.card.name });
+      break;
+    }
+    case 'untapFound': {
+      // Fabled Passage: with four or more lands; Elven Passage: beholding an Elf (always done when possible).
+      const land = r.lastFound ? findPermanent(d, r.lastFound) : undefined;
+      if (!land) break;
+      const lands = d.battlefield.filter((x) => x.controller === caster && isLand(x.card)).length;
+      const elf = e.behold && (d.battlefield.some((x) => x.controller === caster && hasSubtype(x.card, e.behold!)) || d.players[caster].hand.some((c) => hasSubtype(c.card, e.behold!)));
+      if ((e.lands && lands >= e.lands) || elf) {
+        land.tapped = false;
+        log(d, { k: 'untapped', card: land.card.name });
+      }
+      break;
+    }
+    case 'removeAllCounters':
+      // Hapatra's Mark: "Remove all -1/-1 counters from it."
+      for (const perm of perms) {
+        if (!perm.counters[e.counter]) continue;
+        perm.counters = { ...perm.counters, [e.counter]: 0 };
+        log(d, { k: 'counterRemoved', card: perm.card.name, counter: e.counter });
+      }
+      break;
+    case 'shuffleSelfIntoLibrary':
+      // Green Sun's Zenith: put away into its owner's library, shuffled (see putAwaySpell).
+      item.toLibrary = true;
       break;
     case 'gainProtection':
     case 'gainProtectionAll': {
@@ -3488,7 +3619,10 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       for (const inst of chosen) {
         if (e.dest === 'top') continue;
         if (e.dest === 'hand') ps.hand.push(inst);
-        else putOntoBattlefield(d, inst, searcher, { tapped: e.tapped });
+        else {
+          putOntoBattlefield(d, inst, searcher, { tapped: e.tapped });
+          r.lastFound = inst.iid;
+        }
       }
       ps.library = shuffle(ps.library, () => random(d));
       // Enlightened Tutor: "then shuffle and put that card on top".
@@ -5181,7 +5315,8 @@ export function apply(state: GameState, action: Action): GameState {
       const item: StackItem = {
         iid: from === 'prepared' ? `${inst.iid}-prepared-${d.abilities}` : inst.iid, card: inst.card, ...(from === 'prepared' ? { copy: true } : {}), controller: p, targets, ...(xCount(card) ? { x } : {}),
         ...(face ? { face } : {}), ...(modes ? { modes } : {}), ...(kicked ? { kicked } : {}), ...(from !== 'hand' ? { from } : {}),
-        ...(inst.commander ? { commander: true } : {}), ...(noMana ? { noMana } : {}), ...(noColoredMana ? { noColoredMana } : {}), ...(splitSecond ? { splitSecond } : {}), ...(uncounterable ? { uncounterable } : {}),
+        ...(inst.commander ? { commander: true } : {}), ...(noMana ? { noMana } : {}), ...(noColoredMana ? { noColoredMana } : {}), ...(splitSecond ? { splitSecond } : {}),
+        ...(isMainStep(d) && isActivePlayer(d, p) ? { castInMain: true } : {}), ...(uncounterable ? { uncounterable } : {}),
         ...(altIndex !== undefined ? { alt: altIndex } : {}), ...(castNow ? { castNow } : {}),
       };
       delete d.castNow;
@@ -5244,7 +5379,7 @@ export function apply(state: GameState, action: Action): GameState {
       const x = spec?.cost.mana.includes('{X}') || spec?.cost.loyaltyX ? (action.x ?? 0) : 0;
       if (!Number.isInteger(x) || x < 0) throw new IllegalAction('badX');
       const problem = activationProblem(d, p, perm, action.index, x);
-      if (problem) throw new IllegalAction(problem, { card: perm.card.name });
+      if (problem) throw new IllegalAction(problem, { card: perm.card.name, ...(spec?.minGraveyard ? { n: spec.minGraveyard } : {}) });
       const targets = checkTargets(d, p, perm.card, spec.ability, action.targets ?? []);
 
       const first = targets[0]?.[0];

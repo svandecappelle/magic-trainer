@@ -529,6 +529,32 @@ Hunter (beginning of combat triggers, Vehicle tokens, emblems, "sacrifice or dis
 Approximations: "the rest on the bottom in any order" is put in a random order; Leylines are always put onto the
 battlefield.
 
+## Duel Commander: mono-green landfall (mtgtop8 deck 901562)
+
+Fixture `duel-commander-landfall-2026-10`: 49 of 88 cards fully simulated before, 77 after. Fixed (they played wrongly):
+Hickory Woodlot (entered untapped; enters tapped with two depletion counters, {G}{G} for each, sacrificed after the
+last), Elvish Reclaimer (+2/+2 with three or more land cards in the graveyard), Surrak (a card when an opponent targets
+your creature or creature spell), Centaur Garden (threshold: activate only with seven or more cards in the graveyard).
+Also: pump spells (Groundswell's landfall, Might of Old Krosa in a main phase, Tyvar's Stand's +X/+X, Vines of Vastwood
+kicked, Grow Extra Arms, Invigorate's "an opponent gains 3 life" instead of its cost, Hapatra's Mark removing -1/-1
+counters, Tamiyo's Safekeeping and Defend the Rider on any permanent), Bridgeworks Battle ("It fights up to one target
+creature"), Green Sun's Zenith (a green creature, then shuffled into the library), landfall permanents (Adventuring
+Gear and Skyclave Pick-Axe on the equipped creature, Tifa doubling her power, Mossborn Hydra and Bristly Bill doubling
+counters, Scythecat Cub's second resolution each turn), Arbor Elf ("target Forest"), Okina ("target legendary
+creature"), Escape Tunnel ("can't be blocked this turn"), Command Beacon, Fabled and Elven Passage (untap the land
+found), Brokers Hideout and Cabaretti Courtyard ("sacrifice it. When you do, search …"). Library searches now check
+colors ("a green creature card").
+
+Approximations: Grow Extra Arms never costs {1} less (a Spider target); Invigorate's life goes to the first opponent;
+Elven Passage always beholds an Elf when it can; Brokers Hideout's search happens even if it couldn't be sacrificed.
+
+Still not simulated, most played first:
+- [ ] Berserk (+X/+0 where X is its power, destroyed at the end step if it attacked), Embiggen, Bounty of the Hunt
+  (distributed counters removed at cleanup), Scale Up (overload), Wild Shape (modes setting base P/T and a type)
+- [ ] Royal Treatment (Role tokens), Legolas's Quick Reflexes (a granted trigger), Defend the Rider's Pilot token
+  (saddle), Hope of Ghirapur, Talon Gates of Madara (phasing; put onto the battlefield from the hand), Jeweled Amulet
+  (noting the type of mana spent)
+
 ## Comprehensive Rules audit (CR 2026-09-25)
 
 Rules from the Comprehensive Rules (https://magic.wizards.com/en/rules, effective 2026-09-25) that the engine does not

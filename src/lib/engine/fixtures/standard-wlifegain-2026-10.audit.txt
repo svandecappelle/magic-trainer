@@ -17,8 +17,8 @@ PARTIAL  Case of the Uneaten Feast {W} — Enchantment — Case
       trigger (enters) → gainLife
   ✗ To solve — You've gained 5 or more life this turn.
       Case: solving not simulated
-  ✗ Solved — Sacrifice this Case: Creature cards in your graveyard gain "…
-      keyword not simulated: solved
+  ? Solved — Sacrifice this Case: Creature cards in your graveyard gain "…
+      activated ability with a cost or restriction not understood
 PARTIAL  Enduring Innocence {1}{W}{W} — Enchantment Creature — Sheep Glimmer
   ✓ Lifelink
       keyword
@@ -33,11 +33,6 @@ PARTIAL  Leonardo, Cutting Edge {1}{W} — Legendary Creature — Mutant Ninja T
       keyword
   ✓ Whenever you gain life, put a +1/+1 counter on Leonardo.
       trigger (gainLife) → addCounters
-PARTIAL  Liliana the Faultless {W} — Legendary Creature — Human Cleric
-  ✓ Whenever another creature or planeswalker you control enters, you gai…
-      trigger (enters) → gainLife
-  ✗ {1}, {T}, Discard a card: Another target creature or planeswalker you…
-      activated ability, effect not simulated
 OK       Abandoned Air Temple  — Land
   ✓ This land enters tapped unless you control a basic land.
       enters tapped (unlessBasic)
@@ -76,6 +71,11 @@ OK       Haliya, Guided by Light {2}{W} — Legendary Creature — Human Soldier
       trigger (endStep) → draw, if 3+ life gained this turn
   ✓ Warp {W}
       keyword
+OK       Liliana the Faultless {W} — Legendary Creature — Human Cleric
+  ✓ Whenever another creature or planeswalker you control enters, you gai…
+      trigger (enters) → gainLife
+  ✓ {1}, {T}, Discard a card: Another target creature or planeswalker you…
+      activated → pump (1 target)
 OK       Rest in Peace {1}{W} — Enchantment
   ✓ When this enchantment enters, exile all graveyards.
       trigger (enters) → exileGraveyards
@@ -90,5 +90,5 @@ OK       Voice of Victory {1}{W} — Creature — Human Bard
   ✓ Your opponents can't cast spells during your turn.
       rule for the game: opponentsCantCastOnYourTurn
 
-17 cards: 11 ok, 5 partial, 1 not simulated, 0 can't be cast
+17 cards: 12 ok, 4 partial, 1 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

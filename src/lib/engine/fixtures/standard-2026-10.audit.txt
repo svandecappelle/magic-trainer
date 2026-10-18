@@ -89,21 +89,14 @@ NONE     M.O.D.O.K. {3}{B}{B} — Legendary Artifact Creature — Villain
   ✓ Flying, lifelink
       keyword
   ✗ Mental Organism — Pay 3 life: M.O.D.O.K. connives. Activate only duri…
-      keyword not simulated: mental organism
-  ✗ Designed Only for Killing — Creatures your opponents control get -1/-…
-      keyword not simulated: designed only for killing
+      activated ability, effect not simulated
+  ? Designed Only for Killing — Creatures your opponents control get -1/-…
+      not read by the engine
 NONE     Molten-Core Maestro {1}{R} — Creature — Goblin Bard
   ✓ Menace
       keyword
   ✗ Opus — Whenever you cast an instant or sorcery spell, put a +1/+1 cou…
       trigger (cast), effect not simulated
-NONE     Momo, Friendly Flier {W} — Legendary Creature — Lemur Bat Ally
-  ✓ Flying
-      keyword
-  ? The first non-Lemur creature spell with flying you cast during each o…
-      not read by the engine
-  ✗ Whenever another creature you control with flying enters, Momo gets +…
-      trigger (enters), effect not simulated
 NONE     Moseo, Vein's New Dean {2}{B} — Legendary Creature — Bird Skeleton Warlock
   ✓ Flying
       keyword
@@ -250,8 +243,8 @@ PARTIAL  Case of the Uneaten Feast {W} — Enchantment — Case
       trigger (enters) → gainLife
   ✗ To solve — You've gained 5 or more life this turn.
       Case: solving not simulated
-  ✗ Solved — Sacrifice this Case: Creature cards in your graveyard gain "…
-      keyword not simulated: solved
+  ? Solved — Sacrifice this Case: Creature cards in your graveyard gain "…
+      activated ability with a cost or restriction not understood
 PARTIAL  Chandra, Torch of Defiance {2}{R}{R} — Legendary Planeswalker — Chandra
   ✗ +1: Exile the top card of your library. You may cast that card. If yo…
       activated ability, effect not simulated
@@ -370,11 +363,6 @@ PARTIAL  Likeness Looter {U}{B} — Creature — Faerie Shapeshifter
       activated → draw+discard
   ✗ {X}: This creature becomes a copy of target creature card in your gra…
       activated ability, effect not simulated
-PARTIAL  Liliana the Faultless {W} — Legendary Creature — Human Cleric
-  ✓ Whenever another creature or planeswalker you control enters, you gai…
-      trigger (enters) → gainLife
-  ✗ {1}, {T}, Discard a card: Another target creature or planeswalker you…
-      activated ability, effect not simulated
 PARTIAL  Mistrise Village  — Land
   ✓ This land enters tapped unless you control a Mountain or a Forest.
       enters tapped (unlessSubtypes)
@@ -382,6 +370,13 @@ PARTIAL  Mistrise Village  — Land
       mana: U
   ✗ {U}, {T}: The next spell you cast this turn can't be countered.
       activated ability, effect not simulated
+PARTIAL  Momo, Friendly Flier {W} — Legendary Creature — Lemur Bat Ally
+  ✓ Flying
+      keyword
+  ? The first non-Lemur creature spell with flying you cast during each o…
+      not read by the engine
+  ✓ Whenever another creature you control with flying enters, Momo gets +…
+      trigger (enters) → pump
 PARTIAL  Moonshadow {B} — Creature — Elemental
   ✓ Menace
       keyword
@@ -742,6 +737,11 @@ OK       Leyline of the Void {2}{B}{B} — Enchantment
       begins the game on the battlefield (always)
   ✓ If a card would be put into an opponent's graveyard from anywhere, ex…
       rule for the game: opponentGraveyardsExiled
+OK       Liliana the Faultless {W} — Legendary Creature — Human Cleric
+  ✓ Whenever another creature or planeswalker you control enters, you gai…
+      trigger (enters) → gainLife
+  ✓ {1}, {T}, Discard a card: Another target creature or planeswalker you…
+      activated → pump (1 target)
 OK       Lunar Convocation {W}{B} — Enchantment
   ✓ At the beginning of your end step, if you gained life this turn, each…
       trigger (endStep) → loseLife, if 1+ life gained this turn
@@ -961,5 +961,5 @@ OK       Zoraline, Cosmos Caller {1}{W}{B} — Legendary Creature — Bat Cleric
   ✓ Whenever Zoraline enters or attacks, you may pay {W}{B} and 2 life. W…
       trigger (enters/attacks) → reflexive | reflexive
 
-178 cards: 94 ok, 43 partial, 41 not simulated, 0 can't be cast
+178 cards: 95 ok, 43 partial, 40 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)
