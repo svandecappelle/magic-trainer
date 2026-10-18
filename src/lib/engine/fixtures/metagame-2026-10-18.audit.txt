@@ -12,6 +12,17 @@ PARTIAL  Jace, Wielder of Mysteries {1}{U}{U}{U} — Legendary Planeswalker — 
       loyalty ability → mill+draw (1 target)
   ✗ −8: Draw seven cards. Then if your library has no cards in it, you wi…
       activated ability, effect not simulated
+PARTIAL  Kaito, Bane of Nightmares {2}{U}{B} — Legendary Planeswalker — Kaito
+  ✗ Ninjutsu {1}{U}{B}
+      keyword not simulated: ninjutsu
+  ✓ During your turn, as long as Kaito has one or more loyalty counters o…
+      a 3/4 Ninja creature during your turn (with loyalty)
+  ✓ +1: You get an emblem with "Ninjas you control get +1/+1."
+      loyalty ability → emblem
+  ✓ 0: Surveil 2. Then draw a card for each opponent who lost life this t…
+      loyalty ability → surveil+draw
+  ✓ −2: Tap target creature. Put two stun counters on it.
+      loyalty ability → tap+addCounters (1 target)
 PARTIAL  Lurrus of the Dream-Den {1}{W/B}{W/B} — Legendary Creature — Cat Nightmare
   ✗ Companion — Each permanent card in your starting deck has mana value …
       companion not simulated (played from the deck)
@@ -41,11 +52,27 @@ OK       Chalice of the Void {X}{X} — Artifact
       enters with X charge counters
   ✓ Whenever a player casts a spell with mana value equal to the number o…
       trigger (castMvCounters) → counter (1 target)
+OK       Curious Obsession {U} — Enchantment — Aura
+  ✓ Enchant creature
+      keyword
+  ✓ Enchanted creature gets +1/+1 and has "Whenever this creature deals c…
+      static ability
+  ✓ At the beginning of your end step, if you didn't attack with a creatu…
+      trigger (endStep) → sacrificeSelf, if you didn't attack this turn
 OK       Dark Matter Manipulator {B} — Creature — Human Warlock
   ✓ When this creature enters, mill three cards.
       trigger (enters) → mill
   ✓ This creature gets +2/+0 for every seven cards in your graveyard.
       static ability
+OK       Detective's Phoenix {2}{R} — Enchantment Creature — Phoenix
+  ✓ Bestow—{R}, Collect evidence 6.
+      keyword
+  ✓ Flying, haste
+      keyword
+  ✓ Enchanted creature gets +2/+2 and has flying and haste.
+      static ability
+  ✓ You may cast this card from your graveyard using its bestow ability.
+      bestow from the graveyard
 OK       Devoted Druid {1}{G} — Creature — Elf Druid
   ✓ {T}: Add {G}.
       mana: G
@@ -64,6 +91,11 @@ OK       Fear of Missing Out {1}{R} — Enchantment Creature — Nightmare
 OK       Grand Abolisher {W}{W} — Creature — Human Cleric
   ✓ During your turn, your opponents can't cast spells or activate abilit…
       rule for the game: abolisher
+OK       Inti, Seneschal of the Sun {1}{R} — Legendary Creature — Human Knight
+  ✓ Whenever you attack, you may discard a card. When you do, put a +1/+1…
+      trigger (youAttack) → reflexive
+  ✓ Whenever you discard one or more cards, exile the top card of your li…
+      trigger (youDiscard) → impulse
 OK       Karn, Argent Defender {2} — Legendary Artifact Creature — Golem
   ✓ Artifacts and creatures entering the battlefield don't cause abilitie…
       rule for the game: noEntersTriggers
@@ -81,6 +113,15 @@ OK       Moonshadow {B} — Creature — Elemental
       enters with 6 -1/-1 counters
   ✓ Whenever one or more permanent cards are put into your graveyard from…
       trigger (permanentCardsToGraveyard) → removeCounterSelf
+OK       Murktide Regent {5}{U}{U} — Creature — Dragon
+  ✓ Delve
+      keyword
+  ✓ Flying
+      keyword
+  ✓ This creature enters with a +1/+1 counter on it for each instant and …
+      enters with delvedSpells +1/+1 counters
+  ✓ Whenever an instant or sorcery card leaves your graveyard, put a +1/+…
+      trigger (leavesYourGraveyard) → addCounters
 OK       Necropotence {B}{B}{B} — Enchantment
   ✓ Skip your draw step.
       rule for the game: skipDraw
@@ -166,5 +207,5 @@ OK       Uro, Titan of Nature's Wrath {1}{G}{U} — Legendary Creature — Elder
   ✓ Escape—{G}{G}{U}{U}, Exile five other cards from your graveyard.
       escape {G}{G}{U}{U}: cast from the graveyard, exiling 5
 
-29 cards: 24 ok, 5 partial, 0 not simulated, 0 can't be cast
+34 cards: 28 ok, 6 partial, 0 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

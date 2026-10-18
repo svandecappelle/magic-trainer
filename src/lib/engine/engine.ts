@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, counterMana, choosesColor, diamondMana, sacrificeMana, mayStayTapped, gainsLifeFromCombatDamageTaken, restrictedMana, type RestrictedMana, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, hasSplitSecond, crewBonus, ROLES, foodMana, type TokenSpec, vanishingOf, hasEnlist, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, counterMana, choosesColor, diamondMana, sacrificeMana, mayStayTapped, gainsLifeFromCombatDamageTaken, restrictedMana, type RestrictedMana, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, hasSplitSecond, crewBonus, ROLES, foodMana, creatureOnYourTurn, type TokenSpec, vanishingOf, hasEnlist, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type AltCost, type CastInfo, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -28,6 +28,8 @@ export interface CardInst {
   castFor?: { cost: string; afterTurn?: number; sorcery?: boolean };
   /** "Exile the top card of your library. You may play it this turn.": playable from exile on that turn. */
   playableOnTurn?: number;
+  /** Inti: playable from exile until this player's next end step ends. */
+  playableUntilEndOf?: PlayerId;
 }
 
 /** A lasting change to a permanent's power, toughness or abilities. */
@@ -53,6 +55,10 @@ export interface Permanent extends CardInst {
   attackedOnTurn?: number;
   /** Cast for its escape cost (Phlage, Uro: "unless it escaped"). */
   escaped?: boolean;
+  /** Bestow: an Aura now (its printed card, a creature card, in `printed`). */
+  bestowed?: boolean;
+  /** Kaito: a creature for its controller's turn. */
+  yourTurnCreature?: boolean;
   /** Fear of Missing Out: its latest attack is its first this turn. */
   firstAttack?: boolean;
   /** Jeweled Amulet: the type of mana last spent on its charge ability. */
@@ -113,7 +119,7 @@ export interface Permanent extends CardInst {
   /** Swift Reconfiguration: its card before it became a Vehicle artifact (restored when the Aura leaves). */
   reconfigured?: Card;
   /** What static abilities (anthems, Auras, Equipment) give it right now; recomputed by the engine. */
-  statics?: { power: number; toughness: number; keywords: Keyword[]; cantAttack?: boolean; cantBlock?: boolean; mustAttack?: boolean; ward?: number[]; wardLife?: number[]; hexproofFromMonocolored?: boolean; doubleDamage?: boolean };
+  statics?: { power: number; toughness: number; keywords: Keyword[]; cantAttack?: boolean; cantBlock?: boolean; mustAttack?: boolean; ward?: number[]; wardLife?: number[]; hexproofFromMonocolored?: boolean; doubleDamage?: boolean; grants?: string[] };
 }
 
 export interface StackItem extends CardInst {
@@ -130,6 +136,8 @@ export interface StackItem extends CardInst {
   notedMana?: Color;
   /** Cast for an escape cost. */
   escaped?: boolean;
+  /** Murktide Regent: instant and sorcery cards exiled with it (delve). */
+  delvedSpells?: number;
   /** Cast with flashback (its own, or Snapcaster Mage's): exiled as it leaves the stack. */
   flashback?: boolean;
   /** Might of Old Krosa: cast during its controller's main phase. */
@@ -224,6 +232,8 @@ export interface PlayerState {
   landPlayed: boolean;
   /** Lands played this turn (Exploration allows a second one). */
   landsThisTurn?: number;
+  /** Curious Obsession: the last turn they attacked with a creature. */
+  attackedOnTurn?: number;
   /** Lurrus: the turn its permission was used. */
   lurrusOnTurn?: number;
   /** Screaming Nemesis: "they can't gain life for the rest of the game". */
@@ -354,6 +364,7 @@ export type ChoicePurpose =
   | 'distributeTwo' // Bounty of the Hunt with two targets: which one gets two counters
   | 'escapeExile' // escape: the other cards to exile from the graveyard
   | 'exileOwnGraveCard' // Relic of Progenitus: which card of your graveyard to exile
+  | 'collectEvidence' // collect evidence N: cards from your graveyard with that total mana value
   | 'triggerMode'; // a modal trigger ("When … enters, choose one —"): which mode
 
 /** Where "arrange" choices may put cards (scry: top/bottom, surveil: top/graveyard). */
@@ -634,6 +645,8 @@ export interface GameState {
   returnAtEnd?: { iid: string; owner: PlayerId; source?: string; controller: PlayerId; counterIfYours: boolean }[];
   /** Counter for ability ids on the stack. */
   abilities?: number;
+  /** Murktide Regent: each player's graveyard as last seen (cards that left it since trigger). */
+  graveSeen?: Record<number, CardInst[]>;
   /** Necropotence: cards set aside face down, put into their owner's hand at their next end step. */
   handAtEndStep?: { p: PlayerId; iid: string }[];
   /** Fear of Missing Out: additional combat phases still to come this turn. */
@@ -697,7 +710,7 @@ export type Action =
 /** Why an action was refused. Rendered in the player's language (src/i18n). */
 export type GameErrorCode =
   | 'gameOver' | 'keepFirst' | 'notMulliganTime' | 'noMoreMulligans' | 'chooseBottom' | 'notInHand'
-  | 'landTiming' | 'landAlreadyPlayed' | 'notALand' | 'notASpell' | 'sorcerySpeed' | 'castTiming' | 'sorceryOnly' | 'nameStopped' | 'mustAttack' | 'noCounterToRemove' | 'nothingToExile' | 'threshold' | 'delirium' | 'escapeTypes'
+  | 'landTiming' | 'landAlreadyPlayed' | 'notALand' | 'notASpell' | 'sorcerySpeed' | 'castTiming' | 'sorceryOnly' | 'nameStopped' | 'mustAttack' | 'noCounterToRemove' | 'nothingToExile' | 'threshold' | 'delirium' | 'escapeTypes' | 'notEnoughEvidence'
   | 'noLandToReturn' | 'onlyNotYourTurn' | 'noCardToExile' | 'noTappedCreature'
   | 'needsTarget' | 'tooManyTargets' | 'targetMustBe' | 'illegalTarget' | 'notEnoughMana' | 'chosenManaShort' | 'declareBlockersFirst'
   | 'notAttackStep' | 'cannotAttack' | 'notBlockStep' | 'notAttacking' | 'menace' | 'cannotBlock'
@@ -1054,7 +1067,7 @@ export const canActivateDiamond = (s: GameState, perm: Permanent) => diamondMana
 
 /** Tapping it for mana costs life (Mana Confluence) or deals damage (City of Brass): tapped last, and can't be undone. */
 const painfulMana = (perm: Permanent) =>
-  manaLifeCost(perm.card) > 0 || !!tapsAnotherForMana(perm.card) || !!filterMana(perm.card) || triggersOf(perm.card).some((t) => t.event.on === 'becomesTapped');
+  manaLifeCost(perm.card) > 0 || !!tapsAnotherForMana(perm.card) || !!filterMana(perm.card) || permTriggers(perm).some((t) => t.event.on === 'becomesTapped');
 
 /** Permanents on the battlefield with a rule-changing static ability. */
 const withRule = (s: GameState, rule: GameRule) => {
@@ -1293,6 +1306,7 @@ function altMana(c: Card, alt: AltCost, x: number): Cost {
   if (alt.kind === 'mana') return parseCost(alt.cost);
   // Escape: its own mana, or the card's mana cost (Underworld Breach).
   if (alt.kind === 'escape') return alt.cost ? parseCost(alt.cost) : costWithX(c, x);
+  if (alt.kind === 'bestow') return parseCost(alt.cost);
   if (alt.kind === 'phyrexian') {
     const cost = parseCost(c.manaCost.split('//')[0].replace(/\{[WUBRG]\/P\}/g, ''));
     return { ...cost, generic: cost.generic + x * xCount(c) };
@@ -1309,6 +1323,11 @@ function altCostProblem(s: GameState, p: PlayerId, alt: AltCost, iid: string, fr
     return me.hand.some((c) => c.iid !== iid && cardColors(c.card).includes(alt.color)) ? null : 'noCardToExile';
   }
   if (alt.kind === 'phyrexian') return me.life >= 2 * alt.n ? null : 'notEnoughLife';
+  if (alt.kind === 'bestow') {
+    if (from === 'graveyard' && !alt.fromGraveyard) return 'castTiming';
+    const evidence = me.graveyard.filter((c) => c.iid !== iid).reduce((n, c) => n + c.card.cmc, 0);
+    return alt.evidence && evidence < alt.evidence ? 'notEnoughEvidence' : null;
+  }
   if (alt.kind === 'escape') {
     if (from !== 'graveyard') return 'castTiming';
     const others = me.graveyard.filter((c) => c.iid !== iid);
@@ -1337,6 +1356,11 @@ function payAltCost(d: GameState, p: PlayerId, alt: AltCost, item: StackItem, na
     changeLife(d, p, -2 * alt.n);
     return false;
   }
+  // Collect evidence N: cards with that total mana value exiled from the graveyard.
+  if (alt.kind === 'bestow' && alt.evidence) {
+    const options = me.graveyard.filter((c) => c.iid !== item.iid);
+    return ask({ kind: 'cards', player: p, purpose: 'collectEvidence', min: 1, max: options.length, options, params: { card, n: alt.evidence } });
+  }
   // Escape: the other cards to exile from the graveyard.
   if (alt.kind === 'escape') {
     item.escaped = true;
@@ -1357,6 +1381,7 @@ function payAltCost(d: GameState, p: PlayerId, alt: AltCost, item: StackItem, na
     const options = me.hand.filter((c) => cardColors(c.card).includes(alt.color));
     return ask({ kind: 'cards', player: p, purpose: 'exileFromHandCost', min: 1, max: 1, options, params: { card, n: 1 } });
   }
+  if (alt.kind === 'bestow') return false;
   if (alt.name === 'webSlinging') {
     const options = d.battlefield.filter((x) => x.controller === p && x.tapped && isCreature(x.card));
     return ask({ kind: 'cards', player: p, purpose: 'returnCreatureCost', min: 1, max: 1, options, params: { card, n: 1 } });
@@ -1523,11 +1548,11 @@ export function castSource(s: GameState, p: PlayerId, iid: string): { inst: Card
   const now = s.castNow?.player === p && s.castNow.iid === iid;
   // Escape (Nethergoyf, Underworld Breach), Lurrus.
   const graveCast = inGrave && (castInfo(inGrave.card).flashback || inGrave.flashbackOnTurn === s.turn || now
-    || altsFor(s, p, inGrave.card, 0, 'graveyard').some((a) => a.kind === 'escape') || lurrusCast(s, p, inGrave.card));
+    || altsFor(s, p, inGrave.card, 0, 'graveyard').some((a) => a.kind === 'escape' || (a.kind === 'bestow' && a.fromGraveyard)) || lurrusCast(s, p, inGrave.card));
   if (inGrave && graveCast && !withRule(s, 'noCastingFromGraveyardsLibraries').length) return { inst: inGrave, from: 'graveyard' };
   // An adventurer, or a warped card on a later turn.
   const inExile = ps.exile.find((c) => c.iid === iid && (c.adventure || (c.warpedOnTurn !== undefined && s.turn > c.warpedOnTurn)
-    || (c.castFor && (c.castFor.afterTurn === undefined || s.turn > c.castFor.afterTurn)) || c.playableOnTurn === s.turn));
+    || (c.castFor && (c.castFor.afterTurn === undefined || s.turn > c.castFor.afterTurn)) || c.playableOnTurn === s.turn || c.playableUntilEndOf === p));
   if (inExile) return { inst: inExile, from: 'exile' };
   const inCommand = ps.command?.find((c) => c.iid === iid);
   if (inCommand) return { inst: inCommand, from: 'command' };
@@ -1734,7 +1759,7 @@ function finishCast(d: GameState, item: StackItem, named: LogTarget[]) {
   // Chalice of the Void: a spell with mana value equal to its charge counters (X counted on the stack).
   const mv = card.cmc + (item.x ?? 0) * xCount(card);
   for (const x of d.battlefield) {
-    for (const t of triggersOf(x.card)) {
+    for (const t of permTriggers(x)) {
       if (t.event.on === 'castMvCounters' && (x.counters[t.event.counter] ?? 0) === mv) {
         (d.triggered ??= []).push({ source: { iid: x.iid, card: x.card }, controller: x.controller, ability: t.ability, targets: [[{ kind: 'spell', iid: item.iid }]] });
       }
@@ -2101,10 +2126,10 @@ function fireDraw(d: GameState, p: PlayerId, firstInDrawStep: boolean) {
   // Tamiyo: "When you draw your third card in a turn, …" (on the battlefield).
   for (const x of d.battlefield) {
     if (x.controller !== p) continue;
-    for (const t of triggersOf(x.card)) if (t.event.on === 'youDrawNth' && !t.event.fromGraveyard && t.event.nth === nth) queueTrigger(d, x, p, t.ability);
+    for (const t of permTriggers(x)) if (t.event.on === 'youDrawNth' && !t.event.fromGraveyard && t.event.nth === nth) queueTrigger(d, x, p, t.ability);
   }
   for (const x of d.battlefield) {
-    for (const t of triggersOf(x.card)) {
+    for (const t of permTriggers(x)) {
       if (t.event.on !== 'opponentDraws') continue;
       if (!t.event.anyPlayer && teamOf(d, x.controller) === teamOf(d, p)) continue;
       if (t.event.nth !== undefined && t.event.nth !== nth) continue;
@@ -2217,6 +2242,8 @@ function finishCleanup(d: GameState, p: PlayerId, iids: string[]) {
 }
 
 function finishTurn(d: GameState) {
+  // Inti: "until your next end step" is over for the active player.
+  for (const ps of d.players) for (const c of ps.exile) if (c.playableUntilEndOf !== undefined && isActivePlayer(d, c.playableUntilEndOf)) delete c.playableUntilEndOf;
   // Bounty of the Hunt: the +1/+1 counters put "this way" are removed.
   for (const { iid, n } of d.countersAtCleanup ?? []) {
     const perm = findPermanent(d, iid);
@@ -2236,6 +2263,7 @@ function finishTurn(d: GameState) {
     if (perm.unanimated) {
       perm.card = perm.unanimated;
       delete perm.unanimated;
+      delete perm.yourTurnCreature;
     }
     perm.damage = 0;
     perm.deathtouched = false;
@@ -2301,7 +2329,7 @@ function putInZone(d: GameState, owner: PlayerId, inst: CardInst, zone: 'graveya
   if (zone === 'graveyard' && cardTypes(inst.card).some((t) => PERMANENT_TYPES.includes(t))) {
     for (const x of d.battlefield) {
       if (x.controller !== owner) continue;
-      for (const t of triggersOf(x.card)) {
+      for (const t of permTriggers(x)) {
         if (t.event.on !== 'permanentCardsToGraveyard' || (t.event.whileCounter && !x.counters[t.event.whileCounter])) continue;
         if ((d.triggered ?? []).some((q) => q.source.iid === x.iid && q.ability === t.ability)) continue;
         queueTrigger(d, x, owner, t.ability);
@@ -2334,11 +2362,11 @@ function removePermanent(d: GameState, perm: Permanent, zone: 'graveyard' | 'exi
   // A token that leaves the battlefield ceases to exist (it still "dies").
   if (!isToken(printedCard(perm))) putInZone(d, perm.owner ?? perm.controller, { iid: perm.iid, card: printedCard(perm), ...(perm.commander ? { commander: true } : {}) }, zone);
   // A creature dies; an artifact's "When this artifact is put into a graveyard from the battlefield" too.
-  if (zone === 'graveyard' && (isCreature(perm.card) || triggersOf(perm.card).some((t) => t.event.on === 'dies' && t.event.self))) fireObject(d, 'dies', perm);
+  if (zone === 'graveyard' && (isCreature(perm.card) || permTriggers(perm).some((t) => t.event.on === 'dies' && t.event.self))) fireObject(d, 'dies', perm);
   // Skullclamp: "Whenever equipped creature dies" (its Equipment is still attached).
   if (zone === 'graveyard' && isCreature(perm.card)) {
     for (const eq of d.battlefield.filter((x) => x.attachedTo === perm.iid)) {
-      for (const t of triggersOf(eq.card)) if (t.event.on === 'equippedDies') queueTrigger(d, eq, eq.controller, t.ability);
+      for (const t of permTriggers(eq)) if (t.event.on === 'equippedDies') queueTrigger(d, eq, eq.controller, t.ability);
     }
   }
 }
@@ -2417,10 +2445,10 @@ function payMana(d: GameState, p: PlayerId, plan: ManaPick[]) {
 function tapPermanent(d: GameState, perm: Permanent) {
   if (perm.tapped) return;
   perm.tapped = true;
-  for (const t of triggersOf(perm.card)) if (t.event.on === 'becomesTapped' && !t.event.which) queueTrigger(d, perm, perm.controller, t.ability);
+  for (const t of permTriggers(perm)) if (t.event.on === 'becomesTapped' && !t.event.which) queueTrigger(d, perm, perm.controller, t.ability);
   // Tezzeret's emblem: "Whenever an artifact you control becomes tapped, draw a card."
   for (const x of [...d.battlefield, ...emblemSources(d)]) {
-    for (const t of triggersOf(x.card)) {
+    for (const t of permTriggers(x)) {
       if (t.event.on === 'becomesTapped' && t.event.which && fits(d, x.controller, t.event.which, perm)) queueTrigger(d, x, x.controller, t.ability);
     }
   }
@@ -2519,7 +2547,7 @@ function sacrifice(d: GameState, perm: Permanent) {
   // Biotech Specialist: "Whenever you sacrifice an artifact, …"; The Sackville-Bagginses: "a token".
   for (const x of d.battlefield) {
     if (x.controller !== p) continue;
-    for (const t of triggersOf(x.card)) {
+    for (const t of permTriggers(x)) {
       if (t.event.on === 'youSacrifice' && (t.event.token ? isToken(card) : cardMatches(perm.card, t.event.filter))) queueTrigger(d, x, p, t.ability);
     }
   }
@@ -2527,7 +2555,7 @@ function sacrifice(d: GameState, perm: Permanent) {
 
 /** Basking Broodscale: "Whenever one or more +1/+1 counters are put on this creature, …" */
 function countersPut(d: GameState, perm: Permanent) {
-  for (const t of triggersOf(perm.card)) if (t.event.on === 'countersPut') queueTrigger(d, perm, perm.controller, t.ability);
+  for (const t of permTriggers(perm)) if (t.event.on === 'countersPut') queueTrigger(d, perm, perm.controller, t.ability);
 }
 
 /** `p` discarded `inst` (already moved): logged; Monument to Endurance's "Whenever you discard a card". */
@@ -2535,10 +2563,12 @@ function noteDiscard(d: GameState, p: PlayerId, inst: CardInst, cleanup = false)
   log(d, { k: 'discard', p, card: inst.card.name, ...(cleanup ? { cleanup } : {}) });
   for (const x of d.battlefield) {
     if (x.controller !== p) continue;
-    for (const t of triggersOf(x.card)) {
+    for (const t of permTriggers(x)) {
       if (t.event.on !== 'youDiscard') continue;
       // Necropotence: "exile that card from your graveyard" (the discarded card is its target).
       if (t.ability.targets[0]?.kind === 'card') (d.triggered ??= []).push({ source: { iid: x.iid, card: x.card }, controller: p, ability: t.ability, targets: [[{ kind: 'card', iid: inst.iid }]] });
+      // Inti: "one or more cards": once for cards discarded together (one still waiting isn't added again).
+      else if (t.batch && (d.triggered ?? []).some((q) => q.source.iid === x.iid && q.ability === t.ability)) continue;
       else queueTrigger(d, x, p, t.ability);
     }
   }
@@ -2568,7 +2598,7 @@ function putOntoBattlefield(d: GameState, inst: CardInst, controller: PlayerId, 
   enterBattlefield(d, inst, controller, opts);
 }
 
-function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, opts: { x?: number; tapped?: boolean; cast?: boolean; escaped?: boolean } = {}): Permanent {
+function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, opts: { x?: number; tapped?: boolean; cast?: boolean; escaped?: boolean; delvedSpells?: number } = {}): Permanent {
   const perm = newPermanent(inst, controller, d.turn);
   // Phlage, Uro: "unless it escaped".
   if (opts.escaped) perm.escaped = true;
@@ -2614,7 +2644,7 @@ function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, op
   if (vanishing) perm.counters = { ...perm.counters, time: vanishing };
   const counters = entersCounters(inst.card);
   if (counters) {
-    const n = typeof counters.n === 'number' ? counters.n : (opts.x ?? 0);
+    const n = typeof counters.n === 'number' ? counters.n : counters.n === 'delvedSpells' ? (opts.delvedSpells ?? 0) : (opts.x ?? 0);
     if (n > 0) perm.counters = { [counters.counter]: n };
   }
   if (isPlaneswalker(inst.card)) perm.counters = { ...perm.counters, loyalty: startingLoyalty(inst.card) };
@@ -2725,6 +2755,12 @@ function phaseOut(d: GameState, perm: Permanent) {
   for (const [a, bs] of Object.entries(d.blocks)) d.blocks[a] = bs.filter((b) => b !== perm.iid);
   (d.phasedOut ??= []).push(...all);
   log(d, { k: 'phasedOut', card: perm.card.name });
+}
+
+/** Bestow: the card as an Aura ("Enchant creature"), not a creature. */
+function bestowedAura(card: Card): Card {
+  const types = card.typeLine.split(' // ')[0].split(' — ')[0].replace(/\s*\bCreature\b/, '');
+  return { ...card, typeLine: `${types} — Aura`, oracleText: `Enchant creature\n${card.oracleText}` };
 }
 
 /** The card a permanent leaves the battlefield as: its printed card, not a face, an animation or gained abilities. */
@@ -2866,7 +2902,7 @@ function addLore(d: GameState, perm: Permanent) {
   const before = perm.counters.lore ?? 0;
   perm.counters = { ...perm.counters, lore: before + 1 };
   log(d, { k: 'counters', card: perm.card.name, counter: 'lore', n: 1 });
-  for (const t of triggersOf(perm.card)) {
+  for (const t of permTriggers(perm)) {
     if (t.event.on === 'chapter' && t.event.n === before + 1) queueTrigger(d, perm, perm.controller, t.ability);
   }
 }
@@ -2894,6 +2930,7 @@ function conditionMet(d: GameState, p: PlayerId, cond: AbilitySpec['condition'],
   if (cond.cast && !(source && findPermanent(d, source)?.cast)) return false;
   if (cond.delirium && !delirium(d, p)) return false;
   if (cond.notEscaped && source && findPermanent(d, source)?.escaped) return false;
+  if (cond.noAttack && ps.attackedOnTurn === d.turn) return false;
   return (ps.gainedThisTurn ?? 0) >= (cond.gained ?? 0) && (!cond.lost || (ps.lostThisTurn ?? 0) > 0);
 }
 
@@ -2937,7 +2974,7 @@ function fireObject(d: GameState, on: ObjectEvent, perm: Permanent) {
   if (on === 'enters' && withRule(d, 'noEntersTriggers').length && (isCreature(perm.card) || cardTypes(perm.card).includes('artifact'))) return;
   const watchers = [...(d.battlefield.some((x) => x.iid === perm.iid) ? d.battlefield : [...d.battlefield, perm]), ...emblemSources(d)];
   for (const x of watchers) {
-    triggersOf(x.card).forEach((t, i) => {
+    permTriggers(x).forEach((t, i) => {
       const e: TriggerEvent = t.event;
       if (e.on !== on) return;
       const hit = e.self ? x.iid === perm.iid : !(e.another && x.iid === perm.iid) && fits(d, x.controller, e.which, perm);
@@ -2953,6 +2990,16 @@ function fireObject(d: GameState, on: ObjectEvent, perm: Permanent) {
       queueTrigger(d, x, x.controller, t.ability, batch);
     });
   }
+}
+
+/**
+ * A permanent's triggered abilities: its own, and those granted by Auras and Equipment (Curious Obsession: "has
+ * \"Whenever this creature deals combat damage to a player, you may draw a card.\"").
+ */
+function permTriggers(x: CardInst) {
+  const grants = isPermanent(x) ? x.statics?.grants ?? [] : [];
+  if (!grants.length) return triggersOf(x.card);
+  return [...triggersOf(x.card), ...grants.flatMap((text) => triggersOf({ ...x.card, name: 'This creature', oracleText: text, keywords: [] }))];
 }
 
 /** Emblems as trigger sources (Chandra's: "Whenever an artifact you control enters, this emblem deals 3 damage …"). */
@@ -3058,7 +3105,7 @@ function fireStep(d: GameState, on: StepEvent) {
     delete d.sacrificeAtEnd;
   }
   for (const x of [...d.battlefield, ...emblemSources(d)]) {
-    for (const t of triggersOf(x.card)) {
+    for (const t of permTriggers(x)) {
       if (t.event.on !== on) continue;
       const mine = isActivePlayer(d, x.controller);
       if (t.event.whose === 'each' || (t.event.whose === 'you') === mine) queueTrigger(d, x, x.controller, t.ability);
@@ -3071,7 +3118,7 @@ function fireCast(d: GameState, p: PlayerId, card: Card) {
   // Rhystic Study: "Whenever an opponent casts a spell, …" (aimed at that player).
   for (const x of d.battlefield) {
     if (teamOf(d, x.controller) === teamOf(d, p)) continue;
-    for (const t of triggersOf(x.card)) {
+    for (const t of permTriggers(x)) {
       if (t.event.on === 'opponentCasts' && cardMatches(card, t.event.filter) && (!t.event.firstNoncreature || d.players[p].noncreatureThisTurn === 1)
         && (!t.event.nth || d.players[p].spellsThisTurn === t.event.nth)) {
         // Its slot 0 (if any) is the player who cast it ("unless that player pays").
@@ -3081,7 +3128,7 @@ function fireCast(d: GameState, p: PlayerId, card: Card) {
   }
   for (const x of [...d.battlefield, ...emblemSources(d)]) {
     if (x.controller !== p) continue;
-    for (const t of triggersOf(x.card)) {
+    for (const t of permTriggers(x)) {
       if (t.event.on === 'cast' && cardMatches(card, t.event.filter) && (!t.event.nth || d.players[p].spellsThisTurn === t.event.nth)) queueTrigger(d, x, p, t.ability);
     }
   }
@@ -3090,7 +3137,7 @@ function fireCast(d: GameState, p: PlayerId, card: Card) {
 /** A spell was cast without spending mana: Vexing Bauble's trigger, aimed at that spell. */
 function fireCastWithoutMana(d: GameState, item: StackItem) {
   for (const x of d.battlefield) {
-    for (const t of triggersOf(x.card)) {
+    for (const t of permTriggers(x)) {
       if (t.event.on === 'castWithoutMana' && (item.noMana || t.event.colored) && !(t.event.opponents && teamOf(d, x.controller) === teamOf(d, item.controller))) {
         (d.triggered ??= []).push({ source: { iid: x.iid, card: x.card }, controller: x.controller, ability: t.ability, targets: [[{ kind: 'spell', iid: item.iid }]] });
       }
@@ -3111,7 +3158,7 @@ function fireWard(d: GameState, item: StackItem) {
     if (!obj || !isCreature(obj.card) || teamOf(d, obj.controller) === teamOf(d, item.controller)) continue;
     for (const x of d.battlefield) {
       if (x.controller !== obj.controller) continue;
-      for (const tr of triggersOf(x.card)) if (tr.event.on === 'yourCreatureTargeted') queueTrigger(d, x, x.controller, tr.ability);
+      for (const tr of permTriggers(x)) if (tr.event.on === 'yourCreatureTargeted') queueTrigger(d, x, x.controller, tr.ability);
     }
   }
   for (const t of item.targets.flat()) {
@@ -3119,7 +3166,7 @@ function fireWard(d: GameState, item: StackItem) {
     seen.add(t.iid);
     const perm = findPermanent(d, t.iid);
     // Phantasmal Image: "When this creature becomes the target of a spell or ability, sacrifice it."
-    if (perm) for (const tr of triggersOf(perm.card)) if (tr.event.on === 'becomesTarget') queueTrigger(d, perm, perm.controller, tr.ability);
+    if (perm) for (const tr of permTriggers(perm)) if (tr.event.on === 'becomesTarget') queueTrigger(d, perm, perm.controller, tr.ability);
     if (!perm || perm.controller === item.controller) continue;
     // Its own ward, and each one granted (Lavaspur Boots, Hexing Squelcher): each triggers.
     const wards = [
@@ -3210,6 +3257,18 @@ function stackTrigger(d: GameState, t: Triggered): boolean {
 /** State-based actions: +1/+1 and -1/-1 counters cancel out, 0 toughness, lethal damage, 0 life. */
 function checkStateBased(d: GameState) {
   refreshStatics(d);
+  // Murktide Regent: "Whenever an instant or sorcery card leaves your graveyard" (seen since the last check).
+  for (const p of playersOf(d)) {
+    const now = d.players[p].graveyard;
+    const before = d.graveSeen?.[p] ?? [];
+    const left = before.filter((c) => !now.some((x) => x.iid === c.iid));
+    for (const c of left) {
+      for (const x of d.battlefield.filter((y) => y.controller === p)) {
+        for (const t of permTriggers(x)) if (t.event.on === 'leavesYourGraveyard' && cardMatches(c.card, t.event.filter)) queueTrigger(d, x, p, t.ability);
+      }
+    }
+    (d.graveSeen ??= {})[p] = now.map((c) => ({ iid: c.iid, card: c.card }));
+  }
   // Ascend: "If you control ten or more permanents, you get the city's blessing for the rest of the game."
   for (const p of playersOf(d)) {
     const mine = d.battlefield.filter((x) => x.controller === p);
@@ -3238,7 +3297,7 @@ function checkStateBased(d: GameState) {
   }
   // Phyrexian Devourer: "When this creature's power is 7 or greater, sacrifice it." (once until it drops below)
   for (const perm of d.battlefield) {
-    for (const t of triggersOf(perm.card)) {
+    for (const t of permTriggers(perm)) {
       if (t.event.on !== 'powerAtLeast') continue;
       if (powerOf(perm) < t.event.n) delete perm.stateTriggered;
       else if (!perm.stateTriggered) {
@@ -3260,7 +3319,15 @@ function checkStateBased(d: GameState) {
     const host = perm.attachedTo ? findPermanent(d, perm.attachedTo) : undefined;
     const aura = auraTarget(perm.card);
     if (aura) {
-      if (!host || !fitsSpec(d, perm.controller, aura, { kind: 'permanent', iid: host.iid }) || protectedFrom(host, perm.card)) {
+      const gone = !host || !fitsSpec(d, perm.controller, aura, { kind: 'permanent', iid: host.iid }) || protectedFrom(host, perm.card);
+      // Bestow: unattached, it's a creature again (it stays).
+      if (gone && perm.bestowed && perm.printed) {
+        perm.card = perm.printed;
+        delete perm.printed;
+        delete perm.bestowed;
+        delete perm.attachedTo;
+        log(d, { k: 'becomesCreature', card: perm.card.name });
+      } else if (gone) {
         removePermanent(d, perm, 'graveyard');
         log(d, { k: 'destroyed', card: perm.card.name });
       }
@@ -3318,7 +3385,24 @@ function refreshStatics(d: GameState) {
     log(d, { k: 'control', p: perm.controller, card: perm.card.name });
   }
   for (const perm of d.battlefield) delete perm.statics;
-  for (const src of d.battlefield) {
+  // Kaito: a 3/4 Ninja creature with hexproof during his controller's turn, while he has loyalty counters.
+  for (const perm of d.battlefield) {
+    const shape = creatureOnYourTurn(perm.unanimated ?? perm.card);
+    if (!shape) continue;
+    const on = isActivePlayer(d, perm.controller) && (perm.counters.loyalty ?? 0) > 0;
+    if (on && !perm.yourTurnCreature) {
+      const own = perm.card;
+      perm.unanimated ??= own;
+      const [types, subtypes = ''] = own.typeLine.split(' // ')[0].split(' — ');
+      perm.card = { ...own, typeLine: `${types} Creature — ${[subtypes, shape.subtype].filter(Boolean).join(' ')}`, power: String(shape.power), toughness: String(shape.toughness), keywords: [...(own.keywords ?? []), ...shape.keywords.map((k) => k.replace(/^./, (c) => c.toUpperCase()))] };
+      perm.yourTurnCreature = true;
+    } else if (!on && perm.yourTurnCreature) {
+      if (perm.unanimated) perm.card = perm.unanimated;
+      delete perm.unanimated;
+      delete perm.yourTurnCreature;
+    }
+  }
+  for (const src of [...d.battlefield, ...emblemSources(d)]) {
     for (const st of staticsOf(src.card)) {
       const hosts = st.who === 'self' ? [src]
         : typeof st.who === 'string'
@@ -3346,6 +3430,7 @@ function refreshStatics(d: GameState) {
         if (st.wardLife) b.wardLife = [...(b.wardLife ?? []), st.wardLife];
         if (st.hexproofFromMonocolored) b.hexproofFromMonocolored = true;
         if (st.doubleDamage) b.doubleDamage = true;
+        if (st.grants) b.grants = [...(b.grants ?? []), st.grants];
         for (const k of st.keywords) if (!b.keywords.includes(k)) b.keywords.push(k);
         if (st.cantAttack) b.cantAttack = true;
         if (st.cantBlock) b.cantBlock = true;
@@ -3362,7 +3447,7 @@ function dealDamage(d: GameState, source: CardInst, controller: PlayerId, target
   // Screaming Nemesis: "Whenever this creature is dealt damage, it deals that much damage to …"
   if (typeof target !== 'number') {
     const dealt = target.damage + (target.counters['-1/-1'] ?? 0) - before;
-    for (const t of dealt > 0 ? triggersOf(target.card) : []) {
+    for (const t of dealt > 0 ? permTriggers(target) : []) {
       if (t.event.on === 'dealtDamage') (d.triggered ??= []).push({ source: { iid: target.iid, card: target.card }, controller: target.controller, ability: t.ability, x: dealt });
     }
   }
@@ -3391,7 +3476,7 @@ function applyDamage(d: GameState, source: CardInst, controller: PlayerId, targe
   // Hypnotic Specter: "Whenever this creature deals damage to an opponent, that player …" (the creature itself dealing it).
   const self = findPermanent(d, source.iid);
   if (self && typeof target === 'number' && teamOf(d, target) !== teamOf(d, self.controller) && !mooned(d, self.card)) {
-    for (const t of triggersOf(self.card)) {
+    for (const t of permTriggers(self)) {
       if (t.event.on !== 'damagesOpponent') continue;
       if (!t.ability.effects.length) log(d, { k: 'notSimulated', card: self.card.name });
       else (d.triggered ??= []).push({ source: { iid: self.iid, card: self.card }, controller: self.controller, ability: t.ability, targets: [[{ kind: 'player', player: target }]] });
@@ -3406,7 +3491,7 @@ function applyDamage(d: GameState, source: CardInst, controller: PlayerId, targe
     // The Cabbage Merchant: "Whenever a creature deals combat damage to you, …"
     if (combat && isCreature(source.card)) {
       for (const x of d.battlefield.filter((y) => y.controller === target)) {
-        for (const t of triggersOf(x.card)) if (t.event.on === 'combatDamageToYou') queueTrigger(d, x, target, t.ability);
+        for (const t of permTriggers(x)) if (t.event.on === 'combatDamageToYou') queueTrigger(d, x, target, t.ability);
       }
     }
     changeLife(d, target, -amount);
@@ -3451,7 +3536,7 @@ function changeLife(d: GameState, p: PlayerId, delta: number) {
   if (delta > 0) {
     for (const x of d.battlefield) {
       if (x.controller !== p) continue;
-      for (const t of triggersOf(x.card)) if (t.event.on === 'gainLife') queueTrigger(d, x, p, t.ability);
+      for (const t of permTriggers(x)) if (t.event.on === 'gainLife') queueTrigger(d, x, p, t.ability);
     }
   }
 }
@@ -3594,7 +3679,8 @@ function affected(d: GameState, r: Resolving, to: Affected): Affectable[] {
 
 const amount = (d: GameState, r: Resolving, a: Amount) =>
   a === 'X' ? (r.item.x ?? 0) : a === 'lifeGained' ? (d.players[r.item.controller].gainedThisTurn ?? 0)
-    : a === 'sacrificed' ? (d.players[r.item.controller].sacrificedThisTurn ?? 0) : a === 'exiledMv' ? (r.item.exiledMv ?? 0) : a;
+    : a === 'sacrificed' ? (d.players[r.item.controller].sacrificedThisTurn ?? 0) : a === 'exiledMv' ? (r.item.exiledMv ?? 0)
+    : a === 'opponentsLostLife' ? opponentsOf(d, r.item.controller).filter((q) => (d.players[q].lostThisTurn ?? 0) > 0).length : a;
 
 function moveToGraveyard(d: GameState, p: PlayerId, inst: CardInst, from: 'hand' | 'library') {
   const ps = d.players[p];
@@ -4036,7 +4122,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       // Archivist of Oghma: "Whenever an opponent searches their library, …" (once, as the search starts).
       if (!answer) {
         for (const x of d.battlefield.filter((y) => teamOf(d, y.controller) !== teamOf(d, searcher))) {
-          for (const t of triggersOf(x.card)) if (t.event.on === 'opponentSearches') queueTrigger(d, x, x.controller, t.ability);
+          for (const t of permTriggers(x)) if (t.event.on === 'opponentSearches') queueTrigger(d, x, x.controller, t.ability);
         }
       }
       // Ashiok, Dream Render: an opponent's own spells and abilities can't make them search.
@@ -4502,7 +4588,9 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       const ps = d.players[caster];
       const top = ps.library.splice(0, e.n);
       for (const c of top) {
-        c.playableOnTurn = d.turn;
+        // Inti: "until your next end step".
+        if (e.untilYourEndStep) c.playableUntilEndOf = caster;
+        else c.playableOnTurn = d.turn;
         ps.exile.push(c);
         log(d, { k: 'exiled', card: c.card.name });
       }
@@ -4949,6 +5037,22 @@ function resolvePermanentSpell(d: GameState, item: StackItem, reason: WindowReas
     };
     return;
   }
+  // Bestow: an Aura on the creature still there; otherwise it enters as a creature (it doesn't fizzle).
+  const bestowed = item.alt !== undefined && altsFor(d, item.controller, item.card, item.face ?? 0, item.from)[item.alt]?.kind === 'bestow';
+  if (bestowed) {
+    const target = item.targets[0]?.[0];
+    const host = target?.kind === 'permanent' && isLegalTarget(d, item.controller, { kind: 'creature', min: 1, max: 1, filter: {} }, target, item.iid, card) ? findPermanent(d, target.iid) : undefined;
+    log(d, { k: 'enters', card: card.name });
+    const perm = enterBattlefield(d, { iid: item.iid, card: host ? bestowedAura(card) : card }, item.controller, { cast: true });
+    if (host) {
+      perm.printed = item.card;
+      perm.bestowed = true;
+      perm.attachedTo = host.iid;
+      log(d, { k: 'attached', card: card.name, to: host.card.name });
+    }
+    afterResolving(d, reason);
+    return;
+  }
   // An Aura needs its target to still be legal; it enters attached to it.
   const aura = auraTarget(card);
   const host = item.targets[0]?.[0];
@@ -4959,7 +5063,7 @@ function resolvePermanentSpell(d: GameState, item: StackItem, reason: WindowReas
     return;
   }
   log(d, { k: 'enters', card: faceName(item.card, item.face ?? 0) });
-  const perm = enterBattlefield(d, { iid: item.iid, card, ...(item.commander ? { commander: true } : {}) }, item.controller, { x: item.x, cast: !item.copy, escaped: !!item.escaped });
+  const perm = enterBattlefield(d, { iid: item.iid, card, ...(item.commander ? { commander: true } : {}) }, item.controller, { x: item.x, cast: !item.copy, escaped: !!item.escaped, delvedSpells: item.delvedSpells });
   if (card !== item.card) perm.printed = item.card;
   // Evoke: "When it enters, if its evoke cost was paid, its controller sacrifices it." Warp: exiled at the next end step.
   const paid = item.alt === undefined ? undefined : castInfo(item.card, item.face ?? 0).alts[item.alt];
@@ -5217,6 +5321,7 @@ function declareAttacks(d: GameState, p: PlayerId, ids: string[], pw: Record<str
   // Everything declared becomes attacking at once.
   for (const head of plan) {
     const mine = head.ids.map((iid) => findPermanent(d, iid)).filter((a): a is Permanent => !!a && a.controller === head.p && canAttack(a));
+    if (mine.length) d.players[head.p].attackedOnTurn = d.turn;
     for (const a of mine) {
       a.firstAttack = a.attackedOnTurn !== d.turn;
       a.attackedOnTurn = d.turn;
@@ -5267,7 +5372,7 @@ function enlist(d: GameState, attacker: Permanent, other: Permanent) {
   log(d, { k: 'enlisted', card: attacker.card.name, other: other.card.name });
   const n = powerOf(other);
   if (n > 0) queueTrigger(d, attacker, attacker.controller, { targets: [], effects: [{ kind: 'pump', power: n, toughness: 0, keywords: [], to: 'self' }] });
-  for (const t of triggersOf(attacker.card)) if (t.event.on === 'enlists') queueTrigger(d, attacker, attacker.controller, t.ability);
+  for (const t of permTriggers(attacker)) if (t.event.on === 'enlists') queueTrigger(d, attacker, attacker.controller, t.ability);
 }
 
 /** The attackers are declared: attack triggers, then the attacking team gets priority. */
@@ -5276,12 +5381,12 @@ function attacked(d: GameState) {
   for (const a of attackers) {
     fireObject(d, 'attacks', a);
     // Fear of Missing Out: "Whenever this creature attacks for the first time each turn".
-    if (a.firstAttack) for (const t of triggersOf(a.card)) if (t.event.on === 'attacksFirstTime') queueTrigger(d, a, a.controller, t.ability);
+    if (a.firstAttack) for (const t of permTriggers(a)) if (t.event.on === 'attacksFirstTime') queueTrigger(d, a, a.controller, t.ability);
   }
   // "Whenever you attack": each player who attacked with at least one creature.
   for (const q of new Set(attackers.map((a) => a.controller))) {
     for (const x of d.battlefield) {
-      if (x.controller === q) for (const t of triggersOf(x.card)) if (t.event.on === 'youAttack') queueTrigger(d, x, q, t.ability);
+      if (x.controller === q) for (const t of permTriggers(x)) if (t.event.on === 'youAttack') queueTrigger(d, x, q, t.ability);
     }
   }
   if (!d.attackers.length) {
@@ -5586,7 +5691,7 @@ export function apply(state: GameState, action: Action): GameState {
         }
         log(d, { k: 'enters', card: own.name });
         if (model) log(d, { k: 'copied', card: own.name, as: model.card.name });
-        const perm = enterBattlefield(d, { iid: item.iid, card: copy, ...(item.commander ? { commander: true } : {}) }, item.controller, { x: item.x, cast: !item.copy, escaped: !!item.escaped });
+        const perm = enterBattlefield(d, { iid: item.iid, card: copy, ...(item.commander ? { commander: true } : {}) }, item.controller, { x: item.x, cast: !item.copy, escaped: !!item.escaped, delvedSpells: item.delvedSpells });
         if (model) perm.printed = item.card;
         // "When you do, exile that card." (at once: not a trigger of its own)
         if (dead) {
@@ -5601,10 +5706,20 @@ export function apply(state: GameState, action: Action): GameState {
         const extra = castInfo(item.card, item.face ?? 0).additional;
         const chosen = extra?.kind === 'either' ? extra.options[action.answer.yes ? 0 : 1] : undefined;
         if (!chosen || !payExtraCost(d, p, chosen, item, named)) finishCast(d, item, named);
-      } else if (pending.resume === 'castCost' && action.answer.kind === 'cards' && ['returnLandCost', 'exileFromHandCost', 'returnCreatureCost', 'escapeExile'].includes(pending.choice.purpose)) {
+      } else if (pending.resume === 'castCost' && action.answer.kind === 'cards' && ['returnLandCost', 'exileFromHandCost', 'returnCreatureCost', 'escapeExile', 'collectEvidence'].includes(pending.choice.purpose)) {
         // An alternative cost: an Island (or a tapped creature) back to its owner's hand, or a card exiled from the hand.
         const picked = action.answer.iids[0];
-        if (pending.choice.purpose === 'escapeExile') {
+        if (pending.choice.purpose === 'collectEvidence') {
+          // Collect evidence: a total mana value of N or more.
+          const ps = d.players[p];
+          const chosen = action.answer.iids.map((iid) => ps.graveyard.find((c) => c.iid === iid)!);
+          if (chosen.reduce((n, c) => n + c.card.cmc, 0) < Number(pending.choice.params?.n ?? 0)) throw new IllegalAction('notEnoughEvidence', { card: String(pending.choice.params?.card) });
+          for (const inst of chosen) {
+            ps.graveyard = ps.graveyard.filter((c) => c !== inst);
+            ps.exile.push(inst);
+            log(d, { k: 'exiledCard', card: inst.card.name });
+          }
+        } else if (pending.choice.purpose === 'escapeExile') {
           // Escape: the cards chosen, with Nethergoyf's "four or more card types among them".
           const ps = d.players[p];
           const chosen = action.answer.iids.map((iid) => ps.graveyard.find((c) => c.iid === iid)!);
@@ -5691,7 +5806,7 @@ export function apply(state: GameState, action: Action): GameState {
       // City of Traitors: "When you play another land, …"
       for (const x of d.battlefield) {
         if (x.controller !== p || x.iid === perm.iid) continue;
-        for (const t of triggersOf(x.card)) if (t.event.on === 'youPlayLand') queueTrigger(d, x, p, t.ability);
+        for (const t of permTriggers(x)) if (t.event.on === 'youPlayLand') queueTrigger(d, x, p, t.ability);
       }
       break;
     }
@@ -5724,7 +5839,7 @@ export function apply(state: GameState, action: Action): GameState {
       const altIndex = action.alt !== undefined && alts[action.alt] ? action.alt : undefined;
       const alt = altIndex === undefined ? undefined : alts[altIndex];
       // From the graveyard: flashback, Snapcaster Mage, Malcolm, Lurrus, or an escape cost.
-      if (from === 'graveyard' && !castNow && !info.flashback && inst.flashbackOnTurn !== d.turn && alt?.kind !== 'escape' && !lurrusCast(d, p, card)) {
+      if (from === 'graveyard' && !castNow && !info.flashback && inst.flashbackOnTurn !== d.turn && alt?.kind !== 'escape' && alt?.kind !== 'bestow' && !lurrusCast(d, p, card)) {
         throw new IllegalAction('castTiming');
       }
       if (alt) {
@@ -5773,6 +5888,8 @@ export function apply(state: GameState, action: Action): GameState {
         if (src && legendaryMana(src.card) && isLegendary(card)) return true;
         return !!src?.chosenType && !!chosenTypeMana(src.card) && ofType(card, src.chosenType);
       });
+      // Murktide Regent: the instant and sorcery cards exiled with it (delve).
+      const delvedSpells = plan.filter((m) => m.iid.startsWith('delve:') && isInstantOrSorcery(me.graveyard.find((c) => c.iid === m.iid.slice(6))?.card ?? card)).length;
       payMana(d, p, plan);
       // Creatures tapped for convoke and cards exiled for delve aren't mana.
       const noMana = plan.every((m) => /^(?:convoke|delve):/.test(m.iid));
@@ -5787,7 +5904,7 @@ export function apply(state: GameState, action: Action): GameState {
       else if (from === 'graveyard') {
         me.graveyard = me.graveyard.filter((c) => c.iid !== inst.iid);
         // Lurrus: used for this turn (unless another permission was).
-        if (!castNow && !info.flashback && inst.flashbackOnTurn !== d.turn && alt?.kind !== 'escape') me.lurrusOnTurn = d.turn;
+        if (!castNow && !info.flashback && inst.flashbackOnTurn !== d.turn && alt?.kind !== 'escape' && alt?.kind !== 'bestow') me.lurrusOnTurn = d.turn;
       }
       else if (from === 'command') {
         me.command = me.command!.filter((c) => c.iid !== inst.iid);
@@ -5801,7 +5918,7 @@ export function apply(state: GameState, action: Action): GameState {
       const item: StackItem = {
         iid: from === 'prepared' ? `${inst.iid}-prepared-${d.abilities}` : inst.iid, card: inst.card, ...(from === 'prepared' ? { copy: true } : {}), controller: p, targets, ...(xCount(card) ? { x } : {}),
         ...(face ? { face } : {}), ...(modes ? { modes } : {}), ...(kicked ? { kicked } : {}), ...(from !== 'hand' ? { from } : {}),
-        ...(inst.commander ? { commander: true } : {}), ...(noMana ? { noMana } : {}), ...(noColoredMana ? { noColoredMana } : {}), ...(splitSecond ? { splitSecond } : {}),
+        ...(inst.commander ? { commander: true } : {}), ...(noMana ? { noMana } : {}), ...(noColoredMana ? { noColoredMana } : {}), ...(splitSecond ? { splitSecond } : {}), ...(delvedSpells ? { delvedSpells } : {}),
         ...(isMainStep(d) && isActivePlayer(d, p) ? { castInMain: true } : {}), ...(uncounterable ? { uncounterable } : {}),
         ...(altIndex !== undefined ? { alt: altIndex } : {}), ...(castNow ? { castNow } : {}),
         ...(from === 'graveyard' && !castNow && alt?.kind !== 'escape' && (info.flashback || inst.flashbackOnTurn === d.turn) ? { flashback: true } : {}),

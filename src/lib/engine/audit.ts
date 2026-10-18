@@ -1,7 +1,7 @@
 import type { Card } from '../../types';
 import {
   activatedOf, auraTarget, castInfo, gainsLifeFromDamage, gainsLifeFromCombatDamageTaken, castSpec, cloneOf, entersCounters, entersTappedRule, beginsWithLuck, discardsLandInstead, manaConditions, stateMana, doesntUntap, frontText, gameRulesOf, isInstantOrSorcery,
-  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, chosenNameTax, namesAnyCard, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, extraManaOf, manaMultiplier, choosesColor, counterMana, diamondMana, restrictedMana, mayStayTapped, reconfiguresEnchanted, entersPrepared, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, returnsExiledWhenLeaving, fadingOf, vanishingOf, hasEnlist, hasSplitSecond, sacrificeMana, foodMana, type AbilitySpec,
+  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, chosenNameTax, namesAnyCard, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, extraManaOf, manaMultiplier, choosesColor, counterMana, diamondMana, restrictedMana, mayStayTapped, reconfiguresEnchanted, entersPrepared, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, returnsExiledWhenLeaving, fadingOf, vanishingOf, hasEnlist, hasSplitSecond, sacrificeMana, foodMana, creatureOnYourTurn, type AbilitySpec,
 } from './rules';
 
 /**
@@ -40,7 +40,7 @@ function effectsText(spec: AbilitySpec): string | null {
   if (spec.modal) return `choose ${spec.modal.min}–${spec.modal.max} modes`;
   const targets = spec.targets.length ? ` (${spec.targets.length} target${spec.targets.length > 1 ? 's' : ''})` : '';
   const c = spec.condition;
-  const cond = !c ? '' : c.tapped ? ', if tapped' : c.cast ? ', if cast' : c.delirium ? ', with delirium' : c.notEscaped ? ', unless it escaped' : `, if ${c.lost ? 'life gained and lost' : `${c.gained}+ life gained`} this turn`;
+  const cond = !c ? '' : c.tapped ? ', if tapped' : c.cast ? ', if cast' : c.delirium ? ', with delirium' : c.notEscaped ? ', unless it escaped' : c.noAttack ? ', if you didn\'t attack this turn' : `, if ${c.lost ? 'life gained and lost' : `${c.gained}+ life gained`} this turn`;
   const kinds = spec.effects.map((e) => (e.kind === 'tap' && e.untap ? 'untap' : e.kind)).join('+');
   return kinds + targets + (spec.mayPay ? `, may pay ${spec.mayPay}` : spec.optional ? ', optional' : '') + cond;
 }
@@ -85,6 +85,7 @@ function keywordLine(card: Card, line: string, one: Card): LineReport | null {
     // Alternative costs: evoke, warp, web-slinging, cleave.
     if (k === 'evoke' || k === 'warp' || k === 'web-slinging' || k === 'cleave' || k === 'impending') return castInfo(card).alts.length > 0;
     if (k === 'escape') return castInfo(card).alts.some((a) => a.kind === 'escape');
+    if (k === 'bestow' || k === 'collect evidence') return castInfo(card).alts.some((a) => a.kind === 'bestow');
     if (k === 'cumulative upkeep') return triggersOf(one).some((tr) => tr.ability.effects.some((x) => x.kind === 'cumulativeUpkeep'));
     if (k === 'devoid') return true; // the card's colors are already none
     if (k === 'metalcraft') return manaConditions(one).some((c) => 'artifacts' in c);
@@ -216,6 +217,13 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   // Escape: "Escape—{2}{B}, Exile …" (its cost has a comma: not a keyword list).
   const escape = /^Escape—/.test(line) ? castInfo(one).alts.find((a) => a.kind === 'escape') : undefined;
   if (escape?.kind === 'escape') return { text: line, status: 'ok', how: `escape ${escape.cost}: cast from the graveyard, exiling ${escape.exile || `cards with ${escape.minTypes} card types`}` };
+  // Detective's Phoenix: "You may cast this card from your graveyard using its bestow ability."
+  if (/^You may cast this card from your graveyard using its bestow ability\.$/.test(line) && castInfo(card).alts.some((a) => a.kind === 'bestow' && a.fromGraveyard)) {
+    return { text: line, status: 'ok', how: 'bestow from the graveyard' };
+  }
+  // Kaito: a creature during your turn.
+  const turnCreature = creatureOnYourTurn(one);
+  if (turnCreature) return { text: line, status: 'ok', how: `a ${turnCreature.power}/${turnCreature.toughness} ${turnCreature.subtype} creature during your turn (with loyalty)` };
   // Lurrus: there is no companion here (the card is played from the deck).
   if (/^Companion — /.test(line)) return { text: line, status: 'notSimulated', how: 'companion not simulated (played from the deck)' };
   // Birgi: boast isn't simulated, so boasting twice changes nothing.

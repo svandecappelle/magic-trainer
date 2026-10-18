@@ -10,8 +10,8 @@ PARTIAL  Ajani Resolute {1}{W} — Legendary Planeswalker — Ajani
       loyalty ability → gainLife
   ✗ −4: Create a 2/2 white Cat Soldier creature token named Ajani's Pride…
       activated ability, effect not simulated
-  ✗ −10: You get an emblem with "Creatures you control get +2/+2."
-      activated ability, effect not simulated
+  ✓ −10: You get an emblem with "Creatures you control get +2/+2."
+      loyalty ability → emblem
 PARTIAL  Case of the Uneaten Feast {W} — Enchantment — Case
   ✓ Whenever a creature you control enters, you gain 1 life.
       trigger (enters) → gainLife

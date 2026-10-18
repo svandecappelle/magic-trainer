@@ -1034,6 +1034,18 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
         const best = [...options].sort((a, b) => worth(b.card) - worth(a.card))[0];
         return { kind: 'cards', iids: best ? [best.iid] : [] };
       }
+      if (choice.purpose === 'collectEvidence') {
+        // Collect evidence: the fewest cards reaching the total mana value (the biggest first).
+        const n = Number(choice.params?.n ?? 0);
+        const picked: string[] = [];
+        let total = 0;
+        for (const c of [...options].sort((a, b) => b.card.cmc - a.card.cmc)) {
+          if (total >= n) break;
+          picked.push(c.iid);
+          total += c.card.cmc;
+        }
+        return { kind: 'cards', iids: picked };
+      }
       if (choice.purpose === 'escapeExile') {
         // Escape: the least useful cards; Nethergoyf: one of each card type until there are enough.
         const n = Number(choice.params?.n ?? 0);

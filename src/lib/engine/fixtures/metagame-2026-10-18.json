@@ -621,5 +621,117 @@
   "keywords": [
    "Flying"
   ]
+ },
+ {
+  "id": "e2a01edd-dbc0-4ed4-b827-9b608290e9a1",
+  "name": "Detective's Phoenix",
+  "manaCost": "{2}{R}",
+  "cmc": 3,
+  "typeLine": "Enchantment Creature — Phoenix",
+  "oracleText": "Bestow—{R}, Collect evidence 6. (To pay this bestow cost, pay {R} and exile cards with total mana value 6 or greater from your graveyard.)\nFlying, haste\nEnchanted creature gets +2/+2 and has flying and haste.\nYou may cast this card from your graveyard using its bestow ability.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "mh3",
+  "setName": "Modern Horizons 3",
+  "rarity": "rare",
+  "power": "2",
+  "toughness": "2",
+  "keywords": [
+   "Flying",
+   "Collect evidence",
+   "Haste",
+   "Bestow"
+  ]
+ },
+ {
+  "id": "20c4aae1-7665-4df7-bd51-a1d95bf8a17d",
+  "name": "Murktide Regent",
+  "manaCost": "{5}{U}{U}",
+  "cmc": 7,
+  "typeLine": "Creature — Dragon",
+  "oracleText": "Delve (Each card you exile from your graveyard while casting this spell pays for {1}.)\nFlying\nThis creature enters with a +1/+1 counter on it for each instant and sorcery card exiled with it.\nWhenever an instant or sorcery card leaves your graveyard, put a +1/+1 counter on this creature.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "mh2",
+  "setName": "Modern Horizons 2",
+  "rarity": "mythic",
+  "power": "3",
+  "toughness": "3",
+  "keywords": [
+   "Flying",
+   "Delve"
+  ]
+ },
+ {
+  "id": "55a14f30-4ff9-4472-90a6-c3139f1c18e5",
+  "name": "Kaito, Bane of Nightmares",
+  "manaCost": "{2}{U}{B}",
+  "cmc": 4,
+  "typeLine": "Legendary Planeswalker — Kaito",
+  "oracleText": "Ninjutsu {1}{U}{B} ({1}{U}{B}, Return an unblocked attacker you control to hand: Put this card onto the battlefield from your hand tapped and attacking.)\nDuring your turn, as long as Kaito has one or more loyalty counters on him, he's a 3/4 Ninja creature and has hexproof.\n+1: You get an emblem with \"Ninjas you control get +1/+1.\"\n0: Surveil 2. Then draw a card for each opponent who lost life this turn.\n−2: Tap target creature. Put two stun counters on it.",
+  "colors": [
+   "B",
+   "U"
+  ],
+  "colorIdentity": [
+   "B",
+   "U"
+  ],
+  "setCode": "dsk",
+  "setName": "Duskmourn: House of Horror",
+  "rarity": "mythic",
+  "loyalty": "4",
+  "keywords": [
+   "Surveil",
+   "Ninjutsu"
+  ]
+ },
+ {
+  "id": "04cf3030-dc92-45ab-9c26-f2e6aef67e56",
+  "name": "Curious Obsession",
+  "manaCost": "{U}",
+  "cmc": 1,
+  "typeLine": "Enchantment — Aura",
+  "oracleText": "Enchant creature\nEnchanted creature gets +1/+1 and has \"Whenever this creature deals combat damage to a player, you may draw a card.\"\nAt the beginning of your end step, if you didn't attack with a creature this turn, sacrifice this Aura.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "jmp",
+  "setName": "Jumpstart",
+  "rarity": "uncommon",
+  "keywords": [
+   "Enchant"
+  ]
+ },
+ {
+  "id": "fa7a55aa-ae61-4933-b7a4-dcc55dac6fcd",
+  "name": "Inti, Seneschal of the Sun",
+  "manaCost": "{1}{R}",
+  "cmc": 2,
+  "typeLine": "Legendary Creature — Human Knight",
+  "oracleText": "Whenever you attack, you may discard a card. When you do, put a +1/+1 counter on target attacking creature. It gains trample until end of turn.\nWhenever you discard one or more cards, exile the top card of your library. You may play that card until your next end step.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "lci",
+  "setName": "The Lost Caverns of Ixalan",
+  "rarity": "rare",
+  "power": "2",
+  "toughness": "2",
+  "keywords": []
  }
 ]

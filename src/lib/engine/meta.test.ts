@@ -5302,3 +5302,108 @@ describe('Metagame audit 2026-10-18 evening, third batch', () => {
     expect([s.players[0].graveyard.map((c) => c.card.name), s.players[1].graveyard.length]).toEqual([['Faerie Macabre'], 0]);
   });
 });
+
+describe('Granted abilities, bestow, Kaito, Murktide Regent, Inti', () => {
+  const cards = JSON.parse(readFileSync(new URL('./fixtures/metagame-2026-10-18.json', import.meta.url), 'utf8')) as Card[];
+  const real = (name: string, manaCost?: string) => {
+    const c = cards.find((x) => x.name.startsWith(name))!;
+    return manaCost === undefined ? c : { ...c, manaCost };
+  };
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 10 && (s.stack.length || s.triggered?.length) && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  const target = (s: GameState, name: string) => [[{ kind: 'permanent' as const, iid: iidOf(s, name) }]];
+  const bear = creature('Bear', 2, 2);
+  const passTurn = (s: GameState) => {
+    const turn = s.turn;
+    for (let i = 0; i < 40 && s.turn === turn && s.winner === null; i++) {
+      s = s.pending ? apply(s, { type: 'choose', answer: s.pending.choice.kind === 'yesNo' ? { kind: 'yesNo', yes: true } : { kind: 'cards', iids: [] } })
+        : !s.priority && s.step === 'attack' ? apply(s, { type: 'declareAttackers', attackers: [] })
+        : apply(s, { type: 'pass' });
+    }
+    return s;
+  };
+  const attackWith = (s: GameState, name: string) => {
+    s = apply(s, { type: 'pass' });
+    for (let i = 0; i < 6 && (s.priority || s.step !== 'attack'); i++) s = apply(s, { type: 'pass' });
+    s = apply(s, { type: 'declareAttackers', attackers: [iidOf(s, name)] });
+    for (let i = 0; i < 20 && s.step !== 'main2'; i++) {
+      s = s.pending ? apply(s, { type: 'choose', answer: s.pending.choice.kind === 'yesNo' ? { kind: 'yesNo', yes: true } : { kind: 'cards', iids: [] } })
+        : !s.priority && s.step === 'block' ? apply(s, { type: 'declareBlockers', blocks: {} }) : apply(s, { type: 'pass' });
+    }
+    for (let i = 0; i < 6 && (s.pending || s.stack.length); i++) {
+      s = s.pending ? apply(s, { type: 'choose', answer: s.pending.choice.kind === 'yesNo' ? { kind: 'yesNo', yes: true } : { kind: 'cards', iids: [] } }) : apply(s, { type: 'pass' });
+    }
+    return resolve(s);
+  };
+
+  it('Curious Obsession: +1/+1 and a card when the creature deals combat damage; sacrificed if you didn\'t attack', () => {
+    let s = board({ mine: [bear], hand: [real('Curious Obsession', '{0}')] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', targets: target(s, 'Bear') }));
+    expect(powerOf(perm(s, 'Bear')!)).toBe(3);
+    s = attackWith(s, 'Bear');
+    expect([s.players[1].life, s.players[0].hand.length]).toEqual([17, 1]);
+    s = passTurn(passTurn(s));
+    // A turn without attacking: the Aura is sacrificed at the end step.
+    s = passTurn(s);
+    expect(perm(s, 'Curious Obsession')).toBeUndefined();
+  });
+
+  it('Detective\'s Phoenix: bestowed (collect evidence 6) from the graveyard; a creature again when its host leaves', () => {
+    const ogre = creature('Ogre', 3, 3, { cmc: 6 });
+    let s = board({ mine: [bear, card({ name: 'Mountain', typeLine: 'Basic Land — Mountain' })], grave: [real('Detective\'s Phoenix'), ogre], hand: [spell('Blast', '{0}', 'Blast deals 5 damage to any target.')] });
+    const bestow = castOptions(s, 0, 'g0');
+    expect(bestow).toHaveLength(1);
+    s = apply(s, { type: 'cast', iid: 'g0', alt: bestow[0].alt, targets: target(s, 'Bear') });
+    expect(s.pending?.choice).toMatchObject({ purpose: 'collectEvidence' });
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['g1'] } }));
+    expect([powerOf(perm(s, 'Bear')!), hasKw(perm(s, 'Bear')!, 'flying'), isCreature(perm(s, 'Detective\'s Phoenix')!.card)]).toEqual([4, true, false]);
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', targets: target(s, 'Bear') }));
+    expect(perm(s, 'Bear')).toBeUndefined();
+    s = apply(s, { type: 'pass' });
+    const phoenix = perm(s, 'Detective\'s Phoenix')!;
+    expect([isCreature(phoenix.card), phoenix.attachedTo, powerOf(phoenix)]).toEqual([true, undefined, 2]);
+  });
+
+  it('Kaito: a 3/4 Ninja creature with hexproof during your turn; −2 stuns, 0 surveils and draws', () => {
+    let s = board({ mine: [real('Kaito, Bane of Nightmares')], theirs: [bear] });
+    const kaito = perm(s, 'Kaito, Bane of Nightmares')!;
+    kaito.counters = { loyalty: 4 };
+    s = apply(s, { type: 'pass' });
+    const k = perm(s, 'Kaito, Bane of Nightmares')!;
+    expect([isCreature(k.card), powerOf(k), hasKw(k, 'hexproof')]).toEqual([true, 3, true]);
+    s = passTurn(s);
+    expect(isCreature(perm(s, 'Kaito, Bane of Nightmares')!.card)).toBe(false);
+    s = passTurn(s);
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Kaito, Bane of Nightmares'), index: activatedOf(real('Kaito, Bane of Nightmares')).findIndex((a) => a.cost.loyalty === -2), targets: target(s, 'Bear') }));
+    expect(perm(s, 'Bear')).toMatchObject({ tapped: true, counters: { stun: 2 } });
+  });
+
+  it('Murktide Regent: counters for the instants and sorceries delved; one more when such a card leaves your graveyard', () => {
+    const opt = spell('Opt', '{U}', 'Draw a card.');
+    let s = board({ mana: 1, hand: [real('Murktide Regent', '{6}')], grave: [opt, opt, card({ name: 'Island', typeLine: 'Basic Land — Island' }), opt, spell('Rite', '{R}', 'Add {R}.', 'Sorcery')] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    const regent = perm(s, 'Murktide Regent')!;
+    expect(s.players[0].graveyard).toHaveLength(0);
+    expect(regent.counters['+1/+1']).toBe(4);
+    // An instant leaving the graveyard later: one more.
+    s.players[0].graveyard.push({ iid: 'g9', card: opt });
+    s = apply(s, { type: 'pass' });
+    s.players[0].graveyard = [];
+    s = resolve(apply(s, { type: 'pass' }));
+    expect(perm(s, 'Murktide Regent')!.counters['+1/+1']).toBe(5);
+  });
+
+  it('Inti: discarding exiles the top card, playable until your next end step', () => {
+    let s = board({ mine: [real('Inti, Seneschal of the Sun')], hand: [spell('Rummage', '{0}', 'Discard two cards, then draw two cards.', 'Sorcery'), bear, bear] });
+    s.players[0].library = [0, 1, 2, 3].map((i) => ({ iid: `l${i}`, card: creature('Elf', 1, 1, { manaCost: '{0}', cmc: 0 }) }));
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    if (s.pending) s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['h1', 'h2'] } }));
+    // Two cards discarded together: one card exiled (the third: two were drawn first).
+    expect(s.players[0].exile.map((c) => c.iid)).toEqual(['l2']);
+    expect(castOptions(s, 0, 'l2')).toHaveLength(1);
+    s = passTurn(s);
+    expect(castOptions(s, 0, 'l2')).toEqual([]);
+  });
+});

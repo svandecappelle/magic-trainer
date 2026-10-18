@@ -384,6 +384,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice, readOnly
         : alt.kind === 'phyrexian' ? t.game.altCosts.phyrexian(2 * alt.n)
         : alt.kind === 'opponentGainsLife' ? t.game.altCosts.opponentGainsLife(alt.n)
         : alt.kind === 'escape' ? t.game.altCosts.escape(alt.cost || card.manaCost, alt.exile)
+        : alt.kind === 'bestow' ? t.game.altCosts.bestow(alt.cost, alt.evidence ?? 0)
         : t.game.altCosts[alt.name](alt.cost))
         : opt.from === 'prepared' ? t.game.castCopy(name)
         : g.castNow?.iid === iid ? t.game.castFree(name)

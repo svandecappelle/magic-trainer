@@ -52,6 +52,7 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
     case 'spellName': return t.game.choice.spellName({ card: card(String(p.card)) });
     case 'cardName': return t.game.choice.cardName({ card: card(String(p.card)) });
     case 'taxName': return t.game.choice.taxName({ card: card(String(p.card)) });
+    case 'collectEvidence': return t.game.choice.collectEvidence({ card: card(String(p.card)), n });
     case 'escapeExile': return t.game.choice.escapeExile({ card: card(String(p.card)), n, ...(p.types ? { types: Number(p.types) } : {}) });
     case 'exileOwnGraveCard': return t.game.choice.exileOwnGraveCard({ card: card(String(p.card)) });
     case 'distributeTwo': return t.game.choice.distributeTwo({ card: card(String(p.card)) });

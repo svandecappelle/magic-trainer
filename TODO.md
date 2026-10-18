@@ -494,11 +494,21 @@ Macabre ("Discard this card:" without mana; "cards from graveyards").
 
 Approximations: Theorist's Sanctum always beholds a Jace when it can.
 
+Fourth batch: abilities granted by Auras and Equipment (Curious Obsession: "has \"Whenever this creature deals combat
+damage to a player, you may draw a card.\""; its end step sacrifice "if you didn't attack with a creature this turn"),
+bestow and collect evidence (Detective's Phoenix, also from the graveyard; a creature again when its host leaves),
+Kaito, Bane of Nightmares (a 3/4 Ninja creature with hexproof during your turn while he has loyalty; −2's stun counters,
+0's draws for opponents who lost life, +1's emblem), emblems with static abilities ("Creatures you control get +2/+2"),
+Murktide Regent (counters for the instants and sorceries delved, and when one leaves your graveyard), Inti (the card
+exiled by discarding is playable until your next end step).
+
+Approximations: Murktide Regent sees cards leave the graveyard at the next state check (one leaving and coming back in
+between is missed). Kaito's ninjutsu isn't simulated.
+
 Approximations: Moonshadow's trigger counts as "together" every card put into the graveyard before it goes on the
 stack (an effect that mills, then discards, triggers it once).
 
 Still open, playing wrongly, most played first (see `audit-reports/2026-10-18/report.md`):
-- [ ] Detective's Phoenix (bestow, collect evidence, from the graveyard)
 
 ## Tezzeret artifacts (a user's deck, `deck-2.txt`)
 
