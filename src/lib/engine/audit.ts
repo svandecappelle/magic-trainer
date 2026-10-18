@@ -1,7 +1,7 @@
 import type { Card } from '../../types';
 import {
   activatedOf, auraTarget, castInfo, gainsLifeFromDamage, gainsLifeFromCombatDamageTaken, castSpec, cloneOf, entersCounters, entersTappedRule, beginsWithLuck, discardsLandInstead, manaConditions, stateMana, doesntUntap, frontText, gameRulesOf, isInstantOrSorcery,
-  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, chosenNameTax, namesAnyCard, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, extraManaOf, manaMultiplier, choosesColor, counterMana, diamondMana, restrictedMana, mayStayTapped, reconfiguresEnchanted, entersPrepared, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, returnsExiledWhenLeaving, fadingOf, vanishingOf, hasEnlist, type AbilitySpec,
+  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, chosenNameTax, namesAnyCard, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, extraManaOf, manaMultiplier, choosesColor, counterMana, diamondMana, restrictedMana, mayStayTapped, reconfiguresEnchanted, entersPrepared, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, returnsExiledWhenLeaving, fadingOf, vanishingOf, hasEnlist, hasSplitSecond, type AbilitySpec,
 } from './rules';
 
 /**
@@ -78,6 +78,7 @@ function keywordLine(card: Card, line: string, one: Card): LineReport | null {
     if (k === 'fading') return fadingOf(one) > 0;
     if (k === 'vanishing') return vanishingOf(one) > 0;
     if (k === 'enlist') return hasEnlist(one);
+    if (k === 'split second') return hasSplitSecond(one);
     // Alternative costs: evoke, warp, web-slinging, cleave.
     if (k === 'evoke' || k === 'warp' || k === 'web-slinging' || k === 'cleave' || k === 'impending') return castInfo(card).alts.length > 0;
     if (k === 'cumulative upkeep') return triggersOf(one).some((tr) => tr.ability.effects.some((x) => x.kind === 'cumulativeUpkeep'));
@@ -202,6 +203,8 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   if (returnsExiledWhenLeaving(one)) return { text: line, status: 'ok', how: 'what it exiled returns when it leaves' };
   if (fadingOf(one)) return { text: line, status: 'ok', how: `fading ${fadingOf(one)}` };
   if (vanishingOf(one)) return { text: line, status: 'ok', how: `vanishing ${vanishingOf(one)}` };
+  // Birgi: boast isn't simulated, so boasting twice changes nothing.
+  if (/^Creatures you control can boast twice during each of your turns rather than once\.$/.test(line)) return { text: line, status: 'notSimulated', how: 'boast not simulated' };
   if (hasEnlist(one)) return { text: line, status: 'ok', how: 'enlist: may tap a creature that doesn\'t attack, adding its power' };
   // True-Name Nemesis: its two lines are read together.
   if (protectionFromChosenPlayer(card) && /choose a player|protection from the chosen player/.test(line)) return { text: line, status: 'ok', how: 'protection from a player chosen as it enters' };

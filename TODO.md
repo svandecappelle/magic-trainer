@@ -442,9 +442,16 @@ Approximations: Incubation Druid's three mana may be of different types; a mana 
 colored for Void Mirror (the caster picks); the end step move of Glimpse the Impossible isn't a trigger on the stack.
 The bot never activates Phyrexian Devourer (free abilities aren't planned).
 
+cEDH: Birgi (its {R} lasts until end of turn, not emptied as steps and phases end; boast isn't simulated, so "boast
+twice" does nothing), Samut (split second for your instants and sorceries, and the keyword itself: no spell and no
+ability but mana abilities while it's on the stack), Biomancer's Familiar (creature abilities {2} cheaper, never below
+one mana; the next adapt as though it had no counters).
+
+Approximations: Biomancer's Familiar doesn't reduce mana abilities that cost mana.
+
 Still open, playing wrongly, most played first (see `audit-reports/2026-10-18/report.md`):
-- [ ] cEDH: Underworld Breach (escape for every card), Birgi, Lurrus, Samut (split second for your spells), Biomancer's
-  Familiar
+- [ ] cEDH: Underworld Breach (escape for every card), Lurrus (a permanent with mana value 2 or less from the graveyard
+  each turn; companion)
 
 ## Tezzeret artifacts (a user's deck, `deck-2.txt`)
 

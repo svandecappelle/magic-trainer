@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, counterMana, choosesColor, diamondMana, sacrificeMana, mayStayTapped, gainsLifeFromCombatDamageTaken, restrictedMana, type RestrictedMana, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, type TokenSpec, vanishingOf, hasEnlist, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, counterMana, choosesColor, diamondMana, sacrificeMana, mayStayTapped, gainsLifeFromCombatDamageTaken, restrictedMana, type RestrictedMana, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, hasSplitSecond, type TokenSpec, vanishingOf, hasEnlist, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type AltCost, type CastInfo, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -47,6 +47,8 @@ export interface Permanent extends CardInst {
   controller: PlayerId;
   /** Phyrexian Devourer: its "power is 7 or greater" state trigger is waiting (it triggers again once it drops below). */
   stateTriggered?: boolean;
+  /** Biomancer's Familiar: its next adapt this turn (that turn number) ignores its +1/+1 counters. */
+  adaptFresh?: number;
   tapped: boolean;
   /** Summoning sick: entered this turn, can't attack or tap for mana. */
   sick: boolean;
@@ -108,6 +110,8 @@ export interface StackItem extends CardInst {
   exiledMv?: number;
   /** Void Mirror: no colored mana was spent to cast it. */
   noColoredMana?: boolean;
+  /** Split second (Samut gives it to its controller's instants and sorceries): nothing but mana abilities meanwhile. */
+  splitSecond?: boolean;
   /** Chosen targets, one list per target slot of the spell or ability. */
   targets: Target[][];
   /** Set for an ability: the rules to resolve. `card` is its source, which stays where it is. */
@@ -164,6 +168,8 @@ export interface Triggered {
 /** One mana in a pool: its possible colors, and the permanent that made it (to untap it again). */
 export interface PoolMana {
   colors: Color[];
+  /** Birgi: kept as steps and phases end, until the end of the turn. */
+  untilEndOfTurn?: boolean;
   source?: string;
   /** Starting Town: spent as one of these colors, it costs this much life. */
   pain?: { life: number; colors: Color[] };
@@ -1052,7 +1058,14 @@ const caged = (s: GameState, card: Card) => isCreature(card) && withRule(s, 'noC
 const sorceryOnly = (s: GameState, p: PlayerId) =>
   withRule(s, 'opponentsSorcerySpeed').some((x) => teamOf(s, x.controller) !== teamOf(s, p));
 
+/**
+ * Split second: a spell with it on the stack (its own keyword, or Samut's "Instant and sorcery spells you control have
+ * split second") stops spells and abilities that aren't mana abilities.
+ */
+const splitSecondOnStack = (s: GameState) => s.stack.some((x) => !x.ability && x.splitSecond);
+
 const castingForbidden = (s: GameState, p: PlayerId) =>
+  splitSecondOnStack(s) ||
   withRule(s, 'opponentsCantCastOnYourTurn').some((x) => teamOf(s, x.controller) !== teamOf(s, p) && isActivePlayer(s, x.controller))
   // High Noon: one spell each turn.
   || ((s.players[p].spellsThisTurn ?? 0) >= 1 && withRule(s, 'oneSpellEachTurn').length > 0);
@@ -1463,6 +1476,9 @@ function abilityCost(s: GameState, perm: Permanent, spec: ActivatedSpec, x = 0, 
   generic += nameTax(s, p, printedCard(perm).name, 'abilities');
   // Tezzeret, Betrayer of Flesh: the first artifact ability each turn costs {2} less.
   if (cardTypes(perm.card).includes('artifact') && !s.players[p].artifactAbilitiesThisTurn && withRule(s, 'firstArtifactAbilityCostsLess').some((x) => x.controller === p)) generic -= 2;
+  // Biomancer's Familiar: {2} less for a creature's ability, but at least one mana if it had any.
+  const familiars = isCreature(perm.card) ? withRule(s, 'creatureAbilitiesCostLess').filter((x) => x.controller === p).length : 0;
+  if (familiars) generic = Math.max(generic - 2 * familiars, generic + cost.colored.length > 0 && !cost.colored.length ? 1 : 0);
   if (spec.equip) {
     if (freeEquip(s, p)) return { generic: 0, colored: [] };
     const reduction = (c: Permanent) => equipDiscount(c.card) + (spec.equip!.perColor ? cardColors(c.card).length : 0);
@@ -1510,6 +1526,7 @@ export function activationProblem(s: GameState, p: PlayerId, perm: Permanent, in
   if (spec.sorcery ? !sorcerySpeed : !s.priority && !(isMainStep(s) && isActivePlayer(s, p))) return 'activateTiming';
   // Wishclaw Talisman: "Activate only during your turn."
   if (spec.yourTurn && !isActivePlayer(s, p)) return 'activateTiming';
+  if (splitSecondOnStack(s)) return 'activationForbidden';
   if (spec.cost.tap && perm.tapped) return 'alreadyTapped';
   if (spec.cost.tap && isCreature(perm.card) && perm.sick && !hasKw(perm, 'haste')) return 'summoningSick';
   if (spec.once && perm.used?.includes(index)) return 'onceEachTurn';
@@ -1949,7 +1966,7 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
     delete ps.sacrificedThisTurn;
     delete ps.artifactAbilitiesThisTurn;
   }
-  emptyPools(d);
+  emptyPools(d, true);
   for (const perm of d.battlefield) {
     if (isActivePlayer(d, perm.controller)) {
       // Stun: "If a permanent with a stun counter would become untapped, remove one from it instead."
@@ -2265,8 +2282,13 @@ export function paymentFor(s: GameState, p: PlayerId, action: Action): { sources
 }
 
 /** Mana empties from pools when a step or phase ends. */
-function emptyPools(d: GameState) {
-  for (const ps of d.players) delete ps.pool;
+/** Mana empties as steps and phases end; Birgi's lasts until the turn ends (`endOfTurn`). */
+function emptyPools(d: GameState, endOfTurn = false) {
+  for (const ps of d.players) {
+    const kept = endOfTurn ? [] : (ps.pool ?? []).filter((m) => m.untilEndOfTurn);
+    if (kept.length) ps.pool = kept;
+    else delete ps.pool;
+  }
 }
 
 /** Sacrifice a permanent (as a cost or an effect). */
@@ -3494,11 +3516,17 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         if (e.counter === '+1/+1' && n > 0) countersPut(d, perm);
       }
       break;
+    case 'adaptFresh':
+      for (const perm of perms) perm.adaptFresh = d.turn;
+      break;
     case 'adapt': {
       // "Adapt 1": if it has no +1/+1 counters, put that many on it.
       const src = item.source ? findPermanent(d, item.source) : undefined;
-      if (!src || src.counters['+1/+1']) break;
-      src.counters = { ...src.counters, '+1/+1': e.n };
+      // Biomancer's Familiar: this time as though it had none (the counters are added).
+      const fresh = src?.adaptFresh === d.turn;
+      if (src) delete src.adaptFresh;
+      if (!src || (src.counters['+1/+1'] && !fresh)) break;
+      src.counters = { ...src.counters, '+1/+1': (src.counters['+1/+1'] ?? 0) + e.n };
       log(d, { k: 'counters', card: src.card.name, counter: '+1/+1', n: e.n });
       countersPut(d, src);
       break;
@@ -4235,7 +4263,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       break;
     case 'addMana': {
       const ps = d.players[caster];
-      ps.pool = [...(ps.pool ?? []), ...e.units.map((colors) => ({ colors }))];
+      ps.pool = [...(ps.pool ?? []), ...e.units.map((colors) => ({ colors, ...(e.untilEndOfTurn ? { untilEndOfTurn: true } : {}) }))];
       break;
     }
     case 'sacrificeSelf': {
@@ -5132,6 +5160,7 @@ export function apply(state: GameState, action: Action): GameState {
       payMana(d, p, plan);
       // Creatures tapped for convoke and cards exiled for delve aren't mana.
       const noMana = plan.every((m) => /^(?:convoke|delve):/.test(m.iid));
+      const splitSecond = hasSplitSecond(card) || (isInstantOrSorcery(card) && withRule(d, 'yourSpellsSplitSecond').some((x) => x.controller === p));
       // Void Mirror: colored mana spent (a mana that could be colored counts: its caster picks the color).
       const noColoredMana = plan.every((m) => {
         if (/^(?:convoke|delve):/.test(m.iid)) return true;
@@ -5152,7 +5181,7 @@ export function apply(state: GameState, action: Action): GameState {
       const item: StackItem = {
         iid: from === 'prepared' ? `${inst.iid}-prepared-${d.abilities}` : inst.iid, card: inst.card, ...(from === 'prepared' ? { copy: true } : {}), controller: p, targets, ...(xCount(card) ? { x } : {}),
         ...(face ? { face } : {}), ...(modes ? { modes } : {}), ...(kicked ? { kicked } : {}), ...(from !== 'hand' ? { from } : {}),
-        ...(inst.commander ? { commander: true } : {}), ...(noMana ? { noMana } : {}), ...(noColoredMana ? { noColoredMana } : {}), ...(uncounterable ? { uncounterable } : {}),
+        ...(inst.commander ? { commander: true } : {}), ...(noMana ? { noMana } : {}), ...(noColoredMana ? { noColoredMana } : {}), ...(splitSecond ? { splitSecond } : {}), ...(uncounterable ? { uncounterable } : {}),
         ...(altIndex !== undefined ? { alt: altIndex } : {}), ...(castNow ? { castNow } : {}),
       };
       delete d.castNow;
@@ -5171,6 +5200,7 @@ export function apply(state: GameState, action: Action): GameState {
       const inst = me.hand.find((c) => c.iid === action.iid);
       const cycling = inst && castInfo(inst.card).cycling;
       if (!inst || !cycling) throw new IllegalAction('cannotCycle');
+      if (splitSecondOnStack(d)) throw new IllegalAction('activationForbidden');
       if (!d.priority && !(isMainStep(d) && isActivePlayer(d, p))) throw new IllegalAction('activateTiming');
       if (!pay(d, p, chosenSources(manaSources(d, p), action.pay), parseCost(cycling.cost))) throw unpaid(action.pay, inst.card.name);
       me.hand = me.hand.filter((c) => c !== inst);
@@ -5195,6 +5225,7 @@ export function apply(state: GameState, action: Action): GameState {
       const channel = inst && castInfo(inst.card).channel;
       if (!inst || !channel) throw new IllegalAction('noSuchAbility');
       if (nameStopped(d, inst.card.name)) throw new IllegalAction('nameStopped');
+      if (splitSecondOnStack(d)) throw new IllegalAction('activationForbidden');
       if (!d.priority && !(isMainStep(d) && isActivePlayer(d, p))) throw new IllegalAction('activateTiming');
       const targets = checkTargets(d, p, inst.card, channel.ability, action.targets ?? []);
       if (!pay(d, p, chosenSources(manaSources(d, p), action.pay), channelCost(d, p, inst.card)!)) throw unpaid(action.pay, inst.card.name);

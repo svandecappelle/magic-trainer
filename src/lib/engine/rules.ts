@@ -580,7 +580,10 @@ export type Effect =
   /** "Put a +1/+1 counter on each creature you control" (`other`: except the source). */
   | { kind: 'addCountersAll'; counter: CounterKind; n: Amount; which: Selector; other: boolean }
   /** Mana into the controller's pool (rituals: "Add {B}{B}{B}"). One entry per mana, with its possible colors. */
-  | { kind: 'addMana'; units: Color[][] }
+  /** `untilEndOfTurn`: Birgi's "Until end of turn, you don't lose this mana as steps and phases end." */
+  | { kind: 'addMana'; units: Color[][]; untilEndOfTurn?: boolean }
+  /** Biomancer's Familiar: "The next time target creature adapts this turn, it adapts as though it had no +1/+1 counters on it." */
+  | { kind: 'adaptFresh'; to: Affected }
   /** Search your library for up to `n` matching cards, then shuffle. */
   /** `searcher`: the controller of the permanent in that target slot searches instead of you (Path to Exile, Boseiju). */
   /** `top`: Enlightened Tutor's "then shuffle and put that card on top". */
@@ -1328,6 +1331,16 @@ export function parseAbilityText(text: string, self?: string): AbilitySpec {
   scan(new RegExp(`${PLAYER} takes an extra turn after this one`, 'gi'), (m) => {
     const to = who(m[1]);
     return to && { kind: 'extraTurn', to };
+  });
+  // Birgi: "add {R}. Until end of turn, you don't lose this mana as steps and phases end."
+  scan(/(?:^|[.\n] *)[Aa]dd ((?:\{[WUBRGC]\})+)\. Until end of turn, you don't lose this mana as steps and phases end\./g, (m) => {
+    const units = parseManaText(m[1]);
+    return units && { kind: 'addMana', units, untilEndOfTurn: true };
+  });
+  // Biomancer's Familiar.
+  scan(/\bThe next time (target creature) adapts this turn, it adapts as though it had no \+1\/\+1 counters on it\./g, (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'creature');
+    return to && { kind: 'adaptFresh', to };
   });
   // Rituals: "Add {B}{B}{B}." (sentence start: mana abilities of permanents are handled as mana sources).
   scan(/(?:^|[.\n] *)Add ([^.]+)\./g, (m) => {
@@ -3324,6 +3337,9 @@ function powerLimitLine(line: string, selves: string[]): number | null {
   return m && selves.includes(m[1].toLowerCase()) ? Number(m[2]) : null;
 }
 
+/** Split second: "As long as this spell is on the stack, players can't cast spells or activate abilities that aren't mana abilities." */
+export const hasSplitSecond = (card: Card) => /^Split second(?: \(|$)/m.test(frontText(card));
+
 /** Vanishing N: "This permanent enters with N time counters on it." */
 export function vanishingOf(card: Card): number {
   const m = frontText(card).match(/^Vanishing (\d+)(?: \(|$)/m);
@@ -3430,6 +3446,13 @@ export type GameRule =
   | 'creaturesTapForAnyColor'
   /** Tezzeret, Betrayer of Flesh: "The first activated ability of an artifact you activate each turn costs {2} less to activate." */
   | 'firstArtifactAbilityCostsLess'
+  /**
+   * Biomancer's Familiar: "Activated abilities of creatures you control cost {2} less to activate. This effect can't
+   * reduce the mana in that cost to less than one mana."
+   */
+  | 'creatureAbilitiesCostLess'
+  /** Samut, Tyrant of Naktamun: "Instant and sorcery spells you control have split second." */
+  | 'yourSpellsSplitSecond'
   /** Karn, the Great Creator: "Activated abilities of artifacts your opponents control can't be activated." */
   | 'opponentsArtifactAbilitiesForbidden'
   /** Cursed Totem: "Activated abilities of creatures can't be activated." (mana abilities included) */
@@ -3512,6 +3535,8 @@ const GAME_RULES: [RegExp, GameRule][] = [
   [/^You may play an additional land on each of your turns\.$/m, 'extraLand'],
   [/^Creatures you control have "\{T\}: Add one mana of any color\."$/m, 'creaturesTapForAnyColor'],
   [/^The first activated ability of an artifact you activate each turn costs \{2\} less to activate\.$/m, 'firstArtifactAbilityCostsLess'],
+  [/^Activated abilities of creatures you control cost \{2\} less to activate\. This effect can't reduce the mana in that cost to less than one mana\.$/m, 'creatureAbilitiesCostLess'],
+  [/^Instant and sorcery spells you control have split second\.(?: \([^)]*\))?$/m, 'yourSpellsSplitSecond'],
   [/^Damage can't be prevented\.$/m, 'damageCantBePrevented'],
 ];
 

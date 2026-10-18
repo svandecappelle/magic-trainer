@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Card } from '../../types';
-import { activationProblem, actor, apply, findPermanent, hasKw, paymentFor, canBlock, canCastNow, castCost, castSource, canTapForMana, type Answer, castOptions, canPay, canActivateDiamond, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
+import { activationProblem, actor, canPayAbility, apply, findPermanent, hasKw, paymentFor, canBlock, canCastNow, castCost, castSource, canTapForMana, type Answer, castOptions, canPay, canActivateDiamond, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
 import { botAction } from './bot';
 import { activatedOf, castInfo, cloneOf, entersTappedRule, gameRulesOf, castSpec, finalChapter, hasKeyword, isCreature, PREDEFINED_TOKENS, tokenCard, type TargetSpec, manaUnits, restrictedMana, extraManaOf, manaMultiplier, filterMana, paidAnyColor, parseAbilityText, spellSpec, triggersOf } from './rules';
 
@@ -4431,5 +4431,91 @@ describe('Metagame audit 2026-10-18: Eldrazi and single cards', () => {
     s = board({ mana: 1, theirs: [mirror], hand: [bear] });
     s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
     expect(perm(s, 'Bear')).toBeDefined();
+  });
+});
+
+describe('Metagame audit 2026-10-18: Birgi, Samut, Biomancer\'s Familiar', () => {
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 10 && (s.stack.length || s.triggered?.length) && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+
+  it('Birgi: {R} for each spell cast, kept as steps and phases end until the end of the turn', () => {
+    const birgi = creature('Birgi, God of Storytelling', 3, 3, {
+      typeLine: 'Legendary Creature — God', manaCost: '{2}{R}', cmc: 3,
+      oracleText: 'Whenever you cast a spell, add {R}. Until end of turn, you don\'t lose this mana as steps and phases end.\nCreatures you control can boast twice during each of your turns rather than once.',
+    });
+    expect(triggersOf(birgi)[0].ability.effects).toEqual([{ kind: 'addMana', units: [['R']], untilEndOfTurn: true }]);
+    const ornithopter = creature('Ornithopter', 0, 2, { manaCost: '{0}', cmc: 0 });
+    let s = board({ mine: [birgi], hand: [ornithopter, creature('Goblin', 1, 1, { manaCost: '{R}', cmc: 1 })] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    expect(s.players[0].pool).toEqual([{ colors: ['R'], untilEndOfTurn: true }]);
+    // Into combat and out: still there in the second main phase, spent on the Goblin.
+    s = apply(s, { type: 'pass' });
+    for (let i = 0; i < 10 && s.step !== 'main2'; i++) s = !s.priority && s.step === 'attack' ? apply(s, { type: 'declareAttackers', attackers: [] }) : apply(s, { type: 'pass' });
+    expect(s.step).toBe('main2');
+    expect(s.players[0].pool).toHaveLength(1);
+    s = resolve(apply(s, { type: 'cast', iid: 'h1' }));
+    expect(perm(s, 'Goblin')).toBeDefined();
+    // Gone at the end of the turn (the Goblin's own {R} too).
+    expect(s.players[0].pool).toHaveLength(1);
+    for (let i = 0; i < 20 && s.active === 0; i++) s = apply(s, { type: 'pass' });
+    expect(s.players[0].pool).toBeUndefined();
+  });
+
+  it('Samut: your instants and sorceries have split second', () => {
+    const samut = creature('Samut, Tyrant of Naktamun', 2, 1, {
+      typeLine: 'Legendary Creature — Human Wizard', manaCost: '{1}{U}', cmc: 2,
+      oracleText: 'Instant and sorcery spells you control have split second. (As long as a spell with split second is on the stack, players can\'t cast spells or activate abilities that aren\'t mana abilities.)',
+    });
+    expect(gameRulesOf(samut)).toEqual(['yourSpellsSplitSecond']);
+    const counterspell = spell('Counterspell', '{U}{U}', 'Counter target spell.');
+    const pinger = creature('Pinger', 1, 1, { oracleText: '{T}: This creature deals 1 damage to any target.' });
+    const divination = { ...spell('Divination', '{0}', 'Draw two cards.'), typeLine: 'Instant' };
+    const opts = { hand: [divination], theirs: [pinger], oppMana: 2, oppHand: [{ ...counterspell, manaCost: '{0}' }] };
+    // Without Samut, the opponent may answer it.
+    let s = apply(board(opts), { type: 'cast', iid: 'h0' });
+    expect(actor(s)).toBe(1);
+    // With Samut, the opponent can do nothing: it resolves at once.
+    s = apply(board({ ...opts, mine: [samut] }), { type: 'cast', iid: 'h0' });
+    expect(s.stack).toEqual([]);
+    expect(s.players[0].hand).toHaveLength(2);
+    expect(s.players[1].hand).toHaveLength(1);
+    // Holding priority over it: neither a spell nor an ability (mana abilities still work).
+    s = board({ ...opts, mine: [samut] });
+    s.stack.push({ iid: 'h9', card: divination, controller: 0, targets: [], splitSecond: true });
+    s.priority = { player: 1, passes: 0, reason: 'main' };
+    expect(errorOf(() => apply(s, { type: 'cast', iid: 'o0', targets: [[{ kind: 'spell', iid: 'h9' }]] }))).toBe('castingForbidden');
+    expect(errorOf(() => apply(s, { type: 'activate', iid: iidOf(s, 'Pinger'), index: 0, targets: [[{ kind: 'player', player: 0 }]] }))).toBe('activationForbidden');
+    expect(errorOf(() => apply(s, { type: 'tapForMana', iid: iidOf(s, 'Island') }))).toBeNull();
+    // A creature spell doesn't get it.
+    const t = apply(board({ ...opts, mine: [samut], hand: [creature('Bear', 2, 2, { manaCost: '{0}', cmc: 0 })] }), { type: 'cast', iid: 'h0' });
+    expect(t.stack[0].splitSecond).toBeUndefined();
+    expect(actor(t)).toBe(1);
+  });
+
+  it('Biomancer\'s Familiar: creature abilities cost {2} less (at least one mana); the next adapt ignores counters', () => {
+    const familiar = creature('Biomancer\'s Familiar', 2, 2, {
+      typeLine: 'Creature — Mutant', manaCost: '{G}{U}', cmc: 2,
+      oracleText: 'Activated abilities of creatures you control cost {2} less to activate. This effect can\'t reduce the mana in that cost to less than one mana.\n{T}: The next time target creature adapts this turn, it adapts as though it had no +1/+1 counters on it.',
+    });
+    const adapter = creature('Adapter', 1, 1, { oracleText: '{3}: Adapt 2. (If this creature has no +1/+1 counters on it, put two +1/+1 counters on it.)' });
+    const pinger = creature('Pinger', 1, 1, { oracleText: '{1}, {T}: This creature deals 1 damage to any target.' });
+    const rock = card({ name: 'Rock', typeLine: 'Artifact', oracleText: '{2}, {T}: You gain 1 life.' });
+    let s = board({ mana: 1, mine: [familiar, adapter, pinger, rock] });
+    // {3} becomes {1}; {1} stays {1}; an artifact's {2} is not reduced.
+    expect(canPayAbility(s, perm(s, 'Adapter')!, 0)).toBe(true);
+    expect(canPayAbility(s, perm(s, 'Pinger')!, 0)).toBe(true);
+    expect(canPayAbility(s, perm(s, 'Rock')!, 0)).toBe(false);
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Adapter'), index: 0 }));
+    expect(perm(s, 'Adapter')!.counters['+1/+1']).toBe(2);
+    // With counters, adapt does nothing, unless the Familiar was used first.
+    s.battlefield.push(...[0, 1].map((i): Permanent => ({ iid: `x${i}`, card: swamp, controller: 0, tapped: false, sick: false, damage: 0, deathtouched: false, counters: {}, boosts: [] })));
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Adapter'), index: 0 }));
+    expect(perm(s, 'Adapter')!.counters['+1/+1']).toBe(2);
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Biomancer\'s Familiar'), index: 0, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Adapter') }]] }));
+    s.battlefield.push({ iid: 'x9', card: swamp, controller: 0, tapped: false, sick: false, damage: 0, deathtouched: false, counters: {}, boosts: [] });
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Adapter'), index: 0 }));
+    expect(perm(s, 'Adapter')!.counters['+1/+1']).toBe(4);
   });
 });
