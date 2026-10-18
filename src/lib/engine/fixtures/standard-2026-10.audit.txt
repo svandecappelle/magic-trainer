@@ -377,13 +377,6 @@ PARTIAL  Momo, Friendly Flier {W} — Legendary Creature — Lemur Bat Ally
       not read by the engine
   ✓ Whenever another creature you control with flying enters, Momo gets +…
       trigger (enters) → pump
-PARTIAL  Moonshadow {B} — Creature — Elemental
-  ✓ Menace
-      keyword
-  ✓ This creature enters with six -1/-1 counters on it.
-      enters with 6 -1/-1 counters
-  ? Whenever one or more permanent cards are put into your graveyard from…
-      not read by the engine
 PARTIAL  Opt {U} — Instant
   ✗ Scry 1.
       keyword not simulated: scry
@@ -754,6 +747,13 @@ OK       Meticulous Archive  — Land — Plains Island
       enters tapped (always)
   ✓ When this land enters, surveil 1.
       trigger (enters) → surveil
+OK       Moonshadow {B} — Creature — Elemental
+  ✓ Menace
+      keyword
+  ✓ This creature enters with six -1/-1 counters on it.
+      enters with 6 -1/-1 counters
+  ✓ Whenever one or more permanent cards are put into your graveyard from…
+      trigger (permanentCardsToGraveyard) → removeCounterSelf
 OK       Multiply by Zero {1}{B} — Instant
   ✓ Target creature has base power and toughness 0/0 until end of turn.
       spell → setBasePT (1 target)
@@ -961,5 +961,5 @@ OK       Zoraline, Cosmos Caller {1}{W}{B} — Legendary Creature — Bat Cleric
   ✓ Whenever Zoraline enters or attacks, you may pay {W}{B} and 2 life. W…
       trigger (enters/attacks) → reflexive | reflexive
 
-178 cards: 95 ok, 43 partial, 40 not simulated, 0 can't be cast
+178 cards: 96 ok, 42 partial, 40 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

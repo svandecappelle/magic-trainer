@@ -4891,3 +4891,63 @@ describe('Duel Commander landfall deck, second pass', () => {
     expect([s.players[0].pool?.[0].colors, perm(s, 'Jeweled Amulet')!.counters.charge]).toEqual([['G'], 0]);
   });
 });
+
+describe('Metagame audit 2026-10-18 evening: Chalice of the Void, Moonshadow, Shifting Woodland', () => {
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 10 && (s.stack.length || s.triggered?.length) && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  const forest = card({ name: 'Forest', typeLine: 'Basic Land — Forest' });
+
+  it('Chalice of the Void: X charge counters; spells with that mana value are countered', () => {
+    const chalice = card({
+      name: 'Chalice of the Void', typeLine: 'Artifact', manaCost: '{X}{X}', cmc: 0,
+      oracleText: 'This artifact enters with X charge counters on it.\nWhenever a player casts a spell with mana value equal to the number of charge counters on this artifact, counter that spell.',
+    });
+    let s = board({ mana: 2, hand: [chalice, creature('Elf', 1, 1, { manaCost: '{0}', cmc: 1 }), creature('Bear', 2, 2, { manaCost: '{0}', cmc: 2 })] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', x: 1 }));
+    expect(perm(s, 'Chalice of the Void')!.counters.charge).toBe(1);
+    // Mana value 1: countered; 2: resolves.
+    s = resolve(apply(s, { type: 'cast', iid: 'h1' }));
+    expect(perm(s, 'Elf')).toBeUndefined();
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toContain('Elf');
+    s = resolve(apply(s, { type: 'cast', iid: 'h2' }));
+    expect(perm(s, 'Bear')).toBeDefined();
+    // An X spell's mana value counts X on the stack: Chalice for X=1 has mana value 2.
+    s = board({ mana: 2, mine: [{ ...chalice, name: 'Old Chalice' }], hand: [chalice] });
+    perm(s, 'Old Chalice')!.counters = { charge: 2 };
+    s = resolve(apply(s, { type: 'cast', iid: 'h0', x: 1 }));
+    expect(perm(s, 'Chalice of the Void')).toBeUndefined();
+  });
+
+  it('Moonshadow: a -1/-1 counter removed when permanent cards go to your graveyard (once for cards put there together)', () => {
+    let s = board({ mine: [moonshadow], hand: [spell('Mill', '{0}', 'Mill three cards.', 'Sorcery'), spell('Opt', '{0}', 'Draw a card.')] });
+    perm(s, 'Moonshadow')!.counters = { '-1/-1': 6 };
+    s.players[0].library = [forest, forest, creature('Bear', 2, 2), ...s.players[0].library.map((c) => c.card)].map((c, i) => ({ iid: `l${i}`, card: c }));
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    // Three permanent cards together (a sorcery card too): one counter.
+    expect(perm(s, 'Moonshadow')!.counters['-1/-1']).toBe(5);
+    expect(powerOf(perm(s, 'Moonshadow')!)).toBe(2);
+    // An instant card isn't a permanent card.
+    s = resolve(apply(s, { type: 'cast', iid: 'h1' }));
+    expect(perm(s, 'Moonshadow')!.counters['-1/-1']).toBe(5);
+  });
+
+  it('Shifting Woodland: with delirium, a copy of a permanent card in your graveyard until end of turn', () => {
+    const woodland = card({
+      name: 'Shifting Woodland', typeLine: 'Land',
+      oracleText: 'This land enters tapped unless you control a Forest.\n{T}: Add {G}.\nDelirium — {2}{G}{G}: This land becomes a copy of target permanent card in your graveyard until end of turn. Activate only if there are four or more card types among cards in your graveyard.',
+    });
+    const titan = creature('Titan', 6, 6, { typeLine: 'Creature — Giant' });
+    const graveTarget = (s: GameState) => [[{ kind: 'card' as const, iid: s.players[0].graveyard.find((c) => c.card.name === 'Titan')!.iid }]];
+    let s = board({ mine: [woodland, forest, forest, forest, forest], grave: [titan, forest] });
+    expect(errorOf(() => apply(s, { type: 'activate', iid: iidOf(s, 'Shifting Woodland'), index: 0, targets: graveTarget(s) }))).toBe('delirium');
+    s.players[0].graveyard.push({ iid: 'g8', card: spell('Opt', '{U}', 'Draw a card.') }, { iid: 'g9', card: spell('Rite', '{R}', 'Add {R}.', 'Sorcery') });
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Shifting Woodland'), index: 0, targets: graveTarget(s) }));
+    const copy = s.battlefield.find((x) => x.card.name === 'Titan')!;
+    expect([powerOf(copy), isCreature(copy.card)]).toEqual([6, true]);
+    // Back to a land at end of turn.
+    for (let i = 0; i < 40 && s.turn === 1; i++) s = !s.priority && s.step === 'attack' ? apply(s, { type: 'declareAttackers', attackers: [] }) : apply(s, s.pending ? { type: 'choose', answer: { kind: 'cards', iids: [] } } : { type: 'pass' });
+    expect(findPermanent(s, copy.iid)!.card.name).toBe('Shifting Woodland');
+  });
+});

@@ -194,6 +194,7 @@ const errors: ErrorMessages = {
   castingForbidden: () => 'Vous ne pouvez pas lancer de sorts pendant ce tour',
   sorceryOnly: () => "Le Teferi adverse : vous ne pouvez lancer des sorts qu'au moment où vous pourriez lancer un rituel",
   nameStopped: () => "Une Aiguille assourdissante nomme cette carte : ses capacités activées ne peuvent pas être activées",
+  delirium: (p) => `${p.card} demande quatre types de cartes ou plus parmi les cartes de votre cimetière`,
   threshold: (p) => `${p.card} demande ${p.n} cartes ou plus dans votre cimetière`,
   notEnoughInGraveyard: (p) => `${p.card} demande ${p.n} autres cartes dans votre cimetière`,
   costNotSimulated: (p) => `Le coût supplémentaire de ${p.card} n'est pas simulé : impossible de le lancer`,

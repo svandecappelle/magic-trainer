@@ -581,6 +581,10 @@ export type Effect =
   | { kind: 'putSelfFromHand' }
   /** Jeweled Amulet: "Put a charge counter on this artifact. Note the type of mana spent to pay this activation cost." */
   | { kind: 'chargeAmulet' }
+  /** Moonshadow: "remove a -1/-1 counter from this creature". */
+  | { kind: 'removeCounterSelf'; counter: CounterKind }
+  /** Shifting Woodland: "This land becomes a copy of target permanent card in your graveyard until end of turn." */
+  | { kind: 'becomeCopy'; to: Affected }
   /**
    * Scythecat Cub: "put a +1/+1 counter on target creature you control. If this is the second time this ability has
    * resolved this turn, double the number of +1/+1 counters on that creature instead."
@@ -1362,6 +1366,11 @@ export function parseAbilityText(text: string, self?: string, selfIt = true): Ab
     return to && { kind: 'phaseOut', to };
   });
   scan(/(?:^|[.] *)Put this card from your hand onto the battlefield\./g, () => ({ kind: 'putSelfFromHand' }));
+  // Shifting Woodland: "This land becomes a copy of target permanent card in your graveyard until end of turn."
+  scan(new RegExp(`(?:^|[.] *)This (?:land|artifact|creature) becomes a copy of (${TARGET}) until end of turn(?=\\.)`, 'g'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'card');
+    return to && { kind: 'becomeCopy', to };
+  });
   scan(new RegExp(AMULET.source, 'g'), () => ({ kind: 'chargeAmulet' }));
   // Tyvar's Stand: "Target creature you control gets +X/+X and gains hexproof and indestructible until end of turn."
   scan(new RegExp(`(${TARGET}) gets \\+X\\/\\+X(?: and gains? ${KEYWORD_LIST})? until end of turn`, 'gi'), (m) => {
@@ -2370,6 +2379,16 @@ export type TriggerEvent =
   | { on: 'yourCreatureTargeted' }
   /** Guardian of New Benalia: "Whenever this creature enlists a creature, …" */
   | { on: 'enlists' }
+  /**
+   * Chalice of the Void: "Whenever a player casts a spell with mana value equal to the number of charge counters on this
+   * artifact, …" (the ability's slot 0 is that spell).
+   */
+  | { on: 'castMvCounters'; counter: CounterKind }
+  /**
+   * Moonshadow: "Whenever one or more permanent cards are put into your graveyard from anywhere while this creature has
+   * a -1/-1 counter on it, …" (once for cards put there together).
+   */
+  | { on: 'permanentCardsToGraveyard'; whileCounter?: CounterKind }
   /** Phyrexian Devourer: "When this creature's power is 7 or greater, …" (a state trigger, checked with state-based actions). */
   | { on: 'powerAtLeast'; n: number }
   /** Monument to Endurance: "Whenever you discard a card, …" (once per card). */
@@ -2762,6 +2781,21 @@ export function triggersOf(card: Card): TriggerSpec[] {
       out.push({ event: { on: 'yourCreatureTargeted' }, ability: triggerAbility(line.replace(/^[^,]+, /, ''), name, true) });
       continue;
     }
+    // Chalice of the Void: "Whenever a player casts a spell with mana value equal to the number of charge counters on this
+    // artifact, counter that spell."
+    if (/^Whenever a player casts a spell with mana value equal to the number of charge counters on this artifact, counter that spell\.$/i.test(line)) {
+      out.push({ event: { on: 'castMvCounters', counter: 'charge' }, ability: { targets: [{ kind: 'spell', min: 1, max: 1, filter: {} }], effects: [{ kind: 'counter', to: { slot: 0 } }] } });
+      continue;
+    }
+    // Moonshadow: "… while this creature has a -1/-1 counter on it, remove a -1/-1 counter from this creature."
+    const permanentsToGrave = line.match(/^Whenever one or more permanent cards are put into your graveyard from anywhere(?: while (.+?) has a -1\/-1 counter on it)?, remove a -1\/-1 counter from (.+?)\.$/i);
+    if (permanentsToGrave && (!permanentsToGrave[1] || selves.includes(permanentsToGrave[1].toLowerCase())) && selves.includes(permanentsToGrave[2].toLowerCase())) {
+      out.push({
+        event: { on: 'permanentCardsToGraveyard', ...(permanentsToGrave[1] ? { whileCounter: '-1/-1' as CounterKind } : {}) },
+        ability: { targets: [], effects: [{ kind: 'removeCounterSelf', counter: '-1/-1' }] },
+      });
+      continue;
+    }
     // Phantasmal Image's copies: "When this creature becomes the target of a spell or ability, sacrifice it."
     const targeted = line.match(/^When(?:ever)? (.+?) becomes the target of a spell or ability, (.+)$/i);
     if (targeted && selves.includes(targeted[1].toLowerCase())) {
@@ -2975,6 +3009,8 @@ export interface ActivatedSpec {
   minGraveyard?: number;
   /** Jeweled Amulet: "Activate only if there are no charge counters on this artifact." */
   noCounter?: CounterKind;
+  /** Shifting Woodland (delirium): "Activate only if there are four or more card types among cards in your graveyard." */
+  delirium?: boolean;
 }
 
 const activatedCache = new Map<string, ActivatedSpec[]>();
@@ -3090,8 +3126,9 @@ export function activatedOf(card: Card): ActivatedSpec[] {
     const yourTurn = /Activate only during your turn/i.test(text);
     const threshold = text.match(/Activate only if there are (\w+) or more cards in your graveyard\./i);
     const minGraveyard = threshold ? toNumber(threshold[1]) : undefined;
+    const needsDelirium = /Activate only if there are four or more card types among cards in your graveyard\./i.test(text);
     const noCounter = text.match(/Activate only if there are no (charge) counters on this artifact\./i)?.[1] as CounterKind | undefined;
-    if (/Activate (?:only|this ability only)/i.test(text.replace(/Activate only (?:as a sorcery|once each turn|during your turn|if there are \w+ or more cards in your graveyard|if there are no charge counters on this artifact)\.?/gi, ''))) continue;
+    if (/Activate (?:only|this ability only)/i.test(text.replace(/Activate only (?:as a sorcery|once each turn|during your turn|if there are \w+ or more cards in your graveyard|if there are no charge counters on this artifact|if there are four or more card types among cards in your graveyard)\.?/gi, ''))) continue;
     text = text.replace(/\s*Activate (?:only|this ability only)[^.]*\./gi, '').trim();
     // Phyrexian Devourer: "Put X +1/+1 counters on this creature, where X is the exiled card's mana value."
     if (cost.exileTop) {
@@ -3112,7 +3149,7 @@ export function activatedOf(card: Card): ActivatedSpec[] {
     if (returnsExiledWhenLeaving(card)) ability = { ...ability, effects: ability.effects.map((x) => (x.kind === 'destroy' && x.exile ? { ...x, untilLeaves: true } : x)) };
     // Stoneforge Mystic: choosing no card is the "may".
     const choosesNone = ability.effects.length === 1 && ability.effects[0].kind === 'putFromHand';
-    out.push({ text: line, cost, ability: optional && ability.effects.length && !choosesNone ? { ...ability, optional } : ability, sorcery, once, ...(discountPer ? { discountPer } : {}), ...(yourTurn ? { yourTurn } : {}), ...(minGraveyard ? { minGraveyard } : {}), ...(noCounter ? { noCounter } : {}) });
+    out.push({ text: line, cost, ability: optional && ability.effects.length && !choosesNone ? { ...ability, optional } : ability, sorcery, once, ...(discountPer ? { discountPer } : {}), ...(yourTurn ? { yourTurn } : {}), ...(minGraveyard ? { minGraveyard } : {}), ...(noCounter ? { noCounter } : {}), ...(needsDelirium ? { delirium: true } : {}) });
   }
   activatedCache.set(key, out);
   return out;
@@ -3208,7 +3245,7 @@ export function entersCounters(card: Card): { counter: CounterKind; n: Amount } 
   // Gemstone Mine: "This land enters with three mining counters on it."
   // Wishclaw Talisman: "This artifact enters with three wish counters on it."
   // Hickory Woodlot: "This land enters tapped with two depletion counters on it." (tapped: see entersTapped)
-  const mining = frontText(card).match(new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)?(?: tapped)? with (${AMOUNT}) (mining|wish|depletion) counters? on it\\.`, 'i'));
+  const mining = frontText(card).match(new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)?(?: tapped)? with (${AMOUNT}) (mining|wish|depletion|charge) counters? on it\\.`, 'i'));
   if (mining) return { counter: mining[2].toLowerCase() as CounterKind, n: toAmount(mining[1]) };
   const m = frontText(card).match(new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)? with (${AMOUNT}) ([+-]1\\/[+-]1) counters? on (?:it|him|her|them)\\.`, 'i'));
   return m && (m[2] === '+1/+1' || m[2] === '-1/-1') ? { counter: m[2], n: toAmount(m[1]) } : null;

@@ -184,6 +184,7 @@ const errors: ErrorMessages = {
   castingForbidden: () => 'You can\'t cast spells during this turn',
   sorceryOnly: () => 'An opponent\'s Teferi: you can cast spells only when you could cast a sorcery',
   nameStopped: () => 'Pithing Needle names this card: its activated abilities can\'t be activated',
+  delirium: (p) => `${p.card} needs four or more card types among cards in your graveyard`,
   threshold: (p) => `${p.card} needs ${p.n} or more cards in your graveyard`,
   notEnoughInGraveyard: (p) => `${p.card} needs ${p.n} other cards in your graveyard`,
   costNotSimulated: (p) => `${p.card}'s additional cost is not simulated: it can't be cast`,

@@ -673,7 +673,7 @@ export type Action =
 /** Why an action was refused. Rendered in the player's language (src/i18n). */
 export type GameErrorCode =
   | 'gameOver' | 'keepFirst' | 'notMulliganTime' | 'noMoreMulligans' | 'chooseBottom' | 'notInHand'
-  | 'landTiming' | 'landAlreadyPlayed' | 'notALand' | 'notASpell' | 'sorcerySpeed' | 'castTiming' | 'sorceryOnly' | 'nameStopped' | 'mustAttack' | 'noCounterToRemove' | 'nothingToExile' | 'threshold'
+  | 'landTiming' | 'landAlreadyPlayed' | 'notALand' | 'notASpell' | 'sorcerySpeed' | 'castTiming' | 'sorceryOnly' | 'nameStopped' | 'mustAttack' | 'noCounterToRemove' | 'nothingToExile' | 'threshold' | 'delirium'
   | 'noLandToReturn' | 'onlyNotYourTurn' | 'noCardToExile' | 'noTappedCreature'
   | 'needsTarget' | 'tooManyTargets' | 'targetMustBe' | 'illegalTarget' | 'notEnoughMana' | 'chosenManaShort' | 'declareBlockersFirst'
   | 'notAttackStep' | 'cannotAttack' | 'notBlockStep' | 'notAttacking' | 'menace' | 'cannotBlock'
@@ -1602,6 +1602,7 @@ export function activationProblem(s: GameState, p: PlayerId, perm: Permanent, in
   if (spec.minGraveyard && s.players[p].graveyard.length < spec.minGraveyard) return 'threshold';
   // Jeweled Amulet: "Activate only if there are no charge counters on this artifact."
   if (spec.noCounter && perm.counters[spec.noCounter]) return 'activationForbidden';
+  if (spec.delirium && !delirium(s, p)) return 'delirium';
   if (spec.cost.exileFromGraveyard && s.players[p].graveyard.filter((c) => cardMatches(c.card, spec.cost.exileFromGraveyard!)).length < (spec.cost.exileCount ?? 1)) return 'nothingToExile';
   if (spec.cost.discard && discardOptions(s, p, spec).length < spec.cost.discard) return 'nothingToDiscard';
   if (spec.cost.sacrifice && !sacrificeOptions(s, perm, spec).length) return 'nothingToSacrifice';
@@ -1651,6 +1652,15 @@ function finishCast(d: GameState, item: StackItem, named: LogTarget[]) {
   }
   fireCast(d, p, card);
   if (item.noMana || item.noColoredMana) fireCastWithoutMana(d, item);
+  // Chalice of the Void: a spell with mana value equal to its charge counters (X counted on the stack).
+  const mv = card.cmc + (item.x ?? 0) * xCount(card);
+  for (const x of d.battlefield) {
+    for (const t of triggersOf(x.card)) {
+      if (t.event.on === 'castMvCounters' && (x.counters[t.event.counter] ?? 0) === mv) {
+        (d.triggered ??= []).push({ source: { iid: x.iid, card: x.card }, controller: x.controller, ability: t.ability, targets: [[{ kind: 'spell', iid: item.iid }]] });
+      }
+    }
+  }
   fireWard(d, item);
   if (d.priority) {
     d.priority.passes = 0;
@@ -2195,7 +2205,21 @@ function putInZone(d: GameState, owner: PlayerId, inst: CardInst, zone: 'graveya
     return;
   }
   ps[zone].push(inst);
+  // Moonshadow: "Whenever one or more permanent cards are put into your graveyard from anywhere …" (cards put there
+  // together, in one action or effect, trigger it once: a trigger already waiting isn't added again).
+  if (zone === 'graveyard' && cardTypes(inst.card).some((t) => PERMANENT_TYPES.includes(t))) {
+    for (const x of d.battlefield) {
+      if (x.controller !== owner) continue;
+      for (const t of triggersOf(x.card)) {
+        if (t.event.on !== 'permanentCardsToGraveyard' || (t.event.whileCounter && !x.counters[t.event.whileCounter])) continue;
+        if ((d.triggered ?? []).some((q) => q.source.iid === x.iid && q.ability === t.ability)) continue;
+        queueTrigger(d, x, owner, t.ability);
+      }
+    }
+  }
 }
+
+const PERMANENT_TYPES: string[] = ['artifact', 'creature', 'enchantment', 'land', 'planeswalker', 'battle'];
 
 function removePermanent(d: GameState, perm: Permanent, zone: 'graveyard' | 'exile') {
   // Rest in Peace: exiled instead, so it doesn't die (a token too). Checked while the permanent is still there.
@@ -3628,6 +3652,24 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       ps.hand = ps.hand.filter((c) => c !== inst);
       log(d, { k: 'enters', card: inst.card.name });
       enterBattlefield(d, inst, caster);
+      break;
+    }
+    case 'removeCounterSelf': {
+      // Moonshadow: one of its -1/-1 counters removed.
+      const src = item.source ? findPermanent(d, item.source) : undefined;
+      if (!src?.counters[e.counter]) break;
+      src.counters = { ...src.counters, [e.counter]: src.counters[e.counter]! - 1 };
+      log(d, { k: 'counterRemoved', card: src.card.name, counter: e.counter });
+      break;
+    }
+    case 'becomeCopy': {
+      // Shifting Woodland: a copy of the card until end of turn (its own card back then, like an animation).
+      const src = item.source ? findPermanent(d, item.source) : undefined;
+      const [g] = graveCards;
+      if (!src || !g) break;
+      src.unanimated ??= src.card;
+      src.card = { ...faceCard(g.grave.card, 0), id: g.grave.card.id };
+      log(d, { k: 'copied', card: src.unanimated.name, as: g.grave.card.name });
       break;
     }
     case 'chargeAmulet': {

@@ -459,10 +459,15 @@ Still open, playing wrongly, most played first (see `audit-reports/2026-10-18/re
 morning), 255 playing wrongly (263). Fully simulated main deck copies: Standard 72%, Pioneer 56%, Modern 60%, Legacy 67%,
 Vintage 68%, Pauper 61%, Premodern 68%, Duel Commander 69%, cEDH 60%.
 
+Fixed: Shifting Woodland (delirium as an activation restriction; a copy of a permanent card in your graveyard until
+end of turn), Chalice of the Void (X charge counters; a spell cast with that mana value, X included, is countered),
+Moonshadow ("one or more permanent cards are put into your graveyard": once for cards put there together).
+
+Approximations: Moonshadow's trigger counts as "together" every card put into the graveyard before it goes on the
+stack (an effect that mills, then discards, triggers it once).
+
 Still open, playing wrongly, most played first (see `audit-reports/2026-10-18/report.md`):
-- [ ] Shifting Woodland (7 decks: delirium, becomes a copy of a permanent card in your graveyard), Chalice of the Void
-  (5: X charge counters, counters spells with that mana value), Nethergoyf (escape with four card types exiled),
-  Moonshadow (12 copies: its -1/-1 counters never go), Detective's Phoenix (bestow, collect evidence, from the
+- [ ] Nethergoyf (escape with four card types exiled), Detective's Phoenix (bestow, collect evidence, from the
   graveyard)
 - [ ] Dark Matter Manipulator (+2/+0 for every seven cards in your graveyard), Fear of Missing Out (delirium: first
   attack each turn, an additional combat), Devoted Druid ("Put a -1/-1 counter on this creature" as a cost), Obsidian
