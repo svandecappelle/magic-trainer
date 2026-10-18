@@ -242,6 +242,45 @@ describe.skipIf(!testDbUrl)('deck and collection API', () => {
     }
   });
 
+  it('shares a deck read-only with anyone, until its owner stops', async () => {
+    alice = await login('1', 'alice');
+    bob = await login('2', 'bob');
+    expect((await call(alice, 'PUT', `/api/decks/${DECK}`, deckBody())).status).toBe(201);
+    // Only its owner can share it, and only once saved.
+    expect((await call(bob, 'PUT', `/api/decks/${DECK}/share`)).status).toBe(404);
+    expect((await call(alice, 'PUT', '/api/decks/55555555-5555-4555-8555-555555555555/share')).status).toBe(404);
+    expect((await call(null, 'PUT', `/api/decks/${DECK}/share`)).status).toBe(401);
+    expect((await call(alice, 'PUT', `/api/decks/${DECK}/share`, undefined, 'https://evil.example.com')).status).toBe(403);
+    const shared = await call(alice, 'PUT', `/api/decks/${DECK}/share`);
+    expect(shared.status).toBe(200);
+    const shareId: string = shared.json.shareId;
+    expect(shareId).toMatch(/^[A-Za-z0-9_-]{12}$/);
+    // Sharing again keeps the same link.
+    expect((await call(alice, 'PUT', `/api/decks/${DECK}/share`)).json.shareId).toBe(shareId);
+    expect((await call(alice, 'GET', '/api/shares')).json).toEqual({ shares: [{ deckId: DECK, shareId }] });
+    expect((await call(bob, 'GET', '/api/shares')).json).toEqual({ shares: [] });
+
+    // Anyone can read it, without logging in; the latest version.
+    await call(alice, 'PUT', `/api/decks/${DECK}`, deckBody({ name: 'Burn 2', baseVersion: 1 }));
+    const read = await call(null, 'GET', `/api/shared/${shareId}`, undefined, '');
+    expect(read.status).toBe(200);
+    expect(read.json).toMatchObject({ name: 'Burn 2', format: 'modern', owner: { name: 'alice' } });
+    expect(read.json.entries).toContainEqual({ card: SCRYFALL.get(BOLT), qty: 4, board: 'main' });
+    expect(read.json).not.toHaveProperty('id');
+    expect((await call(null, 'GET', '/api/shared/nope')).status).toBe(404);
+    expect((await call(null, 'GET', '/api/shared/AAAAAAAAAAAA')).status).toBe(404);
+
+    // Stopped: the link is gone; shared again: a new link.
+    expect((await call(alice, 'DELETE', `/api/decks/${DECK}/share`)).status).toBe(204);
+    expect((await call(null, 'GET', `/api/shared/${shareId}`)).status).toBe(404);
+    const again = (await call(alice, 'PUT', `/api/decks/${DECK}/share`)).json.shareId;
+    expect(again).not.toBe(shareId);
+    // A deleted deck can't be read any more.
+    await call(alice, 'DELETE', `/api/decks/${DECK}`);
+    expect((await call(null, 'GET', `/api/shared/${again}`)).status).toBe(404);
+    expect((await call(alice, 'GET', '/api/shares')).json).toEqual({ shares: [] });
+  });
+
   it('answers 404 when accounts are disabled', async () => {
     const decks = deckRoutes({ pool: null, account: accounts({ pool: null, config: null }), lookup: async () => new Map() });
     const res = { status: 0, body: '', writeHead(s: number) { this.status = s; return this; }, end(b: string) { this.body = b; } };

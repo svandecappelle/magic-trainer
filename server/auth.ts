@@ -16,6 +16,8 @@ export interface SessionUser {
   id: string;
   name: string;
   avatarUrl: string | null;
+  /** When the account was created (ms), for the profile page. */
+  createdAt: number;
 }
 
 /** Discord's /users/@me (scope identify), the fields used. */
@@ -133,8 +135,8 @@ export function accounts({ pool, config, fetch: fetchFn = fetch }: AccountsOptio
     if (!pool) return null;
     const token = parseCookies(req).get(SESSION_COOKIE);
     if (!token) return null;
-    const { rows } = await pool.query<{ id: string; name: string; avatar: string | null; renew: boolean; seen: boolean }>(
-      `SELECT u.id, u.display_name AS name, u.avatar_url AS avatar,
+    const { rows } = await pool.query<{ id: string; name: string; avatar: string | null; created: Date; renew: boolean; seen: boolean }>(
+      `SELECT u.id, u.display_name AS name, u.avatar_url AS avatar, u.created_at AS created,
               s.expires_at < now() + make_interval(days => $2) AS renew, s.last_seen_at < now() - interval '1 hour' AS seen
          FROM sessions s JOIN users u ON u.id = s.user_id
         WHERE s.token_hash = $1 AND s.expires_at > now()`,
@@ -151,7 +153,7 @@ export function accounts({ pool, config, fetch: fetchFn = fetch }: AccountsOptio
     } else if (row.seen) {
       await pool.query(`UPDATE sessions SET last_seen_at = now() WHERE token_hash = $1`, [hashToken(token)]);
     }
-    return { id: row.id, name: row.name, avatarUrl: row.avatar };
+    return { id: row.id, name: row.name, avatarUrl: row.avatar, createdAt: row.created.getTime() };
   }
 
   /**
@@ -162,14 +164,14 @@ export function accounts({ pool, config, fetch: fetchFn = fetch }: AccountsOptio
     if (!pool || !enabled || !sameOrigin(req)) return null;
     const token = parseCookies(req).get(SESSION_COOKIE);
     if (!token) return null;
-    const { rows } = await pool.query<{ id: string; name: string; avatar: string | null }>(
-      `SELECT u.id, u.display_name AS name, u.avatar_url AS avatar
+    const { rows } = await pool.query<{ id: string; name: string; avatar: string | null; created: Date }>(
+      `SELECT u.id, u.display_name AS name, u.avatar_url AS avatar, u.created_at AS created
          FROM sessions s JOIN users u ON u.id = s.user_id
         WHERE s.token_hash = $1 AND s.expires_at > now()`,
       [hashToken(token)],
     );
     const row = rows[0];
-    return row ? { id: row.id, name: row.name, avatarUrl: row.avatar } : null;
+    return row ? { id: row.id, name: row.name, avatarUrl: row.avatar, createdAt: row.created.getTime() } : null;
   }
 
   /** GET /auth/discord?return=/path: off to Discord's consent page. */

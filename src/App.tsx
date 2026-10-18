@@ -11,6 +11,8 @@ import { Home } from './pages/Home';
 import { LifeTracker } from './pages/LifeTracker';
 import { Online } from './pages/Online';
 import { Play } from './pages/Play';
+import { Profile } from './pages/Profile';
+import { SharedDeck } from './pages/SharedDeck';
 import { initAccount } from './store/useAccount';
 
 /** The tab bar on phones: each section with a stroke icon. */
@@ -87,6 +89,8 @@ export function App() {
           <Route path="/life" element={<LifeTracker />} />
           <Route path="/history" element={<History />} />
           <Route path="/history/replay/:replayId" element={<History />} />
+          <Route path="/profile" element={<Profile />} />
+          <Route path="/shared/:shareId" element={<SharedDeck />} />
         </Routes>
       </main>
       <footer className="muted small">

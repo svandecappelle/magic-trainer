@@ -1,9 +1,10 @@
+import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type pg from 'pg';
 import { FORMATS, type Board, type Card, type CollectionEntry, type Deck, type DeckEntry } from '../src/types';
 import type { Accounts, SessionUser } from './auth';
 import { isUuid } from './db/cards';
-import { HttpError, rateLimiter, readJson, sendJson } from './http';
+import { clientIp, HttpError, rateLimiter, readJson, sendJson } from './http';
 
 /** Saved decks and collection of the logged-in user (docs/accounts.md, HTTP API). */
 
@@ -145,6 +146,19 @@ async function ensureCards(pool: pg.Pool, lookup: Lookup, ids: string[]): Promis
   if (unknown.length) throw new HttpError(422, 'unknownCards', { ids: unknown });
 }
 
+/** A shared deck as anyone can read it: the deck, its owner's public name and avatar. */
+export interface SharedDeck {
+  name: string;
+  format: string;
+  updatedAt: number;
+  entries: DeckEntry[];
+  owner: { name: string; avatarUrl: string | null };
+}
+
+const SHARE_ID = /^[A-Za-z0-9_-]{8,32}$/;
+/** A new share id: 12 random URL-safe characters. */
+const newShareId = () => randomBytes(9).toString('base64url');
+
 /** Deletes the tombstones (decks, collection cards) older than TOMBSTONE_DAYS; returns how many. */
 export async function purgeDeletedDecks(pool: pg.Pool): Promise<number> {
   const decks = await pool.query(`DELETE FROM decks WHERE deleted_at < now() - make_interval(days => $1)`, [TOMBSTONE_DAYS]);
@@ -165,6 +179,53 @@ export interface DeckRoutesOptions {
 /** /api/decks and /api/collection. Every query is limited to the session's user. */
 export function deckRoutes({ pool, account, lookup }: DeckRoutesOptions) {
   const writeLimit = rateLimiter(300, 60_000);
+  /** Shared decks are public: limited per address. */
+  const readShared = rateLimiter(120, 60_000);
+
+  /** PUT /api/decks/:id/share: the deck's share id (a new one the first time). The deck must be saved already. */
+  async function share(user: SessionUser, id: string, res: ServerResponse) {
+    const { rows } = await pool!.query<{ share_id: string }>(
+      `UPDATE decks SET share_id = COALESCE(share_id, $3) WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL RETURNING share_id`,
+      [id, user.id, newShareId()],
+    );
+    if (!rows[0]) throw new HttpError(404, 'notFound');
+    sendJson(res, 200, { deckId: id, shareId: rows[0].share_id });
+  }
+
+  /** DELETE /api/decks/:id/share: the link stops working (sharing again makes a new one). */
+  async function unshare(user: SessionUser, id: string, res: ServerResponse) {
+    const { rowCount } = await pool!.query(`UPDATE decks SET share_id = NULL WHERE id = $1 AND user_id = $2`, [id, user.id]);
+    if (!rowCount) throw new HttpError(404, 'notFound');
+    res.writeHead(204).end();
+  }
+
+  /** GET /api/shares: the user's shared decks. */
+  async function listShares(user: SessionUser, res: ServerResponse) {
+    const { rows } = await pool!.query<{ id: string; share_id: string }>(
+      `SELECT id, share_id FROM decks WHERE user_id = $1 AND share_id IS NOT NULL AND deleted_at IS NULL`,
+      [user.id],
+    );
+    sendJson(res, 200, { shares: rows.map((r) => ({ deckId: r.id, shareId: r.share_id })) });
+  }
+
+  /** GET /api/shared/:shareId: a shared deck, for anyone (no login). */
+  async function getShared(shareId: string, res: ServerResponse) {
+    if (!SHARE_ID.test(shareId)) throw new HttpError(404, 'notFound');
+    const { rows } = await pool!.query<DeckRow & { owner: string; avatar: string | null }>(
+      `${DECK_SELECT.replace('SELECT d.id,', 'SELECT u.display_name AS owner, u.avatar_url AS avatar, d.id,')}
+        JOIN users u ON u.id = d.user_id
+       WHERE d.share_id = $1 AND d.deleted_at IS NULL
+       GROUP BY d.id, u.id`,
+      [shareId],
+    );
+    const row = rows[0];
+    if (!row) throw new HttpError(404, 'notFound');
+    const deck: SharedDeck = {
+      name: row.name, format: row.format, updatedAt: row.updated_at.getTime(), entries: row.entries,
+      owner: { name: row.owner, avatarUrl: row.avatar },
+    };
+    sendJson(res, 200, deck);
+  }
 
   async function listDecks(user: SessionUser, url: URL, res: ServerResponse) {
     const since = Number(url.searchParams.get('since') ?? NaN);
@@ -299,14 +360,23 @@ export function deckRoutes({ pool, account, lookup }: DeckRoutesOptions) {
     }
   }
 
-  /** Handles /api/decks… and /api/collection; false for any other path. */
+  /** Handles /api/decks…, /api/collection, /api/shares and /api/shared/…; false for any other path. */
   async function handle(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
     const path = url.pathname;
-    const deckId = /^\/api\/decks\/([^/]+)$/.exec(path)?.[1];
-    if (path !== '/api/decks' && path !== '/api/collection' && deckId === undefined) return false;
+    const deckPath = /^\/api\/decks\/([^/]+)(\/share)?$/.exec(path);
+    const deckId = deckPath?.[1];
+    const shared = /^\/api\/shared\/([^/]+)$/.exec(path)?.[1];
+    if (path !== '/api/decks' && path !== '/api/collection' && path !== '/api/shares' && deckId === undefined && shared === undefined) return false;
     try {
       if (!account.enabled || !pool) throw new HttpError(404, 'accountsDisabled');
       const method = req.method ?? 'GET';
+      // A shared deck: public, read-only.
+      if (shared !== undefined) {
+        if (method !== 'GET') throw new HttpError(405, 'methodNotAllowed');
+        if (!readShared.hit(clientIp(req))) throw new HttpError(429, 'tooManyRequests');
+        await getShared(shared, res);
+        return true;
+      }
       const write = method !== 'GET';
       if (write && !account.sameOrigin(req)) throw new HttpError(403, 'badOrigin');
       const user = await account.userOf(req, res);
@@ -315,11 +385,18 @@ export function deckRoutes({ pool, account, lookup }: DeckRoutesOptions) {
       if (deckId !== undefined) {
         if (!isUuid(deckId)) throw new HttpError(404, 'notFound');
         const id = deckId.toLowerCase();
-        if (method === 'PUT') await saveDeck(user, id, req, res);
+        if (deckPath?.[2]) {
+          if (method === 'PUT') await share(user, id, res);
+          else if (method === 'DELETE') await unshare(user, id, res);
+          else throw new HttpError(405, 'methodNotAllowed');
+        } else if (method === 'PUT') await saveDeck(user, id, req, res);
         else if (method === 'DELETE') await deleteDeck(user, id, res);
         else throw new HttpError(405, 'methodNotAllowed');
       } else if (path === '/api/decks') {
         if (method === 'GET') await listDecks(user, url, res);
+        else throw new HttpError(405, 'methodNotAllowed');
+      } else if (path === '/api/shares') {
+        if (method === 'GET') await listShares(user, res);
         else throw new HttpError(405, 'methodNotAllowed');
       } else if (method === 'GET') await getCollection(user, url, res);
       else if (method === 'PATCH') await patchCollection(user, req, res);

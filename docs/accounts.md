@@ -225,18 +225,22 @@ sequenceDiagram
 
 ## HTTP API
 
-All JSON. Routes under `/api` need a session (401 otherwise), except `/api/me`.
+All JSON. Routes under `/api` need a session (401 otherwise), except `/api/me` and `/api/shared/:shareId`.
 
 | Method | Path                          | Purpose                                                        |
 | ------ | ----------------------------- | -------------------------------------------------------------- |
 | GET    | `/auth/discord`               | Starts the login (`?return=` path)                             |
 | GET    | `/auth/discord/callback`      | Discord redirect target                                        |
 | POST   | `/auth/logout`                | Deletes the session, clears the cookie                         |
-| GET    | `/api/me`                     | `{ enabled, user: { id, name, avatarUrl } \| null }`           |
+| GET    | `/api/me`                     | `{ enabled, user: { id, name, avatarUrl, createdAt } \| null }` |
 | DELETE | `/api/me`                     | Deletes the account and all its data                           |
 | GET    | `/api/decks?since=<cursor>`   | `{ decks, deleted: [{ id, version, deletedAt }], cursor }`: decks changed since the cursor of a previous call (all if omitted) |
 | PUT    | `/api/decks/:id`              | Creates (201, `baseVersion` 0) or replaces (200) a deck; body `{ name, format, entries: [{ cardId, board, qty }], createdAt, updatedAt, baseVersion }`; returns the saved deck with its new `version` |
 | DELETE | `/api/decks/:id`              | Marks the deck deleted (tombstone); returns `{ id, version, deletedAt }` |
+| PUT    | `/api/decks/:id/share`        | Shares a saved deck: `{ deckId, shareId }` (the same `shareId` while it stays shared) |
+| DELETE | `/api/decks/:id/share`        | Stops sharing (204): the link stops working; sharing again makes a new one |
+| GET    | `/api/shares`                 | `{ shares: [{ deckId, shareId }] }`: the user's shared decks   |
+| GET    | `/api/shared/:shareId`        | Public, no session: `{ name, format, updatedAt, entries, owner: { name, avatarUrl } }`; 404 once deleted or no longer shared |
 | GET    | `/api/collection?since=<cursor>` | `{ cards: [{ card, qty, foilQty }], removed: [cardId], cursor }`: the collection, or what changed since the cursor (`removed`: cards now at 0 and 0) |
 | PATCH  | `/api/collection`             | `[{ cardId, qty, foilQty }]`, absolute values (0 and 0 removes); returns `{ count }` |
 | GET    | `/api/history`                | `{ results }`: the account's match results, most recent first (the last 1 000) |
@@ -253,6 +257,10 @@ All JSON. Routes under `/api` need a session (401 otherwise), except `/api/me`.
 - Limits: 500 decks per user, 300 entries per deck, 1 MB request body, 20 000 collection rows, 5 000 changes per
   collection `PATCH`, 300 writes per minute per user. Errors are `{ error: <code>, …params }`.
 - Every query filters on the session's `user_id`; another user's deck id answers 404.
+- Shared decks (`decks.share_id`, migration 006): 12 random URL-safe characters. The page `/shared/<shareId>` reads
+  the latest version of the deck, shows its owner's display name and avatar (nothing else about the account: the
+  profile page `/profile` is private) and offers to copy it into one's own decks. Public reads are limited to 120 per
+  minute per address.
 
 ## Sync in the browser
 

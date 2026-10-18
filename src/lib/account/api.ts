@@ -1,4 +1,4 @@
-import type { Board, CollectionEntry, Deck } from '../../types';
+import type { Board, CollectionEntry, Deck, DeckEntry } from '../../types';
 import type { MatchResult } from '../history';
 
 /** Client of the account API (server/auth.ts, server/decks.ts; docs/accounts.md). */
@@ -7,6 +7,23 @@ export interface AccountUser {
   id: string;
   name: string;
   avatarUrl: string | null;
+  /** When the account was created (ms). */
+  createdAt?: number;
+}
+
+/** A deck shared by its owner: anyone with /shared/<shareId> can read it. */
+export interface DeckShare {
+  deckId: string;
+  shareId: string;
+}
+
+/** A shared deck as anyone reads it (server/decks.ts). */
+export interface SharedDeck {
+  name: string;
+  format: string;
+  updatedAt: number;
+  entries: DeckEntry[];
+  owner: { name: string; avatarUrl: string | null };
 }
 
 export type SavedDeck = Deck & { version: number };
@@ -77,6 +94,10 @@ export const accountApi = {
   decks: (since: number | null) => request<DeckChanges>('GET', `/api/decks${since === null ? '' : `?since=${since}`}`),
   putDeck: (id: string, deck: DeckUpload) => request<SavedDeck>('PUT', `/api/decks/${id}`, deck),
   deleteDeck: (id: string) => request<DeletedDeck>('DELETE', `/api/decks/${id}`),
+  shares: () => request<{ shares: DeckShare[] }>('GET', '/api/shares'),
+  share: (id: string) => request<DeckShare>('PUT', `/api/decks/${id}/share`),
+  unshare: (id: string) => request<void>('DELETE', `/api/decks/${id}/share`),
+  shared: (shareId: string) => request<SharedDeck>('GET', `/api/shared/${encodeURIComponent(shareId)}`),
   collection: (since: number | null) => request<CollectionChanges>('GET', `/api/collection${since === null ? '' : `?since=${since}`}`),
   patchCollection: (changes: { cardId: string; qty: number; foilQty: number }[]) => request<{ count: number }>('PATCH', '/api/collection', changes),
   history: () => request<{ results: MatchResult[] }>('GET', '/api/history'),

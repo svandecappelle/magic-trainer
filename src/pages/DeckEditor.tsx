@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { CardSearch } from '../components/CardSearch';
 import { DeckStats } from '../components/DeckStats';
+import { SharePanel } from '../components/SharePanel';
 import { ManaCost } from '../components/ManaCost';
 import { formatDeckText, parseDeckText } from '../lib/deckText';
 import { canBeCommander, checkDeck, type DeckIssue } from '../lib/legality';
@@ -25,7 +26,7 @@ export function DeckEditor() {
   const collection = useApp((s) => s.collection);
   const { updateDeck, addToDeck, moveBoard } = useApp.getState();
   const hover = useHoverPreview();
-  const [textMode, setTextMode] = useState<'none' | 'import' | 'export'>('none');
+  const [textMode, setTextMode] = useState<'none' | 'import' | 'export' | 'share'>('none');
   const [importText, setImportText] = useState('');
   const [importMsg, setImportMsg] = useState('');
   const [refreshMsg, setRefreshMsg] = useState('');
@@ -157,6 +158,7 @@ export function DeckEditor() {
         <div className="editor-actions">
           <button className="secondary" onClick={() => setTextMode(textMode === 'import' ? 'none' : 'import')}>{t.editor.import}</button>
           <button className="secondary" onClick={() => setTextMode(textMode === 'export' ? 'none' : 'export')}>{t.editor.export}</button>
+          <button className="secondary" onClick={() => setTextMode(textMode === 'share' ? 'none' : 'share')}>{t.share.button}</button>
           <Link to={`/goldfish/${deck.id}`} className="button secondary">{t.editor.goldfishShort}</Link>
           <Link to={`/play?deck=${deck.id}`} className="button">{t.home.playBot}</Link>
         </div>
@@ -183,6 +185,7 @@ export function DeckEditor() {
           </div>
         </div>
       )}
+      {textMode === 'share' && <SharePanel deckId={deck.id} deckName={deck.name} onClose={() => setTextMode('none')} />}
       {textMode === 'export' && (
         <div className="panel">
           <textarea rows={10} readOnly value={formatDeckText(deck)} onFocus={(e) => e.target.select()} />

@@ -583,3 +583,36 @@ footer { padding: 16px 20px; border-top: 1px solid #1f2530; color: var(--faint);
 .replay-links { gap: 8px; flex-wrap: wrap; }
 .undo-button { align-self: flex-start; margin-top: 4px; }
 .saved-games li .icon + .icon { margin-left: 0; }
+
+/* Profile (/profile): the account, statistics, decks with their share links. */
+.account-menu .account-link { padding: 8px 16px; font-weight: 500; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--border); color: var(--text); text-decoration: none; }
+.account-menu .account-link:hover { border-color: var(--muted); }
+.profile-head { display: flex; align-items: center; gap: 18px; margin: 8px 0 18px; }
+.profile-head h1 { margin: 0; }
+.profile-avatar { width: 72px; height: 72px; border-radius: 50%; flex: none; display: inline-grid; place-items: center; background: var(--panel-2); font-size: 2rem; }
+.profile-head .account-status { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.sync-dot.inline { position: static; display: inline-block; border-color: transparent; }
+.profile-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+.profile-stats .tally-card { min-width: 0; margin: 0; }
+.profile-best { font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-last { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.profile-last .result-badge { min-width: 0; }
+.profile-decks li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 44px; padding: 4px 8px; border-bottom: 1px solid var(--line-soft); }
+.profile-deck-name { font-weight: 600; }
+.profile-decks .spacer { flex: 1; }
+
+/* Sharing a deck (deck editor) and a shared deck's page (/shared/<id>). */
+.share-panel h3 { margin-top: 0; }
+.share-link { display: flex; gap: 6px; }
+.share-link input { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 0.85rem; }
+.share-panel .spacer { flex: 1; }
+.shared-owner { display: flex; align-items: center; gap: 6px; margin: 4px 0 8px; }
+.shared-owner img { border-radius: 50%; }
+.shared-deck .editor-name h1 { margin: 0; }
+.shared-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+.shared-columns { columns: 2 260px; column-gap: 24px; }
+.shared-columns .type-group { break-inside: avoid; }
+.shared-deck .deck-list .qty { min-width: 1.6em; text-align: right; color: var(--muted); }
+.shared-deck .deck-list .card-name { flex: 1; }
+@media (max-width: 1000px) { .shared-layout { grid-template-columns: 1fr; } }
+.shared-deck .editor-head { margin-top: 16px; }

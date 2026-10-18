@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useT } from '../i18n';
+import type { Messages } from '../i18n/en';
+import type { SyncStatus } from '../lib/account/sync';
 import { loginUrl } from '../lib/account/api';
 import { deleteAccount, logout, syncNow, useAccount } from '../store/useAccount';
 
@@ -34,12 +37,7 @@ export function AccountMenu() {
   }
 
   const state = status?.state ?? 'syncing';
-  const statusText =
-    state === 'syncing' ? t.account.status.syncing
-    : state === 'synced' ? t.account.status.synced
-    : state === 'offline' ? t.account.status.offline
-    : status?.rejected.length ? t.account.status.rejected(status.rejected)
-    : t.account.status.error(status?.error ?? '?');
+  const statusText = syncStatusText(t, status);
 
   return (
     <div className="account" ref={ref}>
@@ -51,6 +49,7 @@ export function AccountMenu() {
         <div className="account-menu" role="menu">
           <div className="account-name">{user.name}</div>
           <div className={`account-status ${state}`}>{statusText}</div>
+          <Link to="/profile" role="menuitem" className="account-link" onClick={() => setOpen(false)}>{t.profile.title}</Link>
           <button type="button" role="menuitem" onClick={() => void syncNow()} disabled={state === 'syncing'}>{t.account.syncNow}</button>
           <button type="button" role="menuitem" onClick={() => { setOpen(false); void logout(confirm(t.account.confirmRemoveLocal)); }}>{t.account.logout}</button>
           <button
@@ -69,6 +68,16 @@ export function AccountMenu() {
       )}
     </div>
   );
+}
+
+/** The sync state in words (the account menu, the profile page). */
+export function syncStatusText(t: Messages, status: SyncStatus | null): string {
+  const state = status?.state ?? 'syncing';
+  return state === 'syncing' ? t.account.status.syncing
+    : state === 'synced' ? t.account.status.synced
+    : state === 'offline' ? t.account.status.offline
+    : status?.rejected.length ? t.account.status.rejected(status.rejected)
+    : t.account.status.error(status?.error ?? '?');
 }
 
 /** After Discord sends the user back without logging in. */
