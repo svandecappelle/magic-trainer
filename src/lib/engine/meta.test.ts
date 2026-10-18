@@ -5504,3 +5504,85 @@ describe('Ninjutsu', () => {
     expect(botAction(s)).toMatchObject({ type: 'ninjutsu', iid: 'h0', attacker: iidOf(s, 'Rat') });
   });
 });
+
+describe('Metagame audit 2026-10-18 evening, fifth batch', () => {
+  const cards = JSON.parse(readFileSync(new URL('./fixtures/metagame-2026-10-18.json', import.meta.url), 'utf8')) as Card[];
+  const real = (name: string, manaCost?: string) => {
+    const c = cards.find((x) => x.name.startsWith(name))!;
+    return manaCost === undefined ? c : { ...c, manaCost };
+  };
+  const resolve = (s: GameState) => {
+    for (let i = 0; i < 10 && (s.stack.length || s.triggered?.length) && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  const forest = () => card({ name: 'Forest', typeLine: 'Basic Land — Forest' });
+  const goblin = creature('Goblin Guide', 2, 2, { typeLine: 'Creature — Goblin Scout', manaCost: '{2}{R}', cmc: 3 });
+
+  it('cost changes: Helm of Awakening, Goblin Warchief, God-Pharaoh\'s Statue', () => {
+    const s = board({ mine: [real('Helm of Awakening'), real('Goblin Warchief'), real('God-Pharaoh\'s Statue')] });
+    const bear = creature('Bear', 2, 2, { manaCost: '{3}{G}', cmc: 4 });
+    // Mine: {1} less from each (the Goblin), {1} less (the Bear); the opponent's: {1} less, {2} more.
+    expect([castCost(s, 0, goblin, {}).generic, castCost(s, 0, bear, {}).generic, castCost(s, 1, bear, {}).generic]).toEqual([0, 2, 4]);
+  });
+
+  it('Hollow One: {2} less for each card cycled or discarded this turn', () => {
+    let s = board({ hand: [real('Hollow One'), spell('Rummage', '{0}', 'Discard two cards, then draw two cards.', 'Sorcery'), forest(), forest()] });
+    expect(castCost(s, 0, real('Hollow One'), {}).generic).toBe(5);
+    s = resolve(apply(s, { type: 'cast', iid: 'h1' }));
+    if (s.pending) s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['h2', 'h3'] } }));
+    expect(castCost(s, 0, real('Hollow One'), {}).generic).toBe(1);
+  });
+
+  it('Triskelion: a +1/+1 counter for 1 damage', () => {
+    let s = board({ mine: [real('Triskelion')] });
+    perm(s, 'Triskelion')!.counters = { '+1/+1': 3 };
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Triskelion'), index: 0, targets: [[{ kind: 'player', player: 1 }]] }));
+    expect([s.players[1].life, perm(s, 'Triskelion')!.counters['+1/+1']]).toEqual([19, 2]);
+  });
+
+  it('Deathrite Shaman: a land card exiled from a graveyard for a mana of any color', () => {
+    let s = board({ mine: [real('Deathrite Shaman')] });
+    s.players[1].graveyard = [{ iid: 'og0', card: forest() }];
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Deathrite Shaman'), index: 0, targets: [[{ kind: 'card', iid: 'og0' }]] }));
+    expect([s.players[1].exile.length, s.players[0].pool?.[0].colors]).toEqual([1, ['W', 'U', 'B', 'R', 'G']]);
+  });
+
+  it('Attunement: back to the hand to draw three and discard four', () => {
+    let s = board({ mine: [real('Attunement')], hand: Array(5).fill(forest()) });
+    s = resolve(apply(s, { type: 'activate', iid: iidOf(s, 'Attunement'), index: 0 }));
+    if (s.pending) s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: s.players[0].hand.filter((c) => c.card.name === 'Forest').slice(0, 4).map((c) => c.iid) } }));
+    expect(perm(s, 'Attunement')).toBeUndefined();
+    expect(s.players[0].hand.map((c) => c.card.name)).toContain('Attunement');
+  });
+
+  it('Goblin Lackey: a Goblin permanent from the hand when it deals damage to a player', () => {
+    let s = board({ mine: [real('Goblin Lackey')], hand: [goblin] });
+    s = apply(s, { type: 'pass' });
+    for (let i = 0; i < 6 && (s.priority || s.step !== 'attack'); i++) s = apply(s, { type: 'pass' });
+    s = apply(s, { type: 'declareAttackers', attackers: [iidOf(s, 'Goblin Lackey')] });
+    for (let i = 0; i < 20 && !s.pending && s.step !== 'main2'; i++) s = apply(s, { type: 'pass' });
+    for (let i = 0; i < 10 && !s.pending && (s.stack.length || s.triggered?.length); i++) s = apply(s, { type: 'pass' });
+    // "you may": yes, then which Goblin.
+    if (s.pending?.choice.kind === 'yesNo') s = apply(s, { type: 'choose', answer: { kind: 'yesNo', yes: true } });
+    for (let i = 0; i < 10 && !s.pending && (s.stack.length || s.triggered?.length); i++) s = apply(s, { type: 'pass' });
+    expect(s.pending?.choice).toMatchObject({ kind: 'cards' });
+    s = resolve(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['h0'] } }));
+    expect(perm(s, 'Goblin Guide')).toBeDefined();
+  });
+
+  it('Aurora Eidolon: back to the hand from the graveyard when you cast a multicolored spell', () => {
+    let s = board({ grave: [real('Aurora Eidolon')], hand: [spell('Helix', '{0}', 'You gain 3 life.', 'Instant'), { ...spell('Helix', '{0}', 'You gain 3 life.'), name: 'Lightning Helix', colors: ['R', 'W'] }] });
+    s = resolve(apply(s, { type: 'cast', iid: 'h0' }));
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toContain('Aurora Eidolon');
+    s = apply(s, { type: 'cast', iid: 'h1' });
+    for (let i = 0; i < 10 && (s.stack.length || s.triggered?.length); i++) s = s.pending ? apply(s, { type: 'choose', answer: { kind: 'yesNo', yes: true } }) : settle(apply(s, { type: 'pass' }));
+    expect(s.players[0].hand.map((c) => c.card.name)).toEqual(['Aurora Eidolon']);
+  });
+
+  it('Chancellor of the Annex: each opponent spell countered unless they pay {1}', () => {
+    let s = board({ theirs: [real('Chancellor of the Annex')], hand: [creature('Bear', 2, 2, { manaCost: '{0}', cmc: 0 })] });
+    s = apply(s, { type: 'cast', iid: 'h0' });
+    for (let i = 0; i < 10 && (s.stack.length || s.triggered?.length); i++) s = s.pending ? apply(s, { type: 'choose', answer: s.pending.choice.kind === 'yesNo' ? { kind: 'yesNo', yes: true } : { kind: 'cards', iids: [] } }) : settle(apply(s, { type: 'pass' }));
+    expect(perm(s, 'Bear')).toBeUndefined();
+  });
+});

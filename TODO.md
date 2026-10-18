@@ -514,6 +514,15 @@ Relic of Progenitus (a card of a non-empty graveyard; all graveyards when the op
 Devourer, Talon Gates of Madara, bestow (on its best creature). Activated abilities check their targets with their
 source (Hope of Ghirapur). 40 bot-vs-bot games with these cards run to the end without errors.
 
+Fifth batch: spell cost changes on permanents (Helm of Awakening, Goblin Warchief, Ancient Cellarspawn, God-Pharaoh's
+Statue), Hollow One ({2} less per card cycled or discarded this turn), Triskelion ("Remove a +1/+1 counter" as a cost),
+Deathrite Shaman's land exile for mana (an activated ability: it targets), Attunement ("Return this enchantment to its
+owner's hand" as a cost), Goblin Lackey ("deals damage to a player"; a Goblin permanent card from the hand), Aurora
+Eidolon (back from the graveyard when you cast a multicolored spell), Chancellor of the Annex (each opponent spell
+countered unless they pay {1}; its opening-hand reveal isn't simulated).
+
+Approximations: Deathrite Shaman's mana ability uses the stack.
+
 Approximations: Moonshadow's trigger counts as "together" every card put into the graveyard before it goes on the
 stack (an effect that mills, then discards, triggers it once).
 

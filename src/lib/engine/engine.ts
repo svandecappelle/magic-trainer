@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, counterMana, choosesColor, diamondMana, sacrificeMana, mayStayTapped, gainsLifeFromCombatDamageTaken, restrictedMana, type RestrictedMana, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, hasSplitSecond, crewBonus, ROLES, foodMana, creatureOnYourTurn, type TokenSpec, vanishingOf, hasEnlist, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, counterMana, choosesColor, diamondMana, sacrificeMana, mayStayTapped, gainsLifeFromCombatDamageTaken, restrictedMana, type RestrictedMana, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, hasSplitSecond, crewBonus, ROLES, foodMana, creatureOnYourTurn, spellCostMods, type TokenSpec, vanishingOf, hasEnlist, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type AltCost, type CastInfo, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -234,6 +234,8 @@ export interface PlayerState {
   landsThisTurn?: number;
   /** Curious Obsession: the last turn they attacked with a creature. */
   attackedOnTurn?: number;
+  /** Hollow One: cards cycled or discarded this turn. */
+  discardedThisTurn?: number;
   /** Lurrus: the turn its permission was used. */
   lurrusOnTurn?: number;
   /** Screaming Nemesis: "they can't gain life for the rest of the game". */
@@ -1466,6 +1468,10 @@ export function castCost(s: GameState, p: PlayerId, card: Card, opt: { face?: nu
     + (info.greatestMvDiscount ? Math.max(0, ...s.battlefield.filter((x) => x.controller === p && cardMatches(x.card, info.greatestMvDiscount!)).map((x) => printedCard(x).cmc)) : 0)
     // Leyline Binding: domain, each basic land type among lands you control.
     + (info.domainDiscount ? ['plains', 'island', 'swamp', 'mountain', 'forest'].filter((t) => s.battlefield.some((x) => x.controller === p && isLand(x.card) && landHasType(s, x.card, t))).length : 0)
+    // Helm of Awakening, Goblin Warchief, Ancient Cellarspawn: less for spells (more: see the tax below).
+    - spellCostChange(s, p, c, (n) => n < 0)
+    // Hollow One: for each card cycled or discarded this turn.
+    + (info.discardDiscount ? info.discardDiscount * (s.players[p].discardedThisTurn ?? 0) : 0)
     // Obsidian Charmaw: {1} less for each land an opponent controls that could produce {C}.
     + (info.opponentLandsDiscount ? s.battlefield.filter((x) => teamOf(s, x.controller) !== teamOf(s, p) && isLand(x.card) && ownUnits(s, x).flat().includes(info.opponentLandsDiscount!)).length : 0)
     // Bilbo: {1} less for a spell cast from anywhere but the hand.
@@ -1475,6 +1481,8 @@ export function castCost(s: GameState, p: PlayerId, card: Card, opt: { face?: nu
   const tax = (opt.from === 'command' && opt.iid ? 2 * (s.players[p].commanderCasts?.[opt.iid] ?? 0) : 0)
     // Disruptor Flute, Anointed Peacekeeper: more for a spell with the chosen name.
     + nameTax(s, p, c.name, 'spells')
+    // God-Pharaoh's Statue: more for the opponents' spells.
+    + spellCostChange(s, p, c, (n) => n > 0)
     + (isActivePlayer(s, p) ? 0 : 3 * withRule(s, 'offTurnSpellsCost3').length)
     + (isCreature(c) ? 0 : withRule(s, 'noncreatureSpellsCost1').length)
     + (s.players[p].spellsThisTurn ?? 0) * withRule(s, 'spellsCostMorePerSpell').length
@@ -1617,6 +1625,21 @@ export function castOptions(s: GameState, p: PlayerId, iid: string): CastOption[
     });
   }
   return out;
+}
+
+/** The total of the matching permanents' cost changes for `p`'s spell `card` (Helm of Awakening, Goblin Warchief…). */
+function spellCostChange(s: GameState, p: PlayerId, card: Card, keep: (n: number) => boolean): number {
+  let n = 0;
+  for (const x of s.battlefield) {
+    for (const mod of spellCostMods(x.card)) {
+      if (!keep(mod.n)) continue;
+      const mine = teamOf(s, x.controller) === teamOf(s, p);
+      if ((mod.whose === 'you' && !mine) || (mod.whose === 'opponents' && mine)) continue;
+      if (mod.subtypes && !mod.subtypes.some((t) => hasSubtype(card, t))) continue;
+      n += mod.n;
+    }
+  }
+  return n;
 }
 
 /** Can `p` play this card as a land, on which face (modal double-faced cards may have a land on the back)? */
@@ -1812,6 +1835,7 @@ function fitsTypeLine(card: Card, f: TargetFilter): boolean {
   if (f.legendary && !types.includes('legendary')) return false;
   if (f.snow && !types.includes('snow')) return false;
   if (f.colorless && cardColors(card).length) return false;
+  if (f.multicolored && cardColors(card).length < 2) return false;
   if (f.nonSubtypes?.some((t) => hasSubtype(card, t))) return false;
   if (f.subtypes && !f.subtypes.some((t) => hasSubtype(card, t))) return false;
   return true;
@@ -2172,6 +2196,7 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
     delete ps.lostThisTurn;
     delete ps.equipsThisTurn;
     delete ps.sacrificedThisTurn;
+    delete ps.discardedThisTurn;
     delete ps.artifactAbilitiesThisTurn;
   }
   emptyPools(d, true);
@@ -2568,6 +2593,8 @@ function countersPut(d: GameState, perm: Permanent) {
 
 /** `p` discarded `inst` (already moved): logged; Monument to Endurance's "Whenever you discard a card". */
 function noteDiscard(d: GameState, p: PlayerId, inst: CardInst, cleanup = false) {
+  // Hollow One: "each card you've cycled or discarded this turn".
+  d.players[p].discardedThisTurn = (d.players[p].discardedThisTurn ?? 0) + 1;
   log(d, { k: 'discard', p, card: inst.card.name, ...(cleanup ? { cleanup } : {}) });
   for (const x of d.battlefield) {
     if (x.controller !== p) continue;
@@ -3129,10 +3156,16 @@ function fireCast(d: GameState, p: PlayerId, card: Card) {
     for (const t of permTriggers(x)) {
       if (t.event.on === 'opponentCasts' && cardMatches(card, t.event.filter) && (!t.event.firstNoncreature || d.players[p].noncreatureThisTurn === 1)
         && (!t.event.nth || d.players[p].spellsThisTurn === t.event.nth)) {
-        // Its slot 0 (if any) is the player who cast it ("unless that player pays").
-        (d.triggered ??= []).push({ source: { iid: x.iid, card: x.card }, controller: x.controller, ability: t.ability, targets: t.ability.targets.length ? [[{ kind: 'player', player: p }]] : [] });
+        // Its slot 0 (if any) is the player who cast it ("unless that player pays"); Chancellor of the Annex: the spell.
+        const spell = d.stack.at(-1);
+        const slot0: Target[] = t.event.spellTarget ? (spell ? [{ kind: 'spell', iid: spell.iid }] : []) : [{ kind: 'player', player: p }];
+        (d.triggered ??= []).push({ source: { iid: x.iid, card: x.card }, controller: x.controller, ability: t.ability, targets: t.ability.targets.length ? [slot0] : [] });
       }
     }
+  }
+  // Aurora Eidolon: "Whenever you cast a multicolored spell, you may return this card from your graveyard to your hand."
+  for (const c of d.players[p].graveyard) {
+    for (const t of triggersOf(c.card)) if (t.event.on === 'castFromGraveyard' && cardMatches(card, t.event.filter)) queueTrigger(d, c, p, t.ability);
   }
   for (const x of [...d.battlefield, ...emblemSources(d)]) {
     if (x.controller !== p) continue;
@@ -3483,6 +3516,10 @@ function applyDamage(d: GameState, source: CardInst, controller: PlayerId, targe
   const infect = hasKw(source, 'infect');
   // Hypnotic Specter: "Whenever this creature deals damage to an opponent, that player …" (the creature itself dealing it).
   const self = findPermanent(d, source.iid);
+  // Goblin Lackey: "Whenever this creature deals damage to a player, …"
+  if (self && typeof target === 'number' && !mooned(d, self.card)) {
+    for (const t of permTriggers(self)) if (t.event.on === 'damagesPlayer') queueTrigger(d, self, self.controller, t.ability);
+  }
   if (self && typeof target === 'number' && teamOf(d, target) !== teamOf(d, self.controller) && !mooned(d, self.card)) {
     for (const t of permTriggers(self)) {
       if (t.event.on !== 'damagesOpponent') continue;
@@ -4625,6 +4662,12 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       const inst = ps.graveyard.find((c) => c.iid === item.source);
       if (!inst) break;
       ps.graveyard = ps.graveyard.filter((c) => c !== inst);
+      // Aurora Eidolon: to the hand.
+      if (e.toHand) {
+        ps.hand.push(inst);
+        log(d, { k: 'toHand', card: inst.card.name });
+        break;
+      }
       log(d, { k: 'enters', card: inst.card.name });
       enterBattlefield(d, { iid: inst.iid, card: inst.card }, caster, { tapped: e.tapped });
       break;
@@ -5969,6 +6012,7 @@ export function apply(state: GameState, action: Action): GameState {
       me.hand = me.hand.filter((c) => c !== inst);
       putInZone(d, p, inst, 'graveyard');
       log(d, { k: 'cycle', p, card: inst.card.name });
+      me.discardedThisTurn = (me.discardedThisTurn ?? 0) + 1;
       const ability: AbilitySpec = cycling.search
         ? { targets: [], effects: [{ kind: 'search', n: 1, filter: cycling.search, dest: 'hand', tapped: false }] }
         : { targets: [], effects: [{ kind: 'draw', n: 1, to: 'you' }] };
@@ -6078,6 +6122,14 @@ export function apply(state: GameState, action: Action): GameState {
           activation: { item, named },
         };
         break;
+      }
+      // Attunement: "Return this enchantment to its owner's hand".
+      if (spec.cost.returnSelf) {
+        d.battlefield = d.battlefield.filter((x) => x !== perm);
+        returnExiledUntil(d, perm);
+        fireObject(d, 'leaves', perm);
+        if (!isToken(printedCard(perm))) putInZone(d, perm.owner ?? perm.controller, { iid: perm.iid, card: printedCard(perm) }, 'hand');
+        log(d, { k: 'bounced', card: perm.card.name });
       }
       // Relic of Progenitus: "Exile this artifact".
       if (spec.cost.exileSelf) {

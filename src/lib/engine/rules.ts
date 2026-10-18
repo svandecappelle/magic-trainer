@@ -463,6 +463,8 @@ export interface TargetFilter {
   maxPowerIslands?: boolean;
   /** "colorless" (Glaring Fleshraker). */
   colorless?: boolean;
+  /** Aurora Eidolon: "a multicolored spell" (two colors or more). */
+  multicolored?: boolean;
 }
 
 /**
@@ -705,7 +707,7 @@ export type Effect =
   /** Vanishing: a time counter removed; sacrificed when the last one is. */
   | { kind: 'vanish' }
   /** Sneaky Snacker: this card, if still in its owner's graveyard, onto the battlefield (`tapped`). */
-  | { kind: 'returnFromOwnGraveyard'; tapped: boolean }
+  | { kind: 'returnFromOwnGraveyard'; tapped: boolean; toHand?: boolean }
   /** "Recruit": draw a card, then discard a card; a nonland card discarded makes a 1/1 white Human Soldier. */
   | { kind: 'recruit' }
   /** Teferi, Time Raveler's +1: "Until your next turn, you may cast sorcery spells as though they had flash." */
@@ -1103,6 +1105,10 @@ const KEYWORD_LIST = `((?:${KEYWORDS.join('|')})(?:(?:,? and |, )(?:${KEYWORDS.j
 function cardWordsFilter(words: string): TargetFilter | null {
   const filter: TargetFilter = {};
   for (const w of words.toLowerCase().replace(/,? or |, /g, ' ').split(' ').filter(Boolean)) {
+    if (w === 'multicolored') {
+      filter.multicolored = true;
+      continue;
+    }
     // Solitary Cell: "Discard a legendary card".
     if (w === 'legendary') {
       filter.legendary = true;
@@ -1584,7 +1590,9 @@ export function parseAbilityText(text: string, self?: string, selfIt = true): Ab
   // Stoneforge Mystic: "put an Equipment card from your hand onto the battlefield".
   // Uro: "then you may put a land card from your hand onto the battlefield" (choosing none is the "may").
   scan(/\b(?:you may )?put an? ([A-Za-z ]+?) card from your hand onto the battlefield(?=\.|$)/g, (m) => {
-    const filter = revealFilter(m[1]);
+    // Goblin Lackey: "a Goblin permanent card".
+    const permanent = m[1].match(/^([A-Z][a-z]+) permanent$/);
+    const filter = permanent ? { subtypes: [permanent[1].toLowerCase()], nonTypes: ['instant', 'sorcery'] as CardType[] } : revealFilter(m[1]);
     return filter && { kind: 'putFromHand', filter };
   });
   // Path to Exile: "Its controller may search their library for a basic land card, put it onto the battlefield tapped,
@@ -1847,6 +1855,12 @@ export function parseAbilityText(text: string, self?: string, selfIt = true): Ab
     const words = [...selfWords(self), ...(!selfIt || /\btargets?\b/i.test(text) ? [] : ['it'])].map(escapeRe).join('|');
     const SELF = `(?:${words})`;
     scan(new RegExp(`(?:^|\\. )Transform ${SELF}(?=\\.)`, 'g'), () => ({ kind: 'transform' }));
+    // Triskelion: "Remove a +1/+1 counter from this creature: It deals 1 damage to any target." (an ability: "It" is its source)
+    scan(new RegExp(`^It deals (\\\\d+) damage to (${TARGET})(?=\\\\.)`, 'g'), (m) => {
+      if (!/^It deals \\d+ damage to [^.]+\\.$/.test(text)) return null;
+      const to = slotFor(m[2]);
+      return to && { kind: 'damage', amount: Number(m[1]), to };
+    });
     // Legolas's Quick Reflexes' granted trigger: "it deals damage equal to its power to up to one target creature."
     scan(new RegExp(`(?:^|[.] *)(?:it|${selfWords(self).map(escapeRe).join('|')}) deals damage equal to its power to (${TARGET})(?=\\.)`, 'gi'), (m) => {
       const to = slotFor(m[1], (spec) => spec.kind === 'creature');
@@ -2132,6 +2146,8 @@ export interface CastInfo {
   greatestMvDiscount?: TargetFilter;
   /** Leyline Binding: "Domain — This spell costs {1} less to cast for each basic land type among lands you control." */
   domainDiscount?: boolean;
+  /** Hollow One: "{2} less to cast for each card you've cycled or discarded this turn". */
+  discardDiscount?: number;
   /** Obsidian Charmaw: "{1} less to cast for each land your opponents control that could produce {C}". */
   opponentLandsDiscount?: Color;
 }
@@ -2193,6 +2209,7 @@ export function castInfo(card: Card, face = 0): CastInfo {
     else if (/^This spell costs \{1\} less to cast for each card type among cards in your graveyard\.$/i.test(line)) info.graveDiscount = { types: true };
     else if ((m = line.match(/^This spell costs \{1\} less to cast for each land your opponents control that could produce \{([WUBRGC])\}\.$/))) info.opponentLandsDiscount = m[1] as Color;
     else if (/^(?:Domain — )?This spell costs \{1\} less to cast for each basic land type among lands you control\.$/.test(line)) info.domainDiscount = true;
+    else if ((m = line.match(/^This spell costs \{(\d+)\} less to cast for each card you've cycled or discarded this turn\.$/))) info.discardDiscount = Number(m[1]);
     else if (/^This spell costs \{X\} less to cast, where X is the number of cards in your graveyard that are instant cards, sorcery cards, and\/or have an Adventure\.$/i.test(line)) info.graveDiscount = { adventure: true };
     else if ((m = line.match(/^This spell costs \{X\} less to cast, where X is the greatest mana value among ([A-Z][a-z]+)s you control\.$/))) {
       info.greatestMvDiscount = { subtypes: [m[1].toLowerCase()] };
@@ -2458,6 +2475,10 @@ export type TriggerEvent =
   | { on: 'dealtDamage' }
   /** The Cabbage Merchant: "Whenever a creature deals combat damage to you, …" */
   | { on: 'combatDamageToYou' }
+  /** Goblin Lackey: "Whenever this creature deals damage to a player, …" */
+  | { on: 'damagesPlayer' }
+  /** Aurora Eidolon: "Whenever you cast a multicolored spell, you may return this card from your graveyard to your hand." (in the graveyard) */
+  | { on: 'castFromGraveyard'; filter: TargetFilter }
   /** Murktide Regent: "Whenever an instant or sorcery card leaves your graveyard, …" (once for each card). */
   | { on: 'leavesYourGraveyard'; filter: TargetFilter }
   /** Fear of Missing Out: "Whenever this creature attacks for the first time each turn, …" */
@@ -2487,7 +2508,7 @@ export type TriggerEvent =
   /** Sowing Mycospawn: "When you cast this spell, …" (`kicked`: "if it was kicked"). */
   | { on: 'castSelf'; kicked?: boolean }
   /** Rhystic Study: "Whenever an opponent casts a spell, …" (the ability's slot 0 is that player); Esper Sentinel: only their first noncreature spell each turn. */
-  | { on: 'opponentCasts'; filter: TargetFilter; firstNoncreature?: boolean; nth?: number };
+  | { on: 'opponentCasts'; filter: TargetFilter; firstNoncreature?: boolean; nth?: number; spellTarget?: boolean };
 
 export interface TriggerSpec {
   event: TriggerEvent;
@@ -3065,6 +3086,26 @@ export function triggersOf(card: Card): TriggerSpec[] {
       continue;
     }
 
+    // Goblin Lackey: "Whenever this creature deals damage to a player, you may put a Goblin permanent card from your hand onto
+    // the battlefield."
+    const toPlayer = line.match(/^Whenever (.+?) deals damage to a player, (.+)$/i);
+    if (toPlayer && selves.includes(toPlayer[1].toLowerCase()) && !/\bthat player\b/i.test(toPlayer[2])) {
+      out.push({ event: { on: 'damagesPlayer' }, ability: triggerAbility(toPlayer[2], name, true) });
+      continue;
+    }
+    // Aurora Eidolon: "Whenever you cast a multicolored spell, you may return this card from your graveyard to your hand."
+    const back = line.match(/^Whenever you cast an? ([a-z ]*?)spell, you may return this card from your graveyard to your hand\.$/i);
+    const backFilter = back && (back[1].trim() ? cardWordsFilter(back[1].trim()) : {});
+    if (back && backFilter) {
+      out.push({ event: { on: 'castFromGraveyard', filter: backFilter }, ability: { targets: [], effects: [{ kind: 'returnFromOwnGraveyard', tapped: false, toHand: true }], optional: true } });
+      continue;
+    }
+    // Chancellor of the Annex: "Whenever an opponent casts a spell, counter it unless that player pays {1}." (slot 0: the spell)
+    const tax = line.match(/^Whenever an opponent casts a spell, counter it unless that player pays \{(\d+)\}\.$/i);
+    if (tax) {
+      out.push({ event: { on: 'opponentCasts', filter: {}, spellTarget: true }, ability: { targets: [{ kind: 'spell', min: 1, max: 1, filter: {} }], effects: [{ kind: 'counter', to: { slot: 0 }, unlessPays: Number(tax[1]) }] } });
+      continue;
+    }
     // Hypnotic Specter: "Whenever this creature deals damage to an opponent, that player discards a card at random."
     const toOpponent = line.match(/^Whenever (.+?) deals damage to an opponent, that player (.+)$/i);
     if (toOpponent && selves.includes(toOpponent[1].toLowerCase())) {
@@ -3154,6 +3195,8 @@ export interface ActivationCost {
   waterbend?: boolean;
   /** Devoted Druid: "Put a -1/-1 counter on this creature". */
   putCounter?: CounterKind;
+  /** Attunement: "Return this enchantment to its owner's hand". */
+  returnSelf?: boolean;
   /** Relic of Progenitus: "Exile this artifact" (it leaves as a cost). */
   exileSelf?: boolean;
   /** Phyrexian Devourer: "Exile the top card of your library". */
@@ -3243,7 +3286,10 @@ export function activatedOf(card: Card): ActivatedSpec[] {
       continue;
     }
     if (/^(?:\[|[+−])/.test(m[1])) continue; // other loyalty costs
-    if (/\badd \{|\badd (?:one|two|three) mana|\badd [a-z]+ mana/i.test(text)) continue; // mana ability
+    // Deathrite Shaman: "{T}: Exile target land card from a graveyard. Add one mana of any color." (a target: not a mana
+    // ability, played as an activated one)
+    const exileForMana = /^Exile target land card from a graveyard\. Add one mana of any color\.$/.test(text.replace(/\s*\([^)]*\)/g, ''));
+    if (!exileForMana && /\badd \{|\badd (?:one|two|three) mana|\badd [a-z]+ mana/i.test(text)) continue; // mana ability
     const cost: ActivationCost = { mana: '', tap: false, sacrificeSelf: false, life: 0 };
     let ok = true;
     for (const part of m[1].split(/,\s*/)) {
@@ -3282,9 +3328,12 @@ export function activatedOf(card: Card): ActivatedSpec[] {
       else if (/^exile /i.test(p) && selves.includes(p.slice('exile '.length).toLowerCase())) cost.exileSelf = true;
       else if (/^put a -1\/-1 counter on /i.test(p) && selves.includes(p.replace(/^put a -1\/-1 counter on /i, '').toLowerCase())) cost.putCounter = '-1/-1';
       // Wishclaw Talisman: "Remove a wish counter from this artifact".
-      else if (/^remove an? (fade|age|lore|wish) counter from /i.test(p) && selves.includes(p.replace(/^remove an? \w+ counter from /i, '').toLowerCase())) {
-        cost.removeCounter = p.match(/^remove an? (\w+)/i)![1].toLowerCase() as CounterKind;
+      else if (/^remove an? (fade|age|lore|wish|\+1\/\+1) counter from /i.test(p) && selves.includes(p.replace(/^remove an? \S+ counter from /i, '').toLowerCase())) {
+        // Triskelion: "Remove a +1/+1 counter from this creature".
+        cost.removeCounter = p.match(/^remove an? (\S+)/i)![1].toLowerCase() as CounterKind;
       }
+      // Attunement: "Return this enchantment to its owner's hand".
+      else if (/^return /i.test(p) && / to its owner's hand$/i.test(p) && selves.includes(p.replace(/^return /i, '').replace(/ to its owner's hand$/i, '').toLowerCase())) cost.returnSelf = true;
       else ok = false;
     }
     if (!ok) continue;
@@ -3862,6 +3911,34 @@ function powerLimitLine(line: string, selves: string[]): number | null {
 
 /** Split second: "As long as this spell is on the stack, players can't cast spells or activate abilities that aren't mana abilities." */
 export const hasSplitSecond = (card: Card) => /^Split second(?: \(|$)/m.test(frontText(card));
+
+/** A permanent changing what spells cost: Helm of Awakening, Goblin Warchief, God-Pharaoh's Statue. */
+export interface SpellCostMod {
+  /** Whose spells: everyone's, its controller's, or its controller's opponents'. */
+  whose: 'all' | 'you' | 'opponents';
+  /** Negative: less; positive: more. */
+  n: number;
+  /** Goblin Warchief: "Goblin spells"; Ancient Cellarspawn: "a Demon, Horror, or Nightmare". */
+  subtypes?: string[];
+}
+
+export function spellCostMods(card: Card): SpellCostMod[] {
+  const out: SpellCostMod[] = [];
+  for (const line of frontText(card).split('\n')) {
+    let m;
+    // Helm of Awakening: "Spells cost {1} less to cast."; God-Pharaoh's Statue: "Spells your opponents cast cost {2} more to cast."
+    if ((m = line.match(/^Spells (your opponents cast |you cast )?cost \{(\d+)\} (less|more) to cast\.$/))) {
+      out.push({ whose: !m[1] ? 'all' : m[1].startsWith('your') ? 'opponents' : 'you', n: Number(m[2]) * (m[3] === 'less' ? -1 : 1) });
+    } else if ((m = line.match(/^([A-Z][a-z]+) spells you cast cost \{(\d+)\} (less|more) to cast\.$/))) {
+      // Goblin Warchief: "Goblin spells you cast cost {1} less to cast."
+      out.push({ whose: 'you', n: Number(m[2]) * (m[3] === 'less' ? -1 : 1), subtypes: [m[1].toLowerCase()] });
+    } else if ((m = line.match(/^Each spell you cast that's an? ((?:[A-Z][a-z]+, )*[A-Z][a-z]+,? or [A-Z][a-z]+) costs \{(\d+)\} less to cast\.$/))) {
+      // Ancient Cellarspawn: "Each spell you cast that's a Demon, Horror, or Nightmare costs {1} less to cast."
+      out.push({ whose: 'you', n: -Number(m[2]), subtypes: m[1].split(/,? or |, /).map((t) => t.toLowerCase()) });
+    }
+  }
+  return out;
+}
 
 /**
  * Defend the Rider's Pilot: "This token saddles Mounts and crews Vehicles as though its power were 2 greater." → 2 (saddle

@@ -1,3 +1,8 @@
+PARTIAL  Ancient Cellarspawn {1}{B}{B} — Enchantment Creature — Horror
+  ✓ Each spell you cast that's a Demon, Horror, or Nightmare costs {1} le…
+      your spells (demon, horror, nightmare) cost {1} less
+  ✗ Whenever you cast a spell, if the amount of mana spent to cast it was…
+      trigger (cast), effect not simulated
 PARTIAL  Boromir, Warden of the Tower {2}{W} — Legendary Creature — Human Soldier
   ✓ Vigilance
       keyword
@@ -5,6 +10,13 @@ PARTIAL  Boromir, Warden of the Tower {2}{W} — Legendary Creature — Human So
       trigger (castWithoutMana) → counter (1 target)
   ✗ Sacrifice Boromir: Creatures you control gain indestructible until en…
       activated ability, effect not simulated
+PARTIAL  Chancellor of the Annex {4}{W}{W}{W} — Creature — Phyrexian Angel
+  ✗ You may reveal this card from your opening hand. If you do, when each…
+      opening-hand reveal not simulated
+  ✓ Flying
+      keyword
+  ✓ Whenever an opponent casts a spell, counter it unless that player pay…
+      trigger (opponentCasts) → counter (1 target)
 PARTIAL  Jace, Wielder of Mysteries {1}{U}{U}{U} — Legendary Planeswalker — Jace
   ✓ If you would draw a card while your library has no cards in it, you w…
       rule for the game: emptyLibraryWins
@@ -36,6 +48,14 @@ OK       Archivist of Oghma {1}{W} — Creature — Halfling Cleric
       keyword
   ✓ Whenever an opponent searches their library, you gain 1 life and draw…
       trigger (opponentSearches) → gainLife+draw
+OK       Attunement {2}{U} — Enchantment
+  ✓ Return this enchantment to its owner's hand: Draw three cards, then d…
+      activated → draw+discard
+OK       Aurora Eidolon {3}{W} — Creature — Spirit
+  ✓ {W}, Sacrifice this creature: Prevent the next 3 damage that would be…
+      activated → preventDamage (1 target)
+  ✓ Whenever you cast a multicolored spell, you may return this card from…
+      trigger (castFromGraveyard) → returnFromOwnGraveyard, optional
 OK       Chalice of the Void {X}{X} — Artifact
   ✓ This artifact enters with X charge counters on it.
       enters with X charge counters
@@ -53,6 +73,13 @@ OK       Dark Matter Manipulator {B} — Creature — Human Warlock
       trigger (enters) → mill
   ✓ This creature gets +2/+0 for every seven cards in your graveyard.
       static ability
+OK       Deathrite Shaman {B/G} — Creature — Elf Shaman
+  ✓ {T}: Exile target land card from a graveyard. Add one mana of any col…
+      activated → destroy+addMana (1 target)
+  ✓ {B}, {T}: Exile target instant or sorcery card from a graveyard. Each…
+      activated → destroy+loseLife (1 target)
+  ✓ {G}, {T}: Exile target creature card from a graveyard. You gain 2 lif…
+      activated → destroy+gainLife (1 target)
 OK       Detective's Phoenix {2}{R} — Enchantment Creature — Phoenix
   ✓ Bestow—{R}, Collect evidence 6.
       keyword
@@ -77,9 +104,30 @@ OK       Fear of Missing Out {1}{R} — Enchantment Creature — Nightmare
       trigger (enters) → discard+draw
   ✓ Delirium — Whenever this creature attacks for the first time each tur…
       trigger (attacksFirstTime) → untap+extraCombat (1 target), with delirium
+OK       Goblin Lackey {R} — Creature — Goblin
+  ✓ Whenever this creature deals damage to a player, you may put a Goblin…
+      trigger (damagesPlayer) → putFromHand, optional
+OK       Goblin Warchief {1}{R}{R} — Creature — Goblin Warrior
+  ✓ Goblin spells you cast cost {1} less to cast.
+      your spells (goblin) cost {1} less
+  ✓ Goblins you control have haste.
+      static ability
+OK       God-Pharaoh's Statue {6} — Legendary Artifact
+  ✓ Spells your opponents cast cost {2} more to cast.
+      opponents' spells cost {2} more
+  ✓ At the beginning of your end step, each opponent loses 1 life.
+      trigger (endStep) → loseLife
 OK       Grand Abolisher {W}{W} — Creature — Human Cleric
   ✓ During your turn, your opponents can't cast spells or activate abilit…
       rule for the game: abolisher
+OK       Helm of Awakening {2} — Artifact
+  ✓ Spells cost {1} less to cast.
+      spells cost {1} less
+OK       Hollow One {5} — Artifact Creature — Golem
+  ✓ This spell costs {2} less to cast for each card you've cycled or disc…
+      costs {2} less for each card cycled or discarded this turn
+  ✓ Cycling {2}
+      keyword
 OK       Inti, Seneschal of the Sun {1}{R} — Legendary Creature — Human Knight
   ✓ Whenever you attack, you may discard a card. When you do, put a +1/+1…
       trigger (youAttack) → reflexive
@@ -194,6 +242,11 @@ OK       The Cabbage Merchant {2}{G} — Legendary Creature — Human Citizen
       trigger (combatDamageToYou) → sacrifice
   ✓ Tap two untapped Foods you control: Add one mana of any color.
       mana: any color for each two untapped Foods tapped (spent last)
+OK       Triskelion {6} — Artifact Creature — Construct
+  ✓ This creature enters with three +1/+1 counters on it.
+      enters with 3 +1/+1 counters
+  ✓ Remove a +1/+1 counter from this creature: It deals 1 damage to any t…
+      activated → damage (1 target)
 OK       Underworld Breach {1}{R} — Enchantment
   ✓ Each nonland card in your graveyard has escape. The escape cost is eq…
       rule for the game: graveyardEscape
@@ -207,5 +260,5 @@ OK       Uro, Titan of Nature's Wrath {1}{G}{U} — Legendary Creature — Elder
   ✓ Escape—{G}{G}{U}{U}, Exile five other cards from your graveyard.
       escape {G}{G}{U}{U}: cast from the graveyard, exiling 5
 
-34 cards: 29 ok, 5 partial, 0 not simulated, 0 can't be cast
+45 cards: 38 ok, 7 partial, 0 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

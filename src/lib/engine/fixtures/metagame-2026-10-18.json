@@ -733,5 +733,209 @@
   "power": "2",
   "toughness": "2",
   "keywords": []
+ },
+ {
+  "id": "63349fa3-4462-413c-bd96-bbc1049165a0",
+  "name": "Triskelion",
+  "manaCost": "{6}",
+  "cmc": 6,
+  "typeLine": "Artifact Creature — Construct",
+  "oracleText": "This creature enters with three +1/+1 counters on it.\nRemove a +1/+1 counter from this creature: It deals 1 damage to any target.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "moc",
+  "setName": "March of the Machine Commander",
+  "rarity": "rare",
+  "power": "1",
+  "toughness": "1",
+  "keywords": []
+ },
+ {
+  "id": "cfdb1c47-14be-491f-88b3-bed03489dbc5",
+  "name": "Deathrite Shaman",
+  "manaCost": "{B/G}",
+  "cmc": 1,
+  "typeLine": "Creature — Elf Shaman",
+  "oracleText": "{T}: Exile target land card from a graveyard. Add one mana of any color. (Activate only as an instant.)\n{B}, {T}: Exile target instant or sorcery card from a graveyard. Each opponent loses 2 life.\n{G}, {T}: Exile target creature card from a graveyard. You gain 2 life.",
+  "colors": [
+   "B",
+   "G"
+  ],
+  "colorIdentity": [
+   "B",
+   "G"
+  ],
+  "setCode": "rvr",
+  "setName": "Ravnica Remastered",
+  "rarity": "rare",
+  "power": "1",
+  "toughness": "2",
+  "keywords": []
+ },
+ {
+  "id": "5bac033c-dc4e-40a0-b103-4892e4b50249",
+  "name": "Goblin Warchief",
+  "manaCost": "{1}{R}{R}",
+  "cmc": 3,
+  "typeLine": "Creature — Goblin Warrior",
+  "oracleText": "Goblin spells you cast cost {1} less to cast.\nGoblins you control have haste.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "dom",
+  "setName": "Dominaria",
+  "rarity": "uncommon",
+  "power": "2",
+  "toughness": "2",
+  "keywords": []
+ },
+ {
+  "id": "e9e4ff9c-6244-43e1-b569-32a270c4e014",
+  "name": "Helm of Awakening",
+  "manaCost": "{2}",
+  "cmc": 2,
+  "typeLine": "Artifact",
+  "oracleText": "Spells cost {1} less to cast.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "dmr",
+  "setName": "Dominaria Remastered",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "27e2477d-4f04-408d-8c39-8a886ac81f44",
+  "name": "Ancient Cellarspawn",
+  "manaCost": "{1}{B}{B}",
+  "cmc": 3,
+  "typeLine": "Enchantment Creature — Horror",
+  "oracleText": "Each spell you cast that's a Demon, Horror, or Nightmare costs {1} less to cast.\nWhenever you cast a spell, if the amount of mana spent to cast it was less than its mana value, target opponent loses life equal to the difference.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "dsc",
+  "setName": "Duskmourn: House of Horror Commander",
+  "rarity": "rare",
+  "power": "3",
+  "toughness": "3",
+  "keywords": []
+ },
+ {
+  "id": "43fe9c6d-4fa2-4f9a-9025-1bf12fe7ed9f",
+  "name": "Hollow One",
+  "manaCost": "{5}",
+  "cmc": 5,
+  "typeLine": "Artifact Creature — Golem",
+  "oracleText": "This spell costs {2} less to cast for each card you've cycled or discarded this turn.\nCycling {2} ({2}, Discard this card: Draw a card.)",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "hou",
+  "setName": "Hour of Devastation",
+  "rarity": "rare",
+  "power": "4",
+  "toughness": "4",
+  "keywords": [
+   "Cycling"
+  ]
+ },
+ {
+  "id": "f6723528-8b2c-4beb-a465-800300faf158",
+  "name": "Attunement",
+  "manaCost": "{2}{U}",
+  "cmc": 3,
+  "typeLine": "Enchantment",
+  "oracleText": "Return this enchantment to its owner's hand: Draw three cards, then discard four cards.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "usg",
+  "setName": "Urza's Saga",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "30104836-1e9d-4533-98f8-d5c4e6484b52",
+  "name": "Goblin Lackey",
+  "manaCost": "{R}",
+  "cmc": 1,
+  "typeLine": "Creature — Goblin",
+  "oracleText": "Whenever this creature deals damage to a player, you may put a Goblin permanent card from your hand onto the battlefield.",
+  "colors": [
+   "R"
+  ],
+  "colorIdentity": [
+   "R"
+  ],
+  "setCode": "vma",
+  "setName": "Vintage Masters",
+  "rarity": "rare",
+  "power": "1",
+  "toughness": "1",
+  "keywords": []
+ },
+ {
+  "id": "51bb3d0b-8630-4373-b863-bc831cf08098",
+  "name": "Aurora Eidolon",
+  "manaCost": "{3}{W}",
+  "cmc": 4,
+  "typeLine": "Creature — Spirit",
+  "oracleText": "{W}, Sacrifice this creature: Prevent the next 3 damage that would be dealt to any target this turn.\nWhenever you cast a multicolored spell, you may return this card from your graveyard to your hand.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "dis",
+  "setName": "Dissension",
+  "rarity": "common",
+  "power": "2",
+  "toughness": "2",
+  "keywords": []
+ },
+ {
+  "id": "be1b482a-badb-4b9a-ab63-2e7944826aa0",
+  "name": "Chancellor of the Annex",
+  "manaCost": "{4}{W}{W}{W}",
+  "cmc": 7,
+  "typeLine": "Creature — Phyrexian Angel",
+  "oracleText": "You may reveal this card from your opening hand. If you do, when each opponent casts their first spell of the game, counter that spell unless that player pays {1}.\nFlying\nWhenever an opponent casts a spell, counter it unless that player pays {1}.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "nph",
+  "setName": "New Phyrexia",
+  "rarity": "rare",
+  "power": "5",
+  "toughness": "6",
+  "keywords": [
+   "Flying"
+  ]
+ },
+ {
+  "id": "7dce06ba-c1e1-45ec-82a7-fc10b0fa8870",
+  "name": "God-Pharaoh's Statue",
+  "manaCost": "{6}",
+  "cmc": 6,
+  "typeLine": "Legendary Artifact",
+  "oracleText": "Spells your opponents cast cost {2} more to cast.\nAt the beginning of your end step, each opponent loses 1 life.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "war",
+  "setName": "War of the Spark",
+  "rarity": "uncommon",
+  "keywords": []
  }
 ]

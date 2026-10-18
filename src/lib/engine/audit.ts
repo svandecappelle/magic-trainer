@@ -1,7 +1,7 @@
 import type { Card } from '../../types';
 import {
   activatedOf, auraTarget, castInfo, gainsLifeFromDamage, gainsLifeFromCombatDamageTaken, castSpec, cloneOf, entersCounters, entersTappedRule, beginsWithLuck, discardsLandInstead, manaConditions, stateMana, doesntUntap, frontText, gameRulesOf, isInstantOrSorcery,
-  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, chosenNameTax, namesAnyCard, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, extraManaOf, manaMultiplier, choosesColor, counterMana, diamondMana, restrictedMana, mayStayTapped, reconfiguresEnchanted, entersPrepared, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, returnsExiledWhenLeaving, fadingOf, vanishingOf, hasEnlist, hasSplitSecond, sacrificeMana, foodMana, creatureOnYourTurn, type AbilitySpec,
+  KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, chosenNameTax, namesAnyCard, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, extraManaOf, manaMultiplier, choosesColor, counterMana, diamondMana, restrictedMana, mayStayTapped, reconfiguresEnchanted, entersPrepared, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, returnsExiledWhenLeaving, fadingOf, vanishingOf, hasEnlist, hasSplitSecond, sacrificeMana, foodMana, creatureOnYourTurn, spellCostMods, type AbilitySpec,
 } from './rules';
 
 /**
@@ -127,6 +127,11 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   const discount = castInfo(one).graveDiscount;
   if (discount) return { text: line, status: 'ok', how: `costs {1} less for each ${'types' in discount ? 'card type' : 'matching card'} in your graveyard` };
   if (castInfo(one).greatestMvDiscount) return { text: line, status: 'ok', how: 'costs {X} less: the greatest mana value among matching permanents you control' };
+  const mods = spellCostMods(one);
+  if (mods.length) return { text: line, status: 'ok', how: mods.map((m) => `${m.whose === 'all' ? 'spells' : m.whose === 'you' ? 'your spells' : 'opponents\' spells'}${m.subtypes ? ` (${m.subtypes.join(', ')})` : ''} cost {${Math.abs(m.n)}} ${m.n < 0 ? 'less' : 'more'}`).join('; ') };
+  if (castInfo(one).discardDiscount) return { text: line, status: 'ok', how: `costs {${castInfo(one).discardDiscount}} less for each card cycled or discarded this turn` };
+  // Chancellors, Leylines: revealed from the opening hand (not simulated).
+  if (/^You may reveal this card from your opening hand\./.test(line)) return { text: line, status: 'notSimulated', how: 'opening-hand reveal not simulated' };
   if (castInfo(one).domainDiscount) return { text: line, status: 'ok', how: 'costs {1} less for each basic land type among lands you control (domain)' };
   if (castInfo(one).opponentLandsDiscount) return { text: line, status: 'ok', how: `costs {1} less for each opponent's land that could make {${castInfo(one).opponentLandsDiscount}}` };
   const channel = castInfo(one).channel;
