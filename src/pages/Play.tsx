@@ -7,7 +7,7 @@ import { GameBoard } from '../components/GameBoard';
 import { botAction, fallbackAction } from '../lib/engine/bot';
 import { actor, apply, IllegalAction, newGame, teamOf, teamsOf, type Action, type GameState, type PlayerId } from '../lib/engine/engine';
 import { loadDeck75 } from '../lib/loadDeck';
-import { deleteBotGame, listBotGames, loadBotGame, saveBotGame, type BotGame, type BotSetup, type MatchInfo } from '../lib/botGames';
+import { deleteBotGame, listBotGames, loadBotGame, saveBotGame, type BotGame, type BotSetup, type MatchInfo, type Practice } from '../lib/botGames';
 import { newReplay, saveReplay, type Replay, type ReplayFile } from '../lib/replay';
 import { saveResult, syncResults } from '../lib/history';
 import { useAccount } from '../store/useAccount';
@@ -17,7 +17,6 @@ import { errorText, useT, type AppError } from '../i18n';
 import { useApp } from '../store/useApp';
 
 /** You are player 0; in Two-Headed Giant your teammate is player 1 (a bot), and players 2 and 3 are the opponents. */
-const ME: PlayerId = 0;
 const BOT_DELAY_MS = 650;
 /** Wait for the game to settle before saving it (the bot plays several actions in a row). */
 const SAVE_DELAY_MS = 300;
@@ -62,10 +61,16 @@ export function Play() {
   const [commanders, setCommanders] = useState<Card[][]>([]);
   const [between, setBetween] = useState(false);
   /** Who played first in the current game, and whether its result is already in the score. */
-  const current = useRef<{ first: PlayerId; scored: boolean }>({ first: ME, scored: true });
+  /** A game from a replay's moment ("Play from here", lib/practice.ts): your seat, the moment to try again from. */
+  const [practice, setPractice] = useState<Practice | null>(null);
+  /** Your seat: 0, or the one you watched the replay from. */
+  const me: PlayerId = practice?.me ?? 0;
+  const current = useRef<{ first: PlayerId; scored: boolean }>({ first: 0, scored: true });
   /** The current game's replay, and the match (its id, its games' replays, its result saved). */
   const replay = useRef<Replay | null>(null);
   const matchInfo = useRef<MatchInfo>({ id: '', replays: [], recorded: true });
+  /** Shows the link to a replay just saved (a practice game has no score to change). */
+  const [, setReplaysSaved] = useState(0);
   /** The states before your last actions, to take them back (the bot's answers with them). */
   const undoStack = useRef<{ game: GameState; steps: number }[]>([]);
   const loggedIn = useAccount((s) => !!s.user);
@@ -88,6 +93,7 @@ export function Play() {
       setGame(null);
       setMatch(null);
       setBetween(false);
+      setPractice(null);
       return;
     }
     const { setup: su } = saved;
@@ -95,6 +101,7 @@ export function Play() {
     setGameSetup(su.setup); setFirst(su.first); setBestOf(su.bestOf);
     setMatch(saved.match); setMyCards(saved.myCards); setBotCards(saved.botCards); setCommanders(saved.commanders);
     setBetween(saved.between);
+    setPractice(saved.practice ?? null);
     current.current = saved.current;
     replay.current = saved.replay ?? null;
     matchInfo.current = saved.matchInfo ?? { id: gameId!, replays: [], recorded: false };
@@ -108,9 +115,10 @@ export function Play() {
       const saved: BotGame = {
         setup: setup(), game, match, myCards, botCards, commanders, between, current: current.current,
         ...(replay.current ? { replay: replay.current } : {}), matchInfo: matchInfo.current,
+        ...(practice ? { practice } : {}),
       };
       const opponents = twoHeaded ? [botDeck, botDeck2] : [botDeck];
-      saveBotGame(gameId, saved, [deckName(myDeck), opponents.map(deckName).join(' & ')]);
+      saveBotGame(gameId, saved, practice ? [practice.title, ''] : [deckName(myDeck), opponents.map(deckName).join(' & ')]);
     }, SAVE_DELAY_MS);
     return () => clearTimeout(timer);
   });
@@ -126,10 +134,13 @@ export function Play() {
     undoStack.current = [];
     if (replay.current) {
       const file: ReplayFile = {
-        id: crypto.randomUUID(), at: Date.now(), title: `${deckName(myDeck)} vs ${opponentTitle()}`, me: ME,
+        id: crypto.randomUUID(), at: Date.now(), title: practice ? t.play.practiceTitle(practice.title) : `${deckName(myDeck)} vs ${opponentTitle()}`, me,
         replay: replay.current, end: { log: game.log.length, winner: game.winner },
       };
-      if (saveReplay(file)) matchInfo.current.replays.push(file.id);
+      if (saveReplay(file)) {
+        matchInfo.current.replays.push(file.id);
+        setReplaysSaved((n) => n + 1);
+      }
     }
     // The score is kept per team.
     setMatch((m) => (m ? recordGame(m, game.winner === 'draw' ? 'draw' : teamOf(game, game.winner!), teamOf(game, current.current.first)) : m));
@@ -178,7 +189,7 @@ export function Play() {
 
   // The bot acts on a timer so the human can follow what it does.
   useEffect(() => {
-    const bot = (g: GameState) => { const a = actor(g); return a !== null && a !== ME; };
+    const bot = (g: GameState) => { const a = actor(g); return a !== null && a !== me; };
     if (!game || !bot(game)) return;
     const timer = setTimeout(() => {
       try {
@@ -226,7 +237,7 @@ export function Play() {
       }
       // The opponents' first player: seat 1 in a duel, seat 2 in Two-Headed Giant.
       const them: PlayerId = twoHeaded ? 2 : 1;
-      const firstPlayer: PlayerId = first === 'me' ? ME : first === 'bot' ? them : Math.random() < 0.5 ? ME : them;
+      const firstPlayer: PlayerId = first === 'me' ? 0 : first === 'bot' ? them : Math.random() < 0.5 ? 0 : them;
       const cmd = [mine, ...others].map((d) => d.commander);
       matchInfo.current = { id: crypto.randomUUID(), replays: [], recorded: false };
       setMatch(newMatch(bestOf));
@@ -296,6 +307,15 @@ export function Play() {
     navigate('/play');
   };
 
+  /** Practice: the replay's moment again, another try (its own replay). */
+  const tryAgain = () => {
+    if (!practice) return;
+    current.current = { first: practice.start.active, scored: false };
+    undoStack.current = [];
+    replay.current = newReplay(practice.start);
+    setGame(practice.start);
+  };
+
   // Between two games of a best of 3: sideboarding, then the loser plays first.
   if (between && match && myCards) {
     return (
@@ -322,7 +342,7 @@ export function Play() {
     <div className="page play">
       <GameBoard
         game={game}
-        me={ME}
+        me={me}
         onAction={(action) => play(game, action, true)}
         notice={
           <>
@@ -333,7 +353,16 @@ export function Play() {
           </>
         }
         endControls={
-          <>
+          practice ? (
+            <>
+              {matchInfo.current.replays.length > 0 && (
+                <Link className="button secondary" to={`/history/replay/${matchInfo.current.replays.at(-1)}`}>{t.history.watchReplay}</Link>
+              )}
+              <button onClick={tryAgain}>{t.play.tryAgain}</button>
+              <Link className="button secondary" to={practice.back}>{t.play.backToReplay}</Link>
+              <button className="secondary" onClick={changeDecks}>{t.play.newGame}</button>
+            </>
+          ) : <>
             {matchInfo.current.replays.length > 0 && (
               <Link className="button secondary" to={`/history/replay/${matchInfo.current.replays.at(-1)}`}>{t.history.watchReplay}</Link>
             )}

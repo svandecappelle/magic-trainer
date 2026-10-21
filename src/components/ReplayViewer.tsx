@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { GameBoard } from './GameBoard';
 import type { PlayerId } from '../lib/engine/engine';
 import { downloadReplay, replayStates, saveReplay, type ReplayFile } from '../lib/replay';
 import { ownerNamed } from '../lib/replayNames';
+import { startPractice } from '../lib/practice';
 import type { SharedReplay } from '../lib/account/api';
 import { ReplaySharePanel } from './SharePanel';
 import { useT } from '../i18n';
@@ -19,6 +20,7 @@ export function ReplayViewer({ file: own, owner }: { file: ReplayFile; owner?: S
   const t = useT();
   const file = useMemo(() => (owner ? ownerNamed(own, owner.name) : own), [own, owner]);
   const navigate = useNavigate();
+  const location = useLocation();
   const [sharing, setSharing] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
   const { states, diverged } = useMemo(() => replayStates(file), [file]);
@@ -87,6 +89,19 @@ export function ReplayViewer({ file: own, owner }: { file: ReplayFile; owner?: S
           {names.map((n, i) => <option key={i} value={i}>{n}</option>)}
         </select>
       </label>
+      <button
+        type="button"
+        className="play-from-here"
+        disabled={game.winner !== null}
+        title={t.history.playFromHereHint}
+        onClick={() => {
+          const id = startPractice(file, game, seat, names.map((n, i) => (i === file.me && !game.players[i].name ? t.play.botName : n)), location.pathname);
+          if (id) navigate(`/play/${id}`);
+          else setSaveFailed(true);
+        }}
+      >
+        {t.history.playFromHere(seat === file.me && !owner ? null : names[seat])}
+      </button>
       {diverged && <div className="error small">{t.history.diverged}</div>}
       {owner && <span className="small">{t.replayShare.by(owner.name)}</span>}
       <div className="row replay-links">

@@ -34,6 +34,18 @@ export interface BotGame {
   replay?: Replay;
   /** The match: its id (in the history), the replays of its finished games, its result saved. */
   matchInfo?: MatchInfo;
+  /**
+   * "Play from here" (lib/practice.ts): a game from a replay's moment. `me`: your seat; `start`: the moment, to try again
+   * from it; `title`: the replay's; `back`: the replay's page.
+   */
+  practice?: Practice;
+}
+
+export interface Practice {
+  me: PlayerId;
+  start: GameState;
+  title: string;
+  back: string;
 }
 
 export interface MatchInfo {
