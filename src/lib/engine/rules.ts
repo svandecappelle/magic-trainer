@@ -461,6 +461,8 @@ export interface TargetFilter {
   token?: boolean;
   /** Vedalken Shackles: "with power less than or equal to the number of Islands you control". */
   maxPowerIslands?: boolean;
+  /** Unlicensed Hearse: "cards from a single graveyard" (all the cards chosen have the same owner). */
+  sameGraveyard?: boolean;
   /** "colorless" (Glaring Fleshraker). */
   colorless?: boolean;
   /** Aurora Eidolon: "a multicolored spell" (two colors or more). */
@@ -629,7 +631,7 @@ export type Effect =
   | { kind: 'addCounters'; counter: CounterKind; n: Amount; to: Affected }
   /** `filter` limits what the spell's controller may pick ("a nonland card") with casterChooses. */
   /** `unlessFilter`: Tezzeret, Betrayer of Flesh: "discard two cards unless you discard an artifact card" (one such card instead). */
-  | { kind: 'discard'; n: Amount; to: Affected; mode: DiscardMode; filter?: TargetFilter; unlessFilter?: TargetFilter }
+  | { kind: 'discard'; n: Amount; to: Affected; mode: DiscardMode; filter?: TargetFilter; unlessFilter?: TargetFilter; exile?: boolean }
   | { kind: 'mill'; n: Amount; to: Affected }
   | { kind: 'scry'; n: Amount }
   /**
@@ -655,7 +657,7 @@ export type Effect =
   /** Create N tokens under the controller's control. */
   /** `attacking`: "tapped and attacking"; `sacrificeAtEnd`: "Sacrifice them at the beginning of the next end step". */
   /** `forTargetController`: Get Lost's "Its controller creates two Map tokens" (the target's controller gets them). */
-  | { kind: 'token'; n: Amount; token: TokenSpec; attacking?: boolean; sacrificeAtEnd?: boolean; forTargetController?: { slot: number } }
+  | { kind: 'token'; n: Amount; token: TokenSpec; attacking?: boolean; sacrificeAtEnd?: boolean; forTargetController?: { slot: number }; sizeX?: boolean }
   // Map tokens: "Target creature you control explores." (a land on top goes to the hand; otherwise a +1/+1 counter, and
   // the card may go to the graveyard).
   | { kind: 'explore'; to: Affected }
@@ -778,6 +780,8 @@ export type Effect =
   | { kind: 'proliferate' }
   /** Rest in Peace: "exile all graveyards"; Soul-Guide Lantern: "exile each opponent's graveyard". */
   | { kind: 'exileGraveyards'; to: Affected }
+  /** Mesmeric Fiend: "return the exiled card to its owner's hand" (the cards its source exiled). */
+  | { kind: 'returnExiledToHand' }
   /** Threaten effects also untap the creature and give it haste. */
   /** `whileSourceTapped`: Vedalken Shackles, "for as long as this artifact remains tapped". */
   | { kind: 'gainControl'; to: Affected; untilEndOfTurn: boolean; untapHaste?: boolean; whileSourceTapped?: boolean }
@@ -930,10 +934,12 @@ export function parseTargetPhrase(phrase: string): TargetSpec | null {
 
   // "target creature card from your graveyard", "target card from a graveyard"
   // Faerie Macabre: "up to two target cards from graveyards".
-  const grave = text.match(/^(.*?)\bcards? (with [a-z0-9 ]+ )?(?:from|in) (your|a|an opponent's) graveyard$/)
+  // Unlicensed Hearse: "up to two target cards from a single graveyard".
+  const grave = text.match(/^(.*?)\bcards? (with [a-z0-9 ]+ )?(?:from|in) (your|a|a single|an opponent's) graveyard$/)
     ?? text.match(/^(.*?)\bcards? (with [a-z0-9 ]+ )?(?:from|in) (graveyards)$/);
   if (grave) {
-    if (grave[3] !== 'a' && grave[3] !== 'graveyards') filter.controller = grave[3] === 'your' ? 'you' : 'opponent';
+    if (grave[3] === 'a single') filter.sameGraveyard = true;
+    else if (grave[3] !== 'a' && grave[3] !== 'graveyards') filter.controller = grave[3] === 'your' ? 'you' : 'opponent';
     const words = grave[1].trim();
     // "permanent card": not an instant or sorcery ("nonland permanent card": not a land either).
     const permanent = /(?:^|\s)permanent$/.test(words);
@@ -1724,6 +1730,14 @@ export function parseAbilityText(text: string, self?: string, selfIt = true): Ab
     const to = filter && who(m[1]);
     return to && filter && { kind: 'discard', n: 1, to, mode: 'casterChooses', filter };
   });
+  // Mesmeric Fiend: "target opponent reveals their hand and you choose a nonland card from it. Exile that card."
+  scan(/(target player|target opponent) reveals (?:their|his or her) hand and you choose an? ([a-z, -]+?) card from it\. exile that card(?=\.)/gi, (m) => {
+    const filter = cardWordsFilter(m[2]);
+    const to = filter && who(m[1]);
+    return to && filter && { kind: 'discard', n: 1, to, mode: 'casterChooses', filter, exile: true };
+  });
+  // Mesmeric Fiend: "When this creature leaves the battlefield, return the exiled card to its owner's hand."
+  scan(/^return the exiled card to its owner's hand(?=\.)/gi, () => ({ kind: 'returnExiledToHand' }));
   // Mill.
   scan(new RegExp(`${PLAYER} mills? (${AMOUNT}) cards?`, 'gi'), (m) => {
     const to = who(m[1]);
@@ -1807,19 +1821,22 @@ export function parseAbilityText(text: string, self?: string, selfIt = true): Ab
     return to && which && { kind: 'sacrifice', n: toAmount(m[2]), to, which };
   });
   // Tokens: "create two 1/1 white Soldier creature tokens with flying", "create a Treasure token".
-  scan(new RegExp(`\\b[Cc]reates? (${AMOUNT}) (\\d+)\\/(\\d+) ((?:(?:white|blue|black|red|green|colorless)(?:,? and |, | ))+)([A-Z][A-Za-z' -]*?) ((?:artifact |enchantment )?)creature tokens?(?: named ([A-Z][A-Za-z' -]*?))?(?: with ${KEYWORD_LIST}| with "([^"]+)")?(?=\\.|,| and |$)`, 'g'), (m) => {
+  // Shark Typhoon: "create an X/X blue Shark creature token with flying" (X: the ability's).
+  scan(new RegExp(`\\b[Cc]reates? (${AMOUNT}) (\\d+|X)\\/(\\d+|X) ((?:(?:white|blue|black|red|green|colorless)(?:,? and |, | ))+)([A-Z][A-Za-z' -]*?) ((?:artifact |enchantment )?)creature tokens?(?: named ([A-Z][A-Za-z' -]*?))?(?: with ${KEYWORD_LIST}| with "([^"]+)")?(?=\\.|,| and |$)`, 'g'), (m) => {
     const colors = m[4].toLowerCase().split(/,? and |, | /).filter((w) => COLOR_WORDS[w]).map((w) => COLOR_WORDS[w]);
     const kws = keywordList(m[8]);
     const types = `Token ${m[6] ? m[6].trim().replace(/^./, (c) => c.toUpperCase()) + ' ' : ''}Creature — ${m[5]}`;
+    const sizeX = m[2] === 'X';
+    if (sizeX !== (m[3] === 'X') || (sizeX && m[1].toUpperCase() === 'X')) return null;
     const token: TokenSpec = {
-      name: m[7] ?? m[5], typeLine: types, colors, power: Number(m[2]), toughness: Number(m[3]), keywords: kws,
+      name: m[7] ?? m[5], typeLine: types, colors, power: sizeX ? 0 : Number(m[2]), toughness: sizeX ? 0 : Number(m[3]), keywords: kws,
       oracleText: m[9] ?? kws.map((k) => k.replace(/^./, (c) => c.toUpperCase())).join(', '),
     };
     // A token with its own ability ("with \"This token gets +1/+1 for each artifact you control.\""): only when understood.
     // Eldrazi Spawn: "with \"Sacrifice this token: Add {C}.\"" (a mana ability).
     // Defend the Rider's Pilot: "This token saddles Mounts and crews Vehicles as though its power were 2 greater."
     if (m[9] && !staticsOf(tokenCard(token)).length && !sacrificeMana(tokenCard(token)) && !crewBonus(tokenCard(token))) return null;
-    return { kind: 'token', n: toAmount(m[1]), token };
+    return { kind: 'token', n: toAmount(m[1]), token, ...(sizeX ? { sizeX: true } : {}) };
   });
   // Chandra's 0: "Create a 3/2 colorless Vehicle artifact token with crew 1."
   scan(new RegExp(`\\b[Cc]reates? (${AMOUNT}) (\\d+)\\/(\\d+) colorless Vehicle artifact tokens? with crew (\\d+)(?=\\.)`, 'g'), (m) => ({
@@ -2120,7 +2137,7 @@ export interface CastInfo {
   unknownCost?: boolean;
   flashback?: string;
   /** Cycling (draw a card) or landcycling (search for a land card: `search`). */
-  cycling?: { cost: string; search?: TargetFilter };
+  cycling?: { cost: string; search?: TargetFilter; then?: AbilitySpec };
   /**
    * "Channel — {3}{U}, Discard this card: …", activated from the hand at instant speed (no effects: not simulated);
    * `keyword` is false for the same ability without the word (Mjölnir's "{2}{R}, Discard this card: …").
@@ -2259,6 +2276,9 @@ export function castInfo(card: Card, face = 0): CastInfo {
     if (cost) info.additional = cost;
     else info.unknownCost = true;
   }
+  // Shark Typhoon: "When you cycle this card, create an X/X blue Shark creature token with flying." (X: the cycling's)
+  const cycled = text.match(/^When you cycle (?:this card|[^,]+), (.+)$/m);
+  if (cycled && info.cycling) info.cycling.then = triggerAbility(cycled[1], c.name, true);
   return info;
 }
 
@@ -2439,7 +2459,7 @@ export type TriggerEvent =
   /** A Saga's chapter: lore counters reach `n` ("I — …", "II, III — …"). */
   | { on: 'chapter'; n: number }
   /** Whenever you cast a spell matching the card words ("noncreature", "instant or sorcery"); `nth`: only your second spell each turn (flurry). */
-  | { on: 'cast'; filter: TargetFilter; nth?: number }
+  | { on: 'cast'; filter: TargetFilter; nth?: number; xSpellMv?: boolean }
   /** Whenever you gain life. */
   | { on: 'gainLife' }
   /** "Whenever you attack": once when its controller declares one or more attackers. */
@@ -2582,6 +2602,8 @@ function triggerSubject(subject: string, underYourControl: boolean): { which: Se
   }
   const m = subject.toLowerCase().match(/^(a|an|another) (.+)$/);
   if (!m) return null;
+  // Fountainport: "Sacrifice a token".
+  if (m[2] === 'token') return { which: { kind: 'permanent', filter: { token: true, ...(underYourControl ? { controller: 'you' as const } : {}) } }, another: m[1] === 'another' };
   const spec = parseTargetPhrase(`target ${m[2]}`);
   if (!spec || (spec.kind !== 'creature' && spec.kind !== 'permanent')) return null;
   if (underYourControl) {
@@ -2684,7 +2706,8 @@ function triggerBody(text: string, name: string, self: boolean): AbilitySpec {
   const body = optional ? `you ${text.slice('you may '.length)}` : text;
   // "it" in "Whenever a creature you control attacks, it gets +1/+0" is the attacker, not this card.
   // Clauses the parser handles although they contain words it otherwise refuses ("if", "this way", "that card").
-  const checked = body.replace(SURVEIL_TO_HAND, '');
+  // Mesmeric Fiend: "… you choose a nonland card from it. Exile that card."
+  const checked = body.replace(SURVEIL_TO_HAND, '').replace(/ you choose an? [a-z, -]+? card from it\. Exile that card\./i, '');
   if (UNSUPPORTED.test(checked) || (!self && /\bits?\b/i.test(checked))) return NO_EFFECT;
   // Tifa Lockhart's landfall: "double Tifa Lockhart's power" (its own name; "it" was refused above).
   const spec = parseAbilityText(body, name, self);
@@ -3150,7 +3173,10 @@ export function triggersOf(card: Card): TriggerSpec[] {
     const cast = line.match(/^Whenever you cast (?:or copy )?an? (?:([a-z, -]+?) )?spell, (.+)$/i);
     if (cast) {
       const filter = cast[1] ? cardWordsFilter(cast[1]) : {};
-      if (filter) out.push({ event: { on: 'cast', filter }, ability: triggerAbility(cast[2], name, true) });
+      // Shark Typhoon: "…, where X is that spell's mana value." (the trigger's X)
+      const xMv = /, where X is that spell's mana value\.$/i.test(cast[2]);
+      const what = xMv ? cast[2].replace(/, where X is that spell's mana value\.$/i, '.') : cast[2];
+      if (filter) out.push({ event: { on: 'cast', filter, ...(xMv ? { xSpellMv: true } : {}) }, ability: triggerAbility(what, name, true) });
     }
   }
   // Thought-Knot Seer: "When this creature leaves the battlefield, target opponent draws a card." pays back its enters
@@ -3197,6 +3223,8 @@ export interface ActivationCost {
   putCounter?: CounterKind;
   /** Attunement: "Return this enchantment to its owner's hand". */
   returnSelf?: boolean;
+  /** Quirion Ranger: "Return a Forest you control to its owner's hand" (chosen when activating). */
+  returnOther?: Selector;
   /** Relic of Progenitus: "Exile this artifact" (it leaves as a cost). */
   exileSelf?: boolean;
   /** Phyrexian Devourer: "Exile the top card of your library". */
@@ -3334,6 +3362,12 @@ export function activatedOf(card: Card): ActivatedSpec[] {
       }
       // Attunement: "Return this enchantment to its owner's hand".
       else if (/^return /i.test(p) && / to its owner's hand$/i.test(p) && selves.includes(p.replace(/^return /i, '').replace(/ to its owner's hand$/i, '').toLowerCase())) cost.returnSelf = true;
+      // Quirion Ranger: "Return a Forest you control to its owner's hand".
+      else if (/^return (?:a|an) .+ you control to its owner's hand$/i.test(p)) {
+        const subject = triggerSubject(p.replace(/^return /i, '').replace(/ to its owner's hand$/i, ''), true);
+        if (subject && !subject.another) cost.returnOther = subject.which;
+        else ok = false;
+      }
       else ok = false;
     }
     if (!ok) continue;
@@ -3414,12 +3448,16 @@ export function doublesEquippedTriggers(card: Card): boolean {
  * Amber "{T}: Add one mana of any color among legendary creatures and planeswalkers you control." (legends),
  * Gemstone Caverns (luck: any color with a luck counter, otherwise {C}).
  */
-export function stateMana(card: Card): 'imprinted' | 'legends' | 'luck' | 'perArtifact' | 'mining' | 'depletion' | 'noted' | 'reflect' | 'reflectThree' | 'perCreature' | 'perElf' | 'opponentLands' | null {
+export function stateMana(card: Card): 'imprinted' | 'legends' | 'luck' | 'perArtifact' | 'mining' | 'depletion' | 'noted' | 'reflect' | 'reflectThree' | 'perCreature' | 'perElf' | 'perDefender' | 'vivid' | 'opponentLands' | null {
   const text = frontText(card);
   // Priest of Titania: "{T}: Add {G} for each Elf on the battlefield."
   if (/^\{T\}: Add \{G\} for each Elf on the battlefield\.$/m.test(text)) return 'perElf';
   // Gaea's Cradle: "{T}: Add {G} for each creature you control."
   if (/^\{T\}: Add \{G\} for each creature you control\.$/m.test(text)) return 'perCreature';
+  // Overgrown Battlement: "{T}: Add {G} for each creature you control with defender."
+  if (/^\{T\}: Add \{G\} for each creature you control with defender\.$/m.test(text)) return 'perDefender';
+  // Bloom Tender: "Vivid — {T}: For each color among permanents you control, add one mana of that color."
+  if (/^(?:Vivid — )?\{T\}: For each color among permanents you control, add one mana of that color\.$/m.test(text)) return 'vivid';
   // Fellwar Stone: "{T}: Add one mana of any color that a land an opponent controls could produce."
   if (/^\{T\}: Add one mana of any color that a land an opponent controls could produce\.$/m.test(text)) return 'opponentLands';
   // Reflecting Pool: "{T}: Add one mana of any type that a land you control could produce."
@@ -3518,6 +3556,8 @@ export interface StaticSpec {
   ifAnother?: string;
   /** Delirium: "as long as there are four or more card types among cards in your graveyard". */
   delirium?: boolean;
+  /** Keen-Eyed Curator: "as long as there are four or more card types among cards exiled with this creature". */
+  exiledTypes?: number;
   /** Elvish Reclaimer: "as long as there are three or more land cards in your graveyard". */
   graveCards?: { n: number; types?: CardType[] };
   /** "attacks each combat if able". */
@@ -3529,6 +3569,11 @@ export interface StaticSpec {
   perGraveType?: 'you' | 'all';
   /** Dark Matter Manipulator: "for every seven cards in your graveyard". */
   perGraveCards?: number;
+  /**
+   * "power and toughness are each equal to the number of …": land cards in all graveyards (Terravore: `grave`), cards
+   * exiled with it (Unlicensed Hearse: `exiledWith`).
+   */
+  perCount?: { grave: 'you' | 'all'; types?: CardType[] } | { exiledWith: true };
   keywords: Keyword[];
   /** "has … ward {2}" (Lavaspur Boots, Sheltered by Ghosts). */
   ward?: number;
@@ -3641,6 +3686,24 @@ export function staticsOf(card: Card): StaticSpec[] {
     const perGrave = line.match(new RegExp(`^(?:${selves}) gets \\+(\\d+)\\/\\+(\\d+) for every (\\w+) cards in your graveyard\\.$`, 'i'));
     if (perGrave) {
       out.push({ who: 'self', power: Number(perGrave[1]), toughness: Number(perGrave[2]), keywords: [], perGraveCards: toNumber(perGrave[3]) });
+      continue;
+    }
+    // Keen-Eyed Curator: "As long as there are four or more card types among cards exiled with this creature, it gets
+    // +4/+4 and has trample."
+    const curator = line.match(new RegExp(`^As long as there are (\\w+) or more card types among cards exiled with (?:${selves}), it gets \\+(\\d+)\\/\\+(\\d+)(?: and has ${KEYWORD_LIST})?\\.$`, 'i'));
+    if (curator) {
+      out.push({ who: 'self', power: Number(curator[2]), toughness: Number(curator[3]), keywords: curator[4] ? kws(curator[4]) : [], exiledTypes: toNumber(curator[1]) });
+      continue;
+    }
+    // Terravore: "Terravore's power and toughness are each equal to the number of land cards in all graveyards."
+    // Unlicensed Hearse: "… equal to the number of cards exiled with it." (printed */*: 0/0)
+    const equalTo = line.match(new RegExp(`^(?:${selves})'s power and toughness are each equal to the number of (?:([a-z]+ )?cards in (all graveyards|your graveyard)|cards exiled with it)\\.$`, 'i'));
+    const eachTypes = equalTo?.[1] ? cardWordsFilter(equalTo[1].trim()) : undefined;
+    if (equalTo && (!equalTo[1] || (eachTypes?.types && Object.keys(eachTypes).length === 1))) {
+      const perCount = equalTo[2] ? { grave: equalTo[2].toLowerCase() === 'your graveyard' ? 'you' as const : 'all' as const, ...(eachTypes ? { types: eachTypes.types } : {}) } : { exiledWith: true as const };
+      out.push({ who: 'self', power: 1, toughness: 1, keywords: [], perCount });
+      // A printed "*" toughness counts as 1 (see `toughness`): back to 0.
+      if (toughness({ ...card, toughness: undefined }) === toughness(card)) out.push({ who: 'self', power: 0, toughness: -1, keywords: [] });
       continue;
     }
     // Barrowgoyf: "Barrowgoyf's power is equal to the number of card types among cards in all graveyards and its

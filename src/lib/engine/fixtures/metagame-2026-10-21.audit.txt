@@ -1,0 +1,52 @@
+OK       Bloom Tender {1}{G} — Creature — Elf Druid
+  ✓ Vivid — {T}: For each color among permanents you control, add one man…
+      mana: one mana of each color among your permanents
+OK       Fountainport  — Land
+  ✓ {T}: Add {C}.
+      mana: C
+  ✓ {2}, {T}, Sacrifice a token: Draw a card.
+      activated → draw
+  ✓ {3}, {T}, Pay 1 life: Create a 1/1 blue Fish creature token.
+      activated → token
+  ✓ {4}, {T}: Create a Treasure token.
+      activated → token
+OK       Keen-Eyed Curator {G}{G} — Creature — Raccoon Scout
+  ✓ As long as there are four or more card types among cards exiled with …
+      static ability
+  ✓ {1}: Exile target card from a graveyard.
+      activated → destroy (1 target)
+OK       Mesmeric Fiend {1}{B} — Creature — Nightmare Horror
+  ✓ When this creature enters, target opponent reveals their hand and you…
+      trigger (enters) → discard (1 target)
+  ✓ When this creature leaves the battlefield, return the exiled card to …
+      trigger (leaves) → returnExiledToHand
+OK       Overgrown Battlement {1}{G} — Creature — Wall
+  ✓ Defender
+      keyword
+  ✓ {T}: Add {G} for each creature you control with defender.
+      mana: G for each creature you control with defender
+OK       Quirion Ranger {G} — Creature — Elf Ranger
+  ✓ Return a Forest you control to its owner's hand: Untap target creatur…
+      activated → untap (1 target)
+OK       Shark Typhoon {5}{U} — Enchantment
+  ✓ Whenever you cast a noncreature spell, create an X/X blue Shark creat…
+      trigger (cast) → token
+  ✓ Cycling {X}{1}{U}
+      keyword
+  ✓ When you cycle this card, create an X/X blue Shark creature token wit…
+      trigger (cycled) → token
+OK       Terravore {1}{G}{G} — Creature — Lhurgoyf
+  ✓ Trample
+      keyword
+  ✓ Terravore's power and toughness are each equal to the number of land …
+      static ability
+OK       Unlicensed Hearse {2} — Artifact — Vehicle
+  ✓ {T}: Exile up to two target cards from a single graveyard.
+      activated → destroy (1 target)
+  ✓ Unlicensed Hearse's power and toughness are each equal to the number …
+      static ability
+  ✓ Crew 2
+      keyword
+
+9 cards: 9 ok, 0 partial, 0 not simulated, 0 can't be cast
+✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

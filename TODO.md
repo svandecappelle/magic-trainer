@@ -528,6 +528,25 @@ stack (an effect that mills, then discards, triggers it once).
 
 Still open, playing wrongly, most played first (see `audit-reports/2026-10-18/report.md`):
 
+## Metagame audit 2026-10-21
+
+`npm run audit-meta` again: 697 cards to fix (732 on the 18th), 204 playing wrongly (255).
+Fixed: Terravore and Unlicensed Hearse ("power and toughness are each equal to the number of …": land cards in all
+graveyards, cards exiled with it; "up to two target cards from a single graveyard"), Keen-Eyed Curator (+4/+4 and
+trample with four card types among the cards it exiled), Fountainport ("Sacrifice a token" as a cost), Overgrown
+Battlement ({G} for each creature you control with defender), Bloom Tender (one mana of each color among your
+permanents), Quirion Ranger ("Return a Forest you control to its owner's hand" as a cost), Shark Typhoon (cycling with
+{X}, "When you cycle this card", X/X tokens; a Shark the size of each noncreature spell you cast), Mesmeric Fiend (a
+nonland card exiled from the opponent's hand, back to it when the Fiend leaves). Fixture `metagame-2026-10-21`.
+
+Still open, playing wrongly, most played first (see `audit-reports/2026-10-21/report.md`):
+- [ ] Agatha's Soul Cauldron (activated abilities of exiled creature cards), Nyxborn Hydra (bestow with X), Static
+  Prison and Guide of Souls (energy), Sunken Citadel and Great Hall of the Biblioplex (mana with a spending restriction)
+- [ ] Stormchaser's Talent (Classes), Ajani, Nacatl Pariah (transforming when a Cat dies), Dauthi Voidwalker (shadow,
+  "exile it instead" with void counters), Loki, Volrath's Shapeshifter
+- [ ] Dress Down, Opalescence, Leyline of the Guildpact, Engineered Plague, Elephant Grass, Winter Moon, Desert, Mystic
+  Sanctuary, Phantom Nishoba, Sanctifier en-Vec, Necrodominance
+
 ## Tezzeret artifacts (a user's deck, `deck-2.txt`)
 
 Audited (fixture `tezzeret-artifacts-2026-10`): 6 of 16 cards fully simulated before, 13 after. Fixed: Phyrexian

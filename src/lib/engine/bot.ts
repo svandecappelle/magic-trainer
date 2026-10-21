@@ -1,5 +1,5 @@
 import {
-  abilityMaxX, activatable, activationProblem, canPayAbility, actor, castSource, channelCost, crewOptions, crewPower, ninjutsuAttackers, firstOpponent, mulliganBottom, isActivePlayer, opponentsOf, teamOf, canAttack, castCost, castOptions, castSources, findInGraveyard, landFaces, manaSources, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
+  abilityMaxX, cycleMaxX, activatable, activationProblem, canPayAbility, actor, castSource, channelCost, crewOptions, crewPower, ninjutsuAttackers, firstOpponent, mulliganBottom, isActivePlayer, opponentsOf, teamOf, canAttack, castCost, castOptions, castSources, findInGraveyard, landFaces, manaSources, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
   legalTargets, matching, maxX, powerOf, toughnessOf, xCount,
   type Action, type Answer, type CastOption, type CardInst, type Choice, type GameState, type Permanent, type PlayerId, type StackItem, type Target, type Triggered,
 } from './engine';
@@ -318,6 +318,12 @@ function chooseCycle(s: GameState, me: PlayerId): Action | null {
   for (const c of s.players[me].hand) {
     const cycling = castInfo(c.card).cycling;
     if (!cycling || !findPayment(manaSources(s, me), parseCost(cycling.cost))) continue;
+    // Shark Typhoon: as big a Shark as the mana allows, at least a 2/2.
+    if (cycling.cost.includes('{X}')) {
+      const x = cycleMaxX(s, me, c.card);
+      if (x >= 2) return { type: 'cycle', iid: c.iid, x };
+      continue;
+    }
     const want = cycling.search ? lands < 5 : isLandCard(c.card) ? lands >= 5 : c.card.cmc > lands + 2;
     if (want) return { type: 'cycle', iid: c.iid };
   }
@@ -1200,10 +1206,13 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
           : cardWorth(c.card);
         options.sort((a, b) => score(b) - score(a));
         return { kind: 'cards', iids: options.slice(0, choice.max).map((c) => c.iid) };
+      } else if (!safe && choice.purpose === 'returnCost') {
+        // Quirion Ranger: a tapped Forest (played again later), not an untapped one.
+        options.sort((a, b) => Number(!!findPermanent(s, b.iid)?.tapped) - Number(!!findPermanent(s, a.iid)?.tapped));
       } else if (!safe && choice.purpose === 'exileCost') {
         // Exile what we won't get back: lands and spells before creature cards.
         options.sort((a, b) => Number(isCreature(a.card)) - Number(isCreature(b.card)));
-      } else if (!safe && choice.purpose === 'discardChosen') {
+      } else if (!safe && (choice.purpose === 'discardChosen' || choice.purpose === 'exileChosen')) {
         // Take their best card: the most expensive spell.
         options.sort((a, b) => b.card.cmc - a.card.cmc);
       } else if (choice.purpose === 'discardUnlessArtifact') {

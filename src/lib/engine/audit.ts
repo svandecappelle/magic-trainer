@@ -134,6 +134,12 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   if (/^You may reveal this card from your opening hand\./.test(line)) return { text: line, status: 'notSimulated', how: 'opening-hand reveal not simulated' };
   if (castInfo(one).domainDiscount) return { text: line, status: 'ok', how: 'costs {1} less for each basic land type among lands you control (domain)' };
   if (castInfo(one).opponentLandsDiscount) return { text: line, status: 'ok', how: `costs {1} less for each opponent's land that could make {${castInfo(one).opponentLandsDiscount}}` };
+  // Shark Typhoon: "When you cycle this card, …".
+  const cycled = /^When you cycle /.test(line) ? castInfo(card).cycling?.then : undefined;
+  if (cycled) {
+    const read = effectsText(cycled);
+    return read ? { text: line, status: 'ok', how: `trigger (cycled) → ${read}` } : { text: line, status: 'notSimulated', how: 'trigger (cycled), effect not simulated' };
+  }
   const channel = castInfo(one).channel;
   if (channel) {
     const read = effectsText(channel.ability);
@@ -196,7 +202,7 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   if (fromHand) return { text: line, status: 'ok', how: `mana: ${fromHand}, exiling it from the hand (spent last)` };
   const state = stateMana(one);
   if (state) {
-    const how = { imprinted: 'the colors of the exiled card', legends: 'the colors of your legendary creatures and planeswalkers', luck: 'C, any color with a luck counter', perArtifact: 'U for each artifact you control', mining: 'any color, removing a mining counter (sacrificed after the last)', reflect: 'one mana of a type your other lands could make', reflectThree: 'one mana of a type your lands could make, three with a +1/+1 counter', depletion: 'GG, removing a depletion counter (sacrificed after the last)', noted: 'one mana of the type noted, removing a charge counter', perCreature: 'G for each creature you control', perElf: 'G for each Elf on the battlefield', opponentLands: 'a color an opponent\'s land could make' }[state];
+    const how = { imprinted: 'the colors of the exiled card', legends: 'the colors of your legendary creatures and planeswalkers', luck: 'C, any color with a luck counter', perArtifact: 'U for each artifact you control', mining: 'any color, removing a mining counter (sacrificed after the last)', reflect: 'one mana of a type your other lands could make', reflectThree: 'one mana of a type your lands could make, three with a +1/+1 counter', depletion: 'GG, removing a depletion counter (sacrificed after the last)', noted: 'one mana of the type noted, removing a charge counter', perCreature: 'G for each creature you control', perElf: 'G for each Elf on the battlefield', perDefender: 'G for each creature you control with defender', vivid: 'one mana of each color among your permanents', opponentLands: 'a color an opponent\'s land could make' }[state];
     return { text: line, status: 'ok', how: `mana: ${how}` };
   }
   if (gameRulesOf(one).includes('creaturesTapForAnyColor')) return { text: line, status: 'ok', how: 'rule for the game: your creatures tap for any color' };

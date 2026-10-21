@@ -23,6 +23,7 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
     case 'discard': return t.game.choice.discard({ n });
     case 'discardUnlessArtifact': return t.game.choice.discardUnlessArtifact({ n });
     case 'discardChosen': return t.game.choice.discardChosen({ n, who: names[Number(p.p) as 0 | 1] });
+    case 'exileChosen': return t.game.choice.exileChosen({ n, who: names[Number(p.p) as 0 | 1] });
     case 'scry': return t.game.choice.scry({ n });
     case 'surveil': return t.game.choice.surveil({ n });
     case 'optional': return t.game.choice.optional({ card: card(String(p.card)) });
@@ -39,6 +40,7 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
     case 'legendRule': return t.game.choice.legendRule({ card: card(String(p.card)) });
     case 'payLife': return t.game.choice.payLife({ card: card(String(p.card)), n });
     case 'sacrificeCost': return t.game.choice.sacrificeCost({ card: card(String(p.card)) });
+    case 'returnCost': return t.game.choice.returnCost({ card: card(String(p.card)) });
     case 'creatureType': return t.game.choice.creatureType({ card: card(String(p.card)) });
     case 'returnFromGraveyard': return t.game.choice.returnFromGraveyard({ card: card(String(p.card)) });
     case 'reflexiveSacrifice': return t.game.choice.reflexiveSacrifice({ card: card(String(p.card)) });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import type { Card } from '../../types';
-import { activationProblem, actor, canPayAbility, apply, findPermanent, hasKw, paymentFor, canBlock, canCastNow, castCost, castSource, canTapForMana, type Answer, castOptions, canPay, canActivateDiamond, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
+import { activationProblem, actor, cycleMaxX, canPayAbility, apply, findPermanent, hasKw, paymentFor, canBlock, canCastNow, castCost, castSource, canTapForMana, type Answer, castOptions, canPay, canActivateDiamond, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
 import { botAction } from './bot';
 import { activatedOf, castInfo, cloneOf, entersTappedRule, gameRulesOf, castSpec, finalChapter, hasKeyword, isCreature, PREDEFINED_TOKENS, tokenCard, type TargetSpec, manaUnits, restrictedMana, extraManaOf, manaMultiplier, filterMana, paidAnyColor, parseAbilityText, spellSpec, triggersOf } from './rules';
 
@@ -5584,5 +5584,129 @@ describe('Metagame audit 2026-10-18 evening, fifth batch', () => {
     s = apply(s, { type: 'cast', iid: 'h0' });
     for (let i = 0; i < 10 && (s.stack.length || s.triggered?.length); i++) s = s.pending ? apply(s, { type: 'choose', answer: s.pending.choice.kind === 'yesNo' ? { kind: 'yesNo', yes: true } : { kind: 'cards', iids: [] } }) : settle(apply(s, { type: 'pass' }));
     expect(perm(s, 'Bear')).toBeUndefined();
+  });
+
+});
+
+describe('Metagame audit 2026-10-21', () => {
+  const cards = JSON.parse(readFileSync(new URL('./fixtures/metagame-2026-10-21.json', import.meta.url), 'utf8')) as Card[];
+  const real = (name: string) => cards.find((x) => x.name === name)!;
+  const run = (s: GameState) => {
+    for (let i = 0; i < 12 && !s.pending && (s.stack.length || s.triggered?.length); i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+
+  it('Terravore and Unlicensed Hearse: power and toughness counted from graveyards and from the cards exiled with it', () => {
+    const [terravore, hearse] = [real('Terravore'), real('Unlicensed Hearse')];
+    const ogre = creature('Ogre', 2, 2);
+    let s = board({ mine: [terravore, hearse, ogre], grave: [swamp, ogre] });
+    s.players[1].graveyard = [{ iid: 'x0', card: island }, { iid: 'x1', card: island }];
+    // Three land cards among both graveyards (statics are refreshed by any action).
+    s = apply(s, { type: 'activate', iid: iidOf(s, 'Unlicensed Hearse'), index: 1 });
+    expect([powerOf(perm(s, 'Terravore')!), toughnessOf(perm(s, 'Terravore')!)]).toEqual([3, 3]);
+    s = board({ mine: [terravore, hearse, ogre], grave: [swamp, ogre] });
+    s.players[1].graveyard = [{ iid: 'x0', card: island }, { iid: 'x1', card: island }];
+    // "from a single graveyard": not one of each.
+    expect(errorOf(() => apply(s, { type: 'activate', iid: iidOf(s, 'Unlicensed Hearse'), index: 0, targets: [[{ kind: 'card', iid: 'g0' }, { kind: 'card', iid: 'x0' }]] }))).toBe('illegalTarget');
+    s = run(settle(apply(s, { type: 'activate', iid: iidOf(s, 'Unlicensed Hearse'), index: 0, targets: [[{ kind: 'card', iid: 'x0' }, { kind: 'card', iid: 'x1' }]] })));
+    expect(s.players[1].exile).toHaveLength(2);
+    expect([powerOf(perm(s, 'Terravore')!), toughnessOf(perm(s, 'Terravore')!)]).toEqual([1, 1]);
+    // Crewed: a 2/2.
+    s = apply(s, { type: 'activate', iid: iidOf(s, 'Unlicensed Hearse'), index: 1 });
+    s = run(apply(s, { type: 'choose', answer: { kind: 'cards', iids: [iidOf(s, 'Ogre')] } }));
+    const crewed = perm(s, 'Unlicensed Hearse')!;
+    expect([powerOf(crewed), toughnessOf(crewed)]).toEqual([2, 2]);
+  });
+
+  it('Keen-Eyed Curator: +4/+4 and trample with four card types among the cards it exiled', () => {
+    const bolt = spell('Bolt', '{R}', 'Bolt deals 3 damage to any target.');
+    const rite = card({ name: 'Rite', typeLine: 'Sorcery', manaCost: '{B}', cmc: 1, oracleText: 'Draw a card.' });
+    const ogre = creature('Ogre', 2, 2);
+    let s = board({ mana: 4, mine: [real('Keen-Eyed Curator')] });
+    s.players[1].graveyard = [swamp, bolt, rite, ogre].map((c, i) => ({ iid: `x${i}`, card: c }));
+    for (let i = 0; i < 4; i++) {
+      expect([powerOf(perm(s, 'Keen-Eyed Curator')!), hasKw(perm(s, 'Keen-Eyed Curator')!, 'trample')]).toEqual([3, false]);
+      s = run(settle(apply(s, { type: 'activate', iid: iidOf(s, 'Keen-Eyed Curator'), index: 0, targets: [[{ kind: 'card', iid: `x${i}` }]] })));
+    }
+    expect([powerOf(perm(s, 'Keen-Eyed Curator')!), toughnessOf(perm(s, 'Keen-Eyed Curator')!), hasKw(perm(s, 'Keen-Eyed Curator')!, 'trample')]).toEqual([7, 7, true]);
+  });
+
+  it('Fountainport: "Sacrifice a token" as a cost', () => {
+    let s = board({ mana: 6, mine: [real('Fountainport')] });
+    expect(errorOf(() => apply(s, { type: 'activate', iid: iidOf(s, 'Fountainport'), index: 0 }))).toBe('nothingToSacrifice');
+    // A Fish (1 life), then the Fish for a card.
+    s = run(settle(apply(s, { type: 'activate', iid: iidOf(s, 'Fountainport'), index: 1 })));
+    expect([perm(s, 'Fish')?.card.typeLine, s.players[0].life]).toEqual(['Token Creature — Fish', 19]);
+    perm(s, 'Fountainport')!.tapped = false;
+    const hand = s.players[0].hand.length;
+    s = apply(s, { type: 'activate', iid: iidOf(s, 'Fountainport'), index: 0 });
+    expect(s.pending?.choice).toMatchObject({ purpose: 'sacrificeCost', options: [{ card: { name: 'Fish' } }] });
+    s = run(settle(apply(s, { type: 'choose', answer: { kind: 'cards', iids: [iidOf(s, 'Fish')] } })));
+    expect([perm(s, 'Fish'), s.players[0].hand.length]).toEqual([undefined, hand + 1]);
+  });
+
+  it('Overgrown Battlement and Bloom Tender: mana counted from the board', () => {
+    const wall = creature('Wall of Roots', 0, 5, { keywords: ['Defender'], oracleText: 'Defender' });
+    const relic = card({ name: 'Relic', typeLine: 'Artifact', manaCost: '{U}{R}', colors: ['U', 'R'] });
+    const s = board({ mine: [real('Overgrown Battlement'), wall, real('Bloom Tender'), relic] });
+    let t = apply(s, { type: 'tapForMana', iid: iidOf(s, 'Overgrown Battlement') });
+    expect(t.players[0].pool?.map((m) => m.colors)).toEqual([['G'], ['G']]);
+    // Green (Bloom Tender itself), blue and red.
+    t = apply(s, { type: 'tapForMana', iid: iidOf(s, 'Bloom Tender') });
+    expect(t.players[0].pool?.map((m) => m.colors)).toEqual([['U'], ['R'], ['G']]);
+  });
+
+  it('Quirion Ranger: a Forest back to the hand untaps a creature, once each turn', () => {
+    const forest = card({ name: 'Forest', typeLine: 'Basic Land — Forest' });
+    const ogre = creature('Ogre', 2, 2);
+    let s = board({ mine: [real('Quirion Ranger'), forest, ogre] });
+    perm(s, 'Ogre')!.tapped = true;
+    s = apply(s, { type: 'activate', iid: iidOf(s, 'Quirion Ranger'), index: 0, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Ogre') }]] });
+    expect(s.pending?.choice).toMatchObject({ purpose: 'returnCost', options: [{ card: { name: 'Forest' } }] });
+    s = run(settle(apply(s, { type: 'choose', answer: { kind: 'cards', iids: [iidOf(s, 'Forest')] } })));
+    expect([perm(s, 'Forest'), s.players[0].hand.map((c) => c.card.name), perm(s, 'Ogre')!.tapped]).toEqual([undefined, ['Forest'], false]);
+    expect(errorOf(() => apply(s, { type: 'activate', iid: iidOf(s, 'Quirion Ranger'), index: 0, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Ogre') }]] }))).toBe('onceEachTurn');
+  });
+
+  it('Shark Typhoon: cycled for X, an X/X flying Shark; on the battlefield, a Shark the size of each noncreature spell', () => {
+    const typhoon = real('Shark Typhoon');
+    let s = board({ mana: 5, hand: [typhoon] });
+    s.battlefield.filter((x) => x.card.name === 'Swamp').forEach((x) => (x.card = island));
+    expect(cycleMaxX(s, 0, typhoon)).toBe(3);
+    s = run(settle(apply(s, { type: 'cycle', iid: 'h0', x: 3 })));
+    const shark = perm(s, 'Shark')!;
+    expect([powerOf(shark), toughnessOf(shark), hasKw(shark, 'flying'), shark.controller]).toEqual([3, 3, true, 0]);
+    expect(s.players[0].hand).toHaveLength(1); // the cycling's card
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toEqual(['Shark Typhoon']);
+    // The bot cycles it for as much as it can.
+    const b = board({ mana: 4, hand: [typhoon] });
+    b.battlefield.forEach((x) => (x.card = island));
+    b.step = 'main2';
+    expect(botAction(b)).toMatchObject({ type: 'cycle', x: 2 });
+
+    const growth = { ...spell('Growth', '{X}{G}', 'Draw X cards.', 'Sorcery'), cmc: 1 };
+    let t = board({ mana: 4, mine: [typhoon], hand: [growth] });
+    t.battlefield.forEach((x) => { if (x.card.name === 'Swamp') x.card = card({ name: 'Forest', typeLine: 'Basic Land — Forest' }); });
+    t = run(settle(apply(t, { type: 'cast', iid: 'h0', x: 3 })));
+    expect([powerOf(perm(t, 'Shark')!), toughnessOf(perm(t, 'Shark')!)]).toEqual([4, 4]);
+  });
+
+  it('Mesmeric Fiend: a nonland card exiled from the opponent\'s hand, back when it leaves', () => {
+    const fiend = real('Mesmeric Fiend');
+    const bolt = spell('Bolt', '{R}', 'Bolt deals 3 damage to any target.');
+    let s = board({ mana: 2, hand: [fiend], oppHand: [island, bolt] });
+    s = settle(apply(s, { type: 'cast', iid: 'h0' }));
+    for (let i = 0; i < 10 && s.pending?.choice.purpose !== 'exileChosen'; i++) {
+      s = s.pending?.choice.kind === 'targets' ? apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'player', player: 1 }]] } }) : settle(apply(s, { type: 'pass' }));
+    }
+    expect(s.pending?.choice).toMatchObject({ purpose: 'exileChosen', options: [{ card: { name: 'Bolt' } }] });
+    s = run(apply(s, { type: 'choose', answer: { kind: 'cards', iids: ['o1'] } }));
+    expect([s.players[1].hand.map((c) => c.card.name), s.players[1].exile.map((c) => c.card.name)]).toEqual([['Island'], ['Bolt']]);
+    // It dies: the Bolt goes back to its owner's hand.
+    const fiendPerm = perm(s, 'Mesmeric Fiend')!;
+    fiendPerm.damage = 5;
+    s = run(settle(apply(s, { type: 'pass' })));
+    expect(perm(s, 'Mesmeric Fiend')).toBeUndefined();
+    expect(s.players[1].hand.map((c) => c.card.name).sort()).toEqual(['Bolt', 'Island']);
   });
 });

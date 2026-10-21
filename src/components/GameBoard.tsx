@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom';
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import {
-  activatable, activationProblem, abilityMaxX, actor, altsFor, apply, ninjutsuAttackers, canActivateDiamond, canAttack, canTapForMana, canUntapForMana, castCost, castOptions, castSource, castSources, channelCost, manaSources,
+  activatable, activationProblem, abilityMaxX, cycleMaxX, actor, altsFor, apply, ninjutsuAttackers, canActivateDiamond, canAttack, canTapForMana, canUntapForMana, castCost, castOptions, castSource, castSources, channelCost, manaSources,
   landFaces, findInGraveyard, legalTargets, canBlock, findPermanent, hasKw, IllegalAction, isActivePlayer, mulliganBottom, isLegalTarget, isMainStep, firstOpponent, opponentsOf, teammatesOf, teamPlayers, wonBy,
   paymentFor, powerOf, toughnessOf, unitsOf, xCount,
   type Action, type CardInst, type CastOption, type GameState, type Permanent, type PlayerId, type Target,
@@ -183,9 +183,9 @@ export function GameBoard({ game: g, me, onAction, endControls, notice, readOnly
     /** Set when channeling card `iid` from the hand. */
     channel?: boolean;
   } | null>(null);
-  /** Choosing X before casting a spell (`plan`) or activating an ability (`ability`) with {X} in its cost. */
+  /** Choosing X before casting a spell (`plan`), activating an ability (`ability`) or cycling (`cycle`) with {X} in its cost. */
   const [xPick, setXPick] = useState<{
-    iid: string; card: Card; x: number; max: number; ability?: number; plan?: { card: Card; opt: CastOption; modes?: number[] };
+    iid: string; card: Card; x: number; max: number; ability?: number; plan?: { card: Card; opt: CastOption; modes?: number[] }; cycle?: boolean;
   } | null>(null);
   /** A card with several ways to play it (kicker, adventure, land face, cycling…): which one? */
   const [castMenu, setCastMenu] = useState<{ card: Card; items: { key: string; label: string; run: () => void }[] } | null>(null);
@@ -398,7 +398,11 @@ export function GameBoard({ game: g, me, onAction, endControls, notice, readOnly
     const cycling = inHand ? castInfo(card).cycling : undefined;
     const cycleTiming = !!g.priority || (isMainStep(g) && myTurn);
     if (cycling && cycleTiming && !g.pending && findPayment(castSources(g, me, card, iid), parseCost(cycling.cost))) {
-      items.push({ key: 'cycle', label: t.game.cycleFor(cycling.cost), run: () => submit({ type: 'cycle', iid }) });
+      // Shark Typhoon: "Cycling {X}{1}{U}": X first.
+      const run = cycling.cost.includes('{X}')
+        ? () => { const max = cycleMaxX(g, me, card); setXPick({ iid, card, x: max, max, cycle: true }); }
+        : () => submit({ type: 'cycle', iid });
+      items.push({ key: 'cycle', label: t.game.cycleFor(cycling.cost), run });
     }
     const channel = inHand ? castInfo(card).channel : undefined;
     const channelCostNow = channel && channelCost(g, me, card);
@@ -728,6 +732,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice, readOnly
       setXPick(null);
       const perm = xPick.ability === undefined ? undefined : findPermanent(g, xPick.iid);
       if (perm) startActivation(perm, xPick.ability!, xPick.x);
+      else if (xPick.cycle) submit({ type: 'cycle', iid: xPick.iid, x: xPick.x });
       else if (xPick.plan) continueCast(xPick.iid, xPick.plan.card, xPick.plan.opt, xPick.plan.modes, xPick.x);
     };
     primary = confirm;

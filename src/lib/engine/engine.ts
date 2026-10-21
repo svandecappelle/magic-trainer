@@ -326,6 +326,7 @@ export type ChoicePurpose =
   | 'discard' // "discard a card": the discarding player chooses
   | 'discardUnlessArtifact' // Tezzeret, Betrayer of Flesh: two cards, or one artifact card
   | 'discardChosen' // Duress: the spell's controller chooses from a revealed hand
+  | 'exileChosen' // Mesmeric Fiend: the same, the card exiled
   | 'scry'
   | 'surveil'
   | 'search' // library search: find up to N matching cards
@@ -337,6 +338,7 @@ export type ChoicePurpose =
   | 'damageOrder' // an attacker blocked by several creatures: in which order its damage goes
   | 'sacrifice' // an edict: choose what to sacrifice
   | 'sacrificeCost' // "Sacrifice a creature:" when activating, or as a spell's additional cost
+  | 'returnCost' // Quirion Ranger: "Return a Forest you control to its owner's hand:" when activating
   | 'discardCost' // a spell's additional cost: discard a card
   | 'exileCost' // a spell's additional cost: exile cards from your graveyard
   | 'costChoice' // a spell's additional cost "A or B": yes pays the first
@@ -691,7 +693,7 @@ export type Action =
       pay?: string[];
     }
   /** Cycling (or landcycling) a card in hand. */
-  | { type: 'cycle'; iid: string; pay?: string[] }
+  | { type: 'cycle'; iid: string; pay?: string[]; x?: number }
   /** Channel: discard a card from hand to activate its channel ability. */
   | { type: 'channel'; iid: string; targets?: Target[][]; pay?: string[] }
   /** Ninjutsu: card `iid` from the hand, returning the unblocked attacker `attacker`. */
@@ -720,7 +722,7 @@ export type GameErrorCode =
   | 'notAttackStep' | 'cannotAttack' | 'notBlockStep' | 'notAttacking' | 'menace' | 'cannotBlock'
   | 'makeChoiceFirst' | 'nothingToChoose' | 'badChoice' | 'badX'
   | 'notEnoughLoyalty' | 'cannotAttackThat' | 'manaSpent' | 'badModes' | 'nothingToDiscard' | 'activationForbidden' | 'castingForbidden' | 'notEnoughInGraveyard' | 'costNotSimulated' | 'cannotCycle'
-  | 'noSuchAbility' | 'activateTiming' | 'alreadyTapped' | 'summoningSick' | 'onceEachTurn' | 'notEnoughLife' | 'nothingToSacrifice' | 'notEnoughCrew';
+  | 'noSuchAbility' | 'activateTiming' | 'alreadyTapped' | 'summoningSick' | 'onceEachTurn' | 'notEnoughLife' | 'nothingToSacrifice' | 'nothingToReturn' | 'notEnoughCrew';
 
 export type ErrorParams = Record<string, string | number>;
 
@@ -886,6 +888,13 @@ function ownUnits(s: GameState, perm: Permanent, spell?: Card, ability?: Card): 
     // Gaea's Cradle: {G} for each creature you control.
     const n = s.battlefield.filter((x) => x.controller === perm.controller && isCreature(x.card)).length;
     units = Array.from({ length: n }, () => ['G'] as Color[]);
+  } else if (state === 'perDefender') {
+    const n = s.battlefield.filter((x) => x.controller === perm.controller && isCreature(x.card) && hasKw(x, 'defender')).length;
+    units = Array.from({ length: n }, () => ['G'] as Color[]);
+  } else if (state === 'vivid') {
+    // Bloom Tender: one mana of each color among its controller's permanents.
+    const colors = new Set(s.battlefield.filter((x) => x.controller === perm.controller).flatMap((x) => cardColors(x.card)));
+    units = (['W', 'U', 'B', 'R', 'G'] as Color[]).filter((c) => colors.has(c)).map((c) => [c]);
   } else if (state === 'perElf') {
     const n = s.battlefield.filter((x) => isCreature(x.card) && hasSubtype(x.card, 'elf')).length;
     units = Array.from({ length: n }, () => ['G'] as Color[]);
@@ -1735,6 +1744,7 @@ export function activationProblem(s: GameState, p: PlayerId, perm: Permanent, in
   if (spec.cost.exileFromGraveyard && s.players[p].graveyard.filter((c) => cardMatches(c.card, spec.cost.exileFromGraveyard!)).length < (spec.cost.exileCount ?? 1)) return 'nothingToExile';
   if (spec.cost.discard && discardOptions(s, p, spec).length < spec.cost.discard) return 'nothingToDiscard';
   if (spec.cost.sacrifice && !sacrificeOptions(s, perm, spec).length) return 'nothingToSacrifice';
+  if (spec.cost.returnOther && !returnOptions(s, perm, spec).length) return 'nothingToReturn';
   if (spec.cost.crew !== undefined && crewOptions(s, perm).reduce((n, x) => n + crewPower(x), 0) < spec.cost.crew) return 'notEnoughCrew';
   if (!findPayment(sourcesFor(s, perm, spec), abilityCost(s, perm, spec, x))) return 'notEnoughMana';
   return null;
@@ -1759,6 +1769,19 @@ const discardOptions = (s: GameState, p: PlayerId, spec: ActivatedSpec) =>
 function sacrificeOptions(s: GameState, perm: Permanent, spec: ActivatedSpec): Permanent[] {
   const cost = spec.cost.sacrifice!;
   return matching(s, perm.controller, cost.which).filter((x) => x.controller === perm.controller && !(cost.another && x.iid === perm.iid));
+}
+
+/** Quirion Ranger: what may be returned to the hand for "Return a Forest you control to its owner's hand". */
+const returnOptions = (s: GameState, perm: Permanent, spec: ActivatedSpec) =>
+  matching(s, perm.controller, spec.cost.returnOther!).filter((x) => x.controller === perm.controller);
+
+/** Returns a permanent to its owner's hand as a cost (Attunement, Quirion Ranger). */
+function returnToHand(d: GameState, perm: Permanent) {
+  d.battlefield = d.battlefield.filter((x) => x !== perm);
+  returnExiledUntil(d, perm);
+  fireObject(d, 'leaves', perm);
+  if (!isToken(printedCard(perm))) putInZone(d, perm.owner ?? perm.controller, { iid: perm.iid, card: printedCard(perm) }, 'hand');
+  log(d, { k: 'bounced', card: perm.card.name });
 }
 
 /** The spell's costs are paid: it goes on the stack, cast triggers fire, and the opponent may respond. */
@@ -1996,6 +2019,9 @@ function checkTargets(s: GameState, caster: PlayerId, card: Card, spec: AbilityS
     if (ts.length > slot.max) throw new IllegalAction('tooManyTargets', { card: card.name });
     ts.forEach((t, j) => {
       if (ts.slice(0, j).some((u) => sameTarget(t, u))) throw new IllegalAction('tooManyTargets', { card: card.name });
+      // Unlicensed Hearse: "cards from a single graveyard".
+      const ownerOf = (x: Target) => (x.kind === 'card' ? findInGraveyard(s, x.iid)?.owner : undefined);
+      if (slot.filter.sameGraveyard && j > 0 && ownerOf(t) !== ownerOf(ts[0])) throw new IllegalAction('illegalTarget', { card: card.name });
       if (!isLegalTarget(s, caster, slot, t, selfIid, card)) {
         const kindOk =
           (t.kind === 'player' && (slot.kind === 'player' || slot.kind === 'any')) ||
@@ -2554,10 +2580,25 @@ export function paymentFor(s: GameState, p: PlayerId, action: Action): { sources
   if (action.type === 'cycle' || action.type === 'channel') {
     const inst = s.players[p].hand.find((c) => c.iid === action.iid);
     const info = inst && castInfo(inst.card);
-    const cost = action.type === 'cycle' ? info?.cycling && parseCost(info.cycling.cost) : inst && channelCost(s, p, inst.card);
+    const cost = action.type === 'cycle' ? info?.cycling && cycleCost(info.cycling.cost, action.x) : inst && channelCost(s, p, inst.card);
     return cost ? { sources: manaSources(s, p), cost } : null;
   }
   return null;
+}
+
+/** Cycling's mana cost, with X (Shark Typhoon: "Cycling {X}{1}{U}"). */
+export function cycleCost(cost: string, x = 0): Cost {
+  const c = parseCost(cost);
+  return { ...c, generic: c.generic + x * (cost.match(/\{X\}/g) ?? []).length };
+}
+
+/** The largest X `p` can pay to cycle `card` (0 without {X}). */
+export function cycleMaxX(s: GameState, p: PlayerId, card: Card): number {
+  const cost = castInfo(card).cycling?.cost;
+  if (!cost?.includes('{X}')) return 0;
+  let x = 0;
+  while (findPayment(manaSources(s, p), cycleCost(cost, x + 1))) x++;
+  return x;
 }
 
 /** Mana empties from pools when a step or phase ends. */
@@ -3170,7 +3211,11 @@ function fireCast(d: GameState, p: PlayerId, card: Card) {
   for (const x of [...d.battlefield, ...emblemSources(d)]) {
     if (x.controller !== p) continue;
     for (const t of permTriggers(x)) {
-      if (t.event.on === 'cast' && cardMatches(card, t.event.filter) && (!t.event.nth || d.players[p].spellsThisTurn === t.event.nth)) queueTrigger(d, x, p, t.ability);
+      if (t.event.on !== 'cast' || !cardMatches(card, t.event.filter) || (t.event.nth && d.players[p].spellsThisTurn !== t.event.nth)) continue;
+      // Shark Typhoon: "where X is that spell's mana value" (X paid counted).
+      const spell = d.stack.at(-1);
+      if (t.event.xSpellMv) (d.triggered ??= []).push({ source: { iid: x.iid, card: x.card }, controller: p, ability: t.ability, x: card.cmc + (spell?.x ?? 0) * xCount(card) });
+      else queueTrigger(d, x, p, t.ability);
     }
   }
 }
@@ -3414,6 +3459,12 @@ function refreshReconfigured(d: GameState) {
   }
 }
 
+/** The cards a permanent exiled that are still in exile ("cards exiled with it"). */
+const exiledWithCards = (d: GameState, iid: string) =>
+  (d.exiledWith?.[iid] ?? []).flatMap((x) => d.players[x.owner].exile.filter((c) => c.iid === x.iid));
+/** Keen-Eyed Curator: "card types among cards exiled with this creature". */
+const exiledWithTypes = (d: GameState, iid: string) => new Set(exiledWithCards(d, iid).flatMap((c) => cardTypes(c.card))).size;
+
 function refreshStatics(d: GameState) {
   refreshReconfigured(d);
   // Vedalken Shackles: control lasts "for as long as this artifact remains tapped" (gone or untapped: it ends).
@@ -3452,6 +3503,7 @@ function refreshStatics(d: GameState) {
       // Dáin's Company: "as long as you control another Dwarf".
       // Delirium: four or more card types among cards in its controller's graveyard.
       if (st.delirium && !delirium(d, src.controller)) continue;
+      if (st.exiledTypes && exiledWithTypes(d, src.iid) < st.exiledTypes) continue;
       // Elvish Reclaimer: "as long as there are three or more land cards in your graveyard".
       if (st.graveCards && d.players[src.controller].graveyard.filter((c) => !st.graveCards!.types || st.graveCards!.types.some((t) => cardTypes(c.card).includes(t))).length < st.graveCards.n) continue;
       if (st.ifAnother && !d.battlefield.some((x) => x.iid !== src.iid && x.controller === src.controller && isCreature(x.card) && hasSubtype(x.card, st.ifAnother!))) continue;
@@ -3460,6 +3512,9 @@ function refreshStatics(d: GameState) {
         : st.perAttached ? d.battlefield.filter((x) => x.attachedTo === src.iid && /\b(?:Aura|Equipment)\b/.test(x.card.typeLine.split('//')[0])).length
         : st.perCounter ? (src.counters[st.perCounter] ?? 0)
         : st.perGraveCards ? Math.floor(d.players[src.controller].graveyard.length / st.perGraveCards)
+        : st.perCount ? ('exiledWith' in st.perCount ? exiledWithCards(d, src.iid).length
+          : (st.perCount.grave === 'you' ? [src.controller] : playersOf(d)).flatMap((q) => d.players[q].graveyard)
+            .filter((c) => { const types = 'types' in st.perCount! ? st.perCount.types : undefined; return !types || types.some((t) => cardTypes(c.card).includes(t)); }).length)
         : st.perGraveType ? new Set((st.perGraveType === 'you' ? [src.controller] : playersOf(d)).flatMap((q) => d.players[q].graveyard.flatMap((c) => cardTypes(c.card)))).size
         : 1;
       for (const h of hosts) {
@@ -4298,11 +4353,19 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         if (!answer || answer.kind !== 'cards') {
           r.sub = i;
           const chooser = e.mode === 'casterChooses' ? caster : p;
-          const purpose = e.mode === 'casterChooses' ? 'discardChosen' : 'discard';
+          const purpose = e.mode === 'casterChooses' ? (e.exile ? 'exileChosen' : 'discardChosen') : 'discard';
           return { kind: 'cards', player: chooser, purpose, min: n, max: n, options: [...options], params: { n, p } };
         }
         for (const iid of answer.iids) {
           const inst = hand.find((c) => c.iid === iid)!;
+          if (e.exile) {
+            // Mesmeric Fiend: exiled, remembered by its source ("the exiled card").
+            d.players[p].hand = hand.filter((c) => c !== inst);
+            d.players[p].exile.push(inst);
+            log(d, { k: 'exiledCard', card: inst.card.name });
+            if (r.item.source) ((d.exiledWith ??= {})[r.item.source] ??= []).push({ iid: inst.iid, owner: p });
+            continue;
+          }
           moveToGraveyard(d, p, inst, 'hand');
           noteDiscard(d, p, inst);
           (r.discarded ??= []).push(inst.iid);
@@ -4904,6 +4967,18 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         putOntoBattlefield(d, inst, owner);
       }
       break;
+    case 'returnExiledToHand': {
+      // Mesmeric Fiend: the cards its source exiled, back to their owners' hands.
+      for (const x of (r.item.source && d.exiledWith?.[r.item.source]) || []) {
+        const inst = d.players[x.owner].exile.find((c) => c.iid === x.iid);
+        if (!inst) continue;
+        d.players[x.owner].exile = d.players[x.owner].exile.filter((c) => c !== inst);
+        d.players[x.owner].hand.push(inst);
+        log(d, { k: 'returned', card: inst.card.name, dest: 'hand' });
+      }
+      if (r.item.source) delete d.exiledWith?.[r.item.source];
+      break;
+    }
     case 'airbend':
     case 'plot': {
       // Aang: "Exile it. While it's exiled, its owner may cast it for {2} rather than its mana cost."
@@ -5004,7 +5079,9 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
       if (owner === undefined) break;
       for (let i = 0; i < n; i++) {
         d.abilities = (d.abilities ?? 0) + 1;
-        const token = enterBattlefield(d, { iid: `token-${d.abilities}`, card: tokenCard(e.token) }, owner, { tapped: e.attacking });
+        // Shark Typhoon: an X/X token.
+        const spec = e.sizeX ? { ...e.token, power: amount(d, r, 'X'), toughness: amount(d, r, 'X') } : e.token;
+        const token = enterBattlefield(d, { iid: `token-${d.abilities}`, card: tokenCard(spec) }, owner, { tapped: e.attacking });
         // "tapped and attacking": attacking (the defending player) without having been declared, so no attack trigger.
         if (e.attacking && d.attackers.length) d.attackers = [...d.attackers, token.iid];
         if (e.sacrificeAtEnd) (d.sacrificeAtEnd ??= []).push(token.iid);
@@ -5847,6 +5924,9 @@ export function apply(state: GameState, action: Action): GameState {
           noteDiscard(d, p, inst);
         }
         finishActivation(d, pending.activation!.item, pending.activation!.named);
+      } else if (pending.resume === 'activation' && action.answer.kind === 'cards' && pending.choice.purpose === 'returnCost') {
+        returnToHand(d, findPermanent(d, action.answer.iids[0])!);
+        finishActivation(d, pending.activation!.item, pending.activation!.named);
       } else if (pending.resume === 'activation' && action.answer.kind === 'cards') {
         sacrifice(d, findPermanent(d, action.answer.iids[0])!);
         finishActivation(d, pending.activation!.item, pending.activation!.named);
@@ -6008,7 +6088,8 @@ export function apply(state: GameState, action: Action): GameState {
       if (!inst || !cycling) throw new IllegalAction('cannotCycle');
       if (splitSecondOnStack(d)) throw new IllegalAction('activationForbidden');
       if (!d.priority && !(isMainStep(d) && isActivePlayer(d, p))) throw new IllegalAction('activateTiming');
-      if (!pay(d, p, chosenSources(manaSources(d, p), action.pay), parseCost(cycling.cost))) throw unpaid(action.pay, inst.card.name);
+      const x = cycling.cost.includes('{X}') ? Math.max(0, Math.floor(action.x ?? 0)) : 0;
+      if (!pay(d, p, chosenSources(manaSources(d, p), action.pay), cycleCost(cycling.cost, x))) throw unpaid(action.pay, inst.card.name);
       me.hand = me.hand.filter((c) => c !== inst);
       putInZone(d, p, inst, 'graveyard');
       log(d, { k: 'cycle', p, card: inst.card.name });
@@ -6018,6 +6099,8 @@ export function apply(state: GameState, action: Action): GameState {
         : { targets: [], effects: [{ kind: 'draw', n: 1, to: 'you' }] };
       d.abilities = (d.abilities ?? 0) + 1;
       d.stack.push({ iid: `${inst.iid}-cycle-${d.abilities}`, card: inst.card, controller: p, targets: [], ability });
+      // Shark Typhoon: "When you cycle this card, …" triggers once the cycling ability is on the stack (its X: the cycling's).
+      if (cycling.then?.effects.length) (d.triggered ??= []).push({ source: { iid: inst.iid, card: inst.card }, controller: p, ability: cycling.then, ...(x ? { x } : {}) });
       if (d.priority) {
         d.priority.passes = 0;
         d.priority.player = nextPlayer(d, p);
@@ -6124,12 +6207,15 @@ export function apply(state: GameState, action: Action): GameState {
         break;
       }
       // Attunement: "Return this enchantment to its owner's hand".
-      if (spec.cost.returnSelf) {
-        d.battlefield = d.battlefield.filter((x) => x !== perm);
-        returnExiledUntil(d, perm);
-        fireObject(d, 'leaves', perm);
-        if (!isToken(printedCard(perm))) putInZone(d, perm.owner ?? perm.controller, { iid: perm.iid, card: printedCard(perm) }, 'hand');
-        log(d, { k: 'bounced', card: perm.card.name });
+      if (spec.cost.returnSelf) returnToHand(d, perm);
+      if (spec.cost.returnOther) {
+        // Quirion Ranger: the rest of the cost is paid; the player now picks the Forest.
+        d.pending = {
+          choice: { kind: 'cards', player: p, purpose: 'returnCost', min: 1, max: 1, options: returnOptions(d, perm, spec), params: { card: perm.card.name } },
+          resume: 'activation',
+          activation: { item, named },
+        };
+        break;
       }
       // Relic of Progenitus: "Exile this artifact".
       if (spec.cost.exileSelf) {

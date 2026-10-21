@@ -1,0 +1,182 @@
+[
+ {
+  "id": "658cfcb7-81b7-48c6-9dd2-1663d06108cf",
+  "name": "Fountainport",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land",
+  "oracleText": "{T}: Add {C}.\n{2}, {T}, Sacrifice a token: Draw a card.\n{3}, {T}, Pay 1 life: Create a 1/1 blue Fish creature token.\n{4}, {T}: Create a Treasure token.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "blb",
+  "setName": "Bloomburrow",
+  "rarity": "rare",
+  "keywords": [
+   "Treasure"
+  ]
+ },
+ {
+  "id": "605ca3c0-7c9a-4bc1-9795-82aeb6f552ee",
+  "name": "Shark Typhoon",
+  "manaCost": "{5}{U}",
+  "cmc": 6,
+  "typeLine": "Enchantment",
+  "oracleText": "Whenever you cast a noncreature spell, create an X/X blue Shark creature token with flying, where X is that spell's mana value.\nCycling {X}{1}{U} ({X}{1}{U}, Discard this card: Draw a card.)\nWhen you cycle this card, create an X/X blue Shark creature token with flying.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "frc",
+  "setName": "Reality Fracture Commander",
+  "rarity": "rare",
+  "keywords": [
+   "Cycling"
+  ]
+ },
+ {
+  "id": "93ee60f7-31dd-4bc6-b71f-57a1a0d19d20",
+  "name": "Unlicensed Hearse",
+  "manaCost": "{2}",
+  "cmc": 2,
+  "typeLine": "Artifact — Vehicle",
+  "oracleText": "{T}: Exile up to two target cards from a single graveyard.\nUnlicensed Hearse's power and toughness are each equal to the number of cards exiled with it.\nCrew 2",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "snc",
+  "setName": "Streets of New Capenna",
+  "rarity": "rare",
+  "power": "*",
+  "toughness": "*",
+  "keywords": [
+   "Crew"
+  ]
+ },
+ {
+  "id": "8cf33d80-0704-4dc4-8e8d-1dcbcbc35add",
+  "name": "Keen-Eyed Curator",
+  "manaCost": "{G}{G}",
+  "cmc": 2,
+  "typeLine": "Creature — Raccoon Scout",
+  "oracleText": "As long as there are four or more card types among cards exiled with this creature, it gets +4/+4 and has trample.\n{1}: Exile target card from a graveyard.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "blb",
+  "setName": "Bloomburrow",
+  "rarity": "rare",
+  "power": "3",
+  "toughness": "3",
+  "keywords": []
+ },
+ {
+  "id": "680f6308-4469-4565-873e-40fb5aaef27d",
+  "name": "Overgrown Battlement",
+  "manaCost": "{1}{G}",
+  "cmc": 2,
+  "typeLine": "Creature — Wall",
+  "oracleText": "Defender\n{T}: Add {G} for each creature you control with defender.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "tdc",
+  "setName": "Tarkir: Dragonstorm Commander",
+  "rarity": "uncommon",
+  "power": "0",
+  "toughness": "4",
+  "keywords": [
+   "Defender"
+  ]
+ },
+ {
+  "id": "864930ce-7c56-4ad2-9b90-57b10e5a0842",
+  "name": "Mesmeric Fiend",
+  "manaCost": "{1}{B}",
+  "cmc": 2,
+  "typeLine": "Creature — Nightmare Horror",
+  "oracleText": "When this creature enters, target opponent reveals their hand and you choose a nonland card from it. Exile that card.\nWhen this creature leaves the battlefield, return the exiled card to its owner's hand.",
+  "colors": [
+   "B"
+  ],
+  "colorIdentity": [
+   "B"
+  ],
+  "setCode": "a25",
+  "setName": "Masters 25",
+  "rarity": "uncommon",
+  "power": "1",
+  "toughness": "1",
+  "keywords": []
+ },
+ {
+  "id": "320fdf89-e158-41c5-b0bf-fee9dec36a75",
+  "name": "Quirion Ranger",
+  "manaCost": "{G}",
+  "cmc": 1,
+  "typeLine": "Creature — Elf Ranger",
+  "oracleText": "Return a Forest you control to its owner's hand: Untap target creature. Activate only once each turn.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "mh2",
+  "setName": "Modern Horizons 2",
+  "rarity": "uncommon",
+  "power": "1",
+  "toughness": "1",
+  "keywords": []
+ },
+ {
+  "id": "b70fbe1c-d3f4-4e28-a830-2072dee1b7b5",
+  "name": "Terravore",
+  "manaCost": "{1}{G}{G}",
+  "cmc": 3,
+  "typeLine": "Creature — Lhurgoyf",
+  "oracleText": "Trample\nTerravore's power and toughness are each equal to the number of land cards in all graveyards.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "dmr",
+  "setName": "Dominaria Remastered",
+  "rarity": "uncommon",
+  "power": "*",
+  "toughness": "*",
+  "keywords": [
+   "Trample"
+  ]
+ },
+ {
+  "id": "ba86688d-18f0-4b5c-a797-42bf125a6c9f",
+  "name": "Bloom Tender",
+  "manaCost": "{1}{G}",
+  "cmc": 2,
+  "typeLine": "Creature — Elf Druid",
+  "oracleText": "Vivid — {T}: For each color among permanents you control, add one mana of that color.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "ecl",
+  "setName": "Lorwyn Eclipsed",
+  "rarity": "mythic",
+  "power": "1",
+  "toughness": "1",
+  "keywords": [
+   "Vivid"
+  ]
+ }
+]
