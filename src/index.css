@@ -651,3 +651,7 @@ footer { padding: 16px 20px; border-top: 1px solid #1f2530; color: var(--faint);
   .admin-table td[data-label]::before { content: attr(data-label); color: var(--muted); min-width: 90px; }
   .admin-actions { justify-content: flex-start; margin-top: 6px; }
 }
+
+/* Decks: import from a link */
+.import-link { flex-wrap: nowrap; margin-bottom: 8px; }
+.import-link input { flex: 1; min-width: 0; }

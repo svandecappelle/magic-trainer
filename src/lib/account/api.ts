@@ -172,6 +172,8 @@ export const accountApi = {
   share: (id: string) => request<DeckShare>('PUT', `/api/decks/${id}/share`),
   unshare: (id: string) => request<void>('DELETE', `/api/decks/${id}/share`),
   shared: (shareId: string) => request<SharedDeck>('GET', `/api/shared/${encodeURIComponent(shareId)}`),
+  /** A deck from an mtgtop8, Moxfield or Archidekt link (server/importDeck.ts): its name, format and decklist text. */
+  importDeck: (url: string) => request<{ name: string; format?: string; text: string; source: string }>('GET', `/api/import-deck?url=${encodeURIComponent(url)}`),
   admin: {
     overview: () => request<AdminOverview>('GET', '/api/admin/overview'),
     users: (q: string, sort: 'seen' | 'joined') => request<{ users: AdminUser[]; total: number }>('GET', `/api/admin/users?q=${encodeURIComponent(q)}&sort=${sort}`),

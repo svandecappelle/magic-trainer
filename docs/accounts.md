@@ -250,6 +250,7 @@ All JSON. Routes under `/api` need a session (401 otherwise), except `/api/me`, 
 | POST   | `/api/replays`                | `{ data }` (a replay file, `packReplay`): shares it; returns `{ replayId, shareId, title, at }` (the same `shareId` for a replay shared again) |
 | DELETE | `/api/replays/:shareId`       | Stops sharing (204): the link stops working, the replay is deleted from the server |
 | GET    | `/api/shared-replays/:shareId` | Public, no session: `{ data, owner: { name, avatarUrl } }`; 404 once no longer shared |
+| GET    | `/api/import-deck?url=`       | Public, no session (works without accounts): an mtgtop8, Moxfield or Archidekt deck link read by the server, answered as `{ name, format?, text, source }` (decklist text); 400 `unsupportedLink`, 404 `deckNotFound`, 502 `sourceRefused` (Moxfield's bot protection) or `sourceUnreachable`; 20 a minute per address |
 
 - Decks come back with full card data (`cards.data`), in the client's `Deck` shape.
 - Unknown card ids are fetched from Scryfall before saving. If Scryfall is unreachable, the API answers 503 and

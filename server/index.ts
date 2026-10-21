@@ -12,6 +12,7 @@ import { ROOM_KEEP_HOURS, roomStore } from './db/roomStore';
 import { historyRoutes, historyStore } from './history';
 import { replayRoutes } from './replays';
 import { adminRoutes } from './admin';
+import { importRoutes } from './importDeck';
 import { sendJson } from './http';
 import { RoomManager, type Conn } from './rooms';
 
@@ -92,6 +93,7 @@ const server = createServer(async (req, res) => {
     if (await history.handle(req, res, url)) return;
     if (await replays.handle(req, res, url)) return;
     if (await admin.handle(req, res, url)) return;
+    if (await imports.handle(req, res, url)) return;
     if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { error: 'notFound' });
     serveStatic(res, url);
   } catch (e) {
@@ -108,6 +110,8 @@ const decks = deckRoutes({ pool: db, account, lookup });
 // Results of finished matches, per account.
 const results = db ? historyStore(db) : null;
 const history = historyRoutes({ store: results, account });
+// Decks imported from a link (mtgtop8, Moxfield, Archidekt): the server reads the site for the browser.
+const imports = importRoutes();
 // Replays shared by their owner, readable by anyone with the link.
 const replays = replayRoutes({ pool: db, account });
 // Online rooms are saved in the database (when there is one), so a restart doesn't end the games.

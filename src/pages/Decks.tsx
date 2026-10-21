@@ -4,6 +4,7 @@ import { parseDecklist } from '../lib/deckText';
 import { useT } from '../i18n';
 import { useCardDisplay } from '../lib/cardLocale';
 import { resolveDecklist } from '../lib/importDeck';
+import { accountApi, ApiError } from '../lib/account/api';
 import { countCards } from '../lib/stats';
 import { useApp } from '../store/useApp';
 import { FORMATS } from '../types';
@@ -23,6 +24,28 @@ export function Decks() {
   const [importFormat, setImportFormat] = useState<string>('casual');
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ id?: string; message: string } | null>(null);
+  const [link, setLink] = useState('');
+  const [fetching, setFetching] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
+
+  /** mtgtop8, Moxfield, Archidekt: the server reads the deck, which fills the list below (then "Import"). */
+  async function fetchLink(e: React.FormEvent) {
+    e.preventDefault();
+    setFetching(true);
+    setLinkError(null);
+    try {
+      const deck = await accountApi.importDeck(link.trim());
+      setImportText(deck.text);
+      setImportName(deck.name);
+      if (deck.format && (FORMATS as readonly string[]).includes(deck.format)) setImportFormat(deck.format);
+    } catch (err) {
+      const code = err instanceof ApiError ? err.code : '';
+      setLinkError(code === 'unsupportedLink' ? t.decks.linkUnsupported : code === 'deckNotFound' ? t.decks.linkNotFound : code === 'tooManyRequests' ? t.decks.linkTooMany
+        : code === 'sourceRefused' ? t.decks.linkRefused : t.decks.linkFailed);
+    } finally {
+      setFetching(false);
+    }
+  }
 
   const parsed = useMemo(() => parseDecklist(importText), [importText]);
   const parsedCount = (board: string) => parsed.lines.filter((l) => l.board === board).reduce((n, l) => n + l.qty, 0);
@@ -76,6 +99,11 @@ export function Decks() {
 
       {showImport && (
         <div className="panel import-panel">
+          <form className="row import-link" onSubmit={fetchLink}>
+            <input type="url" placeholder={t.decks.linkPlaceholder} value={link} onChange={(e) => setLink(e.target.value)} aria-label={t.decks.linkLabel} />
+            <button type="submit" className="secondary" disabled={fetching || !link.trim()}>{fetching ? t.decks.fetching : t.decks.fetchLink}</button>
+          </form>
+          {linkError && <p className="error small">{linkError}</p>}
           <p className="small muted">
             {t.decks.importHelp} {t.decks.importFormat}
           </p>
