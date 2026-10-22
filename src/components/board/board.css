@@ -1,6 +1,5 @@
 /* ---------- Game table (GameBoard) ---------- */
 
-.page.play { max-width: none; }
 /* The table uses the whole window width. */
 main:has(> .page.play) { padding: 0 10px 10px; }
 

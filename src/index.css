@@ -98,7 +98,7 @@ button.icon { padding: 2px 8px; font-size: 0.8rem; background: var(--panel-2); c
 .brand-mark { flex: none; }
 main { padding: 0 20px 40px; }
 footer { padding: 16px 20px; border-top: 1px solid #1f2530; color: var(--faint); }
-.page { max-width: 1400px; margin: 0 auto; }
+.page { width: 100%; margin: 0 auto; }
 .panel { background: var(--panel); border: 1px solid var(--line-soft); border-radius: 16px; padding: 16px 18px; margin: 10px 0; }
 .stat-row { display: flex; gap: 20px; flex-wrap: wrap; margin: 8px 0; }
 
@@ -341,7 +341,7 @@ footer { padding: 16px 20px; border-top: 1px solid #1f2530; color: var(--faint);
 .icon-svg { display: inline-block; vertical-align: -2px; flex: none; }
 
 /* Play vs Bot */
-.page.setup { max-width: 1120px; display: flex; flex-direction: column; gap: 28px; padding-top: 12px; }
+.page.setup { display: flex; flex-direction: column; gap: 28px; padding-top: 12px; }
 .page.setup h1 { margin: 12px 0 0; }
 .setup h4 { margin: 0 0 12px; }
 /* Game mode: a list of modes (title, one line, chevron), and the chosen one in detail. */
@@ -417,7 +417,6 @@ footer { padding: 16px 20px; border-top: 1px solid #1f2530; color: var(--faint);
 .import-panel code { background: var(--panel-2); padding: 0 4px; border-radius: 3px; }
 
 /* Matches: sideboarding between games */
-.between-games { max-width: 900px; }
 .sb-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 640px) { .sb-columns { grid-template-columns: 1fr; } }
 .sb-list { list-style: none; padding: 0; margin: 4px 0; max-height: 50vh; overflow: auto; }
@@ -448,7 +447,6 @@ footer { padding: 16px 20px; border-top: 1px solid #1f2530; color: var(--faint);
   .join-row .start-button { width: auto; flex: none; }
 }
 .room-code-input { width: 110px; font-family: var(--font-mono); font-size: 1.1rem; letter-spacing: 0.2em; text-transform: uppercase; }
-.lobby { max-width: 520px; }
 .teams-lobby { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 10px 0; }
 .room-code { font-family: var(--font-mono); font-size: 2.2rem; font-weight: 800; letter-spacing: 0.25em; color: var(--accent); }
 .play-notice .clock { font-weight: 600; }
