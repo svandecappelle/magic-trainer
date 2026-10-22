@@ -1,3 +1,17 @@
+NONE     Agatha's Soul Cauldron {2} — Legendary Artifact
+  ? You may spend mana as though it were mana of any color to activate ab…
+      not read by the engine
+  ? Creatures you control with +1/+1 counters on them have all activated …
+      not read by the engine
+  ✗ {T}: Exile target card from a graveyard. When a creature card is exil…
+      activated ability, effect not simulated
+PARTIAL  Dauthi Voidwalker {B}{B} — Creature — Dauthi Rogue
+  ✓ Shadow
+      keyword
+  ✓ If a card would be put into an opponent's graveyard from anywhere, in…
+      rule for the game: opponentGraveyardsVoid
+  ✗ {T}, Sacrifice this creature: Choose an exiled card an opponent owns …
+      activated ability, effect not simulated
 OK       Bloom Tender {1}{G} — Creature — Elf Druid
   ✓ Vivid — {T}: For each color among permanents you control, add one man…
       mana: one mana of each color among your permanents
@@ -10,6 +24,18 @@ OK       Fountainport  — Land
       activated → token
   ✓ {4}, {T}: Create a Treasure token.
       activated → token
+OK       Great Hall of the Biblioplex  — Land
+  ✓ {T}: Add {C}.
+      mana: C
+  ✓ {T}, Pay 1 life: Add one mana of any color. Spend this mana only to c…
+      mana: W/U/B/R/G, paying 1 life, only for some spells (chosen automatically when paying)
+  ✓ {5}: If this land isn't a creature, it becomes a 2/4 Wizard creature …
+      activated → animate
+OK       Guide of Souls {W} — Creature — Human Cleric
+  ✓ Whenever another creature you control enters, you gain 1 life and get…
+      trigger (enters) → gainLife+energy
+  ✓ Whenever you attack, you may pay {E}{E}{E}. When you do, put two +1/+…
+      trigger (youAttack) → reflexive
 OK       Keen-Eyed Curator {G}{G} — Creature — Raccoon Scout
   ✓ As long as there are four or more card types among cards exiled with …
       static ability
@@ -35,6 +61,18 @@ OK       Shark Typhoon {5}{U} — Enchantment
       keyword
   ✓ When you cycle this card, create an X/X blue Shark creature token wit…
       trigger (cycled) → token
+OK       Static Prison {W} — Enchantment
+  ✓ When this enchantment enters, exile target nonland permanent an oppon…
+      trigger (enters) → destroy+energy (1 target)
+  ✓ At the beginning of your first main phase, sacrifice this enchantment…
+      trigger (main1) → sacrificeUnlessEnergy
+OK       Sunken Citadel  — Land — Cave
+  ✓ This land enters tapped. As it enters, choose a color.
+      enters tapped (always)
+  ✓ {T}: Add one mana of the chosen color.
+      mana: one mana of the color chosen as it entered
+  ✓ {T}: Add two mana of the chosen color. Spend this mana only to activa…
+      mana: 2 of the chosen color, only for some abilities (chosen automatically when paying)
 OK       Terravore {1}{G}{G} — Creature — Lhurgoyf
   ✓ Trample
       keyword
@@ -48,5 +86,5 @@ OK       Unlicensed Hearse {2} — Artifact — Vehicle
   ✓ Crew 2
       keyword
 
-9 cards: 9 ok, 0 partial, 0 not simulated, 0 can't be cast
+15 cards: 13 ok, 1 partial, 1 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

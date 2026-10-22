@@ -1303,6 +1303,7 @@ function answerChoice(s: GameState, choice: Choice, safe = false): Answer {
       // Subtlety: our spell goes back on top, to be drawn again.
       if (choice.purpose === 'tuckTop') return { kind: 'yesNo', yes: true };
       // Cumulative upkeep: kept while it costs at most {2}.
+      if (choice.purpose === 'payEnergy') return { kind: 'yesNo', yes: !safe };
       if (choice.purpose === 'cumulativeUpkeep') return { kind: 'yesNo', yes: !safe && Number(choice.params?.n ?? 0) <= 2 };
       // Rhystic Study: pay the tax when the mana isn't needed for anything else in hand.
       if (choice.purpose === 'payOrDraw') return { kind: 'yesNo', yes: !safe && castable(s, choice.player).length === 0 };

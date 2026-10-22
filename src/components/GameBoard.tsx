@@ -987,6 +987,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice, readOnly
           <span className="zone-count" title={t.game.zoneNames.hand}><Icon name="hand" /> {ps.hand.length}</span>
           {zone('graveyard', <Icon name="graveyard" />)}
           {!!ps.poison && <span className="poison" title={t.game.poisonTitle}><Icon name="poison" /> {ps.poison}</span>}
+          {!!ps.energy && <span className="energy" title={t.game.energyTitle}><Icon name="energy" /> {ps.energy}</span>}
           {zone('exile', <Icon name="exile" />)}
           {ps.command && zone('command', <Icon name="command" />)}
           {commanderDamage > 0 && <span className="poison" title={t.game.commanderDamageTitle}><Icon name="sword" /> {commanderDamage}</span>}

@@ -539,11 +539,20 @@ permanents), Quirion Ranger ("Return a Forest you control to its owner's hand" a
 {X}, "When you cycle this card", X/X tokens; a Shark the size of each noncreature spell you cast), Mesmeric Fiend (a
 nonland card exiled from the opponent's hand, back to it when the Fiend leaves). Fixture `metagame-2026-10-21`.
 
+Second batch: energy (Static Prison: "You get {E}{E}", "At the beginning of your first main phase, sacrifice this
+enchantment unless you pay {E}"; Guide of Souls: "you may pay {E}{E}{E}. When you do, put two +1/+1 counters and two
+flying counters on target attacking creature. It becomes an Angel in addition to its other types."), Sunken Citadel (a
+color chosen as it enters; two mana of it only for abilities of land sources), Great Hall of the Biblioplex (any color
+for 1 life, only for instants and sorceries; a 2/4 Wizard for good), Dauthi Voidwalker (shadow; the opponents' cards
+exiled with a void counter instead of going to their graveyard).
+Approximations: mana with a spending restriction left over after a payment goes to the pool as the permanent's normal
+mana, or is lost.
+
 Still open, playing wrongly, most played first (see `audit-reports/2026-10-21/report.md`):
-- [ ] Agatha's Soul Cauldron (activated abilities of exiled creature cards), Nyxborn Hydra (bestow with X), Static
-  Prison and Guide of Souls (energy), Sunken Citadel and Great Hall of the Biblioplex (mana with a spending restriction)
-- [ ] Stormchaser's Talent (Classes), Ajani, Nacatl Pariah (transforming when a Cat dies), Dauthi Voidwalker (shadow,
-  "exile it instead" with void counters), Loki, Volrath's Shapeshifter
+- [ ] Agatha's Soul Cauldron (activated abilities of exiled creature cards), Nyxborn Hydra (bestow with X)
+- [ ] Dauthi Voidwalker's "{T}, Sacrifice this creature: Choose an exiled card an opponent owns with a void counter on it.
+  You may play it this turn without paying its mana cost." (playing a card another player owns from exile)
+- [ ] Stormchaser's Talent (Classes), Ajani, Nacatl Pariah (transforming when a Cat dies), Loki, Volrath's Shapeshifter
 - [ ] Dress Down, Opalescence, Leyline of the Guildpact, Engineered Plague, Elephant Grass, Winter Moon, Desert, Mystic
   Sanctuary, Phantom Nishoba, Sanctifier en-Vec, Necrodominance
 

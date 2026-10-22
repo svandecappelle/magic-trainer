@@ -8,6 +8,7 @@ const PATHS = {
   heart: 'M8 13.5S2.5 10 2.5 6.2A2.9 2.9 0 0 1 8 4.8a2.9 2.9 0 0 1 5.5 1.4C13.5 10 8 13.5 8 13.5z',
   poison: 'M8 2.5s-4 4.4-4 7.2a4 4 0 0 0 8 0C12 6.9 8 2.5 8 2.5z',
   sword: 'M13.5 2.5 7 9M13.5 2.5h-3M13.5 2.5v3M5 8.5l2.5 2.5M3 13l2.5-2.5',
+  energy: 'M9.5 1.5 3.5 9h4l-1 5.5 6-7.5h-4z',
 } as const;
 
 export type IconName = keyof typeof PATHS;

@@ -30,6 +30,8 @@ export interface CardInst {
   playableOnTurn?: number;
   /** Inti: playable from exile until this player's next end step ends. */
   playableUntilEndOf?: PlayerId;
+  /** Dauthi Voidwalker: exiled with a void counter on it (instead of going to its owner's graveyard). */
+  voidCounter?: boolean;
 }
 
 /** A lasting change to a permanent's power, toughness or abilities. */
@@ -253,6 +255,8 @@ export interface PlayerState {
   pool?: PoolMana[];
   /** Poison counters: ten or more and the player loses. */
   poison?: number;
+  /** Energy counters ({E}): got from effects, paid for others. */
+  energy?: number;
   /** Commander: the command zone, how many times each commander was cast from it, combat damage taken per commander. */
   command?: CardInst[];
   commanderCasts?: Record<string, number>;
@@ -323,6 +327,7 @@ export type ChoicePurpose =
   | 'returnCreatureCost' // web-slinging: which tapped creature to return to its owner's hand
   | 'tuckTop' // Subtlety: put your spell on top of your library (or the bottom)?
   | 'cumulativeUpkeep' // pay the cumulative upkeep, or sacrifice the permanent
+  | 'payEnergy' // Static Prison: pay {E}, or sacrifice the permanent
   | 'discard' // "discard a card": the discarding player chooses
   | 'discardUnlessArtifact' // Tezzeret, Betrayer of Flesh: two cards, or one artifact card
   | 'discardChosen' // Duress: the spell's controller chooses from a revealed hand
@@ -532,6 +537,7 @@ export type LogEntry =
   /** Urza's Saga's chapters: the permanent gains an ability (its text). */
   | { k: 'gainsAbility'; card: string; text: string }
   | { k: 'poison'; p: PlayerId; n: number }
+  | { k: 'energy'; p: PlayerId; n: number }
   | { k: 'proliferate'; p: PlayerId }
   | { k: 'control'; p: PlayerId; card: string }
   | { k: 'copied'; card: string; as: string }
@@ -888,6 +894,9 @@ function ownUnits(s: GameState, perm: Permanent, spell?: Card, ability?: Card): 
     // Gaea's Cradle: {G} for each creature you control.
     const n = s.battlefield.filter((x) => x.controller === perm.controller && isCreature(x.card)).length;
     units = Array.from({ length: n }, () => ['G'] as Color[]);
+  } else if (state === 'chosenColor') {
+    // Sunken Citadel: one mana of the color chosen as it entered.
+    units = perm.chosenColor ? [[perm.chosenColor]] : [];
   } else if (state === 'perDefender') {
     const n = s.battlefield.filter((x) => x.controller === perm.controller && isCreature(x.card) && hasKw(x, 'defender')).length;
     units = Array.from({ length: n }, () => ['G'] as Color[]);
@@ -942,7 +951,8 @@ function ownUnits(s: GameState, perm: Permanent, spell?: Card, ability?: Card): 
   // ability, or one more color for a one-mana one (Herd Heirloom).
   const restricted = restrictedMana(perm.card);
   if (restricted && manaUseFits(restricted, spell, ability)) {
-    const more = restricted.units;
+    // Sunken Citadel: "two mana of the chosen color".
+    const more = restricted.chosen ? (perm.chosenColor ? Array.from({ length: restricted.chosen }, () => [perm.chosenColor!]) : []) : restricted.units;
     if (more.length > units.length) units = more;
     else if (more.length === 1 && units.length === 1) units = [[...new Set([...units[0], ...more[0]])]];
   }
@@ -989,8 +999,12 @@ function hasSubtype(c: Card, type: string): boolean {
 }
 
 /** Starting Town: the colors its mana costs life to be spent as, while its controller can pay that life. */
-function painOf(s: GameState, perm: Permanent) {
-  const pain = manaPain(perm.card, s.players[perm.controller]?.identity);
+function painOf(s: GameState, perm: Permanent, spell?: Card, ability?: Card) {
+  // Great Hall of the Biblioplex: "{T}, Pay 1 life: Add one mana of any color. Spend this mana only to cast an instant or
+  // sorcery spell." (its colors cost the life, for such a spell)
+  const restricted = restrictedMana(perm.card);
+  const paid = restricted?.life && manaUseFits(restricted, spell, ability) ? { life: restricted.life, colors: restricted.units.flat().filter((c) => c !== 'C') } : null;
+  const pain = paid ?? manaPain(perm.card, s.players[perm.controller]?.identity);
   return pain && s.players[perm.controller].life >= pain.life ? pain : undefined;
 }
 
@@ -1185,7 +1199,9 @@ const castingForbidden = (s: GameState, p: PlayerId) =>
 /** Rest in Peace / Leyline of the Void: cards that would go to `owner`'s graveyard are exiled instead. */
 const graveyardExiled = (s: GameState, owner: PlayerId) =>
   withRule(s, 'graveyardsExiled').length > 0 ||
-  withRule(s, 'opponentGraveyardsExiled').some((x) => teamOf(s, x.controller) !== teamOf(s, owner));
+  withRule(s, 'opponentGraveyardsExiled').some((x) => teamOf(s, x.controller) !== teamOf(s, owner)) || voidExiled(s, owner);
+/** Dauthi Voidwalker: a card going to `owner`'s graveyard is exiled with a void counter instead. */
+const voidExiled = (s: GameState, owner: PlayerId) => withRule(s, 'opponentGraveyardsVoid').some((x) => teamOf(s, x.controller) !== teamOf(s, owner));
 
 /** What `p` can pay with: mana in their pool ("pool:N"), then untapped mana sources. */
 export function manaSources(s: GameState, p: PlayerId, spell?: Card, ability?: Card): ManaSource[] {
@@ -1203,7 +1219,7 @@ export function manaSources(s: GameState, p: PlayerId, spell?: Card, ability?: C
     .filter((x) => x.controller === p && canTapForMana(s, x, spell, ability))
     .map((x): ManaSource => {
       const units = unitsOf(s, x, spell, ability);
-      const pain = painOf(s, x);
+      const pain = painOf(s, x, spell, ability);
       return {
         iid: x.iid, colors: [...new Set(units.flat())], ...(units.length > 1 ? { units } : {}), ...(painfulMana(x) ? { last: true } : {}), ...(pain ? { pain } : {}),
         ...(units.length === 1 && paidAnyColor(x.card) ? { paid: [...COLORS] } : {}),
@@ -1543,6 +1559,8 @@ export function canBlock(blocker: Permanent, attacker: Permanent): boolean {
   if (protectedFrom(attacker, blocker.card) || protectedFromPlayer(attacker, blocker.controller)) return false;
   // Brazen Borrower: "can block only creatures with flying".
   if (blocksOnlyFlyers(blocker.card) && !hasKw(attacker, 'flying')) return false;
+  // Shadow: "can block or be blocked by only creatures with shadow".
+  if (hasKw(attacker, 'shadow') !== hasKw(blocker, 'shadow')) return false;
   if (hasKw(attacker, 'flying')) return hasKw(blocker, 'flying') || hasKw(blocker, 'reach');
   return true;
 }
@@ -2370,6 +2388,7 @@ function returnExiledUntil(d: GameState, source: Permanent) {
 
 function putInZone(d: GameState, owner: PlayerId, inst: CardInst, zone: 'graveyard' | 'exile' | 'hand') {
   const ps = d.players[owner];
+  if (zone === 'graveyard' && voidExiled(d, owner)) inst = { ...inst, voidCounter: true };
   if (zone === 'graveyard' && graveyardExiled(d, owner)) zone = 'exile';
   if (inst.commander && ps.command) {
     ps.command.push({ iid: inst.iid, card: inst.card, commander: true });
@@ -2396,6 +2415,7 @@ const PERMANENT_TYPES: string[] = ['artifact', 'creature', 'enchantment', 'land'
 function removePermanent(d: GameState, perm: Permanent, zone: 'graveyard' | 'exile') {
   // Rest in Peace: exiled instead, so it doesn't die (a token too). Checked while the permanent is still there.
   // A finality counter: "If a permanent with a finality counter on it would die, exile it instead."
+  const toVoid = zone === 'graveyard' && voidExiled(d, perm.owner ?? perm.controller);
   if (zone === 'graveyard' && (graveyardExiled(d, perm.owner ?? perm.controller) || perm.counters.finality)) zone = 'exile';
   d.battlefield = d.battlefield.filter((x) => x.iid !== perm.iid);
   returnExiledUntil(d, perm);
@@ -2413,7 +2433,7 @@ function removePermanent(d: GameState, perm: Permanent, zone: 'graveyard' | 'exi
     queueTrigger(d, perm, owner, { targets: [], effects: [{ kind: 'token', n: 1, token: illusion }] });
   }
   // A token that leaves the battlefield ceases to exist (it still "dies").
-  if (!isToken(printedCard(perm))) putInZone(d, perm.owner ?? perm.controller, { iid: perm.iid, card: printedCard(perm), ...(perm.commander ? { commander: true } : {}) }, zone);
+  if (!isToken(printedCard(perm))) putInZone(d, perm.owner ?? perm.controller, { iid: perm.iid, card: printedCard(perm), ...(perm.commander ? { commander: true } : {}), ...(toVoid ? { voidCounter: true } : {}) }, zone);
   // A creature dies; an artifact's "When this artifact is put into a graveyard from the battlefield" too.
   if (zone === 'graveyard' && (isCreature(perm.card) || permTriggers(perm).some((t) => t.event.on === 'dies' && t.event.self))) fireObject(d, 'dies', perm);
   // Skullclamp: "Whenever equipped creature dies" (its Equipment is still attached).
@@ -2957,7 +2977,8 @@ function askCreatureType(d: GameState): boolean {
 
 /** Utopia Sprawl: "As this Aura enters, choose a color." (for its mana; asked once nothing else is going on). */
 function askManaColor(d: GameState): boolean {
-  const perm = d.battlefield.find((x) => !x.chosenColor && choosesColor(x.card) && extraManaOf(x.card)?.add === 'chosen');
+  const perm = d.battlefield.find((x) => !x.chosenColor && choosesColor(x.card)
+    && (extraManaOf(x.card)?.add === 'chosen' || stateMana(x.card) === 'chosenColor' || !!restrictedMana(x.card)?.chosen));
   if (!perm) return false;
   d.pending = {
     choice: { kind: 'mode', player: perm.controller, purpose: 'manaColor', min: 1, max: 1, modes: [...COLORS], params: { card: perm.card.name } },
@@ -4589,6 +4610,16 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
     case 'animate':
       for (const perm of perms) animate(d, perm, e);
       break;
+    case 'addSubtypes':
+      // Guide of Souls: "It becomes an Angel in addition to its other types."
+      for (const perm of perms) {
+        const [types, subs] = perm.card.typeLine.split(' — ');
+        const added = e.subtypes.filter((t) => !(subs ?? '').split(' ').includes(t));
+        if (!added.length) continue;
+        perm.printed ??= perm.card;
+        perm.card = { ...perm.card, typeLine: `${types} — ${[subs, ...added].filter(Boolean).join(' ')}` };
+      }
+      break;
     case 'emblem': {
       const emblem: Card = {
         id: `emblem:${item.card.name}`, name: `${item.card.name.split(' // ')[0]} emblem`, manaCost: '', cmc: 0, typeLine: 'Emblem', oracleText: e.text,
@@ -4646,6 +4677,12 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         if (!inst) break;
         moveToGraveyard(d, caster, inst, 'hand');
         noteDiscard(d, caster, inst);
+      } else if (e.cost.energy) {
+        // Guide of Souls: "you may pay {E}{E}{E}".
+        if ((ps.energy ?? 0) < e.cost.energy) break;
+        if (answer?.kind !== 'yesNo') return { kind: 'yesNo', player: caster, purpose: 'reflexivePay', params: { card: item.card.name, cost: '{E}'.repeat(e.cost.energy), life: 0 } };
+        if (!answer.yes) break;
+        ps.energy = (ps.energy ?? 0) - e.cost.energy;
       } else {
         const cost = parseCost(e.cost.mana ?? '');
         const life = e.cost.life ?? 0;
@@ -4847,6 +4884,25 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
     case 'poison':
       for (const p of players) addPoison(d, p, amount(d, r, e.n));
       break;
+    case 'energy':
+      d.players[caster].energy = (d.players[caster].energy ?? 0) + e.n;
+      log(d, { k: 'energy', p: caster, n: e.n });
+      break;
+    case 'sacrificeUnlessEnergy': {
+      // Static Prison: pay {E}, or it's sacrificed.
+      const src = item.source ? findPermanent(d, item.source) : undefined;
+      if (!src) break;
+      const ps = d.players[caster];
+      if ((ps.energy ?? 0) >= e.n) {
+        if (answer?.kind !== 'yesNo') return { kind: 'yesNo', player: caster, purpose: 'payEnergy', params: { card: src.card.name, n: e.n } };
+        if (answer.yes) {
+          ps.energy = (ps.energy ?? 0) - e.n;
+          break;
+        }
+      }
+      sacrifice(d, src);
+      break;
+    }
     case 'exileGraveyards':
       for (const q of players) {
         const ps = d.players[q];
@@ -5414,6 +5470,9 @@ function closeWindow(d: GameState, reason: WindowReason) {
     afterCombat(d);
   } else if (reason === 'end') {
     endTurn(d);
+  } else if (reason === 'begin') {
+    // The first main phase begins (Static Prison: "At the beginning of your first main phase, …").
+    fireStep(d, 'main1');
   }
 }
 

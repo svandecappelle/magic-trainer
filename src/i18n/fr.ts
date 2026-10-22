@@ -12,7 +12,7 @@ const signed = (n: number) => (n < 0 ? `${n}` : `+${n}`);
 const keywordNames: Record<Keyword, string> = {
   flying: 'le vol', reach: 'la portée', haste: 'la célérité', vigilance: 'la vigilance', trample: 'le piétinement',
   deathtouch: 'le contact mortel', lifelink: 'le lien de vie', defender: 'défenseur', 'first strike': "l'initiative",
-  'double strike': 'la double initiative', menace: 'la menace', flash: 'le flash', prowess: 'la prouesse', hexproof: 'la défense talismanique', shroud: 'le linceul', indestructible: "l'indestructibilité", infect: "l'infection",
+  'double strike': 'la double initiative', menace: 'la menace', flash: 'le flash', prowess: 'la prouesse', hexproof: 'la défense talismanique', shroud: 'le linceul', indestructible: "l'indestructibilité", infect: "l'infection", shadow: "l'ombre",
 };
 
 const targetKinds = {
@@ -93,6 +93,7 @@ const log: LogMessages = {
   bounced: (e, c) => `${c.card(e.card)} retourne dans la main de son propriétaire`,
   sacrificed: (e, c) => `${c.card(e.card)} est sacrifié`,
   poison: (e, c) => `${c.isMe(e.p) ? 'Vous recevez' : `${c.name(e.p)} reçoit`} ${e.n} marqueur${e.n > 1 ? 's' : ''} poison`,
+  energy: (e, c) => `${c.isMe(e.p) ? 'Vous recevez' : `${c.name(e.p)} reçoit`} ${'{E}'.repeat(e.n)}`,
   proliferate: (e, c) => `${c.isMe(e.p) ? 'Vous proliférez' : `${c.name(e.p)} prolifère`}`,
   control: (e, c) => `${c.isMe(e.p) ? 'Vous acquérez' : `${c.name(e.p)} acquiert`} le contrôle de ${c.card(e.card)}`,
   copied: (e, c) => (e.card === e.as ? `${c.card(e.card)} est copié` : `${c.card(e.card)} arrive comme copie de ${c.card(e.as)}`),
@@ -951,6 +952,7 @@ export const fr: Messages = {
       mayShuffle: (p) => `${p.card} : mélanger votre bibliothèque ?`,
       putBack: (p) => `Remettez ${p.n} cartes de votre main au-dessus de votre bibliothèque (la première choisie au-dessus).`,
       putFromHand: (p) => `${p.card} : mettez un équipement de votre main sur le champ de bataille (ou rien).`,
+      payEnergy: (p) => `${p.card} : payer ${'{E}'.repeat(p.n)}, ou le sacrifier ?`,
       cumulativeUpkeep: (p) => `${p.card} : entretien cumulatif (${p.n} marqueurs d'âge). Payer ${p.cost}, ou le sacrifier ?`,
       discard: (p) => `Défaussez ${plural(p.n, 'carte', 'cartes')}.`,
       discardUnlessArtifact: (p) => `Défaussez ${plural(p.n, 'carte', 'cartes')}, ou une carte d'artefact.`,
@@ -1092,6 +1094,7 @@ export const fr: Messages = {
     modeNotSimulated: "Ce mode n'est pas simulé",
     modeUnavailable: 'non simulé ou sans cible légale',
     poisonTitle: 'Marqueurs poison : à 10, la partie est perdue',
+    energyTitle: 'Marqueurs énergie ({E}), payés pour certaines capacités',
     commanderDamageTitle: "Le plus de blessures de combat reçues d'un même commandant (21 : partie perdue)",
     commanderTax: (n) => `Taxe de commandant : {${n}} de plus pour le relancer depuis la zone de commandement`,
     commanderTitle: 'Commandant',

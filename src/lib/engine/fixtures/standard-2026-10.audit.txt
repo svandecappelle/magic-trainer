@@ -317,13 +317,6 @@ PARTIAL  Get Out {U}{U} — Instant
       mode
   ✗ • Return one or two target creatures and/or enchantments you own to y…
       mode not simulated (can't be chosen)
-PARTIAL  Great Hall of the Biblioplex  — Land
-  ✓ {T}: Add {C}.
-      mana: C
-  ? {T}, Pay 1 life: Add one mana of any color. Spend this mana only to c…
-      mana ability not understood
-  ✗ {5}: If this land isn't a creature, it becomes a 2/4 Wizard creature …
-      activated ability, effect not simulated
 PARTIAL  Guiding Hydra {X}{W} — Creature — Hydra Horror
   ✓ This creature enters with X +1/+1 counters on it.
       enters with X +1/+1 counters
@@ -703,6 +696,13 @@ OK       Gloomlake Verge  — Land
 OK       Godless Shrine  — Land — Plains Swamp
   ✓ As this land enters, you may pay 2 life. If you don't, it enters tapp…
       enters tapped (payLife)
+OK       Great Hall of the Biblioplex  — Land
+  ✓ {T}: Add {C}.
+      mana: C
+  ✓ {T}, Pay 1 life: Add one mana of any color. Spend this mana only to c…
+      mana: W/U/B/R/G, paying 1 life, only for some spells (chosen automatically when paying)
+  ✓ {5}: If this land isn't a creature, it becomes a 2/4 Wizard creature …
+      activated → animate
 OK       Haliya, Guided by Light {2}{W} — Legendary Creature — Human Soldier
   ✓ Whenever Haliya or another creature or artifact you control enters, y…
       trigger (enters) → gainLife
@@ -961,5 +961,5 @@ OK       Zoraline, Cosmos Caller {1}{W}{B} — Legendary Creature — Bat Cleric
   ✓ Whenever Zoraline enters or attacks, you may pay {W}{B} and 2 life. W…
       trigger (enters/attacks) → reflexive | reflexive
 
-178 cards: 97 ok, 42 partial, 39 not simulated, 0 can't be cast
+178 cards: 98 ok, 41 partial, 39 not simulated, 0 can't be cast
 ✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)

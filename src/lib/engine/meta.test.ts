@@ -5709,4 +5709,93 @@ describe('Metagame audit 2026-10-21', () => {
     expect(perm(s, 'Mesmeric Fiend')).toBeUndefined();
     expect(s.players[1].hand.map((c) => c.card.name).sort()).toEqual(['Bolt', 'Island']);
   });
+
+  /** Passes (no attacks, "yes" to other questions) until `stop` holds. */
+  const until = (s: GameState, stop: (s: GameState) => boolean) => {
+    for (let i = 0; i < 80 && !stop(s) && s.winner === null; i++) {
+      s = s.pending ? apply(s, { type: 'choose', answer: s.pending.choice.kind === 'yesNo' ? { kind: 'yesNo', yes: true } : { kind: 'cards', iids: [] } })
+        : !s.priority && s.step === 'attack' ? apply(s, { type: 'declareAttackers', attackers: [] })
+        : apply(s, { type: 'pass' });
+    }
+    return s;
+  };
+  const plains = card({ name: 'Plains', typeLine: 'Basic Land — Plains' });
+
+  it('Static Prison: energy; at the beginning of each first main phase, {E} paid or it is sacrificed', () => {
+    const ogre = creature('Ogre', 3, 3);
+    let s = board({ mine: [plains], hand: [real('Static Prison')], theirs: [ogre] });
+    s = settle(apply(s, { type: 'cast', iid: 'h0' }));
+    s = until(s, (x) => x.pending?.choice.kind === 'targets' || (!x.stack.length && !x.triggered?.length && !!perm(x, 'Static Prison')));
+    if (s.pending?.choice.kind === 'targets') s = apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Ogre') }]] } });
+    s = run(s);
+    expect([perm(s, 'Ogre'), s.players[0].energy]).toEqual([undefined, 2]);
+    // Next turns: {E} paid twice, then sacrificed (the Ogre comes back).
+    for (const left of [1, 0]) {
+      s = until(s, (x) => x.pending?.choice.purpose === 'payEnergy');
+      s = run(apply(s, { type: 'choose', answer: { kind: 'yesNo', yes: true } }));
+      expect([s.players[0].energy, s.step, !!perm(s, 'Static Prison')]).toEqual([left, 'main1', true]);
+    }
+    const turn = s.turn;
+    s = until(s, (x) => x.turn === turn + 2 && x.step === 'main1' && !x.stack.length && !x.triggered?.length);
+    expect([perm(s, 'Static Prison'), perm(s, 'Ogre')?.controller]).toEqual([undefined, 1]);
+  });
+
+  it('Guide of Souls: life and energy as creatures enter; {E}{E}{E} for counters, flying and an Angel', () => {
+    const bear = creature('Bear', 2, 2, { manaCost: '{1}', cmc: 1 });
+    let s = board({ mana: 3, mine: [real('Guide of Souls')], hand: [bear, bear, bear].map((c, i) => ({ ...c, id: `b${i}` })) });
+    for (let i = 0; i < 3; i++) s = run(settle(apply(s, { type: 'cast', iid: `h${i}` })));
+    expect([s.players[0].life, s.players[0].energy]).toEqual([23, 3]);
+    s.battlefield.filter((x) => x.card.name === 'Bear').forEach((x) => (x.sick = false));
+    s = apply(s, { type: 'pass' });
+    for (let i = 0; i < 6 && (s.priority || s.step !== 'attack'); i++) s = apply(s, { type: 'pass' });
+    const bearIid = s.battlefield.find((x) => x.card.name === 'Bear')!.iid;
+    s = apply(s, { type: 'declareAttackers', attackers: [bearIid] });
+    s = until(s, (x) => !!x.pending);
+    expect(s.pending?.choice).toMatchObject({ purpose: 'reflexivePay', params: { cost: '{E}{E}{E}' } });
+    s = apply(s, { type: 'choose', answer: { kind: 'yesNo', yes: true } });
+    s = until(s, (x) => !!x.pending || (!x.stack.length && !x.triggered?.length));
+    if (s.pending?.choice.kind === 'targets') s = run(apply(s, { type: 'choose', answer: { kind: 'targets', targets: [[{ kind: 'permanent', iid: bearIid }]] } }));
+    const angel = findPermanent(s, bearIid)!;
+    expect([powerOf(angel), hasKw(angel, 'flying'), angel.card.typeLine, s.players[0].energy]).toEqual([4, true, 'Creature — Angel', 0]);
+  });
+
+  it('Great Hall of the Biblioplex: any color for 1 life, for instants and sorceries only; a 2/4 Wizard for good', () => {
+    const shock = spell('Shock', '{R}', 'Shock deals 2 damage to any target.');
+    const goblin = creature('Goblin', 1, 1, { manaCost: '{R}', cmc: 1 });
+    let s = board({ mine: [real('Great Hall of the Biblioplex')], hand: [shock, goblin] });
+    expect([canCastNow(s, 0, shock), canCastNow(s, 0, goblin)]).toEqual([true, false]);
+    s = apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'player', player: 1 }]] });
+    s = run(settle(s));
+    expect([s.players[0].life, s.players[1].life]).toEqual([19, 18]);
+  });
+
+  it('Sunken Citadel: a color chosen as it enters; two of it for abilities of lands (Great Hall\'s {5})', () => {
+    let s = board({ mana: 3, mine: [real('Great Hall of the Biblioplex')], hand: [real('Sunken Citadel')] });
+    s = apply(s, { type: 'playLand', iid: 'h0' });
+    expect(s.pending?.choice).toMatchObject({ purpose: 'manaColor' });
+    s = apply(s, { type: 'choose', answer: { kind: 'mode', modes: [1] } });
+    const citadel = perm(s, 'Sunken Citadel')!;
+    expect([citadel.tapped, citadel.chosenColor]).toEqual([true, 'U']);
+    citadel.tapped = false;
+    expect(unitsOf(s, citadel)).toEqual([['U']]);
+    // {5}: its two mana and three Swamps.
+    const hall = perm(s, 'Great Hall of the Biblioplex')!;
+    s = run(settle(apply(s, { type: 'activate', iid: hall.iid, index: 0 })));
+    const wizard = perm(s, 'Great Hall of the Biblioplex')!;
+    expect([wizard.card.typeLine, powerOf(wizard), toughnessOf(wizard), perm(s, 'Sunken Citadel')!.tapped]).toEqual(['Land Creature — Wizard', 2, 4, true]);
+    expect(s.battlefield.filter((x) => x.card.name === 'Swamp' && !x.tapped)).toHaveLength(0);
+  });
+
+  it('Dauthi Voidwalker: shadow; the opponent\'s cards are exiled with a void counter instead of going to the graveyard', () => {
+    const ogre = creature('Ogre', 3, 3);
+    const murder = spell('Murder', '{B}', 'Destroy target creature.');
+    let s = board({ mana: 1, mine: [real('Dauthi Voidwalker')], theirs: [ogre], hand: [murder] });
+    const dauthi = perm(s, 'Dauthi Voidwalker')!;
+    expect([canBlock(perm(s, 'Ogre')!, dauthi), canBlock(dauthi, perm(s, 'Ogre')!)]).toEqual([false, false]);
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0', targets: [[{ kind: 'permanent', iid: iidOf(s, 'Ogre') }]] })));
+    expect(s.players[1].graveyard).toEqual([]);
+    expect(s.players[1].exile).toMatchObject([{ card: { name: 'Ogre' }, voidCounter: true }]);
+    // Mine still go to my graveyard.
+    expect(s.players[0].graveyard.map((c) => c.card.name)).toEqual(['Murder']);
+  });
 });

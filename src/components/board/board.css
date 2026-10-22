@@ -176,7 +176,7 @@ main:has(> .page.play) { padding: 0 10px 10px; }
 .turn-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
 .hud-name strong { font-weight: 600; }
 .hud .zones { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--muted); }
-.zone-count, .hud .zones .poison { display: inline-flex; align-items: center; gap: 4px; }
+.zone-count, .hud .zones .poison, .hud .zones .energy { display: inline-flex; align-items: center; gap: 4px; }
 .hud .life { position: relative; font-family: var(--font-display); font-size: 2.1rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; animation: life-pulse 0.5s ease-out; }
 .hud .pool { display: flex; flex-wrap: wrap; gap: 3px; margin: 2px 0; }
 .mana-dot {
@@ -189,6 +189,7 @@ main:has(> .page.play) { padding: 0 10px 10px; }
 .hud .zones { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; color: var(--muted); }
 .hud .zones > * { white-space: nowrap; }
 .hud .poison { color: #9be38f; font-weight: 700; }
+.hud .energy { color: #f5c542; font-weight: 700; }
 .zone-chip {
   display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; font-size: 0.78rem; font-weight: 500; color: var(--text);
   background: transparent; border: 1px solid var(--border); border-radius: 999px; box-shadow: none;

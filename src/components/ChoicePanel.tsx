@@ -13,6 +13,7 @@ export function choicePrompt(t: Messages, choice: Choice, card: (englishName: st
     case 'cleanupDiscard': return t.game.choice.cleanupDiscard({ n });
     case 'payOrCounter': return t.game.choice.payOrCounter({ card: card(String(p.card)), n });
     case 'cumulativeUpkeep': return t.game.choice.cumulativeUpkeep({ card: card(String(p.card)), cost: String(p.cost), n });
+    case 'payEnergy': return t.game.choice.payEnergy({ card: card(String(p.card)), n });
     case 'reorder': return t.game.choice.reorder({ n });
     case 'mayShuffle': return t.game.choice.mayShuffle({ card: card(String(p.card)) });
     case 'putBack': return t.game.choice.putBack({ n });
@@ -134,6 +135,7 @@ export function ChoicePanel({ choice, onAnswer, onPreview, title }: Props) {
       : choice.purpose === 'payLifeOrCounter' ? [t.game.payLifeN(n), t.game.dontPay]
       : choice.purpose === 'payOrDraw' ? [t.game.payN(n), t.game.dontPay]
       : choice.purpose === 'cumulativeUpkeep' ? [t.game.payMana(String(choice.params?.cost)), t.game.sacrificeIt]
+      : choice.purpose === 'payEnergy' ? [t.game.payMana('{E}'.repeat(n)), t.game.sacrificeIt]
       : choice.purpose === 'payLife' ? [t.game.payLifeN(n), t.game.enterTapped]
       : choice.purpose === 'costChoice' ? [costLabel(t, String(choice.params?.yes)), costLabel(t, String(choice.params?.no))]
       : [t.game.yes, t.game.no];

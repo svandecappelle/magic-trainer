@@ -6,7 +6,7 @@ import type { Card, CardFace } from '../../types';
 export const KEYWORDS = [
   'flying', 'reach', 'haste', 'vigilance', 'trample', 'deathtouch', 'lifelink',
   'defender', 'first strike', 'double strike', 'menace', 'flash', 'prowess',
-  'hexproof', 'shroud', 'indestructible', 'infect',
+  'hexproof', 'shroud', 'indestructible', 'infect', 'shadow',
 ] as const;
 export type Keyword = (typeof KEYWORDS)[number];
 
@@ -195,6 +195,10 @@ export interface RestrictedMana {
   spell?: TargetFilter;
   /** The abilities it may pay for, by their source ("abilities of creature sources"). */
   ability?: TargetFilter;
+  /** Great Hall of the Biblioplex: "{T}, Pay 1 life: Add one mana of any color." (its colors cost that life) */
+  life?: number;
+  /** Sunken Citadel: "Add two mana of the chosen color" (`units` empty: that many of the permanent's chosen color). */
+  chosen?: number;
 }
 
 const COLORLESS_ELDRAZI: TargetFilter = { subtypes: ['eldrazi'], nonColors: ['W', 'U', 'B', 'R', 'G'] };
@@ -204,6 +208,8 @@ const MANA_USES: [RegExp, Omit<RestrictedMana, 'units'>][] = [
   [/^cast a legendary spell$/i, { spell: { legendary: true } }],
   [/^cast colorless Eldrazi spells or activate abilities of colorless Eldrazi$/i, { spell: COLORLESS_ELDRAZI, ability: COLORLESS_ELDRAZI }],
   [/^activate abilities of creature sources$/i, { ability: { types: ['creature'] } }],
+  [/^activate abilities of land sources$/i, { ability: { types: ['land'] } }],
+  [/^cast an instant or sorcery spell$/i, { spell: { types: ['instant', 'sorcery'] } }],
 ];
 
 /**
@@ -212,10 +218,11 @@ const MANA_USES: [RegExp, Omit<RestrictedMana, 'units'>][] = [
  */
 export function restrictedMana(card: Card): RestrictedMana | null {
   for (const line of frontText(card).split('\n')) {
-    const m = line.match(/^\{T\}: Add ([^.]+)\. Spend this mana only to ([^.,]+)\.$/);
-    const units = m && parseManaText(m[1]);
-    const use = m && MANA_USES.find(([re]) => re.test(m[2]));
-    if (units && use) return { units, ...use[1] };
+    const m = line.match(/^\{T\}(?:, Pay (\d+) life)?: Add ([^.]+)\. Spend this mana only to ([^.,]+)\.$/);
+    const chosen = m?.[2].match(/^(one|two|three) mana of the chosen color$/i);
+    const units = m && (chosen ? [] : parseManaText(m[2]));
+    const use = m && MANA_USES.find(([re]) => re.test(m[3]));
+    if (units && use) return { units, ...use[1], ...(m[1] ? { life: Number(m[1]) } : {}), ...(chosen ? { chosen: MANA_WORDS[chosen[1].toLowerCase()] } : {}) };
   }
   return null;
 }
@@ -629,6 +636,8 @@ export type Effect =
   | { kind: 'gainLife'; n: Amount; to: Affected }
   | { kind: 'loseLife'; n: Amount; to: Affected }
   | { kind: 'addCounters'; counter: CounterKind; n: Amount; to: Affected }
+  /** Guide of Souls: "It becomes an Angel in addition to its other types." (for good) */
+  | { kind: 'addSubtypes'; subtypes: string[]; to: Affected }
   /** `filter` limits what the spell's controller may pick ("a nonland card") with casterChooses. */
   /** `unlessFilter`: Tezzeret, Betrayer of Flesh: "discard two cards unless you discard an artifact card" (one such card instead). */
   | { kind: 'discard'; n: Amount; to: Affected; mode: DiscardMode; filter?: TargetFilter; unlessFilter?: TargetFilter; exile?: boolean }
@@ -760,7 +769,7 @@ export type Effect =
    * Other costs: Ruthless Lawbringer's "you may sacrifice another creature" (`sacrifice`), Leatherhead's "you may remove a
    * counter from her" (`removeCounter`).
    */
-  | { kind: 'reflexive'; cost: { discard?: number; mana?: string; life?: number; sacrifice?: { which: Selector; another: boolean }; removeCounter?: boolean }; then: AbilitySpec }
+  | { kind: 'reflexive'; cost: { discard?: number; mana?: string; life?: number; energy?: number; sacrifice?: { which: Selector; another: boolean }; removeCounter?: boolean }; then: AbilitySpec }
   /**
    * Seasoned Cryomancer: "When you discard one or more nonland cards this way, tap up to that many target creatures …"
    * A reflexive trigger after the discard, its target count (`upToThatMany`) the number of nonland cards discarded.
@@ -776,6 +785,10 @@ export type Effect =
   /** Urza's Saga: "This Saga gains \"…\"" — the ability's source gets this ability text while it stays. */
   | { kind: 'gainAbility'; text: string }
   | { kind: 'poison'; n: Amount; to: Affected }
+  /** Energy: "you get {E}{E}" (counters kept by the player, paid with "pay {E}"). */
+  | { kind: 'energy'; n: number }
+  /** Static Prison: "sacrifice this enchantment unless you pay {E}". */
+  | { kind: 'sacrificeUnlessEnergy'; n: number }
   /** Add one counter of each kind already there: chosen automatically (the controller's side gains, opponents lose). */
   | { kind: 'proliferate' }
   /** Rest in Peace: "exile all graveyards"; Soul-Guide Lantern: "exile each opponent's graveyard". */
@@ -1488,6 +1501,8 @@ export function parseAbilityText(text: string, self?: string, selfIt = true): Ab
     return to && { kind: 'poison', n: toAmount(m[2]), to };
   });
   scan(/(?:^|[.\n] *)Proliferate\./g, () => ({ kind: 'proliferate' }));
+  // Energy: "You get {E}{E}", "you gain 1 life and get {E}".
+  scan(/(?:^|[.,] *|and )(?:you )?get ((?:\{E\})+)(?=\.)/gi, (m) => ({ kind: 'energy', n: m[1].length / 3 }));
   scan(/\b[Ee]xile all graveyards(?=\.)/g, () => ({ kind: 'exileGraveyards', to: 'each-player' }));
   scan(/\b[Ee]xile each opponent's graveyard(?=\.)/g, () => ({ kind: 'exileGraveyards', to: 'each-opponent' }));
   scan(/\b[Ee]xile (target player)'s graveyard(?=\.)/g, (m) => {
@@ -1659,6 +1674,12 @@ export function parseAbilityText(text: string, self?: string, selfIt = true): Ab
       ...(m[6] ? { artifact: true } : {}), ...(allTypes ? { allTypes: true } : {}), ...(text ? { text } : {}),
     };
   });
+  // Great Hall of the Biblioplex: "If this land isn't a creature, it becomes a 2/4 Wizard creature with "Whenever you cast
+  // an instant or sorcery spell, this creature gets +1/+0 until end of turn." It's still a land." (for good)
+  scan(new RegExp(LAND_BECOMES_FOR_GOOD.source, 'g'), (m) => {
+    if (!understoodAbilities(m[4])) return null;
+    return { kind: 'animate', to: 'self', power: Number(m[1]), toughness: Number(m[2]), subtypes: [m[3]], keywords: [], text: m[4], permanent: true };
+  });
   // Chandra's −7: "You get an emblem with \"Whenever an artifact you control enters, this emblem deals 3 damage to any target.\""
   scan(/\bYou get an emblem with "([^"]+)"/g, (m) => {
     const emblem: Card = { id: 'emblem', name: 'Emblem', manaCost: '', cmc: 0, typeLine: 'Emblem', oracleText: m[1], colors: [], colorIdentity: [], setCode: '', setName: '', rarity: '', keywords: [] };
@@ -1690,6 +1711,18 @@ export function parseAbilityText(text: string, self?: string, selfIt = true): Ab
       ? { types: ['land'], subtypes: ['plains', 'island', 'swamp', 'mountain', 'forest'] }
       : { basic: true, types: ['land'] };
     return { kind: 'search', n: 1, filter, dest: 'battlefield', tapped: !!m[2], searcher: { slot: 0 } };
+  });
+  // Guide of Souls: "put two +1/+1 counters and two flying counters on target attacking creature. It becomes an Angel in
+  // addition to its other types."
+  const KEYWORD_COUNTERS = 'flying|hexproof|indestructible|lifelink|trample|deathtouch|menace|reach|vigilance|first strike';
+  scan(new RegExp(`\\bput (${AMOUNT}) (\\+1\\/\\+1) counters? and (${AMOUNT}) (${KEYWORD_COUNTERS}) counters? on (${TARGET})\\.(?: It becomes an? ([A-Z][a-z]+) in addition to its other types\\.)?`, 'g'), (m) => {
+    const to = slotFor(m[5], (spec) => spec.kind === 'creature');
+    if (!to) return null;
+    return [
+      { kind: 'addCounters', counter: '+1/+1', n: toAmount(m[1]), to },
+      { kind: 'addCounters', counter: m[4] as CounterKind, n: toAmount(m[3]), to },
+      ...(m[6] ? [{ kind: 'addSubtypes' as const, subtypes: [m[6]], to }] : []),
+    ];
   });
   // Not Scythecat Cub's (see SCYTHECAT).
   scan(new RegExp(`\\bput (${AMOUNT}) ([+-]1\\/[+-]1) counters? on (${TARGET})${END}(?!\\. If this is the second time this ability has resolved this turn)`, 'gi'), (m) => {
@@ -1898,6 +1931,8 @@ export function parseAbilityText(text: string, self?: string, selfIt = true): Ab
       kind: 'addCounters', counter: m[2] as CounterKind, n: toAmount(m[1]), to: 'self',
     }));
     scan(new RegExp(`(?:^|[.,] *|then )sacrifice ${SELF}(?=\\.|$)`, 'gi'), () => ({ kind: 'sacrificeSelf' }));
+    // Static Prison: "sacrifice this enchantment unless you pay {E}".
+    scan(new RegExp(`(?:^|[.,] *)sacrifice ${SELF} unless you pay ((?:\\{E\\})+)(?=\\.)`, 'gi'), (m) => ({ kind: 'sacrificeUnlessEnergy', n: m[1].length / 3 }));
     scan(/(?:^|[.] *)Until your next turn, you may cast sorcery spells as though they had flash(?=\.|$)/g, () => ({ kind: 'sorceryFlash' }));
     // Chrome Mox: "Imprint — When this artifact enters, you may exile a nonartifact, nonland card from your hand."
     scan(/(?:^|[.,] *)(?:you )?exile an? ([a-z, -]+?) card from your hand(?=\.|$)/gi, (m) => {
@@ -1977,6 +2012,7 @@ function understoodAbilities(text: string): boolean {
   return staticsOf(card).length + abilities.length > 0;
 }
 
+const LAND_BECOMES_FOR_GOOD = /\bIf this land isn't a creature, it becomes an? (\d+)\/(\d+) ([A-Z][a-z]+) creature with "([^"]+)" It's still a land\./;
 const LAND_BECOMES = /\b(Until end of turn, )?[Tt]his land becomes an? (\d+)\/(\d+) ((?:white|blue|black|red|green)(?: and (?:white|blue|black|red|green))?)? ?((?:[A-Z][\w'-]*)(?: [A-Z][\w'-]*)*)? ?(artifact )?creature(?: with (.+?))?( until end of turn)?(?:\.|(?<=")) It's still a land\./;
 const BECOMES_CREATURE = /\bIf this (?:Equipment|artifact) isn't a creature, it becomes an? (\d+)\/(\d+) ([A-Z][a-z]+(?: [A-Z][a-z]+)*) artifact creature(?: with ([a-z ,]+?))?(?: and "([^"]+)")? until end of turn\./;
 const TRADE_FOR_CARD = /\bYou may sacrifice an? (artifact|creature) or discard a card\. If you do, draw a card\./;
@@ -2446,7 +2482,7 @@ export const parseEffects = (card: Card): Effect[] => spellSpec(card).effects;
 /** `combatDamageWalker`: combat damage to a planeswalker (Psychic Frog: "to a player or planeswalker"). */
 /** `leaves`: Sewer-veillance Cam's "enters or leaves the battlefield". */
 export type ObjectEvent = 'enters' | 'dies' | 'attacks' | 'combatDamage' | 'combatDamageWalker' | 'leaves';
-export type StepEvent = 'upkeep' | 'draw' | 'endStep' | 'beginCombat';
+export type StepEvent = 'upkeep' | 'draw' | 'endStep' | 'beginCombat' | 'main1';
 
 /** What makes a triggered ability trigger. */
 export type TriggerEvent =
@@ -2583,7 +2619,7 @@ const UNSUPPORTED_WORDS = /\b(?:if|unless|for each|where|instead|that (?:creatur
 const UNSUPPORTED = {
   test: (text: string) => {
     let rest = text;
-    for (const handled of [CONTROLLER_SEARCH, REVEAL_FOUND, SURVEIL_TO_HAND, THORIN_ATTACH, BECOMES_CREATURE, LAND_BECOMES, TRADE_FOR_CARD, COUNTER_DEST, TIDEBINDER, POWER_LIFE, PHELIA, CITY_COPIES, GHOST_VACUUM, MALCOLM, FLICKER, BLACK_SUN, EMPIRES, UNLESS_ARTIFACT, TEZZERET_ANIMATE, PURSUIT, IMPULSE, FABLED, BEHOLD, SCYTHECAT, BERSERK, BOUNTY, AMULET, NECRO, LOST_LIFE_DRAW]) rest = rest.replace(handled, '');
+    for (const handled of [CONTROLLER_SEARCH, REVEAL_FOUND, SURVEIL_TO_HAND, THORIN_ATTACH, BECOMES_CREATURE, LAND_BECOMES, LAND_BECOMES_FOR_GOOD, TRADE_FOR_CARD, COUNTER_DEST, TIDEBINDER, POWER_LIFE, PHELIA, CITY_COPIES, GHOST_VACUUM, MALCOLM, FLICKER, BLACK_SUN, EMPIRES, UNLESS_ARTIFACT, TEZZERET_ANIMATE, PURSUIT, IMPULSE, FABLED, BEHOLD, SCYTHECAT, BERSERK, BOUNTY, AMULET, NECRO, LOST_LIFE_DRAW]) rest = rest.replace(handled, '');
     return UNSUPPORTED_WORDS.test(rest.replace(/"[^"]*"/g, '""'));
   },
 };
@@ -2632,16 +2668,19 @@ function triggerAbility(text: string, name: string, self: boolean): AbilitySpec 
   if (sacrificeThen) return triggerAbility(`sacrifice it. ${sacrificeThen[1].replace(/^./, (c) => c.toUpperCase())}`, name, self);
   // "you may discard a card. When you do, …", "you may pay {W}{B} and 2 life. When you do, …"
   // The Sackville-Bagginses: "you may sacrifice another creature or artifact. If you do, …" (no target: the same).
-  const reflexive = text.match(/^you may (?:(discard a card)|pay ((?:\{(?:\d+|[WUBRGC])\})+)(?: and (\d+) life)?|sacrifice ((?:a|an|another) [a-z ]+?)|(remove a counter from (?:it|him|her|them|this creature)))\. When you do, (.+)$/i)
+  // Guide of Souls: "you may pay {E}{E}{E}. When you do, …" (energy: group 2 with {E} symbols).
+  const reflexive = text.match(/^you may (?:(discard a card)|pay ((?:\{(?:\d+|[WUBRGC])\})+|(?:\{E\})+)(?: and (\d+) life)?|sacrifice ((?:a|an|another) [a-z ]+?)|(remove a counter from (?:it|him|her|them|this creature)))\. When you do, (.+)$/i)
     ?? sacrificeIfYouDo(text);
   if (reflexive) {
     const inner = reflexive[6]!;
     // "It" in the reflexive part is its own target ("put a +1/+1 counter on target attacking creature. It gains trample").
-    const then = UNSUPPORTED.test(inner) ? NO_EFFECT : parseAbilityText(inner, self ? name : undefined);
+    // Guide of Souls: "It becomes an Angel in addition to its other types." (its target)
+    const then = UNSUPPORTED.test(inner.replace(/ It becomes an? [A-Z][a-z]+ in addition to its other types\.$/, '')) ? NO_EFFECT : parseAbilityText(inner, self ? name : undefined);
     if (!then.effects.length) return NO_EFFECT;
     const sacrifice = reflexive[4] ? triggerSubject(reflexive[4], true) : undefined;
     if (reflexive[4] && !sacrifice) return NO_EFFECT;
     const cost = reflexive[1] ? { discard: 1 } : sacrifice ? { sacrifice } : reflexive[5] ? { removeCounter: true }
+      : reflexive[2]?.startsWith('{E}') ? { energy: reflexive[2].length / 3 }
       : { mana: reflexive[2], ...(reflexive[3] ? { life: Number(reflexive[3]) } : {}) };
     return { targets: [], effects: [{ kind: 'reflexive', cost, then }] };
   }
@@ -2707,7 +2746,8 @@ function triggerBody(text: string, name: string, self: boolean): AbilitySpec {
   // "it" in "Whenever a creature you control attacks, it gets +1/+0" is the attacker, not this card.
   // Clauses the parser handles although they contain words it otherwise refuses ("if", "this way", "that card").
   // Mesmeric Fiend: "… you choose a nonland card from it. Exile that card."
-  const checked = body.replace(SURVEIL_TO_HAND, '').replace(/ you choose an? [a-z, -]+? card from it\. Exile that card\./i, '');
+  // Static Prison: "sacrifice this enchantment unless you pay {E}".
+  const checked = body.replace(SURVEIL_TO_HAND, '').replace(/^sacrifice this [a-z]+ unless you pay (?:\{E\})+\.$/i, '').replace(/ you choose an? [a-z, -]+? card from it\. Exile that card\./i, '');
   if (UNSUPPORTED.test(checked) || (!self && /\bits?\b/i.test(checked))) return NO_EFFECT;
   // Tifa Lockhart's landfall: "double Tifa Lockhart's power" (its own name; "it" was refused above).
   const spec = parseAbilityText(body, name, self);
@@ -3088,11 +3128,13 @@ export function triggersOf(card: Card): TriggerSpec[] {
       out.push({ event: { on: 'beginCombat', whose: 'you' }, ability: triggerAbility(combat[1], name, true) });
       continue;
     }
-    const step = line.match(/^At the beginning of (your|each|each player's|each opponent's|the) (upkeep|draw step|end step), (.+)$/i);
+    // Static Prison: "At the beginning of your first main phase, …" (precombat main phase).
+    const step = line.match(/^At the beginning of (your|each|each player's|each opponent's|the) (upkeep|draw step|end step|first main phase|precombat main phase), (.+)$/i);
     if (step) {
       const w = step[1].toLowerCase();
       const whose = w === 'your' ? 'you' : w === "each opponent's" ? 'opponent' : 'each';
-      const on = ({ upkeep: 'upkeep', 'draw step': 'draw', 'end step': 'endStep' } as const)[step[2].toLowerCase() as 'upkeep' | 'draw step' | 'end step'];
+      const steps = { upkeep: 'upkeep', 'draw step': 'draw', 'end step': 'endStep', 'first main phase': 'main1', 'precombat main phase': 'main1' } as const;
+      const on = steps[step[2].toLowerCase() as keyof typeof steps];
       out.push({ event: { on, whose }, ability: triggerAbility(step[3], name, true) });
       continue;
     }
@@ -3448,12 +3490,14 @@ export function doublesEquippedTriggers(card: Card): boolean {
  * Amber "{T}: Add one mana of any color among legendary creatures and planeswalkers you control." (legends),
  * Gemstone Caverns (luck: any color with a luck counter, otherwise {C}).
  */
-export function stateMana(card: Card): 'imprinted' | 'legends' | 'luck' | 'perArtifact' | 'mining' | 'depletion' | 'noted' | 'reflect' | 'reflectThree' | 'perCreature' | 'perElf' | 'perDefender' | 'vivid' | 'opponentLands' | null {
+export function stateMana(card: Card): 'imprinted' | 'legends' | 'luck' | 'perArtifact' | 'mining' | 'depletion' | 'noted' | 'reflect' | 'reflectThree' | 'perCreature' | 'perElf' | 'perDefender' | 'vivid' | 'chosenColor' | 'opponentLands' | null {
   const text = frontText(card);
   // Priest of Titania: "{T}: Add {G} for each Elf on the battlefield."
   if (/^\{T\}: Add \{G\} for each Elf on the battlefield\.$/m.test(text)) return 'perElf';
   // Gaea's Cradle: "{T}: Add {G} for each creature you control."
   if (/^\{T\}: Add \{G\} for each creature you control\.$/m.test(text)) return 'perCreature';
+  // Sunken Citadel: "{T}: Add one mana of the chosen color."
+  if (/^\{T\}: Add one mana of the chosen color\.$/m.test(text)) return 'chosenColor';
   // Overgrown Battlement: "{T}: Add {G} for each creature you control with defender."
   if (/^\{T\}: Add \{G\} for each creature you control with defender\.$/m.test(text)) return 'perDefender';
   // Bloom Tender: "Vivid — {T}: For each color among permanents you control, add one mana of that color."
@@ -3525,9 +3569,10 @@ export function entersWithCounters(card: Card): Amount | null {
 }
 
 /** "This land enters tapped." (unconditional only: "unless …" and "if …" are not checked yet). */
+/** "This land enters tapped." (Sunken Citadel: "… As it enters, choose a color.") */
 export function entersTapped(card: Card): boolean {
   const selves = selfWords(card.name).map(escapeRe).join('|');
-  return new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)? tapped(?: with (?:${AMOUNT}) depletion counters? on it)?\\.(?:\\n|$)`, 'i').test(frontText(card));
+  return new RegExp(`(?:^|\\n)(?:${selves}) enters(?: the battlefield)? tapped(?: with (?:${AMOUNT}) depletion counters? on it)?\\.(?:\\n|$| As it enters, choose a color\\.)`, 'i').test(frontText(card));
 }
 
 /** A planeswalker's starting loyalty (3 for cards saved without it). */
@@ -3900,7 +3945,7 @@ export function extraManaOf(card: Card): ExtraMana | null {
 }
 
 /** Utopia Sprawl: "As this Aura enters, choose a color." */
-export const choosesColor = (card: Card) => /^As this (?:Aura|enchantment|artifact|creature|land|permanent) enters, choose a color\.$/m.test(frontText(card));
+export const choosesColor = (card: Card) => /^(?:This land enters tapped\. )?As (?:this (?:Aura|enchantment|artifact|creature|land|permanent)|it) enters, choose a color\.$/m.test(frontText(card));
 
 /** Nyxbloom Ancient: "If you tap a permanent for mana, it produces three times as much of that mana instead." → 3. */
 export function manaMultiplier(card: Card): number {
@@ -4110,6 +4155,8 @@ export type GameRule =
   | 'graveyardsExiled'
   /** Leyline of the Void: "If a card would be put into an opponent's graveyard from anywhere, exile it instead." */
   | 'opponentGraveyardsExiled'
+  /** Dauthi Voidwalker: "… instead exile it with a void counter on it." */
+  | 'opponentGraveyardsVoid'
   /** Teferi, Time Raveler: "Each opponent can cast spells only any time they could cast a sorcery." */
   | 'opponentsSorcerySpeed'
   /** Containment Priest: "If a nontoken creature would enter and it wasn't cast, exile it instead." */
@@ -4207,6 +4254,7 @@ const GAME_RULES: [RegExp, GameRule][] = [
   [/^Activated abilities of artifacts, creatures, and planeswalkers can't be activated\.$/m, 'noActivatedAbilities'],
   [/^If a card or token would be put into a graveyard from anywhere, exile it instead\.$/m, 'graveyardsExiled'],
   [/^If a card would be put into an opponent's graveyard from anywhere, exile it instead\.$/m, 'opponentGraveyardsExiled'],
+  [/^If a card would be put into an opponent's graveyard from anywhere, instead exile it with a void counter on it\.$/m, 'opponentGraveyardsVoid'],
   [/^Each opponent can cast spells only any time they could cast a sorcery\.$/m, 'opponentsSorcerySpeed'],
   [/^If a nontoken creature would enter(?: the battlefield)? and it wasn't cast, exile it instead\.$/m, 'uncastCreaturesExiled'],
   [/^Creature cards in graveyards and libraries can't enter the battlefield\.$/m, 'noCreaturesFromGraveyardsLibraries'],

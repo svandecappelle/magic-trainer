@@ -9,7 +9,7 @@ const lists = new Intl.ListFormat('en', { type: 'conjunction' });
 const signed = (n: number) => (n < 0 ? `${n}` : `+${n}`);
 const keywordNames: Record<Keyword, string> = {
   flying: 'flying', reach: 'reach', haste: 'haste', vigilance: 'vigilance', trample: 'trample', deathtouch: 'deathtouch',
-  lifelink: 'lifelink', defender: 'defender', 'first strike': 'first strike', 'double strike': 'double strike', menace: 'menace', flash: 'flash', prowess: 'prowess', hexproof: 'hexproof', shroud: 'shroud', indestructible: 'indestructible', infect: 'infect',
+  lifelink: 'lifelink', defender: 'defender', 'first strike': 'first strike', 'double strike': 'double strike', menace: 'menace', flash: 'flash', prowess: 'prowess', hexproof: 'hexproof', shroud: 'shroud', indestructible: 'indestructible', infect: 'infect', shadow: 'shadow',
 };
 
 const log: LogMessages = {
@@ -79,6 +79,7 @@ const log: LogMessages = {
   bounced: (e, c) => `${c.card(e.card)} returns to its owner's hand`,
   sacrificed: (e, c) => `${c.card(e.card)} is sacrificed`,
   poison: (e, c) => `${c.isMe(e.p) ? 'You get' : `${c.name(e.p)} gets`} ${plural(e.n, 'poison counter', 'poison counters')}`,
+  energy: (e, c) => `${c.isMe(e.p) ? 'You get' : `${c.name(e.p)} gets`} ${'{E}'.repeat(e.n)}`,
   proliferate: (e, c) => `${c.isMe(e.p) ? 'You proliferate' : `${c.name(e.p)} proliferates`}`,
   control: (e, c) => `${c.isMe(e.p) ? 'You gain' : `${c.name(e.p)} gains`} control of ${c.card(e.card)}`,
   copied: (e, c) => (e.card === e.as ? `${c.card(e.card)} is copied` : `${c.card(e.card)} enters as a copy of ${c.card(e.as)}`),
@@ -945,6 +946,7 @@ export const en = {
       mayShuffle: (p: { card: string }) => `${p.card}: shuffle your library?`,
       putBack: (p: { n: number }) => `Put ${p.n} cards from your hand on top of your library (the first chosen goes on top).`,
       putFromHand: (p: { card: string }) => `${p.card}: put an Equipment card from your hand onto the battlefield (or choose nothing).`,
+      payEnergy: (p: { card: string; n: number }) => `${p.card}: pay ${'{E}'.repeat(p.n)}, or sacrifice it?`,
       cumulativeUpkeep: (p: { card: string; cost: string; n: number }) => `${p.card}: cumulative upkeep (${p.n} age counters). Pay ${p.cost}, or sacrifice it?`,
       discard: (p: { n: number }) => `Discard ${plural(p.n, 'card', 'cards')}.`,
       discardUnlessArtifact: (p: { n: number }) => `Discard ${plural(p.n, 'card', 'cards')}, or one artifact card.`,
@@ -1084,6 +1086,7 @@ export const en = {
     modeNotSimulated: 'This mode is not simulated',
     modeUnavailable: 'not simulated or no legal target',
     poisonTitle: 'Poison counters: 10 and you lose',
+    energyTitle: 'Energy counters ({E}), paid for some abilities',
     commanderDamageTitle: 'Most combat damage taken from one commander (21 loses)',
     commanderTax: (n: number) => `Commander tax: {${n}} more to cast it again from the command zone`,
     commanderTitle: 'Commander',
