@@ -1097,7 +1097,8 @@ const painfulMana = (perm: Permanent) =>
   manaLifeCost(perm.card) > 0 || !!tapsAnotherForMana(perm.card) || !!filterMana(perm.card) || permTriggers(perm).some((t) => t.event.on === 'becomesTapped');
 
 /** Permanents on the battlefield with a rule-changing static ability. */
-const withRule = (s: GameState, rule: GameRule) => {
+const withRule = (s: GameState, rule: GameRule): Permanent[] => cachedFor(s, `rule|${rule}`, () => readWithRule(s, rule));
+const readWithRule = (s: GameState, rule: GameRule) => {
   // Magus of the Moon: nonbasic lands lose their abilities (Yavimaya, Urborg).
   const moon = rule !== 'nonbasicLandsAreMountains' && rule !== 'nonbasicLandsAreIslands'
     && s.battlefield.some((x) => gameRulesOf(x.card).some((g) => g === 'nonbasicLandsAreMountains' || g === 'nonbasicLandsAreIslands'));
@@ -1203,8 +1204,42 @@ const graveyardExiled = (s: GameState, owner: PlayerId) =>
 /** Dauthi Voidwalker: a card going to `owner`'s graveyard is exiled with a void counter instead. */
 const voidExiled = (s: GameState, owner: PlayerId) => withRule(s, 'opponentGraveyardsVoid').some((x) => teamOf(s, x.controller) !== teamOf(s, owner));
 
+/**
+ * Results kept while a state can't change (the bot choosing, the abilities that can be activated, whether a player
+ * wants priority): each player's mana sources, by state, player, spell and ability. Off while an action is played.
+ */
+let queryCache: WeakMap<GameState, Map<string, unknown>> | null = null;
+/** A spell or an ability's source as mana restrictions see it (Treasures alike share their mana sources). */
+const usedFor = (c?: Card) => (c ? `${c.name}|${c.typeLine}|${c.colors.join('')}` : '');
+
+/** `compute()` once per state and key while the cache is on. */
+function cachedFor<T>(s: GameState, key: string, compute: () => T): T {
+  if (!queryCache) return compute();
+  let byState = queryCache.get(s);
+  if (!byState) queryCache.set(s, (byState = new Map()));
+  if (byState.has(key)) return byState.get(key) as T;
+  const value = compute();
+  byState.set(key, value);
+  return value;
+}
+
+/** Runs `fn` with the cache on (`s` and the states it looks at stay as they are meanwhile). */
+export function readOnly<T>(fn: () => T): T {
+  if (queryCache) return fn();
+  queryCache = new WeakMap();
+  try {
+    return fn();
+  } finally {
+    queryCache = null;
+  }
+}
+
 /** What `p` can pay with: mana in their pool ("pool:N"), then untapped mana sources. */
 export function manaSources(s: GameState, p: PlayerId, spell?: Card, ability?: Card): ManaSource[] {
+  return cachedFor(s, `mana|${p}|${usedFor(spell)}|${usedFor(ability)}`, () => readManaSources(s, p, spell, ability));
+}
+
+function readManaSources(s: GameState, p: PlayerId, spell?: Card, ability?: Card): ManaSource[] {
   const life = s.players[p].life;
   const pool = (s.players[p].pool ?? []).map((m, i): ManaSource => {
     // Cavern of Souls' mana kept in the pool: its colors only for a creature spell of the chosen type.
@@ -1856,12 +1891,12 @@ function finishActivation(d: GameState, item: StackItem, named: LogTarget[]) {
 
 /** Abilities `p` could activate right now with legal targets, as [permanent, index] pairs. */
 export function activatable(s: GameState, p: PlayerId): { perm: Permanent; index: number; spec: ActivatedSpec }[] {
-  return s.battlefield.flatMap((perm) =>
+  return readOnly(() => s.battlefield.flatMap((perm) =>
     perm.controller !== p ? [] : activatedOf(perm.card).flatMap((spec, index) =>
       spec.ability.effects.length && !activationProblem(s, p, perm, index) &&
       spec.ability.targets.every((slot) => legalTargets(s, p, slot, perm.iid, perm.card).length >= slot.min)
         ? [{ perm, index, spec }] : []),
-  );
+  ));
 }
 
 // ---------- Targets ----------
@@ -5334,6 +5369,10 @@ function afterResolving(d: GameState, reason: WindowReason) {
 
 /** Whether `p` should be asked to act in a priority window (Arena-style auto-pass otherwise). */
 function wantsPriority(d: GameState, p: PlayerId): boolean {
+  return readOnly(() => wantsPriorityNow(d, p));
+}
+
+function wantsPriorityNow(d: GameState, p: PlayerId): boolean {
   if (d.fullControl?.[p]) return true;
   const reason = d.priority!.reason;
   if (!d.stack.length) {
@@ -5657,6 +5696,17 @@ export function addAbility(state: GameState, source: CardInst, controller: Playe
 // ---------- Actions ----------
 
 export function apply(state: GameState, action: Action): GameState {
+  // The new state changes as the action is played: nothing computed is kept meanwhile (see readOnly).
+  const outer = queryCache;
+  queryCache = null;
+  try {
+    return applyAction(state, action);
+  } finally {
+    queryCache = outer;
+  }
+}
+
+function applyAction(state: GameState, action: Action): GameState {
   if (state.winner !== null) throw new IllegalAction('gameOver');
   const d = structuredClone(state);
   // Malcolm: the free cast is now or never.

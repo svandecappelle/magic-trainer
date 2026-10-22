@@ -117,7 +117,7 @@ const METALCRAFT = /^Metalcraft — /;
  * A one-mana "{T}, Pay N life: Add …" next to a free ability adds its colors too: they cost life when spent as
  * them (Starting Town, see manaPain). Mana with a spending restriction ("Spend this mana only …") is left out.
  */
-export function manaUnits(card: Card, identity?: Color[]): Color[][] {
+function readManaUnits(card: Card, identity?: Color[]): Color[][] {
   const single = new Set<Color>();
   let best: Color[][] = [];
   const front = card.typeLine.split('//')[0];
@@ -146,7 +146,7 @@ export type ManaCondition = { colors: Color[] } & ({ subtypes: string[] } | { ar
  * ability makes, and the subtypes one of which its controller must control (see unitsOf in the engine).
  * Mox Opal: "Metalcraft — {T}: Add one mana of any color. Activate only if you control three or more artifacts."
  */
-export function manaConditions(card: Card): ManaCondition[] {
+function readManaConditions(card: Card): ManaCondition[] {
   const free = new Set<Color>();
   for (const [type, color] of BASIC_TYPES) if (card.typeLine.split('//')[0].includes(type)) free.add(color);
   const conditional: ManaCondition[] = [];
@@ -173,7 +173,7 @@ export const choosesCreatureType = (card: Card) =>
  * Cavern of Souls: "{T}: Add one mana of any color. Spend this mana only to cast a creature spell of the chosen type, and
  * that spell can't be countered." → those colors (for such a spell only; it then can't be countered).
  */
-export function chosenTypeMana(card: Card): Color[] | null {
+function readChosenTypeMana(card: Card): Color[] | null {
   const m = frontText(card).match(/^\{T\}: Add ([^.]+)\. Spend this mana only to cast a creature spell of the chosen type, and that spell can't be countered\.$/m);
   const units = m && parseManaText(m[1]);
   return units?.length === 1 ? units[0] : null;
@@ -183,7 +183,7 @@ export function chosenTypeMana(card: Card): Color[] | null {
  * Delighted Halfling: "{T}: Add one mana of any color. Spend this mana only to cast a legendary spell, and that spell
  * can't be countered." → its colors, or null.
  */
-export function legendaryMana(card: Card): Color[] | null {
+function readLegendaryMana(card: Card): Color[] | null {
   return /^\{T\}: Add one mana of any color\. Spend this mana only to cast a legendary spell, and that spell can't be countered\.$/m.test(frontText(card))
     ? ['W', 'U', 'B', 'R', 'G'] : null;
 }
@@ -216,7 +216,7 @@ const MANA_USES: [RegExp, Omit<RestrictedMana, 'units'>][] = [
  * Mishra's Workshop: "{T}: Add {C}{C}{C}. Spend this mana only to cast artifact spells." Eldrazi Temple, Herd Heirloom,
  * Plaza of Heroes, Shang-Chi. (Cavern of Souls and Delighted Halfling: chosenTypeMana and legendaryMana.)
  */
-export function restrictedMana(card: Card): RestrictedMana | null {
+function readRestrictedMana(card: Card): RestrictedMana | null {
   for (const line of frontText(card).split('\n')) {
     const m = line.match(/^\{T\}(?:, Pay (\d+) life)?: Add ([^.]+)\. Spend this mana only to ([^.,]+)\.$/);
     const chosen = m?.[2].match(/^(one|two|three) mana of the chosen color$/i);
@@ -237,7 +237,7 @@ const freeMana = (card: Card) =>
  * Mana Confluence: "{T}, Pay 1 life: Add one mana of any color." → 1. Only for a permanent whose sole mana ability it
  * is: with a free one too, see manaPain.
  */
-export function manaLifeCost(card: Card): number {
+function readManaLifeCost(card: Card): number {
   const m = frontText(card).match(/^\{T\}, Pay (\d+) life:\s*Add /m);
   return m && !freeMana(card) ? Number(m[1]) : 0;
 }
@@ -246,7 +246,7 @@ export function manaLifeCost(card: Card): number {
  * Starting Town: "{T}: Add {C}." and "{T}, Pay 1 life: Add one mana of any color." → the colors only the life
  * ability makes, and its life: tapping makes one mana, which costs that life when spent as one of these colors.
  */
-export function manaPain(card: Card, identity?: Color[]): { life: number; colors: Color[] } | null {
+function readManaPain(card: Card, identity?: Color[]): { life: number; colors: Color[] } | null {
   if (!freeMana(card)) return null;
   const free = new Set<Color>();
   for (const [type, color] of BASIC_TYPES) if (card.typeLine.split('//')[0].includes(type)) free.add(color);
@@ -2796,12 +2796,34 @@ function chapterAbility(text: string, name: string): AbilitySpec {
   return triggerAbility(text, name, true);
 }
 
-const triggerCache = new Map<string, TriggerSpec[]>();
+/**
+ * Results read from a card's text, kept by the card object (no key to build: the hot path, cards are never changed in
+ * place) and by its name and text (the same card in another object: a new state, a copy).
+ */
+function cardCache<T>() {
+  const byObject = new WeakMap<Card, T>();
+  const byText = new Map<string, T>();
+  return {
+    get(card: Card): T | undefined {
+      const hit = byObject.get(card);
+      if (hit !== undefined) return hit;
+      const found = byText.get(`${card.name}\n${card.oracleText}`);
+      if (found !== undefined) byObject.set(card, found);
+      return found;
+    },
+    set(card: Card, value: T) {
+      byObject.set(card, value);
+      byText.set(`${card.name}\n${card.oracleText}`, value);
+    },
+  };
+}
+
+
+const triggerCache = cardCache<TriggerSpec[]>();
 
 /** Triggered abilities printed on a permanent card (front face), plus prowess. */
 export function triggersOf(card: Card): TriggerSpec[] {
-  const key = `${card.name}\n${card.oracleText}`;
-  const cached = triggerCache.get(key);
+  const cached = triggerCache.get(card);
   if (cached) return cached;
   const out: TriggerSpec[] = [];
   const name = selfName(card);
@@ -3225,7 +3247,7 @@ export function triggersOf(card: Card): TriggerSpec[] {
   // trigger; with that one not simulated, neither is this one (no drawback without the upside).
   const entersUnread = out.some((t) => t.event.on === 'enters' && t.event.self && !t.ability.effects.length);
   for (const t of out) if (entersUnread && t.event.on === 'leaves' && t.event.self) t.ability = NO_EFFECT;
-  triggerCache.set(key, out);
+  triggerCache.set(card, out);
   return out;
 }
 
@@ -3301,7 +3323,7 @@ export interface ActivatedSpec {
   opponentLands?: number;
 }
 
-const activatedCache = new Map<string, ActivatedSpec[]>();
+const activatedCache = cardCache<ActivatedSpec[]>();
 
 /**
  * Activated abilities of a permanent card ("{T}: …", "{2}{R}, Sacrifice this creature: …").
@@ -3309,8 +3331,7 @@ const activatedCache = new Map<string, ActivatedSpec[]>();
  * engine can't pay yet (sacrificing another permanent, discarding, removing counters…) are left out.
  */
 export function activatedOf(card: Card): ActivatedSpec[] {
-  const key = `${card.name}\n${card.oracleText}`;
-  const cached = activatedCache.get(key);
+  const cached = activatedCache.get(card);
   if (cached) return cached;
   const out: ActivatedSpec[] = [];
   const name = selfName(card);
@@ -3454,7 +3475,7 @@ export function activatedOf(card: Card): ActivatedSpec[] {
     const choosesNone = ability.effects.length === 1 && ability.effects[0].kind === 'putFromHand';
     out.push({ text: line, cost, ability: optional && ability.effects.length && !choosesNone ? { ...ability, optional } : ability, sorcery, once, ...(discountPer ? { discountPer } : {}), ...(yourTurn ? { yourTurn } : {}), ...(minGraveyard ? { minGraveyard } : {}), ...(noCounter ? { noCounter } : {}), ...(needsDelirium ? { delirium: true } : {}), ...(oppLands ? { opponentLands: toNumber(oppLands[1]) } : {}) });
   }
-  activatedCache.set(key, out);
+  activatedCache.set(card, out);
   return out;
 }
 
@@ -3490,7 +3511,7 @@ export function doublesEquippedTriggers(card: Card): boolean {
  * Amber "{T}: Add one mana of any color among legendary creatures and planeswalkers you control." (legends),
  * Gemstone Caverns (luck: any color with a luck counter, otherwise {C}).
  */
-export function stateMana(card: Card): 'imprinted' | 'legends' | 'luck' | 'perArtifact' | 'mining' | 'depletion' | 'noted' | 'reflect' | 'reflectThree' | 'perCreature' | 'perElf' | 'perDefender' | 'vivid' | 'chosenColor' | 'opponentLands' | null {
+function readStateMana(card: Card): 'imprinted' | 'legends' | 'luck' | 'perArtifact' | 'mining' | 'depletion' | 'noted' | 'reflect' | 'reflectThree' | 'perCreature' | 'perElf' | 'perDefender' | 'vivid' | 'chosenColor' | 'opponentLands' | null {
   const text = frontText(card);
   // Priest of Titania: "{T}: Add {G} for each Elf on the battlefield."
   if (/^\{T\}: Add \{G\} for each Elf on the battlefield\.$/m.test(text)) return 'perElf';
@@ -3658,12 +3679,11 @@ function anthemSubject(subject: string): { which: Selector; other: boolean } | n
   return { which: { kind: 'creature', filter }, other };
 }
 
-const staticCache = new Map<string, StaticSpec[]>();
+const staticCache = cardCache<StaticSpec[]>();
 
 /** Static abilities of a permanent card: anthems, and what an Aura or Equipment gives. */
 export function staticsOf(card: Card): StaticSpec[] {
-  const key = `${card.name}\n${card.oracleText}`;
-  const cached = staticCache.get(key);
+  const cached = staticCache.get(card);
   if (cached) return cached;
   const out: StaticSpec[] = [];
   for (const raw of frontText(card).split('\n')) {
@@ -3798,7 +3818,7 @@ export function staticsOf(card: Card): StaticSpec[] {
       out.push({ who: subject, power: Number(anthem[2] ?? 0), toughness: Number(anthem[3] ?? 0), keywords });
     }
   }
-  staticCache.set(key, out);
+  staticCache.set(card, out);
   return out;
 }
 
@@ -3867,7 +3887,7 @@ export function reconfiguresEnchanted(card: Card): number | null {
  * Filter lands: two mana for one other mana. Mystic Gate: "{W/U}, {T}: Add {W}{W}, {W}{U}, or {U}{U}." (the fee: one
  * mana of the two colors); Skycloud Expanse: "{1}, {T}: Add {W}{U}." (the fee: any one mana, `fee` null).
  */
-export function filterMana(card: Card): { fee: Color[] | null; units: Color[][] } | null {
+function readFilterMana(card: Card): { fee: Color[] | null; units: Color[][] } | null {
   const text = frontText(card);
   const gate = text.match(/^\{([WUBRG])\/([WUBRG])\}, \{T\}: Add \{\1\}\{\1\}, \{\1\}\{\2\}, or \{\2\}\{\2\}\.$/m);
   if (gate) {
@@ -3882,26 +3902,26 @@ export function filterMana(card: Card): { fee: Color[] | null; units: Color[][] 
  * Talon Gates of Madara, Giant's Boulder: "{1}, {T}: Add one mana of any color." Its mana costs one other mana (the
  * payment planner spends that one too; see `paid` in ManaSource).
  */
-export const paidAnyColor = (card: Card) => /^\{1\}, \{T\}: Add one mana of any color\.$/m.test(frontText(card));
+const readPaidAnyColor = (card: Card) => /^\{1\}, \{T\}: Add one mana of any color\.$/m.test(frontText(card));
 
 /**
  * Wall of Roots: "Put a -0/-1 counter on this creature: Add {G}. Activate only once each turn." The color, or null. (It
  * doesn't tap: usable tapped or summoning sick.)
  */
-export function counterMana(card: Card): Color | null {
+function readCounterMana(card: Card): Color | null {
   const m = frontText(card).match(new RegExp(`^Put a -0/-1 counter on (?:${selfWords(card.name).map(escapeRe).join('|')}): Add \\{([WUBRG])\\}\\. Activate only once each turn\\.$`, 'im'));
   return m ? (m[1] as Color) : null;
 }
 
 /** Eldrazi Spawn: "Sacrifice this token: Add {C}." (no tap: usable summoning sick). The color, or null. */
-export function sacrificeMana(card: Card): Color[][] | null {
+function readSacrificeMana(card: Card): Color[][] | null {
   // Tinder Wall: "Sacrifice this creature: Add {R}{R}."
   const m = frontText(card).match(/^Sacrifice this (?:token|creature|artifact): Add ((?:\{[WUBRGC]\})+)\.$/m);
   return m ? [...m[1].matchAll(/\{([WUBRGC])\}/g)].map((x) => [x[1] as Color]) : null;
 }
 
 /** The Cabbage Merchant: "Tap two untapped Foods you control: Add one mana of any color." */
-export const foodMana = (card: Card) => /^Tap two untapped Foods you control: Add one mana of any color\.$/m.test(frontText(card));
+const readFoodMana = (card: Card) => /^Tap two untapped Foods you control: Add one mana of any color\.$/m.test(frontText(card));
 
 /** Lion's Eye Diamond: "Discard your hand, Sacrifice this artifact: Add three mana of any one color. Activate only as an instant." */
 export const diamondMana = (card: Card) =>
@@ -3931,6 +3951,16 @@ const extraManaText = (text: string): ExtraMana['add'] | null =>
  * mana, that player adds one mana of any type that land produced."
  */
 export function extraManaOf(card: Card): ExtraMana | null {
+  const cached = extraManaCache.get(card);
+  if (cached !== undefined) return cached || null;
+  const found = readExtraMana(card);
+  extraManaCache.set(card, found ?? false);
+  return found;
+}
+
+const extraManaCache = cardCache<ExtraMana | false>();
+
+function readExtraMana(card: Card): ExtraMana | null {
   for (const line of frontText(card).split('\n')) {
     const aura = line.match(/^Whenever enchanted (land|creature|permanent|Plains|Island|Swamp|Mountain|Forest) is tapped for mana, its controller adds an additional (.+)\.$/);
     const tap = line.match(/^Whenever (you tap|a player taps) an? (land|creature|nonland permanent|permanent) for mana, (?:that player adds|add) (?:an additional )?(.+)\.$/);
@@ -3948,12 +3978,12 @@ export function extraManaOf(card: Card): ExtraMana | null {
 export const choosesColor = (card: Card) => /^(?:This land enters tapped\. )?As (?:this (?:Aura|enchantment|artifact|creature|land|permanent)|it) enters, choose a color\.$/m.test(frontText(card));
 
 /** Nyxbloom Ancient: "If you tap a permanent for mana, it produces three times as much of that mana instead." → 3. */
-export function manaMultiplier(card: Card): number {
+function readManaMultiplier(card: Card): number {
   const m = frontText(card).match(/^If you tap a permanent for mana, it produces (twice|three times) as much of that mana instead\.$/m);
   return m ? (m[1] === 'twice' ? 2 : 3) : 1;
 }
 
-export function tapsAnotherForMana(card: Card): 'creature' | 'permanent' | null {
+function readTapsAnotherForMana(card: Card): 'creature' | 'permanent' | null {
   const m = frontText(card).match(/^\{T\}, Tap an untapped (creature|permanent) you control: Add one mana of any color\.$/m);
   return m ? (m[1] as 'creature' | 'permanent') : null;
 }
@@ -3963,7 +3993,7 @@ export const blocksOnlyFlyers = (card: Card) =>
   new RegExp(`^(?:${selfWords(card.name).map(escapeRe).join('|')}) can block only creatures with flying\\.$`, 'im').test(frontText(card));
 
 /** Elvish Spirit Guide: "Exile this card from your hand: Add {G}." (the color), or null. */
-export function handMana(card: Card): Color | null {
+function readHandMana(card: Card): Color | null {
   const m = frontText(card).match(/^Exile this card from your hand: Add \{([WUBRGC])\}\.$/m);
   return m ? (m[1] as Color) : null;
 }
@@ -4061,7 +4091,7 @@ export function crewBonus(card: Card): number {
  * Kaito, Bane of Nightmares: "During your turn, as long as Kaito has one or more loyalty counters on him, he's a 3/4 Ninja
  * creature and has hexproof."
  */
-export function creatureOnYourTurn(card: Card): { power: number; toughness: number; subtype: string; keywords: Keyword[] } | null {
+function readCreatureOnYourTurn(card: Card): { power: number; toughness: number; subtype: string; keywords: Keyword[] } | null {
   const selves = selfWords(card.name).map(escapeRe).join('|');
   const m = frontText(card).match(new RegExp(`^During your turn, as long as (?:${selves}) has one or more loyalty counters on (?:him|her|it), (?:he|she|it)'s an? (\\d+)\\/(\\d+) ([A-Z][a-z]+) creature(?: and has ${KEYWORD_LIST})?\\.$`, 'im'));
   return m ? { power: Number(m[1]), toughness: Number(m[2]), subtype: m[3], keywords: keywordList(m[4]) } : null;
@@ -4298,14 +4328,13 @@ const GAME_RULES: [RegExp, GameRule][] = [
   [/^Damage can't be prevented\.$/m, 'damageCantBePrevented'],
 ];
 
-const rulesCache = new Map<string, GameRule[]>();
+const rulesCache = cardCache<GameRule[]>();
 
 export function gameRulesOf(card: Card): GameRule[] {
-  const key = `${card.name}\n${card.oracleText}`;
-  let rules = rulesCache.get(key);
+  let rules = rulesCache.get(card);
   if (!rules) {
     rules = GAME_RULES.filter(([re]) => re.test(frontText(card))).map(([, rule]) => rule);
-    rulesCache.set(key, rules);
+    rulesCache.set(card, rules);
   }
   return rules;
 }
@@ -4372,3 +4401,44 @@ export function cloneOf(card: Card): CloneSpec | null {
 }
 
 export const entersAsCopy = (card: Card) => !!cloneOf(card);
+
+// ---------- Cached readings of mana abilities (hot: read for every permanent each time mana is counted) ----------
+
+export const creatureOnYourTurn = memoCard(readCreatureOnYourTurn);
+export const counterMana = memoCard(readCounterMana);
+export const manaConditions = memoCard(readManaConditions);
+export const manaMultiplier = memoCard(readManaMultiplier);
+export const restrictedMana = memoCard(readRestrictedMana);
+export const stateMana = memoCard(readStateMana);
+export const filterMana = memoCard(readFilterMana);
+export const tapsAnotherForMana = memoCard(readTapsAnotherForMana);
+export const legendaryMana = memoCard(readLegendaryMana);
+export const chosenTypeMana = memoCard(readChosenTypeMana);
+export const sacrificeMana = memoCard(readSacrificeMana);
+export const handMana = memoCard(readHandMana);
+export const manaLifeCost = memoCard(readManaLifeCost);
+export const manaUnits = memoCardWithIdentity(readManaUnits);
+export const manaPain = memoCardWithIdentity(readManaPain);
+export const paidAnyColor = memoCard(readPaidAnyColor);
+export const foodMana = memoCard(readFoodMana);
+
+/** `read(card)` once per card (see cardCache). */
+function memoCard<T>(read: (card: Card) => T): (card: Card) => T {
+  const cache = cardCache<{ v: T }>();
+  return (card) => {
+    let hit = cache.get(card);
+    if (!hit) cache.set(card, (hit = { v: read(card) }));
+    return hit.v;
+  };
+}
+
+/** The same with the commanders' color identity (Command Tower): one cache per identity. */
+function memoCardWithIdentity<T>(read: (card: Card, identity?: Color[]) => T): (card: Card, identity?: Color[]) => T {
+  const caches = new Map<string, (card: Card) => T>();
+  return (card, identity) => {
+    const key = identity?.join('') ?? '-';
+    let memo = caches.get(key);
+    if (!memo) caches.set(key, (memo = memoCard((c) => read(c, identity))));
+    return memo(card);
+  };
+}

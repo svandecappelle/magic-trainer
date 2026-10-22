@@ -1,5 +1,5 @@
 import {
-  abilityMaxX, cycleMaxX, activatable, activationProblem, canPayAbility, actor, castSource, channelCost, crewOptions, crewPower, ninjutsuAttackers, firstOpponent, mulliganBottom, isActivePlayer, opponentsOf, teamOf, canAttack, castCost, castOptions, castSources, findInGraveyard, landFaces, manaSources, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
+  abilityMaxX, cycleMaxX, readOnly, activatable, activationProblem, canPayAbility, actor, castSource, channelCost, crewOptions, crewPower, ninjutsuAttackers, firstOpponent, mulliganBottom, isActivePlayer, opponentsOf, teamOf, canAttack, castCost, castOptions, castSources, findInGraveyard, landFaces, manaSources, canBlock, canCastNow, creaturesOf, findPermanent, firstStrikes, hasKw, hasUsefulTarget, isLegalTarget,
   legalTargets, matching, maxX, powerOf, toughnessOf, xCount,
   type Action, type Answer, type CastOption, type CardInst, type Choice, type GameState, type Permanent, type PlayerId, type StackItem, type Target, type Triggered,
 } from './engine';
@@ -19,6 +19,10 @@ const foeCreatures = (s: GameState, me: PlayerId) => opponentsOf(s, me).flatMap(
  * and evaluates combat one creature against one creature.
  */
 export function botAction(s: GameState): Action {
+  return readOnly(() => chooseAction(s));
+}
+
+function chooseAction(s: GameState): Action {
   const me = actor(s);
   if (me === null) throw new Error('No one is to act');
   if (s.mulligan) return mulliganDecision(s, me);
