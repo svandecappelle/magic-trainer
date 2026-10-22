@@ -115,6 +115,8 @@ export function GameBoard({ game: g, me, onAction, endControls, notice, readOnly
   const hideHover = hoverPreview.hide;
   useEffect(() => hideHover(), [g, hideHover]);
   const [zoneView, setZoneView] = useState<{ p: PlayerId; zone: 'graveyard' | 'exile' | 'command' } | null>(null);
+  /** A stack of identical permanents opened (its ×N badge): its copies, to use a given one. */
+  const [stackView, setStackView] = useState<string[] | null>(null);
   const zoneCards = (p: PlayerId, z: 'graveyard' | 'exile' | 'command') => (z === 'command' ? g.players[p].command ?? [] : g.players[p][z]);
   /** A card shown large after a long press (touch screens have no hover preview) or a right click. */
   const [zoom, setZoom] = useState<Card | null>(null);
@@ -819,6 +821,7 @@ export function GameBoard({ game: g, me, onAction, endControls, notice, readOnly
         setXPick(null);
         setBlockerSel(null);
         setZoneView(null);
+        setStackView(null);
         setZoom(null);
       }
     };
@@ -953,11 +956,24 @@ export function GameBoard({ game: g, me, onAction, endControls, notice, readOnly
     return (
       <div key={`stack-${stack.perms[0].iid}`} ref={regCopies(stack, shown)} className="perm-stack" title={t.game.stackTitle(stack.perms.length)}>
         {renderPermanent(shown)}
-        <span className="stack-count">×{stack.perms.length}</span>
+        {openStackButton(stack, shown, 'stack-count')}
         {lane !== 'creatures' && <span className="stack-ready">{t.game.stackReady(ready)}</span>}
       </div>
     );
   };
+  /** The ×N badge of a stack: opens it to see and use each copy. */
+  const openStackButton = (stack: Stack, shown: Permanent, className: string) => (
+    <button
+      type="button"
+      className={className}
+      title={t.game.openStack(stack.perms.length)}
+      aria-label={t.game.openStackNamed(show.name(shown.card), stack.perms.length)}
+      onClick={(e) => { e.stopPropagation(); setStackView(stack.perms.map((x) => x.iid)); }}
+    >
+      ×{stack.perms.length}
+    </button>
+  );
+
   /** Compact: one chip per stack (a land's chip shows its mana). */
   const renderChip = (stack: Stack, lane: Lane) => {
     const shown = copyToUse(stack);
@@ -971,20 +987,15 @@ export function GameBoard({ game: g, me, onAction, endControls, notice, readOnly
       ((targeting && !isTarget) || (paying && !usable)) && 'dimmed', shown.controller === me ? 'mine' : 'theirs',
     ].filter(Boolean).join(' ');
     return (
-      <button
-        key={`chip-${stack.perms[0].iid}`}
-        type="button"
-        ref={(el) => { for (const x of stack.perms) reg(`perm:${x.iid}`)(el); }}
-        className={cls}
-        onClick={() => onPermanentClick(shown)}
-        {...zoomable(shown.card)}
-      >
-        {colors.map((c) => <span key={c} className={`mana-dot mana-${c}`}>{c}</span>)}
-        <span className="chip-name">{show.name(shown.card)}</span>
-        {n > 1 && <span className="chip-count">×{n}</span>}
-        <span className="chip-state">{ready === 0 ? t.game.tappedState : n > 1 ? t.game.stackReady(ready) : ''}</span>
+      <div key={`chip-${stack.perms[0].iid}`} ref={(el) => { for (const x of stack.perms) reg(`perm:${x.iid}`)(el); }} className={cls}>
+        <button type="button" className="chip-main" onClick={() => onPermanentClick(shown)} {...zoomable(shown.card)}>
+          {colors.map((c) => <span key={c} className={`mana-dot mana-${c}`}>{c}</span>)}
+          <span className="chip-name">{show.name(shown.card)}</span>
+          <span className="chip-state">{ready === 0 ? t.game.tappedState : n > 1 ? t.game.stackReady(ready) : ''}</span>
+        </button>
+        {n > 1 && openStackButton(stack, shown, 'chip-count')}
         {floatsFor(`perm:${shown.iid}`)}
-      </button>
+      </div>
     );
   };
 
@@ -1291,6 +1302,48 @@ export function GameBoard({ game: g, me, onAction, endControls, notice, readOnly
             {t.game.turnBanner(ours(fx.banner.player), teamName(fx.banner.player))}
           </div>
         )}
+
+        {stackView && (() => {
+          const copies = stackView.map((iid) => findPermanent(g, iid)).filter((x): x is Permanent => !!x);
+          if (!copies.length) return null;
+          const first = copies[0];
+          const ready = copies.filter((x) => !x.tapped).length;
+          // Choosing targets or paying: several copies may be picked, the panel stays open.
+          const picking = !!targeting || !!paying;
+          return (
+            <div className="zone-view" onClick={() => setStackView(null)}>
+              <div className="zone-view-panel stack-view" role="dialog" aria-label={show.name(first.card)} onClick={(e) => e.stopPropagation()}>
+                <div className="row">
+                  <strong>{show.name(first.card)} ×{copies.length}</strong>
+                  <span className="small muted">{t.game.stackStates(ready, copies.length - ready)}</span>
+                  <span className="spacer" />
+                  <button className="secondary small" onClick={() => setStackView(null)}>{t.game.close}</button>
+                </div>
+                <div className="zone-cards">
+                  {copies.map((x) => {
+                    const asTarget: Target = { kind: 'permanent', iid: x.iid };
+                    const usable = canTarget(asTarget) || canActivate.has(x.iid) || !!payPick(x) || (!targeting && !paying && x.controller === me && canTapForMana(g, x))
+                      || (declaringAttack && x.controller === me && canAttack(x)) || (declaringBlocks && x.controller === me && !x.tapped);
+                    const cls = ['stack-copy', x.tapped && 'tapped', usable && 'castable', isPicked(asTarget) && 'picked'].filter(Boolean).join(' ');
+                    return (
+                      <button
+                        key={x.iid}
+                        type="button"
+                        className={cls}
+                        aria-label={`${show.name(x.card)}${x.tapped ? ` (${t.game.tappedState})` : ''}`}
+                        onClick={() => { if (!picking) setStackView(null); onPermanentClick(x); }}
+                        {...zoomable(x.card)}
+                      >
+                        <img src={show.imageSmall(x.card)} alt="" />
+                        {x.tapped && <span className="stack-copy-state">{t.game.tappedState}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {zoneView && (
           <div className="zone-view" onClick={() => setZoneView(null)}>

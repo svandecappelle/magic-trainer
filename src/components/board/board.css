@@ -132,11 +132,13 @@ main:has(> .page.play) { padding: 0 10px 10px; }
 .perm-stack > .perm { z-index: 1; }
 /* A tapped card is turned: its badge stays, not the edges. */
 .perm-stack:has(> .perm.tapped)::before, .perm-stack:has(> .perm.tapped)::after { display: none; }
+/* The ×N badge opens the stack. */
 .perm-stack > .stack-count {
-  position: absolute; left: -6px; top: -10px; z-index: 3; padding: 1px 7px; border-radius: 999px;
-  background: var(--accent); color: var(--accent-text); font-size: 0.75rem; font-weight: 800; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
-  pointer-events: none;
+  position: absolute; left: -6px; top: -10px; z-index: 3; padding: 1px 7px; border-radius: 999px; border: 0; cursor: pointer;
+  background: var(--accent); color: var(--accent-text); font: inherit; font-size: 0.75rem; font-weight: 800; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  min-width: 28px; min-height: 22px;
 }
+.perm-stack > .stack-count:hover { filter: brightness(1.12); }
 .perm-stack > .stack-ready {
   position: absolute; left: 50%; bottom: 4px; translate: -50% 0; z-index: 3; white-space: nowrap; pointer-events: none;
   font-size: 0.68rem; font-weight: 700; color: var(--text); background: rgba(14, 17, 22, 0.8); padding: 1px 6px; border-radius: 6px;
@@ -144,13 +146,21 @@ main:has(> .page.play) { padding: 0 10px 10px; }
 
 /* Compact lanes: a chip per permanent or stack. */
 .perm-chip {
-  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 5px; border-radius: 999px; position: relative;
-  background: var(--panel-2); border: 1px solid var(--border); color: var(--text); font: inherit; font-size: 0.82rem; cursor: pointer;
+  display: inline-flex; align-items: center; border-radius: 999px; position: relative;
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--text); font-size: 0.82rem;
   min-height: 32px; transition: filter 0.2s, box-shadow 0.2s;
 }
+.perm-chip > .chip-main {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 5px; border: 0; background: none; color: inherit;
+  font: inherit; cursor: pointer; border-radius: 999px; min-height: 32px;
+}
+.perm-chip > .chip-count {
+  border: 0; border-left: 1px solid var(--border); background: none; font: inherit; font-weight: 800; color: var(--accent);
+  padding: 4px 10px 4px 8px; cursor: pointer; border-radius: 0 999px 999px 0; min-height: 32px;
+}
+.perm-chip > .chip-count:hover { background: rgba(217, 169, 78, 0.15); }
 .perm-chip .mana-dot { animation: none; width: 20px; height: 20px; font-size: 0.66rem; }
 .perm-chip .chip-name { font-weight: 600; white-space: nowrap; }
-.perm-chip .chip-count { font-weight: 800; color: var(--accent); }
 .perm-chip .chip-state { color: var(--muted); font-size: 0.75rem; white-space: nowrap; }
 .perm-chip .chip-state:empty { display: none; }
 .perm-chip.tapped { opacity: 0.6; }
@@ -417,6 +427,16 @@ main:has(> .page.play) { padding: 0 10px 10px; }
 .zone-view-panel { width: min(720px, 92%); max-height: 70%; overflow: auto; padding: 14px 16px; background: var(--panel); border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6); }
 .zone-cards { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .zone-cards img { width: clamp(64px, var(--perm-w), 100px); border-radius: 6px; }
+/* An opened stack: its copies, each usable on its own. */
+.stack-copy { position: relative; padding: 0; border: 0; background: none; border-radius: 6px; cursor: pointer; }
+.stack-copy img { display: block; }
+.stack-copy.tapped img { filter: brightness(0.6) saturate(0.8); }
+.stack-copy.castable img { box-shadow: 0 0 0 2px var(--ok), 0 0 10px rgba(92, 184, 92, 0.5); }
+.stack-copy.picked img { box-shadow: 0 0 0 3px var(--accent), 0 0 16px var(--accent); }
+.stack-copy-state {
+  position: absolute; left: 50%; bottom: 6px; translate: -50% 0; font-size: 0.7rem; font-weight: 700; white-space: nowrap;
+  background: rgba(14, 17, 22, 0.8); color: var(--text); padding: 1px 6px; border-radius: 6px;
+}
 
 /* Long press (or right click) on a card: show it large. */
 .card-zoom {
