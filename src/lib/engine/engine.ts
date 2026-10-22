@@ -2,7 +2,7 @@ import type { Card } from '../../types';
 import { shuffle, type Rng } from '../goldfish';
 import {
   cardTypes, chosenModes, chosenTypeMana, choosesCreatureType, findPayment, hasInstantSpeed, manaConditions, manaLifeCost, manaPain, manaUnits, planPayment, hasKeyword, isCreature, isInstantOrSorcery, isLandCard,
-  activatedOf, auraTarget, castInfo, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, counterMana, choosesColor, diamondMana, sacrificeMana, mayStayTapped, gainsLifeFromCombatDamageTaken, restrictedMana, type RestrictedMana, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, hasSplitSecond, crewBonus, ROLES, foodMana, creatureOnYourTurn, spellCostMods, type TokenSpec, vanishingOf, hasEnlist, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
+  activatedOf, auraTarget, castInfo, classCard, classLevelAbility, isClass, castSpec, cloneOf, faceName, modeSets, toxicOf, faceCard, isAdventure, isLandCard as isLand, playableFaces, cardColors, stateMana, entersTappedRule, entersCounters, protectionsOf, staticsOf, wardCost, wardLife, protectsSpells, namesCardToStop, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, counterMana, choosesColor, diamondMana, sacrificeMana, mayStayTapped, gainsLifeFromCombatDamageTaken, restrictedMana, type RestrictedMana, extraManaOf, manaMultiplier, reconfiguresEnchanted, preventsDamageToSelf, entersPrepared, cardFaces, blocksOnlyFlyers, legendaryMana, isLegendary, entersAsBirdCopy, hasSplitSecond, crewBonus, ROLES, foodMana, creatureOnYourTurn, spellCostMods, type TokenSpec, vanishingOf, hasEnlist, namesSpellToStop, namesAnyCard, chosenNameTax, protectionFromChosenPlayer, illusionWhenLeaving, fadingOf, isPlaneswalker, isSaga, isStoried, finalChapter, equipDiscount, freeFirstEquip, doublesEquippedTriggers, beginsOnBattlefield, beginsWithLuck, discardsLandInstead, doesntUntap, isToken, startingLoyalty, parseCost, power, spellSpec, tokenCard, toughness, triggersOf,
   gameRulesOf, type GameRule, type AbilitySpec, type AdditionalCost, type Affected, type Amount, type Color, type CounterKind, type Effect, type Keyword, type ManaPick, type ManaSource, type Selector,
   type ActivatedSpec, type AltCost, type CastInfo, type CastChoice, type Cost, type ObjectEvent, type StepEvent, type TargetFilter, type TargetSpec, type TriggerEvent,
 } from './rules';
@@ -51,6 +51,8 @@ export interface Boost {
 
 export interface Permanent extends CardInst {
   controller: PlayerId;
+  /** A Class's level (its card is the text of that level: see classCard). */
+  classLevel?: number;
   /** Phyrexian Devourer: its "power is 7 or greater" state trigger is waiting (it triggers again once it drops below). */
   stateTriggered?: boolean;
   /** Berserk: the last turn it attacked. */
@@ -538,6 +540,7 @@ export type LogEntry =
   | { k: 'gainsAbility'; card: string; text: string }
   | { k: 'poison'; p: PlayerId; n: number }
   | { k: 'energy'; p: PlayerId; n: number }
+  | { k: 'levelUp'; card: string; n: number }
   | { k: 'proliferate'; p: PlayerId }
   | { k: 'control'; p: PlayerId; card: string }
   | { k: 'copied'; card: string; as: string }
@@ -552,7 +555,7 @@ export type LogEntry =
   | { k: 'shock'; card: string; paid: number }
   | { k: 'token'; p: PlayerId; card: string; n: number }
   /** A card left a graveyard: back to hand, onto the battlefield, or exiled. */
-  | { k: 'returned'; card: string; dest: 'hand' | 'battlefield' }
+  | { k: 'returned'; card: string; dest: 'hand' | 'battlefield' | 'libraryTop' }
   | { k: 'exiledCard'; card: string; from?: 'hand' }
   /** Rest in Peace: `card` exiled these players' graveyards. */
   | { k: 'exiledGraveyards'; card: string }
@@ -1370,7 +1373,11 @@ function altMana(c: Card, alt: AltCost, x: number): Cost {
   if (alt.kind === 'mana') return parseCost(alt.cost);
   // Escape: its own mana, or the card's mana cost (Underworld Breach).
   if (alt.kind === 'escape') return alt.cost ? parseCost(alt.cost) : costWithX(c, x);
-  if (alt.kind === 'bestow') return parseCost(alt.cost);
+  // Nyxborn Hydra: "Bestow {X}{G}{G}".
+  if (alt.kind === 'bestow') {
+    const cost = parseCost(alt.cost);
+    return { ...cost, generic: cost.generic + x * (alt.cost.match(/\{X\}/g) ?? []).length };
+  }
   if (alt.kind === 'phyrexian') {
     const cost = parseCost(c.manaCost.split('//')[0].replace(/\{[WUBRG]\/P\}/g, ''));
     return { ...cost, generic: cost.generic + x * xCount(c) };
@@ -2279,10 +2286,22 @@ function beginTurn(d: GameState, p: PlayerId, skipDraw: boolean) {
     delete ps.artifactAbilitiesThisTurn;
   }
   emptyPools(d, true);
+  // Winter Moon: one tapped nonbasic land untaps per player, the one making the most mana (chosen automatically).
+  const keptTapped = new Set<string>();
+  if (withRule(d, 'oneNonbasicUntap').length) {
+    for (const q of teamPlayers(d, d.active)) {
+      const tapped = d.battlefield.filter((x) => x.controller === q && x.tapped && isNonbasicLand(x.card))
+        .sort((a, b) => unitsOf(d, b).length - unitsOf(d, a).length || unitsOf(d, b).flat().length - unitsOf(d, a).flat().length);
+      for (const x of tapped.slice(1)) keptTapped.add(x.iid);
+    }
+  }
   for (const perm of d.battlefield) {
     if (isActivePlayer(d, perm.controller)) {
       // Stun: "If a permanent with a stun counter would become untapped, remove one from it instead."
       if (perm.tapped && perm.counters.stun) perm.counters = { ...perm.counters, stun: perm.counters.stun - 1 };
+      else if (keptTapped.has(perm.iid)) {
+        // Winter Moon keeps it tapped.
+      }
       // Vedalken Shackles: "You may choose not to untap this artifact": kept tapped while it holds a creature.
       else if (!doesntUntap(perm.card) && !(mayStayTapped(perm.card) && d.battlefield.some((x) => x.controlWhileTapped === perm.iid))) perm.tapped = false;
       perm.sick = false;
@@ -2749,6 +2768,7 @@ function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, op
     perm.tapped = !(isActivePlayer(d, controller) && (d.players[controller].turns ?? 0) <= rule.n);
   } else if (rule?.kind === 'notYourTurn') perm.tapped = !isActivePlayer(d, controller);
   else if (rule?.kind === 'unlessOpponents') perm.tapped = opponentsOf(d, controller).length < rule.n;
+  else if (rule?.kind === 'unlessSubtypeCount') perm.tapped = otherLands.filter((x) => landHasType(d, x.card, rule.subtype)).length < rule.n;
   else if (rule?.kind === 'unlessBasic') perm.tapped = !otherLands.some((x) => /\bBasic\b/.test(x.card.typeLine));
   // Theorist's Sanctum: beholding a Jace (one controlled or in the hand; always done when possible).
   else if (rule?.kind === 'unlessBehold') {
@@ -2779,6 +2799,12 @@ function enterBattlefield(d: GameState, inst: CardInst, controller: PlayerId, op
     if (n > 0) perm.counters = { [counters.counter]: n };
   }
   if (isPlaneswalker(inst.card)) perm.counters = { ...perm.counters, loyalty: startingLoyalty(inst.card) };
+  // A Class enters at level 1: only that level's abilities, and the next level to gain.
+  if (isClass(inst.card)) {
+    perm.printed = inst.card;
+    perm.card = classCard(inst.card, 1);
+    perm.classLevel = 1;
+  }
   d.battlefield.push(perm);
   fireObject(d, 'enters', perm);
   // A Saga enters with a lore counter (CR 714.3a).
@@ -3059,6 +3085,8 @@ function conditionMet(d: GameState, p: PlayerId, cond: AbilitySpec['condition'],
   if (!cond) return true;
   const ps = d.players[p];
   if (cond.tapped && !(source && findPermanent(d, source)?.tapped)) return false;
+  // Mystic Sanctuary: "When this land enters untapped".
+  if (cond.untapped && !(source && findPermanent(d, source) && !findPermanent(d, source)!.tapped)) return false;
   if (cond.cast && !(source && findPermanent(d, source)?.cast)) return false;
   if (cond.delirium && !delirium(d, p)) return false;
   if (cond.notEscaped && source && findPermanent(d, source)?.escaped) return false;
@@ -4242,6 +4270,7 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         unbury(g);
         log(d, { k: 'returned', card: g.grave.card.name, dest: e.dest });
         if (e.dest === 'hand') d.players[g.owner].hand.push(g.grave);
+        else if (e.dest === 'libraryTop') d.players[g.owner].library.unshift(g.grave);
         else putOntoBattlefield(d, g.grave, caster);
         const back = e.finality ? findPermanent(d, g.grave.iid) : undefined;
         if (back) back.counters = { ...back.counters, finality: 1 };
@@ -5058,6 +5087,17 @@ function runEffect(d: GameState, r: Resolving, e: Effect, answer?: Answer): Choi
         putOntoBattlefield(d, inst, owner);
       }
       break;
+    case 'levelUp': {
+      // A Class gains the next level: its abilities, then "When this Class becomes level N, …".
+      const src = item.source ? findPermanent(d, item.source) : undefined;
+      if (!src || !isClass(printedCard(src)) || (src.classLevel ?? 1) !== e.level - 1) break;
+      src.classLevel = e.level;
+      src.card = classCard(printedCard(src), e.level);
+      log(d, { k: 'levelUp', card: src.card.name, n: e.level });
+      const becomes = classLevelAbility(printedCard(src), e.level);
+      if (becomes) queueTrigger(d, src, src.controller, becomes);
+      break;
+    }
     case 'returnExiledToHand': {
       // Mesmeric Fiend: the cards its source exiled, back to their owners' hands.
       for (const x of (r.item.source && d.exiledWith?.[r.item.source]) || []) {
@@ -5276,7 +5316,8 @@ function resolvePermanentSpell(d: GameState, item: StackItem, reason: WindowReas
     const target = item.targets[0]?.[0];
     const host = target?.kind === 'permanent' && isLegalTarget(d, item.controller, { kind: 'creature', min: 1, max: 1, filter: {} }, target, item.iid, card) ? findPermanent(d, target.iid) : undefined;
     log(d, { k: 'enters', card: card.name });
-    const perm = enterBattlefield(d, { iid: item.iid, card: host ? bestowedAura(card) : card }, item.controller, { cast: true });
+    // Nyxborn Hydra: "enters with X +1/+1 counters" (X paid for its bestow cost).
+    const perm = enterBattlefield(d, { iid: item.iid, card: host ? bestowedAura(card) : card }, item.controller, { cast: true, x: item.x });
     if (host) {
       perm.printed = item.card;
       perm.bestowed = true;

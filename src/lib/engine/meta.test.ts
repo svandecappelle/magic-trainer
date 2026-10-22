@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import type { Card } from '../../types';
-import { activationProblem, actor, cycleMaxX, canPayAbility, apply, findPermanent, hasKw, paymentFor, canBlock, canCastNow, castCost, castSource, canTapForMana, type Answer, castOptions, canPay, canActivateDiamond, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId } from './engine';
+import { activationProblem, actor, cycleMaxX, canPayAbility, apply, findPermanent, hasKw, paymentFor, canBlock, canCastNow, castCost, castSource, canTapForMana, type Answer, castOptions, canPay, canActivateDiamond, IllegalAction, isLegalTarget, newGame, powerOf, toughnessOf, unitsOf, type GameState, type Permanent, type PlayerId, type Target } from './engine';
 import { botAction } from './bot';
 import { activatedOf, castInfo, cloneOf, entersTappedRule, gameRulesOf, castSpec, finalChapter, hasKeyword, isCreature, PREDEFINED_TOKENS, tokenCard, type TargetSpec, manaUnits, restrictedMana, extraManaOf, manaMultiplier, filterMana, paidAnyColor, parseAbilityText, spellSpec, triggersOf } from './rules';
 
@@ -5799,3 +5799,103 @@ describe('Metagame audit 2026-10-21', () => {
     expect(s.players[0].graveyard.map((c) => c.card.name)).toEqual(['Murder']);
   });
 });
+
+describe('Metagame audit 2026-10-22', () => {
+  const cards = JSON.parse(readFileSync(new URL('./fixtures/metagame-2026-10-22.json', import.meta.url), 'utf8')) as Card[];
+  const real = (name: string) => cards.find((x) => x.name.startsWith(name))!;
+  const run = (s: GameState) => {
+    for (let i = 0; i < 12 && !s.pending && (s.stack.length || s.triggered?.length); i++) s = settle(apply(s, { type: 'pass' }));
+    return s;
+  };
+  const answerTargets = (s: GameState, targets: Target[][]) => (s.pending?.choice.kind === 'targets' ? run(apply(s, { type: 'choose', answer: { kind: 'targets', targets } })) : s);
+
+  it('Stormchaser\'s Talent: one level at a time, each level\'s abilities only from it on', () => {
+    const opt = spell('Opt', '{U}', 'Scry 1. Draw a card.');
+    let s = board({ mine: [...Array(14).fill(island)], hand: [real('Stormchaser\'s Talent'), opt, opt].map((c, i) => ({ ...c, id: `c${i}` })) });
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    const otters = () => s.battlefield.filter((x) => x.card.name === 'Otter').length;
+    expect(otters()).toBe(1);
+    const talent = () => perm(s, 'Stormchaser\'s Talent')!;
+    expect(talent().classLevel).toBe(1);
+    // Level 1: no Otter for an instant; only "Level 2" can be gained.
+    s = run(settle(apply(s, { type: 'cast', iid: 'h1' })));
+    if (s.pending?.choice.kind === 'arrange') s = run(apply(s, { type: 'choose', answer: { kind: 'arrange', zones: { top: (s.pending.choice as { cards: { iid: string }[] }).cards.map((c) => c.iid) } } }));
+    expect(otters()).toBe(1);
+    expect(activatedOf(talent().card).map((a) => a.text)).toEqual(['{3}{U}: Level 2']);
+    // Level 2: the Opt back from the graveyard.
+    s = settle(apply(s, { type: 'activate', iid: talent().iid, index: 0 }));
+    s = run(s);
+    s = answerTargets(s, [[{ kind: 'card', iid: s.players[0].graveyard.find((c) => c.card.name === 'Opt')!.iid }]]);
+    expect(talent().classLevel).toBe(2);
+    expect(s.players[0].hand.map((c) => c.card.name)).toContain('Opt');
+    // Level 3: an Otter for each instant or sorcery.
+    s = run(settle(apply(s, { type: 'activate', iid: talent().iid, index: 0 })));
+    expect(talent().classLevel).toBe(3);
+    s = run(settle(apply(s, { type: 'cast', iid: s.players[0].hand.find((c) => c.card.name === 'Opt')!.iid })));
+    if (s.pending?.choice.kind === 'arrange') s = run(apply(s, { type: 'choose', answer: { kind: 'arrange', zones: { top: (s.pending.choice as { cards: { iid: string }[] }).cards.map((c) => c.iid) } } }));
+    expect(otters()).toBe(2);
+  });
+
+  it('Nyxborn Hydra: bestowed for X, the enchanted creature gets +1/+1 for each counter on it, reach and trample', () => {
+    const forest = card({ name: 'Forest', typeLine: 'Basic Land — Forest' });
+    const bear = creature('Bear', 2, 2);
+    let s = board({ mine: [...Array(5).fill(forest), bear], hand: [real('Nyxborn Hydra')] });
+    const bestow = castOptions(s, 0, 'h0').find((o) => o.alt !== undefined);
+    expect(bestow).toBeTruthy();
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0', alt: bestow!.alt, x: 3, targets: [[{ kind: 'permanent', iid: iidOf(s, 'Bear') }]] })));
+    const hydra = perm(s, 'Nyxborn Hydra')!;
+    expect([hydra.attachedTo, hydra.counters['+1/+1']]).toEqual([iidOf(s, 'Bear'), 3]);
+    const host = perm(s, 'Bear')!;
+    expect([powerOf(host), toughnessOf(host), hasKw(host, 'reach'), hasKw(host, 'trample')]).toEqual([5, 5, true, true]);
+    expect(s.battlefield.filter((x) => x.card.name === 'Forest' && x.tapped)).toHaveLength(5);
+    // The Bear dies: a 3/4 Hydra (0/1 with three counters).
+    host.damage = 5;
+    s = run(settle(apply(s, { type: 'pass' })));
+    const alone = perm(s, 'Nyxborn Hydra')!;
+    expect([alone.attachedTo, isCreature(alone.card), powerOf(alone), toughnessOf(alone)]).toEqual([undefined, true, 3, 4]);
+  });
+
+  it('Ajani, Nacatl Pariah: another Cat dies, he comes back as Ajani, Nacatl Avenger; +2 puts counters on the Cats', () => {
+    const murder = spell('Murder', '{0}', 'Destroy target creature.');
+    let s = board({ hand: [real('Ajani, Nacatl Pariah'), murder] });
+    s.players[0].hand[0].card = { ...s.players[0].hand[0].card, manaCost: '{0}', cmc: 0 };
+    s = run(settle(apply(s, { type: 'cast', iid: 'h0' })));
+    const token = s.battlefield.find((x) => x.card.name === 'Cat Warrior')!;
+    expect(token).toBeTruthy();
+    s = settle(apply(s, { type: 'cast', iid: 'h1', targets: [[{ kind: 'permanent', iid: token.iid }]] }));
+    for (let i = 0; i < 10 && !s.pending; i++) s = settle(apply(s, { type: 'pass' }));
+    expect(s.pending?.choice.kind).toBe('yesNo');
+    s = run(apply(s, { type: 'choose', answer: { kind: 'yesNo', yes: true } }));
+    const avenger = s.battlefield.find((x) => x.card.name === 'Ajani, Nacatl Avenger')!;
+    expect(avenger.counters.loyalty).toBe(3);
+    // +2 (one Cat left: none; a new Cat token gets one).
+    s.battlefield.push({ ...token, iid: 'cat2' });
+    s = run(settle(apply(s, { type: 'activate', iid: avenger.iid, index: 0 })));
+    expect([findPermanent(s, 'cat2')!.counters['+1/+1'], findPermanent(s, avenger.iid)!.counters.loyalty]).toEqual([1, 5]);
+  });
+
+  it('Mystic Sanctuary: untapped with three other Islands, then an instant from the graveyard on top of the library', () => {
+    const opt = spell('Opt', '{U}', 'Scry 1. Draw a card.');
+    let s = board({ mine: [island, island], hand: [real('Mystic Sanctuary')], grave: [opt] });
+    let t = apply(s, { type: 'playLand', iid: 'h0' });
+    expect([perm(t, 'Mystic Sanctuary')!.tapped, t.stack.length + (t.triggered?.length ?? 0) + (t.pending ? 1 : 0)]).toEqual([true, 0]);
+    s = board({ mine: [island, island, island], hand: [real('Mystic Sanctuary')], grave: [opt] });
+    t = apply(s, { type: 'playLand', iid: 'h0' });
+    expect(perm(t, 'Mystic Sanctuary')!.tapped).toBe(false);
+    for (let i = 0; i < 6 && !(t.pending?.choice.kind === 'targets'); i++) t = settle(apply(t, { type: 'pass' }));
+    t = answerTargets(t, [[{ kind: 'card', iid: 'g0' }]]);
+    if (t.pending?.choice.kind === 'yesNo') t = run(apply(t, { type: 'choose', answer: { kind: 'yesNo', yes: true } }));
+    expect(t.players[0].library[0].card.name).toBe('Opt');
+  });
+
+  it('Winter Moon: one nonbasic land untaps in each untap step (the one making the most mana)', () => {
+    const verge = card({ name: 'Gloomlake Verge', typeLine: 'Land', oracleText: '{T}: Add {U}.\n{T}: Add {B}.' });
+    const tower = card({ name: 'Crystal Tower', typeLine: 'Land', oracleText: '{T}: Add {C}{C}.' });
+    let s = board({ mine: [real('Winter Moon')], theirs: [verge, tower, island] });
+    s.battlefield.filter((x) => x.controller === 1).forEach((x) => (x.tapped = true));
+    const turn = s.turn;
+    for (let i = 0; i < 30 && s.turn === turn; i++) s = s.pending ? apply(s, { type: 'choose', answer: { kind: 'cards', iids: [] } }) : !s.priority && s.step === 'attack' ? apply(s, { type: 'declareAttackers', attackers: [] }) : apply(s, { type: 'pass' });
+    expect([perm(s, 'Crystal Tower')!.tapped, perm(s, 'Gloomlake Verge')!.tapped, perm(s, 'Island')!.tapped]).toEqual([false, true, false]);
+  });
+});
+

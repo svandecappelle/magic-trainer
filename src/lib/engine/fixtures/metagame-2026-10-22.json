@@ -1,0 +1,179 @@
+[
+ {
+  "id": "0d16e8e0-31b2-4389-afd6-783c501f6fa0",
+  "name": "Ajani, Nacatl Pariah // Ajani, Nacatl Avenger",
+  "manaCost": "{1}{W}",
+  "cmc": 2,
+  "typeLine": "Legendary Creature — Cat Warrior // Legendary Planeswalker — Ajani",
+  "oracleText": "When Ajani enters, create a 2/1 white Cat Warrior creature token.\nWhenever one or more other Cats you control die, you may exile Ajani, then return him to the battlefield transformed under his owner's control.\n//\n+2: Put a +1/+1 counter on each Cat you control.\n0: Create a 2/1 white Cat Warrior creature token. When you do, if you control a red permanent other than Ajani, he deals damage equal to the number of creatures you control to any target.\n−4: Each opponent chooses an artifact, a creature, an enchantment, and a planeswalker from among the nonland permanents they control, then sacrifices the rest.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "R",
+   "W"
+  ],
+  "setCode": "mh3",
+  "setName": "Modern Horizons 3",
+  "rarity": "mythic",
+  "power": "1",
+  "toughness": "2",
+  "layout": "transform",
+  "faces": [
+   {
+    "name": "Ajani, Nacatl Pariah",
+    "manaCost": "{1}{W}",
+    "typeLine": "Legendary Creature — Cat Warrior",
+    "oracleText": "When Ajani enters, create a 2/1 white Cat Warrior creature token.\nWhenever one or more other Cats you control die, you may exile Ajani, then return him to the battlefield transformed under his owner's control.",
+    "colors": [
+     "W"
+    ],
+    "power": "1",
+    "toughness": "2",
+    "imageSmall": "https://cards.scryfall.io/small/front/0/d/0d16e8e0-31b2-4389-afd6-783c501f6fa0.jpg?1791803778",
+    "imageNormal": "https://cards.scryfall.io/normal/front/0/d/0d16e8e0-31b2-4389-afd6-783c501f6fa0.jpg?1791803778"
+   },
+   {
+    "name": "Ajani, Nacatl Avenger",
+    "manaCost": "",
+    "typeLine": "Legendary Planeswalker — Ajani",
+    "oracleText": "+2: Put a +1/+1 counter on each Cat you control.\n0: Create a 2/1 white Cat Warrior creature token. When you do, if you control a red permanent other than Ajani, he deals damage equal to the number of creatures you control to any target.\n−4: Each opponent chooses an artifact, a creature, an enchantment, and a planeswalker from among the nonland permanents they control, then sacrifices the rest.",
+    "colors": [
+     "R",
+     "W"
+    ],
+    "loyalty": "3",
+    "imageSmall": "https://cards.scryfall.io/small/back/0/d/0d16e8e0-31b2-4389-afd6-783c501f6fa0.jpg?1791803778",
+    "imageNormal": "https://cards.scryfall.io/normal/back/0/d/0d16e8e0-31b2-4389-afd6-783c501f6fa0.jpg?1791803778"
+   }
+  ],
+  "keywords": [
+   "Transform"
+  ]
+ },
+ {
+  "id": "c74e13eb-6f82-4db1-9d0d-8310f48d9f6d",
+  "name": "Desert",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land — Desert",
+  "oracleText": "{T}: Add {C}.\n{T}: This land deals 1 damage to target attacking creature. Activate only during the end of combat step.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "afc",
+  "setName": "Forgotten Realms Commander",
+  "rarity": "uncommon",
+  "keywords": []
+ },
+ {
+  "id": "04f9f061-67b8-4427-9fcb-b3ccfee8fc5d",
+  "name": "Dress Down",
+  "manaCost": "{1}{U}",
+  "cmc": 2,
+  "typeLine": "Enchantment",
+  "oracleText": "Flash\nWhen this enchantment enters, draw a card.\nCreatures lose all abilities.\nAt the beginning of the end step, sacrifice this enchantment.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "mh2",
+  "setName": "Modern Horizons 2",
+  "rarity": "rare",
+  "keywords": [
+   "Flash"
+  ]
+ },
+ {
+  "id": "4cd86997-d7b9-4b5b-9488-11f5c679e4d3",
+  "name": "Mystic Sanctuary",
+  "manaCost": "",
+  "cmc": 0,
+  "typeLine": "Land — Island",
+  "oracleText": "({T}: Add {U}.)\nThis land enters tapped unless you control three or more other Islands.\nWhen this land enters untapped, you may put target instant or sorcery card from your graveyard on top of your library.",
+  "colors": [],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "soc",
+  "setName": "Secrets of Strixhaven Commander",
+  "rarity": "common",
+  "keywords": []
+ },
+ {
+  "id": "902a969e-9f22-4e92-93eb-9d4536ca82e5",
+  "name": "Nyxborn Hydra",
+  "manaCost": "{X}{G}",
+  "cmc": 1,
+  "typeLine": "Enchantment Creature — Hydra",
+  "oracleText": "Bestow {X}{G}{G} (If you cast this card for its bestow cost, it's an Aura spell with enchant creature. It becomes a creature again if it's not attached.)\nReach, trample\nThis permanent enters with X +1/+1 counters on it.\nEnchanted creature gets +1/+1 for each +1/+1 counter on this Aura and has reach and trample.",
+  "colors": [
+   "G"
+  ],
+  "colorIdentity": [
+   "G"
+  ],
+  "setCode": "mh3",
+  "setName": "Modern Horizons 3",
+  "rarity": "common",
+  "power": "0",
+  "toughness": "1",
+  "keywords": [
+   "Reach",
+   "Trample",
+   "Bestow"
+  ]
+ },
+ {
+  "id": "3c0071fb-afa5-47b5-b266-2b10a4f5a98a",
+  "name": "Opalescence",
+  "manaCost": "{2}{W}{W}",
+  "cmc": 4,
+  "typeLine": "Enchantment",
+  "oracleText": "Each other non-Aura enchantment is a creature in addition to its other types and has base power and base toughness each equal to its mana value.",
+  "colors": [
+   "W"
+  ],
+  "colorIdentity": [
+   "W"
+  ],
+  "setCode": "uds",
+  "setName": "Urza's Destiny",
+  "rarity": "rare",
+  "keywords": []
+ },
+ {
+  "id": "a36e682d-b43d-4e08-bf5b-70d7e924dbe5",
+  "name": "Stormchaser's Talent",
+  "manaCost": "{U}",
+  "cmc": 1,
+  "typeLine": "Enchantment — Class",
+  "oracleText": "(Gain the next level as a sorcery to add its ability.)\nWhen this Class enters, create a 1/1 blue and red Otter creature token with prowess.\n{3}{U}: Level 2\nWhen this Class becomes level 2, return target instant or sorcery card from your graveyard to your hand.\n{5}{U}: Level 3\nWhenever you cast an instant or sorcery spell, create a 1/1 blue and red Otter creature token with prowess.",
+  "colors": [
+   "U"
+  ],
+  "colorIdentity": [
+   "U"
+  ],
+  "setCode": "blb",
+  "setName": "Bloomburrow",
+  "rarity": "rare",
+  "layout": "class",
+  "keywords": []
+ },
+ {
+  "id": "f76bc2da-8f4b-4153-8a7b-c601b19affaf",
+  "name": "Winter Moon",
+  "manaCost": "{2}",
+  "cmc": 2,
+  "typeLine": "Artifact",
+  "oracleText": "Players can't untap more than one nonbasic land during their untap steps.",
+  "colors": [],
+  "colorIdentity": [],
+  "setCode": "mh3",
+  "setName": "Modern Horizons 3",
+  "rarity": "rare",
+  "keywords": []
+ }
+]

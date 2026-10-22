@@ -1,6 +1,6 @@
 import type { Card } from '../../types';
 import {
-  activatedOf, auraTarget, castInfo, gainsLifeFromDamage, gainsLifeFromCombatDamageTaken, castSpec, cloneOf, entersCounters, entersTappedRule, beginsWithLuck, discardsLandInstead, manaConditions, stateMana, doesntUntap, frontText, gameRulesOf, isInstantOrSorcery,
+  activatedOf, auraTarget, castInfo, classLevelAbility, gainsLifeFromDamage, gainsLifeFromCombatDamageTaken, castSpec, cloneOf, entersCounters, entersTappedRule, beginsWithLuck, discardsLandInstead, manaConditions, stateMana, doesntUntap, frontText, gameRulesOf, isInstantOrSorcery,
   KEYWORDS, beginsOnBattlefield, chosenTypeMana, choosesCreatureType, doublesEquippedTriggers, equipDiscount, freeFirstEquip, isStoried, manaLifeCost, manaPain, manaUnits, modeSimulated, protectionsOf, staticsOf, toxicOf, triggersOf, wardCost, wardLife, protectsSpells, namesCardToStop, chosenNameTax, namesAnyCard, drawsOneMore, handMana, choosesBasicType, tapsAnotherForMana, filterMana, paidAnyColor, extraManaOf, manaMultiplier, choosesColor, counterMana, diamondMana, restrictedMana, mayStayTapped, reconfiguresEnchanted, entersPrepared, blocksOnlyFlyers, legendaryMana, entersAsBirdCopy, namesSpellToStop, protectionFromChosenPlayer, illusionWhenLeaving, returnsExiledWhenLeaving, fadingOf, vanishingOf, hasEnlist, hasSplitSecond, sacrificeMana, foodMana, creatureOnYourTurn, spellCostMods, type AbilitySpec,
 } from './rules';
 
@@ -40,7 +40,7 @@ function effectsText(spec: AbilitySpec): string | null {
   if (spec.modal) return `choose ${spec.modal.min}–${spec.modal.max} modes`;
   const targets = spec.targets.length ? ` (${spec.targets.length} target${spec.targets.length > 1 ? 's' : ''})` : '';
   const c = spec.condition;
-  const cond = !c ? '' : c.tapped ? ', if tapped' : c.cast ? ', if cast' : c.delirium ? ', with delirium' : c.notEscaped ? ', unless it escaped' : c.noAttack ? ', if you didn\'t attack this turn' : `, if ${c.lost ? 'life gained and lost' : `${c.gained}+ life gained`} this turn`;
+  const cond = !c ? '' : c.tapped ? ', if tapped' : c.untapped ? ', if untapped' : c.cast ? ', if cast' : c.delirium ? ', with delirium' : c.notEscaped ? ', unless it escaped' : c.noAttack ? ', if you didn\'t attack this turn' : `, if ${c.lost ? 'life gained and lost' : `${c.gained}+ life gained`} this turn`;
   const kinds = spec.effects.map((e) => (e.kind === 'tap' && e.untap ? 'untap' : e.kind)).join('+');
   return kinds + targets + (spec.mayPay ? `, may pay ${spec.mayPay}` : spec.optional ? ', optional' : '') + cond;
 }
@@ -134,6 +134,12 @@ function lineReport(card: Card, line: string, spell: boolean): LineReport | null
   if (/^You may reveal this card from your opening hand\./.test(line)) return { text: line, status: 'notSimulated', how: 'opening-hand reveal not simulated' };
   if (castInfo(one).domainDiscount) return { text: line, status: 'ok', how: 'costs {1} less for each basic land type among lands you control (domain)' };
   if (castInfo(one).opponentLandsDiscount) return { text: line, status: 'ok', how: `costs {1} less for each opponent's land that could make {${castInfo(one).opponentLandsDiscount}}` };
+  // A Class: "When this Class becomes level 2, …".
+  const becomes = line.match(/^When this Class becomes level (\d+), /i);
+  if (becomes) {
+    const read = effectsText(classLevelAbility(card, Number(becomes[1])) ?? { targets: [], effects: [] });
+    return read ? { text: line, status: 'ok', how: `trigger (level ${becomes[1]}) → ${read}` } : { text: line, status: 'notSimulated', how: `trigger (level ${becomes[1]}), effect not simulated` };
+  }
   // Shark Typhoon: "When you cycle this card, …".
   const cycled = /^When you cycle /.test(line) ? castInfo(card).cycling?.then : undefined;
   if (cycled) {

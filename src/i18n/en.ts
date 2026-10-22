@@ -79,6 +79,7 @@ const log: LogMessages = {
   bounced: (e, c) => `${c.card(e.card)} returns to its owner's hand`,
   sacrificed: (e, c) => `${c.card(e.card)} is sacrificed`,
   poison: (e, c) => `${c.isMe(e.p) ? 'You get' : `${c.name(e.p)} gets`} ${plural(e.n, 'poison counter', 'poison counters')}`,
+  levelUp: (e) => `${e.card} reaches level ${e.n}`,
   energy: (e, c) => `${c.isMe(e.p) ? 'You get' : `${c.name(e.p)} gets`} ${'{E}'.repeat(e.n)}`,
   proliferate: (e, c) => `${c.isMe(e.p) ? 'You proliferate' : `${c.name(e.p)} proliferates`}`,
   control: (e, c) => `${c.isMe(e.p) ? 'You gain' : `${c.name(e.p)} gains`} control of ${c.card(e.card)}`,
@@ -112,7 +113,7 @@ const log: LogMessages = {
   shock: (e, c) => (e.paid ? `${c.card(e.card)} enters untapped (${e.paid} life paid)` : `${c.card(e.card)} enters tapped`),
   attackPlaneswalker: (e, c) => `${c.card(e.card)} attacks ${c.card(e.pw)}`,
   loyalty: (e, c) => `${c.card(e.card)}: ${e.n > 0 ? '+' : ''}${e.n} loyalty`,
-  returned: (e, c) => `${c.card(e.card)} returns from the graveyard ${e.dest === 'hand' ? "to its owner's hand" : 'to the battlefield'}`,
+  returned: (e, c) => `${c.card(e.card)} returns from the graveyard ${e.dest === 'hand' ? "to its owner's hand" : e.dest === 'libraryTop' ? "on top of its owner's library" : 'to the battlefield'}`,
   exiledCard: (e, c) => `${c.card(e.card)} is exiled from ${e.from === 'hand' ? 'the hand' : 'the graveyard'}`,
   exiledGraveyards: (e, c) => `${c.card(e.card)} exiles graveyards`,
   search: (e, c) => {

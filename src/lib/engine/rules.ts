@@ -672,7 +672,7 @@ export type Effect =
   | { kind: 'explore'; to: Affected }
   /** A card in a graveyard goes to its owner's hand, or onto the battlefield under the controller's control. */
   // Pre-War Formalwear: "… to the battlefield and attach this Equipment to it".
-  | { kind: 'returnCard'; to: Affected; dest: 'hand' | 'battlefield'; attachSource?: true; finality?: true }
+  | { kind: 'returnCard'; to: Affected; dest: 'hand' | 'battlefield' | 'libraryTop'; attachSource?: true; finality?: true }
   // Snapcaster Mage: "gains flashback until end of turn. The flashback cost is equal to its mana cost."
   | { kind: 'grantFlashback'; to: Affected }
   // Phelia: exiled, back under its owner's control at the next end step (and a +1/+1 counter on the source if it's yours).
@@ -793,6 +793,8 @@ export type Effect =
   | { kind: 'proliferate' }
   /** Rest in Peace: "exile all graveyards"; Soul-Guide Lantern: "exile each opponent's graveyard". */
   | { kind: 'exileGraveyards'; to: Affected }
+  /** A Class: "{3}{U}: Level 2" (gains that level, as a sorcery). */
+  | { kind: 'levelUp'; level: number }
   /** Mesmeric Fiend: "return the exiled card to its owner's hand" (the cards its source exiled). */
   | { kind: 'returnExiledToHand' }
   /** Threaten effects also untap the creature and give it haste. */
@@ -893,7 +895,7 @@ export interface AbilitySpec {
    */
   /** `delirium`: Fear of Missing Out's "if there are four or more card types among cards in your graveyard". */
   /** `notEscaped`: Phlage, Uro: "sacrifice it unless it escaped". `noAttack`: Curious Obsession's "if you didn't attack with a creature this turn". */
-  condition?: { gained?: number; lost?: boolean; tapped?: boolean; cast?: boolean; delirium?: boolean; notEscaped?: boolean; noAttack?: boolean };
+  condition?: { gained?: number; lost?: boolean; tapped?: boolean; untapped?: boolean; cast?: boolean; delirium?: boolean; notEscaped?: boolean; noAttack?: boolean };
   /** A Saga's chapter ability: its Saga isn't sacrificed while it waits or is on the stack. */
   chapter?: number;
   /**
@@ -1186,7 +1188,7 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** Ways rules text names its own card: "Goblin Guide", "Ragavan" (legends), "this creature". */
 function selfWords(name: string): string[] {
   const front = name.split(' // ')[0];
-  return [front, ...front.split(',').map((w) => w.trim()), 'this creature', 'this permanent', 'this artifact', 'this enchantment', 'this land', 'this token', 'this aura', 'this equipment', 'this saga', 'this emblem'];
+  return [front, ...front.split(',').map((w) => w.trim()), 'this creature', 'this permanent', 'this artifact', 'this enchantment', 'this land', 'this token', 'this aura', 'this equipment', 'this saga', 'this emblem', 'this class'];
 }
 
 /**
@@ -1495,6 +1497,11 @@ export function parseAbilityText(text: string, self?: string, selfIt = true): Ab
     const which = selector(m[3].replace(/\bcreature\b/i, 'creatures'));
     return which && { kind: 'addCountersAll', counter: m[2] as CounterKind, n: toAmount(m[1]), which, other: /^other /i.test(m[3]) };
   });
+  // Ajani, Nacatl Avenger's +2: "Put a +1/+1 counter on each Cat you control." (a creature type)
+  scan(new RegExp(`\\b[Pp]ut (${AMOUNT}) ([+-]1\\/[+-]1) counters? on each ([A-Z][a-z]+) you control${END}`, 'g'), (m) => ({
+    kind: 'addCountersAll', counter: m[2] as CounterKind, n: toAmount(m[1]),
+    which: { kind: 'creature', filter: { subtypes: [m[3].toLowerCase()], controller: 'you' } }, other: false,
+  }));
   // Poison: "Target player gets two poison counters", "each opponent gets a poison counter".
   scan(new RegExp(`${PLAYER} gets? (${AMOUNT}) poison counters?`, 'gi'), (m) => {
     const to = who(m[1]);
@@ -1819,6 +1826,11 @@ export function parseAbilityText(text: string, self?: string, selfIt = true): Ab
   scan(new RegExp(`(${TARGET}) gains flashback until end of turn\\. The flashback cost is equal to its mana cost(?=\\.)`, 'gi'), (m) => {
     const to = slotFor(m[1], (spec) => spec.kind === 'card');
     return to && { kind: 'grantFlashback', to };
+  });
+  // Mystic Sanctuary: "put target instant or sorcery card from your graveyard on top of your library".
+  scan(new RegExp(`\\bput (${TARGET}) on top of your library(?=\\.)`, 'gi'), (m) => {
+    const to = slotFor(m[1], (spec) => spec.kind === 'card' && spec.filter.controller === 'you');
+    return to && { kind: 'returnCard', to, dest: 'libraryTop' };
   });
   // From a graveyard: "Return target creature card from your graveyard to your hand / to the battlefield".
   // Zoraline: "… to the battlefield with a finality counter on it".
@@ -2226,7 +2238,7 @@ export function castInfo(card: Card, face = 0): CastInfo {
       info.alts.push({ kind: 'returnLand', subtype: m[1].toLowerCase() });
     } else if ((m = line.match(/^(If it's not your turn, )?you may exile an? (white|blue|black|red|green) card from your hand rather than pay this spell's mana cost\.$/i))) {
       info.alts.push({ kind: 'exileCard', color: COLOR_WORDS[m[2].toLowerCase()], ...(m[1] ? { notYourTurn: true } : {}) });
-    } else if ((m = line.match(/^Bestow—((?:\{[^}]+\})+)(?:, Collect evidence (\d+))?\.?$/))) {
+    } else if ((m = line.match(/^Bestow(?:—| )((?:\{[^}]+\})+)(?:, Collect evidence (\d+))?\.?$/))) {
       info.alts.push({ kind: 'bestow', cost: m[1], ...(m[2] ? { evidence: Number(m[2]) } : {}), ...(/^You may cast this card from your graveyard using its bestow ability\.$/m.test(text) ? { fromGraveyard: true } : {}) });
     } else if ((m = line.match(/^Escape—((?:\{[^}]+\})+), Exile (any number of|\w+) other cards? from your graveyard(?: with (\w+) or more card types among them)?\.$/))) {
       // Nethergoyf: "Escape—{2}{B}, Exile any number of other cards from your graveyard with four or more card types among them."
@@ -3004,6 +3016,14 @@ export function triggersOf(card: Card): TriggerSpec[] {
       });
       continue;
     }
+    // Mystic Sanctuary: "When this land enters untapped, you may put target instant or sorcery card from your graveyard
+    // on top of your library."
+    const untapped = line.match(/^When (.+?) enters untapped, (.+)$/i);
+    if (untapped && selves.includes(untapped[1].toLowerCase())) {
+      const ability = triggerAbility(untapped[2], name, true);
+      out.push({ event: { on: 'enters', self: true }, ability: ability.effects.length ? { ...ability, condition: { ...ability.condition, untapped: true } } : ability });
+      continue;
+    }
     // Tamiyo, Inquisitive Student: "When you draw your third card in a turn, exile Tamiyo, then return her to the
     // battlefield transformed under her owner's control."
     const flips = line.match(/^When you draw your (second|third|fourth) card in a turn, exile (.+?), then return (?:her|him|it|them) to the battlefield transformed under (?:her|his|its|their) owner's control\.$/i);
@@ -3086,6 +3106,16 @@ export function triggersOf(card: Card): TriggerSpec[] {
     const countersPut = line.match(/^Whenever one or more \+1\/\+1 counters are put on (.+?), (.+)$/i);
     if (countersPut && selves.includes(countersPut[1].toLowerCase())) {
       out.push({ event: { on: 'countersPut' }, ability: triggerAbility(countersPut[2], name, true) });
+      continue;
+    }
+    // Ajani, Nacatl Pariah: "Whenever one or more other Cats you control die, you may exile Ajani, then return him to the
+    // battlefield transformed under his owner's control."
+    const catsDie = line.match(/^Whenever one or more other ([A-Z][a-z]+)s you control die, you may exile (.+?), then return (?:her|him|it|them) to the battlefield transformed under (?:her|his|its|their) owner's control\.$/i);
+    if (catsDie && selves.includes(catsDie[2].toLowerCase())) {
+      out.push({
+        event: { on: 'dies', self: false, which: { kind: 'creature', filter: { subtypes: [catsDie[1].toLowerCase()], controller: 'you' } }, another: true },
+        ability: { targets: [], effects: [{ kind: 'flickerTransformed' }], optional: true }, batch: true,
+      });
       continue;
     }
     // Chainsaw: "Whenever one or more creatures die, put a rev counter on this Equipment."
@@ -3348,6 +3378,12 @@ export function activatedOf(card: Card): ActivatedSpec[] {
         text: line, cost: { mana: equip[2], tap: false, sacrificeSelf: false, life: 0 }, sorcery: true, once: false, equip: equip[3] ? { perColor: true } : {},
         ability: { targets: [{ kind: 'creature', min: 1, max: 1, filter: { controller: 'you', ...worthy } }], effects: [{ kind: 'attach', to: { slot: 0 } }] },
       });
+      continue;
+    }
+    // A Class: "{3}{U}: Level 2", as a sorcery (only the next level is in a Class's text: see classCard).
+    const level = line.match(CLASS_LEVEL);
+    if (level) {
+      out.push({ text: line, cost: { mana: level[1], tap: false, sacrificeSelf: false, life: 0 }, sorcery: true, once: false, ability: { targets: [], effects: [{ kind: 'levelUp', level: Number(level[2]) }] } });
       continue;
     }
     // Vehicles: "Crew 1" (tap creatures with total power 1 or more: it becomes an artifact creature until end of turn).
@@ -3704,6 +3740,12 @@ export function staticsOf(card: Card): StaticSpec[] {
         .replace(/(?:,? and |, | )ward \{(\d+)\}$/i, (_, n) => ((extra.ward = Number(n)), ''))
         .replace(/(?:,? and |, | )hexproof from monocolored$/i, () => ((extra.hexproofFromMonocolored = true), ''))
         .replace(/ and has$| has$/, '');
+      // Nyxborn Hydra: "gets +1/+1 for each +1/+1 counter on this Aura and has reach and trample".
+      const forEach = body.match(new RegExp(`^gets \\+(\\d+)\\/\\+(\\d+) for each (\\+1\\/\\+1|[a-z]+) counter on this (?:Equipment|Aura)(?: and has ${KEYWORD_LIST})?$`, 'i'));
+      if (forEach) {
+        out.push({ who, power: Number(forEach[1]), toughness: Number(forEach[2]), keywords: forEach[4] ? kws(forEach[4]) : [], perCounter: forEach[3].toLowerCase() as CounterKind, ...extra });
+        continue;
+      }
       // Chainsaw: "gets +X/+0, where X is the number of rev counters on this Equipment".
       const perCounter = body.match(/^gets \+X\/\+0, where X is the number of ([a-z]+) counters on this (?:Equipment|Aura)$/i);
       if (perCounter) {
@@ -4129,6 +4171,8 @@ export type EntersTappedRule =
   | { kind: 'always' }
   /** "unless you control a Plains or an Island" */
   | { kind: 'unlessSubtypes'; subtypes: string[] }
+  /** Mystic Sanctuary: "unless you control three or more other Islands". */
+  | { kind: 'unlessSubtypeCount'; subtype: string; n: number }
   /** Fast lands "unless you control two or fewer other lands" (max), slow lands "two or more" (min). */
   | { kind: 'unlessOtherLands'; max?: number; min?: number }
   /** Shock lands: "As this land enters, you may pay 2 life. If you don't, it enters tapped." */
@@ -4165,6 +4209,8 @@ export function entersTappedRule(card: Card): EntersTappedRule | null {
     const lands = what.match(/^(two|three) or (fewer|more) other lands$/);
     if (lands) return { kind: 'unlessOtherLands', [lands[2] === 'fewer' ? 'max' : 'min']: toNumber(lands[1]) };
     if (what === 'a basic land') return { kind: 'unlessBasic' };
+    const several = what.match(/^(two|three|four) or more other ([a-z]+)s$/);
+    if (several && LAND_TYPES.includes(several[2])) return { kind: 'unlessSubtypeCount', subtype: several[2], n: toNumber(several[1]) };
     const types = what.split(/,? or |, /).map((w) => w.replace(/^an? /, ''));
     // "unless you control a Mountain or a Forest"; The Lonely Mountain: "unless you control an Equipment".
     if (types.every((t) => LAND_TYPES.includes(t) || OTHER_SUBTYPES.includes(t))) return { kind: 'unlessSubtypes', subtypes: types };
@@ -4187,6 +4233,8 @@ export type GameRule =
   | 'opponentGraveyardsExiled'
   /** Dauthi Voidwalker: "… instead exile it with a void counter on it." */
   | 'opponentGraveyardsVoid'
+  /** Winter Moon: "Players can't untap more than one nonbasic land during their untap steps." */
+  | 'oneNonbasicUntap'
   /** Teferi, Time Raveler: "Each opponent can cast spells only any time they could cast a sorcery." */
   | 'opponentsSorcerySpeed'
   /** Containment Priest: "If a nontoken creature would enter and it wasn't cast, exile it instead." */
@@ -4285,6 +4333,7 @@ const GAME_RULES: [RegExp, GameRule][] = [
   [/^If a card or token would be put into a graveyard from anywhere, exile it instead\.$/m, 'graveyardsExiled'],
   [/^If a card would be put into an opponent's graveyard from anywhere, exile it instead\.$/m, 'opponentGraveyardsExiled'],
   [/^If a card would be put into an opponent's graveyard from anywhere, instead exile it with a void counter on it\.$/m, 'opponentGraveyardsVoid'],
+  [/^Players can't untap more than one nonbasic land during their untap steps\.$/m, 'oneNonbasicUntap'],
   [/^Each opponent can cast spells only any time they could cast a sorcery\.$/m, 'opponentsSorcerySpeed'],
   [/^If a nontoken creature would enter(?: the battlefield)? and it wasn't cast, exile it instead\.$/m, 'uncastCreaturesExiled'],
   [/^Creature cards in graveyards and libraries can't enter the battlefield\.$/m, 'noCreaturesFromGraveyardsLibraries'],
@@ -4441,4 +4490,44 @@ function memoCardWithIdentity<T>(read: (card: Card, identity?: Color[]) => T): (
     if (!memo) caches.set(key, (memo = memoCard((c) => read(c, identity))));
     return memo(card);
   };
+}
+
+// ---------- Classes ----------
+
+/** "{3}{U}: Level 2" */
+const CLASS_LEVEL = /^((?:\{[^}]+\})+): Level (\d+)$/;
+/** "When this Class becomes level 2, …" */
+const CLASS_BECOMES = /^When this Class becomes level (\d+), (.+)$/i;
+
+export const isClass = (card: Card) => /\bClass\b/.test(card.typeLine.split('//')[0]);
+
+/**
+ * A Class at a level: the text of that level and the ones below, and the next level's "{cost}: Level N" (its "When this
+ * Class becomes level N" triggers left out: see classLevelAbility). Its abilities are read from this text as from any
+ * card's (the card on the battlefield is this one).
+ */
+export function classCard(card: Card, level: number): Card {
+  const lines: string[] = [];
+  let at = 1;
+  for (const raw of card.oracleText.split('\n')) {
+    const line = raw.trim();
+    const header = line.match(CLASS_LEVEL);
+    if (header) {
+      at = Number(header[2]);
+      if (at === level + 1) lines.push(line);
+      continue;
+    }
+    if (at > level || CLASS_BECOMES.test(line) || /^\(Gain the next level/i.test(line)) continue;
+    lines.push(line);
+  }
+  return { ...card, oracleText: lines.join('\n') };
+}
+
+/** "When this Class becomes level N, …": that triggered ability, or null. */
+export function classLevelAbility(card: Card, level: number): AbilitySpec | null {
+  for (const raw of card.oracleText.split('\n')) {
+    const m = raw.trim().match(CLASS_BECOMES);
+    if (m && Number(m[1]) === level) return triggerAbility(m[2], selfName(card), true);
+  }
+  return null;
 }

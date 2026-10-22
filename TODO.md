@@ -552,7 +552,18 @@ Still open, playing wrongly, most played first (see `audit-reports/2026-10-21/re
 - [ ] Agatha's Soul Cauldron (activated abilities of exiled creature cards), Nyxborn Hydra (bestow with X)
 - [ ] Dauthi Voidwalker's "{T}, Sacrifice this creature: Choose an exiled card an opponent owns with a void counter on it.
   You may play it this turn without paying its mana cost." (playing a card another player owns from exile)
-- [ ] Stormchaser's Talent (Classes), Ajani, Nacatl Pariah (transforming when a Cat dies), Loki, Volrath's Shapeshifter
+- [ ] Loki, Volrath's Shapeshifter
+- [ ] Ajani, Nacatl Avenger's 0 ("When you do, if you control a red permanent other than Ajani, he deals damage …") and
+  −4 (each opponent keeps an artifact, a creature, an enchantment and a planeswalker)
+- [ ] Desert (an end of combat step to activate in), Dress Down ("Creatures lose all abilities"), Opalescence
+
+Third batch: Classes (Stormchaser's Talent: only the abilities of the levels gained, "{3}{U}: Level 2" as a sorcery, "When
+this Class becomes level 2"; its level 3 Otters were made from level 1), Nyxborn Hydra (bestow with X; "+1/+1 for each
++1/+1 counter on this Aura"), Ajani, Nacatl Pariah ("Whenever one or more other Cats you control die, you may exile
+Ajani, then return him to the battlefield transformed"; the Avenger's +2), Mystic Sanctuary ("unless you control three
+or more other Islands", "When this land enters untapped", a card on top of the library), Winter Moon. Fixture
+`metagame-2026-10-22`.
+Approximations: Winter Moon untaps the nonbasic land making the most mana (the player doesn't choose).
 - [ ] Dress Down, Opalescence, Leyline of the Guildpact, Engineered Plague, Elephant Grass, Winter Moon, Desert, Mystic
   Sanctuary, Phantom Nishoba, Sanctifier en-Vec, Necrodominance
 

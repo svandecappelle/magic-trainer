@@ -1,0 +1,53 @@
+NONE     Opalescence {2}{W}{W} — Enchantment
+  ? Each other non-Aura enchantment is a creature in addition to its othe…
+      not read by the engine
+PARTIAL  Desert  — Land — Desert
+  ✓ {T}: Add {C}.
+      mana: C
+  ? {T}: This land deals 1 damage to target attacking creature. Activate …
+      activated ability with a cost or restriction not understood
+PARTIAL  Dress Down {1}{U} — Enchantment
+  ✓ Flash
+      keyword
+  ✓ When this enchantment enters, draw a card.
+      trigger (enters) → draw
+  ? Creatures lose all abilities.
+      not read by the engine
+  ✓ At the beginning of the end step, sacrifice this enchantment.
+      trigger (endStep) → sacrificeSelf
+OK       Ajani, Nacatl Pariah // Ajani, Nacatl Avenger {1}{W} — Legendary Creature — Cat Warrior // Legendary Planeswalker — Ajani (other faces not audited)
+  ✓ When Ajani enters, create a 2/1 white Cat Warrior creature token.
+      trigger (enters) → token
+  ✓ Whenever one or more other Cats you control die, you may exile Ajani,…
+      trigger (dies) → flickerTransformed, optional
+OK       Mystic Sanctuary  — Land — Island
+  ✓ This land enters tapped unless you control three or more other Island…
+      enters tapped (unlessSubtypeCount)
+  ✓ When this land enters untapped, you may put target instant or sorcery…
+      trigger (enters) → returnCard (1 target), optional, if untapped
+OK       Nyxborn Hydra {X}{G} — Enchantment Creature — Hydra
+  ✓ Bestow {X}{G}{G}
+      keyword
+  ✓ Reach, trample
+      keyword
+  ✓ This permanent enters with X +1/+1 counters on it.
+      enters with X +1/+1 counters
+  ✓ Enchanted creature gets +1/+1 for each +1/+1 counter on this Aura and…
+      static ability
+OK       Stormchaser's Talent {U} — Enchantment — Class
+  ✓ When this Class enters, create a 1/1 blue and red Otter creature toke…
+      trigger (enters) → token
+  ✓ {3}{U}: Level 2
+      activated → levelUp
+  ✓ When this Class becomes level 2, return target instant or sorcery car…
+      trigger (level 2) → returnCard (1 target)
+  ✓ {5}{U}: Level 3
+      activated → levelUp
+  ✓ Whenever you cast an instant or sorcery spell, create a 1/1 blue and …
+      trigger (cast) → token
+OK       Winter Moon {2} — Artifact
+  ✓ Players can't untap more than one nonbasic land during their untap st…
+      rule for the game: oneNonbasicUntap
+
+8 cards: 5 ok, 2 partial, 1 not simulated, 0 can't be cast
+✓ simulated   ✗ recognized, not simulated   ? silently ignored by the engine (check these first)
