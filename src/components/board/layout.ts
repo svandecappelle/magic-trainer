@@ -17,7 +17,15 @@ export interface BoardLayout {
   land?: number;
   /** Width of a card in your hand, in px. */
   hand?: number;
+  /**
+   * Lands and other non-creature permanents as cards or as compact chips; left out (auto), chips only for a lane whose
+   * cards don't fit in one row.
+   */
+  density?: Density;
 }
+
+export type Density = 'cards' | 'compact';
+export const DENSITIES: Density[] = ['cards', 'compact'];
 
 export type LayoutSize = 'side' | 'opp' | 'perm' | 'land' | 'hand';
 
@@ -46,6 +54,7 @@ export function readLayout(raw: string | null): BoardLayout {
     if (typeof o[k] === 'number' && Number.isFinite(o[k])) out[k] = clampSize(k, o[k] as number);
   }
   if (o.closed === true) out.closed = true;
+  if (DENSITIES.includes(o.density as Density)) out.density = o.density as Density;
   return out;
 }
 

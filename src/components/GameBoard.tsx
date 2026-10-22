@@ -21,6 +21,8 @@ import { Lines, type Line } from './board/Lines';
 import { useBoardFx, type Float } from './board/useBoardFx';
 import { clampSize, layoutStyle, LAYOUT_DEFAULTS, LAYOUT_LIMITS, SHARP_FROM, useBoardLayout, type LayoutSize } from './board/layout';
 import { ResizeHandle } from './board/ResizeHandle';
+import { LaneRow } from './board/LaneRow';
+import { laneOf, plain, stacksOf, untappedIn, type Lane, type Stack } from './board/stacks';
 import type { Card } from '../types';
 import { HIDDEN_CARD } from '../lib/multiplayer/protocol';
 import './board/board.css';
@@ -924,21 +926,99 @@ export function GameBoard({ game: g, me, onAction, endControls, notice, readOnly
     );
   };
 
-  const row = (p: PlayerId, lands: boolean) => {
-    const perms = g.battlefield.filter((x) => x.controller === p && isLandCard(x.card) === lands && !attachedTo(x));
-    const items = perms.map((perm) => withAttachments(perm));
-    for (const ghost of fx.ghosts) {
-      if (ghost.perm.controller !== p || isLandCard(ghost.perm.card) !== lands) continue;
-      items.splice(Math.min(ghost.index, items.length), 0, renderPermanent(ghost.perm, true));
-    }
-    return <div className={`perm-row ${lands ? 'lands' : 'creatures'}`}>{items}</div>;
+  // ---------- Big boards: lanes and stacks of identical permanents ----------
+  const payPick = (perm: Permanent) => payment?.sources.find((m) => m.iid === perm.iid || m.iid === `convoke:${perm.iid}`);
+  /** Shown alone right now: in combat, chosen (target, payment, blocker), or with an Aura or Equipment on it. */
+  const apart = (perm: Permanent) =>
+    attackerIds.has(perm.iid) || !!blockedBy(perm.iid) || blockerSel === perm.iid || isPicked({ kind: 'permanent', iid: perm.iid })
+    || (!!paying && !!payPick(perm) && paying.picked.includes(payPick(perm)!.iid)) || attachments(perm).length > 0;
+  /** The copy a click on a stack acts on: one that can do what is asked now, else an untapped one. */
+  const copyToUse = (stack: Stack): Permanent => {
+    const find = (ok: (x: Permanent) => boolean) => stack.perms.find(ok);
+    const first = stack.perms[0];
+    if (paying) return find((x) => !!payPick(x)) ?? first;
+    if (targeting) return find((x) => canTarget({ kind: 'permanent', iid: x.iid })) ?? first;
+    if (declaringAttack) return find((x) => x.controller === me && canAttack(x)) ?? first;
+    if (declaringBlocks) return find((x) => !x.tapped) ?? first;
+    return find((x) => canActivate.has(x.iid)) ?? find((x) => !x.tapped) ?? first;
+  };
+  /** Lines and floating numbers aimed at any copy of a stack land on it. */
+  const regCopies = (stack: Stack, shown: Permanent) => (el: HTMLElement | null) => {
+    for (const x of stack.perms) if (x.iid !== shown.iid) reg(`perm:${x.iid}`)(el);
+  };
+  const renderStack = (stack: Stack, lane: Lane) => {
+    if (stack.perms.length === 1) return withAttachments(stack.perms[0]);
+    const shown = copyToUse(stack);
+    const ready = untappedIn(stack);
+    return (
+      <div key={`stack-${stack.perms[0].iid}`} ref={regCopies(stack, shown)} className="perm-stack" title={t.game.stackTitle(stack.perms.length)}>
+        {renderPermanent(shown)}
+        <span className="stack-count">×{stack.perms.length}</span>
+        {lane !== 'creatures' && <span className="stack-ready">{t.game.stackReady(ready)}</span>}
+      </div>
+    );
+  };
+  /** Compact: one chip per stack (a land's chip shows its mana). */
+  const renderChip = (stack: Stack, lane: Lane) => {
+    const shown = copyToUse(stack);
+    const n = stack.perms.length;
+    const ready = untappedIn(stack);
+    const isTarget = stack.perms.some((x) => canTarget({ kind: 'permanent', iid: x.iid }));
+    const usable = stack.perms.some((x) => canActivate.has(x.iid) || !!payPick(x));
+    const colors = lane === 'lands' ? [...new Set(unitsOf(g, shown).flat())].slice(0, 3) : [];
+    const cls = [
+      'perm-chip', ready === 0 && 'tapped', isTarget && 'targetable', usable && 'actionable',
+      ((targeting && !isTarget) || (paying && !usable)) && 'dimmed', shown.controller === me ? 'mine' : 'theirs',
+    ].filter(Boolean).join(' ');
+    return (
+      <button
+        key={`chip-${stack.perms[0].iid}`}
+        type="button"
+        ref={(el) => { for (const x of stack.perms) reg(`perm:${x.iid}`)(el); }}
+        className={cls}
+        onClick={() => onPermanentClick(shown)}
+        {...zoomable(shown.card)}
+      >
+        {colors.map((c) => <span key={c} className={`mana-dot mana-${c}`}>{c}</span>)}
+        <span className="chip-name">{show.name(shown.card)}</span>
+        {n > 1 && <span className="chip-count">×{n}</span>}
+        <span className="chip-state">{ready === 0 ? t.game.tappedState : n > 1 ? t.game.stackReady(ready) : ''}</span>
+        {floatsFor(`perm:${shown.iid}`)}
+      </button>
+    );
+  };
+
+  /** From the middle of the table out. */
+  const LANES: Lane[] = ['creatures', 'others', 'lands'];
+  const row = (p: PlayerId, lane: Lane) => {
+    const perms = g.battlefield.filter((x) => x.controller === p && laneOf(x) === lane && !attachedTo(x));
+    const ghosts = fx.ghosts.filter((gh) => gh.perm.controller === p && laneOf(gh.perm) === lane);
+    // The lane of other permanents shows only when it has some.
+    if (lane === 'others' && !perms.length && !ghosts.length) return null;
+    const stacks = stacksOf(perms, apart);
+    return (
+      <LaneRow
+        key={lane}
+        lane={lane}
+        density={layout.density}
+        count={stacks.length}
+        render={(compact) => {
+          // Compact: chips, except for what a chip can't show (counters, attachments…).
+          const items = stacks.map((st) => (compact && (st.perms.length > 1 || (plain(st.perms[0]) && !attachments(st.perms[0]).length))
+            ? renderChip(st, lane) : renderStack(st, lane)));
+          if (!compact) for (const ghost of ghosts) items.splice(Math.min(ghost.index, items.length), 0, renderPermanent(ghost.perm, true));
+          return items;
+        }}
+      />
+    );
   };
 
   const ours = (p: PlayerId) => p === me || mates.includes(p);
   const field = (p: PlayerId) => (
     <div key={p} className={`battlefield ${ours(p) ? 'mine' : 'theirs'}`}>
       {multi && <span className="field-name small muted">{names[p]}</span>}
-      {ours(p) ? <>{row(p, false)}{row(p, true)}</> : <>{row(p, true)}{row(p, false)}</>}
+      {/* An opponent's battlefield is a reversed column: its creatures come first, next to the middle. */}
+      {LANES.map((lane) => row(p, lane))}
     </div>
   );
 
@@ -1343,6 +1423,14 @@ export function GameBoard({ game: g, me, onAction, endControls, notice, readOnly
                   />
                 </label>
               ))}
+              <label className="layout-slider small">
+                <span>{t.game.layout.density}</span>
+                <select value={layout.density ?? 'auto'} onChange={(e) => setLayout({ density: e.target.value === 'auto' ? undefined : e.target.value as 'cards' | 'compact' })}>
+                  <option value="auto">{t.game.layout.densityAuto}</option>
+                  <option value="cards">{t.game.layout.densityCards}</option>
+                  <option value="compact">{t.game.layout.densityCompact}</option>
+                </select>
+              </label>
               <button type="button" className="secondary" onClick={resetLayout} disabled={Object.keys(layout).length === 0}>{t.game.layout.reset}</button>
             </section>
           </div>

@@ -7,6 +7,8 @@ main:has(> .page.play) { padding: 0 10px 10px; }
   /* Card sizes follow the screen, so the whole table fits without scrolling. */
   --perm-w: clamp(44px, min(10.5vh, 10vw), 96px);
   --land-w: calc(var(--perm-w) * 0.7);
+  /* Artifacts, enchantments and the other non-creature permanents. */
+  --other-w: calc(var(--perm-w) * 0.8);
   --hand-w: clamp(56px, min(14vh, 15vw), 108px);
   display: grid;
   /* The table, and a column with the log (or the last card, or the settings). */
@@ -46,7 +48,8 @@ main:has(> .page.play) { padding: 0 10px 10px; }
 .fields > .battlefield { flex: 1 1 0; min-width: 0; }
 .fields.multi > .battlefield + .battlefield { border-left: 1px dashed var(--border); }
 .field-name { align-self: center; text-transform: uppercase; letter-spacing: 0.12em; font-weight: 600; }
-.fields.theirs .field-name { order: 99; }
+/* Next to the middle of the table (the column is reversed). */
+.fields.theirs .field-name { order: -1; }
 /* Four players: smaller cards so both battlefields of a side fit. */
 .game:has(.fields.multi) { --perm-w: clamp(40px, min(8.5vh, 5.6vw), 82px); --hand-w: clamp(52px, min(12vh, 13vw), 100px); }
 .player-bar.theirs .seat { display: flex; align-items: flex-start; gap: 6px; flex: 1 1 0; min-width: 0; }
@@ -69,7 +72,9 @@ main:has(> .page.play) { padding: 0 10px 10px; }
 @media (hover: hover) { .ally-card:hover { transform: translateY(-6px); z-index: 2; } }
 
 .battlefield { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow: auto; padding: 6px 8px; }
-.battlefield.theirs { justify-content: flex-end; }
+/* Drawn from the middle of the table up: creatures stay in view, what doesn't fit scrolls away at the top. */
+.battlefield.theirs { flex-direction: column-reverse; justify-content: flex-start; }
+.battlefield > .perm-row { flex-shrink: 0; }
 .battlefield.mine { justify-content: flex-start; }
 .perm-row {
   display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; align-items: center;
@@ -78,6 +83,8 @@ main:has(> .page.play) { padding: 0 10px 10px; }
 .perm-row.lands { background: rgba(0, 0, 0, 0.07); }
 .perm-row.creatures { min-height: calc(var(--perm-w) * 1.4 + 4px); }
 .perm-row.lands { min-height: calc(var(--land-w) * 1.1); gap: 6px; }
+.perm-row.others { gap: 10px; }
+.perm-row.compact { min-height: 0; gap: 6px; padding: 6px; }
 
 .perm {
   --lift: 0px;
@@ -90,11 +97,13 @@ main:has(> .page.play) { padding: 0 10px 10px; }
 }
 .perm img { width: var(--perm-w); display: block; border-radius: 6px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6); transition: box-shadow 0.2s, transform 0.15s; }
 .lands .perm img { width: var(--land-w); }
+.others .perm img { width: var(--other-w); }
 .perm:hover { z-index: 4; }
 @media (hover: hover) { .perm:hover img { transform: scale(1.05); } }
 /* A tapped card is as wide as it is tall: make room on both sides. */
 .perm.tapped { --rot: 90deg; margin: 0 calc(var(--land-w) * 0.2); }
 .creatures .perm.tapped { margin: 0 calc(var(--perm-w) * 0.2); }
+.others .perm.tapped { margin: 0 calc(var(--other-w) * 0.2); }
 .perm.tapped img { filter: brightness(0.72) saturate(0.85); }
 
 /* Attacking: lifted toward the opponent, with a brass glow. Blocking and selected: blue. */
@@ -112,6 +121,42 @@ main:has(> .page.play) { padding: 0 10px 10px; }
 .perm.picked img { box-shadow: 0 0 0 3px var(--accent), 0 0 20px var(--accent); }
 .perm.dimmed { filter: brightness(0.5) saturate(0.6); }
 .perm.leaving { pointer-events: none; animation: perm-leave 0.65s ease-in forwards; }
+
+/* Identical permanents: one card, two edges behind it, how many and how many are untapped. */
+.perm-stack { position: relative; }
+.perm-stack::before, .perm-stack::after {
+  content: ''; position: absolute; inset: 0; border-radius: 6px; background: #3a4150; border: 1px solid #4a5263; pointer-events: none;
+}
+.perm-stack::before { translate: 6px -6px; }
+.perm-stack::after { translate: 3px -3px; background: #454d5e; border-color: #555e70; }
+.perm-stack > .perm { z-index: 1; }
+/* A tapped card is turned: its badge stays, not the edges. */
+.perm-stack:has(> .perm.tapped)::before, .perm-stack:has(> .perm.tapped)::after { display: none; }
+.perm-stack > .stack-count {
+  position: absolute; left: -6px; top: -10px; z-index: 3; padding: 1px 7px; border-radius: 999px;
+  background: var(--accent); color: var(--accent-text); font-size: 0.75rem; font-weight: 800; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+.perm-stack > .stack-ready {
+  position: absolute; left: 50%; bottom: 4px; translate: -50% 0; z-index: 3; white-space: nowrap; pointer-events: none;
+  font-size: 0.68rem; font-weight: 700; color: var(--text); background: rgba(14, 17, 22, 0.8); padding: 1px 6px; border-radius: 6px;
+}
+
+/* Compact lanes: a chip per permanent or stack. */
+.perm-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 5px; border-radius: 999px; position: relative;
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--text); font: inherit; font-size: 0.82rem; cursor: pointer;
+  min-height: 32px; transition: filter 0.2s, box-shadow 0.2s;
+}
+.perm-chip .mana-dot { animation: none; width: 20px; height: 20px; font-size: 0.66rem; }
+.perm-chip .chip-name { font-weight: 600; white-space: nowrap; }
+.perm-chip .chip-count { font-weight: 800; color: var(--accent); }
+.perm-chip .chip-state { color: var(--muted); font-size: 0.75rem; white-space: nowrap; }
+.perm-chip .chip-state:empty { display: none; }
+.perm-chip.tapped { opacity: 0.6; }
+.perm-chip.actionable { box-shadow: 0 0 0 2px var(--ok); }
+.perm-chip.targetable { cursor: crosshair; box-shadow: 0 0 0 2px var(--target); animation: target-pulse 0.9s ease-in-out infinite alternate; }
+.perm-chip.dimmed { filter: brightness(0.5) saturate(0.6); }
 
 /* Auras and Equipment peek out above the permanent they're attached to. */
 .perm-host { position: relative; padding-top: calc(var(--n) * var(--perm-w) * 0.22); }
